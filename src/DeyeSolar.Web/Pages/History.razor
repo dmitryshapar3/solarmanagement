@@ -1,0 +1,72 @@
+@page "/history"
+@inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>History - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Reading History</MudText>
+
+<MudStack Row="true" Class="mb-4" Spacing="2">
+    <MudSelect @bind-Value="_hours" Label="Time Range" Dense="true" Style="max-width: 200px;">
+        <MudSelectItem Value="1">Last 1 hour</MudSelectItem>
+        <MudSelectItem Value="6">Last 6 hours</MudSelectItem>
+        <MudSelectItem Value="24">Last 24 hours</MudSelectItem>
+        <MudSelectItem Value="168">Last 7 days</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" OnClick="LoadData">Refresh</MudButton>
+</MudStack>
+
+@if (_readings == null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_readings.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No readings in selected time range.</MudAlert>
+}
+else
+{
+    <MudTable Items="_readings" Hover="true" Dense="true" Elevation="2" FixedHeader="true" Height="500px">
+        <HeaderContent>
+            <MudTh>Time</MudTh>
+            <MudTh>SOC %</MudTh>
+            <MudTh>Solar W</MudTh>
+            <MudTh>Battery W</MudTh>
+            <MudTh>Grid W</MudTh>
+            <MudTh>Load W</MudTh>
+            <MudTh>Voltage V</MudTh>
+            <MudTh>Temp C</MudTh>
+            <MudTh>Source</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Timestamp.LocalDateTime.ToString("MM/dd HH:mm:ss")</MudTd>
+            <MudTd>@context.BatterySoc</MudTd>
+            <MudTd>@context.SolarProduction</MudTd>
+            <MudTd>@context.BatteryPower</MudTd>
+            <MudTd>@context.GridConsumption</MudTd>
+            <MudTd>@context.LoadPower</MudTd>
+            <MudTd>@context.BatteryVoltage.ToString("F1")</MudTd>
+            <MudTd>@context.BatteryTemperature.ToString("F1")</MudTd>
+            <MudTd>@context.DataSource</MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudText Typo="Typo.caption" Class="mt-2">Showing @_readings.Count readings</MudText>
+}
+
+@code {
+    private List<DeyeSolar.Web.Data.Reading>? _readings;
+    private int _hours = 6;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var cutoff = DateTimeOffset.UtcNow.AddHours(-_hours);
+        _readings = await db.Readings
+            .Where(r => r.Timestamp >= cutoff)
+            .OrderByDescending(r => r.Timestamp)
+            .Take(1000)
+            .ToListAsync();
+    }
+}

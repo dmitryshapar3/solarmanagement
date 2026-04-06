@@ -1,0 +1,106 @@
+@page "/rules"
+@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject NavigationManager Nav
+
+<PageTitle>Rules - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Trigger Rules</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/rules/edit"
+           StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
+    Add Rule
+</MudButton>
+
+@if (_rules == null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_rules.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No rules configured. Create one to get started.</MudAlert>
+}
+else
+{
+    <MudTable Items="_rules" Hover="true" Dense="true" Elevation="2">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Entity</MudTh>
+            <MudTh>SOC On/Off</MudTh>
+            <MudTh>Solar Surplus</MudTh>
+            <MudTh>Time Window</MudTh>
+            <MudTh>State</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Name</MudTd>
+            <MudTd><MudText Typo="Typo.body2">@context.EntityId</MudText></MudTd>
+            <MudTd>
+                @if (context.SocTurnOnThreshold.HasValue)
+                {
+                    <span>@context.SocTurnOnThreshold% / @context.SocTurnOffThreshold%</span>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.MinSolarSurplusWatts.HasValue)
+                {
+                    <span>@context.MinSolarSurplusWatts W</span>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.ActiveFrom.HasValue)
+                {
+                    <span>@context.ActiveFrom - @context.ActiveTo</span>
+                }
+                else
+                {
+                    <span>Always</span>
+                }
+            </MudTd>
+            <MudTd>
+                <MudChip T="string" Color="@(context.CurrentState ? Color.Success : Color.Default)" Size="Size.Small">
+                    @(context.CurrentState ? "ON" : "OFF")
+                </MudChip>
+            </MudTd>
+            <MudTd>
+                <MudSwitch T="bool" Value="context.Enabled" ValueChanged="@(v => ToggleEnabled(context, v))"
+                           Color="Color.Primary" />
+            </MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => Nav.NavigateTo($"/rules/edit/{context.Id}"))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DeleteRule(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<TriggerRule>? _rules;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+    }
+
+    private async Task ToggleEnabled(TriggerRule rule, bool enabled)
+    {
+        rule.Enabled = enabled;
+        await RuleRepo.UpdateAsync(rule, CancellationToken.None);
+    }
+
+    private async Task DeleteRule(int id)
+    {
+        await RuleRepo.DeleteAsync(id, CancellationToken.None);
+        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+    }
+}

@@ -1,0 +1,100 @@
+@page "/rules/edit"
+@page "/rules/edit/{Id:int}"
+@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject NavigationManager Nav
+
+<PageTitle>@(_isNew ? "New Rule" : "Edit Rule") - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">@(_isNew ? "Create Rule" : "Edit Rule")</MudText>
+
+<MudPaper Class="pa-4" MaxWidth="600px" Elevation="2">
+    <MudForm @ref="_form">
+        <MudTextField @bind-Value="_rule.Name" Label="Rule Name" Required="true"
+                      RequiredError="Name is required" />
+
+        <MudTextField @bind-Value="_rule.EntityId" Label="Home Assistant Entity ID"
+                      Required="true" RequiredError="Entity ID is required"
+                      HelperText="e.g., switch.sp401m" Class="mt-3" />
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Battery SOC Thresholds</MudText>
+        <MudGrid>
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Turn ON at (%)"
+                                 Min="0" Max="100" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_rule.SocTurnOffThreshold" Label="Turn OFF at (%)"
+                                 Min="0" Max="100" />
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Solar Surplus</MudText>
+        <MudNumericField @bind-Value="_rule.MinSolarSurplusWatts" Label="Minimum surplus (W)"
+                         HelperText="Solar production minus load" />
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window</MudText>
+        <MudGrid>
+            <MudItem xs="6">
+                <MudTimePicker @bind-Time="_activeFrom" Label="Active From" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudTimePicker @bind-Time="_activeTo" Label="Active To" />
+            </MudItem>
+        </MudGrid>
+
+        <MudNumericField @bind-Value="_rule.CooldownSeconds" Label="Cooldown (seconds)"
+                         Min="0" Class="mt-3" HelperText="Minimum time between toggles" />
+
+        <MudSwitch @bind-Value="_rule.Enabled" Label="Enabled" Color="Color.Primary" Class="mt-3" />
+
+        <MudStack Row="true" Class="mt-4" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">
+                Save
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Href="/rules">Cancel</MudButton>
+        </MudStack>
+    </MudForm>
+</MudPaper>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private TriggerRule _rule = new() { CooldownSeconds = 60, Enabled = true, EntityId = "switch.sp401m" };
+    private bool _isNew => Id == null;
+    private MudForm? _form;
+    private TimeSpan? _activeFrom;
+    private TimeSpan? _activeTo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            var existing = await RuleRepo.GetByIdAsync(Id.Value, CancellationToken.None);
+            if (existing != null)
+            {
+                _rule = existing;
+                _activeFrom = _rule.ActiveFrom?.ToTimeSpan();
+                _activeTo = _rule.ActiveTo?.ToTimeSpan();
+            }
+        }
+    }
+
+    private async Task Save()
+    {
+        if (_form != null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid) return;
+        }
+
+        _rule.ActiveFrom = _activeFrom.HasValue ? TimeOnly.FromTimeSpan(_activeFrom.Value) : null;
+        _rule.ActiveTo = _activeTo.HasValue ? TimeOnly.FromTimeSpan(_activeTo.Value) : null;
+
+        if (_isNew)
+            await RuleRepo.CreateAsync(_rule, CancellationToken.None);
+        else
+            await RuleRepo.UpdateAsync(_rule, CancellationToken.None);
+
+        Nav.NavigateTo("/rules");
+    }
+}

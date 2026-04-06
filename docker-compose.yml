@@ -1,0 +1,24 @@
+services:
+  deye-solar:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - deye-data:/app/data
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/deye.db
+      - DeyeCloud__BaseUrl=https://eu1-developer.deyecloud.com/v1.0
+      - DeyeCloud__AppId=
+      - DeyeCloud__AppSecret=
+      - DeyeCloud__Email=
+      - DeyeCloud__Password=
+      - DeyeCloud__DeviceSn=
+      - HomeAssistant__BaseUrl=http://homeassistant.local:8123
+      - HomeAssistant__AccessToken=
+      - HomeAssistant__DefaultEntityId=switch.sp401m
+      - Polling__IntervalSeconds=10
+    restart: unless-stopped
+
+volumes:
+  deye-data:

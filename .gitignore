@@ -1,0 +1,12 @@
+bin/
+obj/
+/data/
+**/data/*.db*
+*.db
+*.user
+*.suo
+.vs/
+.idea/
+*.swp
+.DS_Store
+appsettings.*.local.json

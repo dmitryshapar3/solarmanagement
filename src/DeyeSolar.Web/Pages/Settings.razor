@@ -1,0 +1,238 @@
+@page "/settings"
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Infrastructure.DeyeCloud.DeyeCloudClient DeyeClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
+
+<MudGrid>
+    <!-- DeyeCloud Config -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">DeyeCloud API</MudText>
+            <MudTextField @bind-Value="_deye.BaseUrl" Label="Base URL" />
+            <MudTextField @bind-Value="_deye.AppId" Label="App ID" Class="mt-2" />
+            <MudTextField @bind-Value="_deye.AppSecret" Label="App Secret" Class="mt-2"
+                          InputType="InputType.Password" />
+            <MudTextField @bind-Value="_deye.Email" Label="Email" Class="mt-2" />
+            <MudTextField @bind-Value="_deye.Password" Label="Password" Class="mt-2"
+                          InputType="InputType.Password" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDeyeCloud" Class="mt-3">
+                Save DeyeCloud Settings
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Station & Device Discovery -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Station & Device</MudText>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchStations"
+                       Disabled="_loadingStations" Class="mb-3">
+                @if (_loadingStations)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Fetch Stations
+            </MudButton>
+
+            @if (_stations != null && _stations.Count > 0)
+            {
+                <MudSelect T="long" @bind-Value="_selectedStationId" Label="Select Station" Class="mb-3"
+                           Variant="Variant.Outlined">
+                    @foreach (var station in _stations)
+                    {
+                        <MudSelectItem T="long" Value="station.Id">
+                            @station.Name @(station.Address != null ? $"({station.Address})" : "")
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchDevices"
+                           Disabled="_loadingDevices || _selectedStationId == 0" Class="mb-3">
+                    @if (_loadingDevices)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Fetch Devices
+                </MudButton>
+            }
+            else if (_stations != null && _stations.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3">No stations found. Check your DeyeCloud credentials.</MudAlert>
+            }
+
+            @if (_devices != null && _devices.Count > 0)
+            {
+                <MudSelect T="string" @bind-Value="_selectedDeviceSn" Label="Select Device" Class="mb-3"
+                           Variant="Variant.Outlined">
+                    @foreach (var device in _devices)
+                    {
+                        <MudSelectItem T="string" Value="@device.SerialNumber">
+                            @device.DeviceType - SN: @device.SerialNumber
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="SaveStationDevice"
+                           Disabled="@string.IsNullOrEmpty(_selectedDeviceSn)">
+                    Save Station & Device
+                </MudButton>
+            }
+            else if (_devices != null && _devices.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning">No devices found for this station.</MudAlert>
+            }
+
+            @if (_deye.StationId > 0 || !string.IsNullOrEmpty(_deye.DeviceSn))
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-3">
+                    Current: Station ID = @_deye.StationId, Device SN = @_deye.DeviceSn
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <!-- Home Assistant Config -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Home Assistant</MudText>
+            <MudTextField @bind-Value="_ha.BaseUrl" Label="Base URL" />
+            <MudTextField @bind-Value="_ha.AccessToken" Label="Access Token" Class="mt-2"
+                          InputType="InputType.Password" />
+            <MudTextField @bind-Value="_ha.DefaultEntityId" Label="Default Entity ID" Class="mt-2"
+                          HelperText="e.g., switch.setti_sp401m" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveHomeAssistant" Class="mt-3">
+                Save Home Assistant Settings
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Polling Config -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Polling</MudText>
+            <MudNumericField @bind-Value="_polling.IntervalSeconds" Label="Interval (seconds)" Min="5" Max="300" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">
+                Save Polling Settings
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _errorMessage = null">
+        @_errorMessage
+    </MudAlert>
+}
+
+@code {
+    private DeyeSolar.Domain.Options.DeyeCloudOptions _deye = new();
+    private DeyeSolar.Domain.Options.HomeAssistantOptions _ha = new();
+    private DeyeSolar.Domain.Options.PollingOptions _polling = new();
+
+    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeStation>? _stations;
+    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice>? _devices;
+    private long _selectedStationId;
+    private string _selectedDeviceSn = "";
+    private bool _loadingStations;
+    private bool _loadingDevices;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _deye = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DeyeCloudOptions>(
+            DeyeSolar.Domain.Options.DeyeCloudOptions.Section);
+        _ha = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.HomeAssistantOptions>(
+            DeyeSolar.Domain.Options.HomeAssistantOptions.Section);
+        _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>(
+            DeyeSolar.Domain.Options.PollingOptions.Section);
+
+        _selectedStationId = _deye.StationId;
+        _selectedDeviceSn = _deye.DeviceSn;
+    }
+
+    private async Task SaveDeyeCloud()
+    {
+        await SettingsService.SaveSectionAsync(DeyeSolar.Domain.Options.DeyeCloudOptions.Section, _deye);
+        DeyeClient.InvalidateToken();
+        Snackbar.Add("DeyeCloud settings saved", Severity.Success);
+    }
+
+    private async Task SaveHomeAssistant()
+    {
+        await SettingsService.SaveSectionAsync(DeyeSolar.Domain.Options.HomeAssistantOptions.Section, _ha);
+        Snackbar.Add("Home Assistant settings saved", Severity.Success);
+    }
+
+    private async Task SavePolling()
+    {
+        await SettingsService.SaveSectionAsync(DeyeSolar.Domain.Options.PollingOptions.Section, _polling);
+        Snackbar.Add("Polling settings saved", Severity.Success);
+    }
+
+    private async Task FetchStations()
+    {
+        _loadingStations = true;
+        _errorMessage = null;
+        _stations = null;
+        _devices = null;
+        _selectedStationId = 0;
+        _selectedDeviceSn = "";
+
+        try
+        {
+            await SaveDeyeCloud();
+            _stations = await DeyeClient.GetStationsWithDevicesAsync(CancellationToken.None);
+
+            if (_stations.Count == 1)
+                _selectedStationId = _stations[0].Id;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to fetch stations: {ex.Message}";
+        }
+        finally
+        {
+            _loadingStations = false;
+        }
+    }
+
+    private async Task FetchDevices()
+    {
+        _loadingDevices = true;
+        _errorMessage = null;
+        _devices = null;
+        _selectedDeviceSn = "";
+
+        try
+        {
+            _devices = await DeyeClient.GetDevicesForStationAsync(_selectedStationId, CancellationToken.None);
+
+            // Auto-select inverter if there's only one
+            var inverters = _devices.Where(d => d.DeviceType == "INVERTER").ToList();
+            if (inverters.Count == 1)
+                _selectedDeviceSn = inverters[0].SerialNumber;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to fetch devices: {ex.Message}";
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
+    }
+
+    private async Task SaveStationDevice()
+    {
+        _deye.StationId = _selectedStationId;
+        _deye.DeviceSn = _selectedDeviceSn;
+        await SaveDeyeCloud();
+        Snackbar.Add($"Saved: Station {_selectedStationId}, Device SN {_selectedDeviceSn}", Severity.Success);
+    }
+}

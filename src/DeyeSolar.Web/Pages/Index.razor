@@ -1,0 +1,147 @@
+@page "/"
+@inject InverterDataSnapshot Snapshot
+@inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
+@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.HomeAssistantOptions> HaOptions
+@implements IDisposable
+
+<PageTitle>Dashboard - DeyeSolar</PageTitle>
+
+<MudGrid>
+    @if (_data == null)
+    {
+        <MudItem xs="12">
+            <MudAlert Severity="Severity.Info">Waiting for first data reading...</MudAlert>
+        </MudItem>
+    }
+    else
+    {
+        <MudItem xs="12">
+            <MudText Typo="Typo.caption" Class="mb-2">
+                Last update: @_data.Timestamp.LocalDateTime.ToString("HH:mm:ss")
+                | Source: DeyeCloud
+            </MudText>
+        </MudItem>
+
+        <!-- Battery SOC -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Primary">Battery SOC</MudText>
+                <MudProgressLinear Color="@GetSocColor(_data.BatterySoc)" Value="@_data.BatterySoc" Class="my-2" />
+                <MudText Typo="Typo.h4">@_data.BatterySoc%</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Solar Production -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Warning">Solar Production</MudText>
+                <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Large" />
+                <MudText Typo="Typo.h4">@_data.SolarProduction W</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Battery Power -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Battery Power</MudText>
+                <MudIcon Icon="@(_data.BatteryPower < 0 ? Icons.Material.Filled.BatteryChargingFull : Icons.Material.Filled.Battery5Bar)"
+                         Color="@(_data.BatteryPower < 0 ? Color.Success : Color.Warning)" Size="Size.Large" />
+                <MudText Typo="Typo.h4">@Math.Abs(_data.BatteryPower) W</MudText>
+                <MudText Typo="Typo.caption">@(_data.BatteryPower < 0 ? "Charging" : _data.BatteryPower > 0 ? "Discharging" : "Idle")</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Grid -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Info">Grid</MudText>
+                <MudIcon Icon="@Icons.Material.Filled.ElectricalServices" Color="Color.Info" Size="Size.Large" />
+                <MudText Typo="Typo.h4">@Math.Abs(_data.GridConsumption) W</MudText>
+                <MudText Typo="Typo.caption">@(_data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle")</MudText>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Battery Details -->
+        <MudItem xs="12" sm="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Battery Details</MudText>
+                <MudSimpleTable Dense="true" Hover="true">
+                    <tbody>
+                        <tr><td>Voltage</td><td>@_data.BatteryVoltage.ToString("F1") V</td></tr>
+                        <tr><td>Current</td><td>@_data.BatteryCurrent.ToString("F1") A</td></tr>
+                        <tr><td>Temperature</td><td>@_data.BatteryTemperature.ToString("F1") C</td></tr>
+                        <tr><td>Load Power</td><td>@_data.LoadPower W</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Quick Actions -->
+        <MudItem xs="12" sm="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               OnClick="@(() => ManualToggle(true))">
+                        Socket ON
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Error"
+                               OnClick="@(() => ManualToggle(false))">
+                        Socket OFF
+                    </MudButton>
+                </MudStack>
+                @if (!string.IsNullOrEmpty(_actionMessage))
+                {
+                    <MudAlert Severity="@_actionSeverity" Class="mt-2">@_actionMessage</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private InverterData? _data;
+    private string? _actionMessage;
+    private Severity _actionSeverity;
+
+    protected override void OnInitialized()
+    {
+        _data = Snapshot.Current;
+        Snapshot.OnDataUpdated += OnDataUpdated;
+    }
+
+    private async void OnDataUpdated()
+    {
+        _data = Snapshot.Current;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ManualToggle(bool turnOn)
+    {
+        try
+        {
+            var entityId = HaOptions.CurrentValue.DefaultEntityId;
+            if (turnOn)
+                await SocketController.TurnOnAsync(entityId, CancellationToken.None);
+            else
+                await SocketController.TurnOffAsync(entityId, CancellationToken.None);
+
+            _actionMessage = turnOn ? "Socket turned ON" : "Socket turned OFF";
+            _actionSeverity = Severity.Success;
+        }
+        catch (Exception ex)
+        {
+            _actionMessage = $"Error: {ex.Message}";
+            _actionSeverity = Severity.Error;
+        }
+    }
+
+    private Color GetSocColor(int soc) => soc switch
+    {
+        >= 80 => Color.Success,
+        >= 40 => Color.Warning,
+        _ => Color.Error
+    };
+
+    public void Dispose() => Snapshot.OnDataUpdated -= OnDataUpdated;
+}
