@@ -38,8 +38,7 @@ public class DeyeCloudClient : IInverterDataSource
         var opts = _options.CurrentValue;
         var response = await _httpClient.PostAsJsonAsync(
             $"{opts.BaseUrl}/station/listWithDevice",
-            new { page = 1, size = 50 },
-            ct);
+            new { page = 1, size = 50 }, ct);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
@@ -58,7 +57,6 @@ public class DeyeCloudClient : IInverterDataSource
             }
         }
 
-        _logger.LogInformation("Fetched {Count} stations from DeyeCloud", stations.Count);
         return stations;
     }
 
@@ -70,8 +68,7 @@ public class DeyeCloudClient : IInverterDataSource
         var opts = _options.CurrentValue;
         var response = await _httpClient.PostAsJsonAsync(
             $"{opts.BaseUrl}/station/listWithDevice",
-            new { page = 1, size = 50 },
-            ct);
+            new { page = 1, size = 50 }, ct);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
@@ -82,9 +79,7 @@ public class DeyeCloudClient : IInverterDataSource
         {
             foreach (var station in stationList.EnumerateArray())
             {
-                if (station.GetProperty("id").GetInt64() != stationId)
-                    continue;
-
+                if (station.GetProperty("id").GetInt64() != stationId) continue;
                 if (station.TryGetProperty("deviceListItems", out var deviceList))
                 {
                     foreach (var d in deviceList.EnumerateArray())
@@ -100,7 +95,6 @@ public class DeyeCloudClient : IInverterDataSource
             }
         }
 
-        _logger.LogInformation("Fetched {Count} devices for station {StationId}", devices.Count, stationId);
         return devices;
     }
 
@@ -115,15 +109,14 @@ public class DeyeCloudClient : IInverterDataSource
 
         var response = await _httpClient.PostAsJsonAsync(
             $"{opts.BaseUrl}/device/latest",
-            new { deviceList = new[] { opts.DeviceSn } },
-            ct);
+            new { deviceList = new[] { opts.DeviceSn } }, ct);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
         EnsureApiSuccess(json, "device/latest");
 
         if (!json.TryGetProperty("deviceDataList", out var deviceDataList))
-            throw new InvalidOperationException($"No deviceDataList in response");
+            throw new InvalidOperationException("No deviceDataList in response");
 
         var dataMap = new Dictionary<string, string>();
         foreach (var device in deviceDataList.EnumerateArray())
@@ -189,19 +182,16 @@ public class DeyeCloudClient : IInverterDataSource
         }
 
         _accessToken = result.TryGetProperty("accessToken", out var at) ? at.GetString()
-            : throw new InvalidOperationException($"No accessToken in response");
+            : throw new InvalidOperationException("No accessToken in response");
 
         long expiresIn = 3600;
         if (result.TryGetProperty("expiresIn", out var ei))
         {
-            if (ei.ValueKind == JsonValueKind.Number)
-                expiresIn = ei.GetInt64();
+            if (ei.ValueKind == JsonValueKind.Number) expiresIn = ei.GetInt64();
             else if (ei.ValueKind == JsonValueKind.String && long.TryParse(ei.GetString(), out var parsed))
                 expiresIn = parsed;
         }
         _tokenExpiry = DateTimeOffset.UtcNow.AddSeconds(expiresIn - 60);
-
-        _logger.LogInformation("DeyeCloud token obtained, expires at {Expiry}", _tokenExpiry);
     }
 
     private static void EnsureApiSuccess(JsonElement json, string endpoint)
@@ -232,7 +222,8 @@ public class DeyeCloudClient : IInverterDataSource
     private static double GetDouble(Dictionary<string, string> data, params string[] keys)
     {
         foreach (var key in keys)
-            if (data.TryGetValue(key, out var v) && double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var result))
+            if (data.TryGetValue(key, out var v) && double.TryParse(v,
+                System.Globalization.CultureInfo.InvariantCulture, out var result))
                 return result;
         return 0;
     }

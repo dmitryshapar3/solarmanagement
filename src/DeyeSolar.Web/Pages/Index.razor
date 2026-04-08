@@ -1,7 +1,7 @@
 @page "/"
 @inject InverterDataSnapshot Snapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
-@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.HomeAssistantOptions> HaOptions
+@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.TuyaOptions> TuyaOpts
 @implements IDisposable
 
 <PageTitle>Dashboard - DeyeSolar</PageTitle>
@@ -120,7 +120,7 @@
     {
         try
         {
-            var entityId = HaOptions.CurrentValue.DefaultEntityId;
+            var entityId = TuyaOpts.CurrentValue.DeviceId;
             if (turnOn)
                 await SocketController.TurnOnAsync(entityId, CancellationToken.None);
             else

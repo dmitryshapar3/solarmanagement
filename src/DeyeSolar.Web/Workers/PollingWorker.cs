@@ -67,7 +67,6 @@ public class PollingWorker : BackgroundService
             data.BatterySoc, data.SolarProduction, data.BatteryPower);
 
         _snapshot.Update(data);
-
         await SaveReadingAsync(data, ct);
 
         var rules = await _ruleRepository.GetAllAsync(ct);

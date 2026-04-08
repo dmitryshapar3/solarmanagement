@@ -14,7 +14,6 @@ public class AppSettingsService
         _dbFactory = dbFactory;
         _configuration = configuration;
 
-        // Find the DbConfigurationProvider to trigger reloads
         if (configuration is IConfigurationRoot root)
         {
             _dbProvider = root.Providers
@@ -74,30 +73,35 @@ public class AppSettingsService
         }
 
         await db.SaveChangesAsync();
-
-        // Trigger configuration reload so IOptionsMonitor picks up changes
         _dbProvider?.Reload();
     }
 
-    public async Task SeedFromConfigurationAsync(IConfiguration configuration, string section)
+    public async Task SeedSectionAsync<T>(string section) where T : new()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
-        var hasSettings = await db.AppSettings.AnyAsync(s => s.Section == section);
-        if (hasSettings)
-            return;
+        var existingKeys = await db.AppSettings
+            .Where(s => s.Section == section)
+            .Select(s => s.Key)
+            .ToListAsync();
+        var existingKeySet = new HashSet<string>(existingKeys);
 
-        var configSection = configuration.GetSection(section);
-        foreach (var child in configSection.GetChildren())
+        var defaults = new T();
+        var configSection = _configuration.GetSection(section);
+
+        foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            if (child.Value != null)
-            {
-                db.AppSettings.Add(new AppSetting
-                {
-                    Section = section,
-                    Key = child.Key,
-                    Value = child.Value
-                });
-            }
+            if (prop.Name == "Section" || !prop.CanRead)
+                continue;
+
+            if (existingKeySet.Contains(prop.Name))
+                continue;
+
+            // Use config value if available, otherwise use the default from the class
+            var configValue = configSection[prop.Name];
+            var defaultValue = prop.GetValue(defaults)?.ToString() ?? "";
+            var value = !string.IsNullOrEmpty(configValue) ? configValue : defaultValue;
+
+            db.AppSettings.Add(new AppSetting { Section = section, Key = prop.Name, Value = value });
         }
 
         await db.SaveChangesAsync();
