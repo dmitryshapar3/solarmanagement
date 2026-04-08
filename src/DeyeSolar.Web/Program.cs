@@ -111,8 +111,13 @@ using (var scope = app.Services.CreateScope())
         var result = await userManager.CreateAsync(adminUser, password);
         if (result.Succeeded)
         {
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-            logger.LogWarning("=== Admin user created. Password: {Password} ===", password);
+            Console.WriteLine($"");
+            Console.WriteLine($"============================================");
+            Console.WriteLine($"  Admin user created");
+            Console.WriteLine($"  Username: admin");
+            Console.WriteLine($"  Password: {password}");
+            Console.WriteLine($"============================================");
+            Console.WriteLine($"");
         }
     }
 }
