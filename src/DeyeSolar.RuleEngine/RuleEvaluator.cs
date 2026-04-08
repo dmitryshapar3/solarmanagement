@@ -103,7 +103,26 @@ public class RuleEvaluator
         if (!rule.ActiveFrom.HasValue || !rule.ActiveTo.HasValue)
             return true;
 
-        var currentTime = TimeOnly.FromDateTime(now.LocalDateTime);
+        // Convert UTC now to the rule's timezone
+        DateTime localNow;
+        if (!string.IsNullOrEmpty(rule.TimeZoneId))
+        {
+            try
+            {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(rule.TimeZoneId);
+                localNow = TimeZoneInfo.ConvertTime(now, tz).DateTime;
+            }
+            catch
+            {
+                localNow = now.UtcDateTime; // fallback to UTC if timezone invalid
+            }
+        }
+        else
+        {
+            localNow = now.UtcDateTime;
+        }
+
+        var currentTime = TimeOnly.FromDateTime(localNow);
 
         if (rule.ActiveFrom.Value <= rule.ActiveTo.Value)
             return currentTime >= rule.ActiveFrom.Value && currentTime <= rule.ActiveTo.Value;

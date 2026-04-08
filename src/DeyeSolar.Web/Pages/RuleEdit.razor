@@ -73,11 +73,16 @@
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window (optional)</MudText>
         <MudGrid>
-            <MudItem xs="6">
+            <MudItem xs="4">
                 <MudTimePicker @bind-Time="_activeFrom" Label="Active From" />
             </MudItem>
-            <MudItem xs="6">
+            <MudItem xs="4">
                 <MudTimePicker @bind-Time="_activeTo" Label="Active To" />
+            </MudItem>
+            <MudItem xs="4">
+                <MudAutocomplete T="string" @bind-Value="_rule.TimeZoneId" Label="Timezone"
+                                 SearchFunc="SearchTimezones" Dense="true"
+                                 HelperText="Auto-detected from browser" />
             </MudItem>
         </MudGrid>
 
@@ -91,6 +96,8 @@
     </MudForm>
 </MudPaper>
 
+@inject IJSRuntime JS
+
 @code {
     [Parameter] public int? Id { get; set; }
 
@@ -102,6 +109,8 @@
     private List<DeyeSolar.Infrastructure.Tuya.TuyaDevice>? _devices;
     private bool _loadingDevices;
     private string? _loadError;
+    private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones()
+        .Select(tz => tz.Id).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
@@ -117,6 +126,32 @@
         }
 
         await LoadDevices();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && string.IsNullOrEmpty(_rule.TimeZoneId))
+        {
+            try
+            {
+                var tz = await JS.InvokeAsync<string>("eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                if (!string.IsNullOrEmpty(tz))
+                {
+                    _rule.TimeZoneId = tz;
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
+    }
+
+    private Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult(_allTimeZones.AsEnumerable());
+
+        return Task.FromResult(_allTimeZones
+            .Where(tz => tz.Contains(value, StringComparison.OrdinalIgnoreCase)));
     }
 
     private async Task LoadDevices()
