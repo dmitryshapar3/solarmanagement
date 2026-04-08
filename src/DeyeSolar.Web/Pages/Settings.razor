@@ -126,6 +126,16 @@
             <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">Save</MudButton>
         </MudPaper>
     </MudItem>
+
+    <!-- Display -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Display</MudText>
+            <MudAutocomplete T="string" @bind-Value="_display.TimeZoneId" Label="Timezone"
+                             SearchFunc="SearchTimezones" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDisplay" Class="mt-3">Save</MudButton>
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @if (!string.IsNullOrEmpty(_errorMessage))
@@ -133,10 +143,13 @@
     <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _errorMessage = null">@_errorMessage</MudAlert>
 }
 
+@inject IJSRuntime JS
+
 @code {
     private DeyeSolar.Domain.Options.DeyeCloudOptions _deye = new();
     private DeyeSolar.Domain.Options.TuyaOptions _tuya = new();
     private DeyeSolar.Domain.Options.PollingOptions _polling = new();
+    private DeyeSolar.Domain.Options.DisplayOptions _display = new();
 
     private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeStation>? _stations;
     private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice>? _devices;
@@ -144,13 +157,34 @@
     private long _selectedStationId;
     private bool _loadingStations, _loadingDevices, _loadingTuya;
     private string? _errorMessage;
+    private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones()
+        .Select(tz => tz.Id).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
         _deye = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DeyeCloudOptions>("DeyeCloud");
         _tuya = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.TuyaOptions>("Tuya");
         _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
+        _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _selectedStationId = _deye.StationId;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _display.TimeZoneId == "UTC")
+        {
+            try
+            {
+                var tz = await JS.InvokeAsync<string>("eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                if (!string.IsNullOrEmpty(tz))
+                {
+                    _display.TimeZoneId = tz;
+                    await SaveDisplay();
+                    StateHasChanged();
+                }
+            }
+            catch { }
+        }
     }
 
     // -- DeyeCloud --
@@ -240,5 +274,20 @@
     {
         await SettingsService.SaveSectionAsync("Polling", _polling);
         Snackbar.Add("Polling settings saved", Severity.Success);
+    }
+
+    // -- Display --
+    private async Task SaveDisplay()
+    {
+        await SettingsService.SaveSectionAsync("Display", _display);
+        Snackbar.Add("Display settings saved", Severity.Success);
+    }
+
+    private Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Task.FromResult(_allTimeZones.AsEnumerable());
+        return Task.FromResult(_allTimeZones
+            .Where(tz => tz.Contains(value, StringComparison.OrdinalIgnoreCase)));
     }
 }

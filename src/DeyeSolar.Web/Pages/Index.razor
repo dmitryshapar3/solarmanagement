@@ -17,7 +17,7 @@
     {
         <MudItem xs="12">
             <MudText Typo="Typo.caption" Class="mb-2">
-                Last update: @_data.Timestamp.LocalDateTime.ToString("HH:mm:ss")
+                Last update: @TimeHelper.ToUserTime(_data.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss")
                 | Source: DeyeCloud
             </MudText>
         </MudItem>
@@ -100,13 +100,18 @@
     }
 </MudGrid>
 
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+
 @code {
     private InverterData? _data;
     private string? _actionMessage;
     private Severity _actionSeverity;
+    private string? _tz;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        _tz = display.TimeZoneId;
         _data = Snapshot.Current;
         Snapshot.OnDataUpdated += OnDataUpdated;
     }

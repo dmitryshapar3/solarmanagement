@@ -8,13 +8,14 @@ public class RuleEvaluator
         InverterData current,
         IReadOnlyList<InverterData> recentReadings,
         IEnumerable<TriggerRule> rules,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? timeZoneId = null)
     {
         var actions = new List<RuleAction>();
 
         foreach (var rule in rules.Where(r => r.Enabled))
         {
-            if (!IsInTimeWindow(rule, now))
+            if (!IsInTimeWindow(rule, now, timeZoneId))
                 continue;
 
             if (!rule.CurrentState)
@@ -98,23 +99,22 @@ public class RuleEvaluator
         return totalWh;
     }
 
-    private static bool IsInTimeWindow(TriggerRule rule, DateTimeOffset now)
+    private static bool IsInTimeWindow(TriggerRule rule, DateTimeOffset now, string? timeZoneId)
     {
         if (!rule.ActiveFrom.HasValue || !rule.ActiveTo.HasValue)
             return true;
 
-        // Convert UTC now to the rule's timezone
         DateTime localNow;
-        if (!string.IsNullOrEmpty(rule.TimeZoneId))
+        if (!string.IsNullOrEmpty(timeZoneId))
         {
             try
             {
-                var tz = TimeZoneInfo.FindSystemTimeZoneById(rule.TimeZoneId);
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
                 localNow = TimeZoneInfo.ConvertTime(now, tz).DateTime;
             }
             catch
             {
-                localNow = now.UtcDateTime; // fallback to UTC if timezone invalid
+                localNow = now.UtcDateTime;
             }
         }
         else

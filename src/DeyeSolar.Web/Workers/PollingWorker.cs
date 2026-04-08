@@ -18,6 +18,7 @@ public class PollingWorker : BackgroundService
     private readonly RuleEvaluator _ruleEvaluator;
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
     private readonly IOptionsMonitor<PollingOptions> _pollingOptions;
+    private readonly AppSettingsService _settingsService;
     private readonly ILogger<PollingWorker> _logger;
 
     public PollingWorker(
@@ -28,6 +29,7 @@ public class PollingWorker : BackgroundService
         RuleEvaluator ruleEvaluator,
         IDbContextFactory<DeyeSolarDbContext> dbFactory,
         IOptionsMonitor<PollingOptions> pollingOptions,
+        AppSettingsService settingsService,
         ILogger<PollingWorker> logger)
     {
         _dataSource = dataSource;
@@ -37,6 +39,7 @@ public class PollingWorker : BackgroundService
         _ruleEvaluator = ruleEvaluator;
         _dbFactory = dbFactory;
         _pollingOptions = pollingOptions;
+        _settingsService = settingsService;
         _logger = logger;
     }
 
@@ -96,7 +99,8 @@ public class PollingWorker : BackgroundService
         // Sync actual device state for due rules
         await SyncDeviceStateAsync(dueRules, ct);
 
-        var actions = _ruleEvaluator.Evaluate(data, recentReadings, dueRules, DateTimeOffset.Now);
+        var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        var actions = _ruleEvaluator.Evaluate(data, recentReadings, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
 
         await LogRuleRunsAsync(data, dueRules, actions, ct);
 

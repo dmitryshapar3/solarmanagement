@@ -12,7 +12,6 @@ public class TriggerRule
     public int CooldownMinutes { get; set; } = 15;
     public TimeOnly? ActiveFrom { get; set; }
     public TimeOnly? ActiveTo { get; set; }
-    public string? TimeZoneId { get; set; }
     public int IntervalSeconds { get; set; } = 30;
     public bool CurrentState { get; set; }
     public DateTime? LastEvaluated { get; set; }

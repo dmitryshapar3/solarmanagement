@@ -49,6 +49,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
 builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
+builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
 
 // Infrastructure
 builder.Services.AddHttpClient<DeyeCloudClient>();
@@ -83,6 +84,7 @@ using (var scope = app.Services.CreateScope())
     await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
     await settingsService.SeedSectionAsync<TuyaOptions>(TuyaOptions.Section);
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
+    await settingsService.SeedSectionAsync<DisplayOptions>(DisplayOptions.Section);
 
     // Seed default rule
     if (!db.TriggerRules.Any())

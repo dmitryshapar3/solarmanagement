@@ -1,5 +1,6 @@
 @page "/history"
 @inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @using Microsoft.EntityFrameworkCore
 
 <PageTitle>History - DeyeSolar</PageTitle>
@@ -39,7 +40,7 @@ else
             <MudTh>Source</MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd>@context.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")</MudTd>
+            <MudTd>@TimeHelper.ToUserTime(context.Timestamp, _tz).ToString("MM/dd HH:mm:ss")</MudTd>
             <MudTd>@context.BatterySoc</MudTd>
             <MudTd>@context.SolarProduction</MudTd>
             <MudTd>@context.BatteryPower</MudTd>
@@ -56,8 +57,14 @@ else
 @code {
     private List<DeyeSolar.Web.Data.Reading>? _readings;
     private int _hours = 6;
+    private string? _tz;
 
-    protected override async Task OnInitializedAsync() => await LoadData();
+    protected override async Task OnInitializedAsync()
+    {
+        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        _tz = display.TimeZoneId;
+        await LoadData();
+    }
 
     private async Task LoadData()
     {
