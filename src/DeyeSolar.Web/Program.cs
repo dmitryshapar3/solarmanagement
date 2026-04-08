@@ -13,26 +13,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Data Source=data/deye.db";
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required");
 
-var dbOptionsBuilder = new DbContextOptionsBuilder<DeyeSolarDbContext>();
-dbOptionsBuilder.UseSqlite(connectionString);
-using (var db = new DeyeSolarDbContext(dbOptionsBuilder.Options))
-{
-    db.Database.EnsureCreated();
-}
-
+// Load settings from DB into configuration pipeline
 ((IConfigurationBuilder)builder.Configuration).Add(new DbConfigurationSource(connectionString));
 
-// Configuration
+builder.Services.AddDbContextFactory<DeyeSolarDbContext>(options =>
+    options.UseSqlServer(connectionString));
+builder.Services.AddSingleton<AppSettingsService>();
+
+// Configuration bindings (reads from appsettings.json + DB overlay)
 builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
 builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
-
-// Database
-builder.Services.AddDbContextFactory<DeyeSolarDbContext>(options =>
-    options.UseSqlite(connectionString));
-builder.Services.AddSingleton<AppSettingsService>();
 
 // Infrastructure
 builder.Services.AddHttpClient<DeyeCloudClient>();
@@ -55,13 +48,35 @@ builder.Services.AddMudServices();
 
 var app = builder.Build();
 
-// Seed settings (creates missing DB rows for all options properties)
+// Migrate database and seed
 using (var scope = app.Services.CreateScope())
 {
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    await db.Database.MigrateAsync();
+
+    // Seed settings
     var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
     await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
     await settingsService.SeedSectionAsync<TuyaOptions>(TuyaOptions.Section);
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
+
+    // Seed default rule
+    if (!db.TriggerRules.Any())
+    {
+        db.TriggerRules.Add(new DeyeSolar.Domain.Models.TriggerRule
+        {
+            Name = "Solar Battery Management",
+            EntityId = "",
+            Enabled = false,
+            SocTurnOnThreshold = 50,
+            MinSolarPowerWatts = 3000,
+            SolarSustainedMinutes = 30,
+            DischargeSustainedMinutes = 5,
+            IntervalSeconds = 30
+        });
+        await db.SaveChangesAsync();
+    }
 }
 
 if (!app.Environment.IsDevelopment())

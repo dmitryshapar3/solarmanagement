@@ -24,47 +24,51 @@ else
     <MudTable Items="_rules" Hover="true" Dense="true" Elevation="2">
         <HeaderContent>
             <MudTh>Name</MudTh>
-            <MudTh>Entity</MudTh>
-            <MudTh>SOC On/Off</MudTh>
-            <MudTh>Solar Surplus</MudTh>
-            <MudTh>Time Window</MudTh>
+            <MudTh>Device</MudTh>
+            <MudTh>Turn ON</MudTh>
+            <MudTh>Turn OFF</MudTh>
+            <MudTh>Interval</MudTh>
             <MudTh>State</MudTh>
             <MudTh>Enabled</MudTh>
             <MudTh>Actions</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd>@context.Name</MudTd>
-            <MudTd><MudText Typo="Typo.body2">@context.EntityId</MudText></MudTd>
+            <MudTd>
+                @if (string.IsNullOrEmpty(context.EntityId))
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Not set</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.EntityId[..Math.Min(context.EntityId.Length, 12)]...</MudText>
+                }
+            </MudTd>
             <MudTd>
                 @if (context.SocTurnOnThreshold.HasValue)
                 {
-                    <span>@context.SocTurnOnThreshold% / @context.SocTurnOffThreshold%</span>
+                    <span>SOC >= @context.SocTurnOnThreshold%</span>
+                }
+                @if (context.MinSolarPowerWatts.HasValue)
+                {
+                    <span> + Solar >= @(context.MinSolarPowerWatts/1000.0)kW for @(context.SolarSustainedMinutes)min</span>
+                }
+                @if (!context.SocTurnOnThreshold.HasValue && !context.MinSolarPowerWatts.HasValue)
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.DischargeSustainedMinutes.HasValue)
+                {
+                    <span>Discharging @(context.DischargeSustainedMinutes)min</span>
                 }
                 else
                 {
                     <span>-</span>
                 }
             </MudTd>
-            <MudTd>
-                @if (context.MinSolarSurplusWatts.HasValue)
-                {
-                    <span>@context.MinSolarSurplusWatts W</span>
-                }
-                else
-                {
-                    <span>-</span>
-                }
-            </MudTd>
-            <MudTd>
-                @if (context.ActiveFrom.HasValue)
-                {
-                    <span>@context.ActiveFrom - @context.ActiveTo</span>
-                }
-                else
-                {
-                    <span>Always</span>
-                }
-            </MudTd>
+            <MudTd>@(context.IntervalSeconds)s</MudTd>
             <MudTd>
                 <MudChip T="string" Color="@(context.CurrentState ? Color.Success : Color.Default)" Size="Size.Small">
                     @(context.CurrentState ? "ON" : "OFF")

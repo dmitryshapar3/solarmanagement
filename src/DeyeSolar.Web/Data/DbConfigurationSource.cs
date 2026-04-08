@@ -26,25 +26,31 @@ public class DbConfigurationProvider : ConfigurationProvider
 
     public override void Load()
     {
-        var optionsBuilder = new DbContextOptionsBuilder<DeyeSolarDbContext>();
-        optionsBuilder.UseSqlite(_connectionString);
-
-        using var db = new DeyeSolarDbContext(optionsBuilder.Options);
-
         try
         {
-            // Table may not exist yet on first run
-            if (!db.Database.GetAppliedMigrations().Any() && !db.Database.CanConnect())
+            var optionsBuilder = new DbContextOptionsBuilder<DeyeSolarDbContext>();
+            optionsBuilder.UseSqlServer(_connectionString);
+
+            using var db = new DeyeSolarDbContext(optionsBuilder.Options);
+            if (!db.Database.CanConnect())
                 return;
 
-            foreach (var setting in db.AppSettings.AsNoTracking().ToList())
+            // Check if AppSettings table exists
+            try
             {
-                Data[$"{setting.Section}:{setting.Key}"] = setting.Value;
+                foreach (var setting in db.AppSettings.AsNoTracking().ToList())
+                {
+                    Data[$"{setting.Section}:{setting.Key}"] = setting.Value;
+                }
+            }
+            catch
+            {
+                // Table doesn't exist yet -- will be created by migration
             }
         }
         catch
         {
-            // DB not ready yet -- will be populated after startup seed
+            // DB not ready yet
         }
     }
 

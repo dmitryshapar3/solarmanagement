@@ -7,7 +7,7 @@ public class AppSettingsService
 {
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
     private readonly IConfiguration _configuration;
-    private DbConfigurationProvider? _dbProvider;
+    private readonly DbConfigurationProvider? _dbProvider;
 
     public AppSettingsService(IDbContextFactory<DeyeSolarDbContext> dbFactory, IConfiguration configuration)
     {
@@ -16,9 +16,7 @@ public class AppSettingsService
 
         if (configuration is IConfigurationRoot root)
         {
-            _dbProvider = root.Providers
-                .OfType<DbConfigurationProvider>()
-                .FirstOrDefault();
+            _dbProvider = root.Providers.OfType<DbConfigurationProvider>().FirstOrDefault();
         }
     }
 
@@ -96,7 +94,6 @@ public class AppSettingsService
             if (existingKeySet.Contains(prop.Name))
                 continue;
 
-            // Use config value if available, otherwise use the default from the class
             var configValue = configSection[prop.Name];
             var defaultValue = prop.GetValue(defaults)?.ToString() ?? "";
             var value = !string.IsNullOrEmpty(configValue) ? configValue : defaultValue;

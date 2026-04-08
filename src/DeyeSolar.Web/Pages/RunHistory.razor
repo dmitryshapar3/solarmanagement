@@ -1,0 +1,90 @@
+@page "/runs"
+@inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
+@using Microsoft.EntityFrameworkCore
+
+<PageTitle>Run History - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Rule Run History</MudText>
+
+<MudStack Row="true" Class="mb-4" Spacing="2">
+    <MudSelect @bind-Value="_hours" Label="Time Range" Dense="true" Style="max-width: 200px;">
+        <MudSelectItem Value="1">Last 1 hour</MudSelectItem>
+        <MudSelectItem Value="6">Last 6 hours</MudSelectItem>
+        <MudSelectItem Value="24">Last 24 hours</MudSelectItem>
+        <MudSelectItem Value="168">Last 7 days</MudSelectItem>
+    </MudSelect>
+    <MudSelect @bind-Value="_filter" Label="Filter" Dense="true" Style="max-width: 200px;">
+        <MudSelectItem Value="@("ALL")">All runs</MudSelectItem>
+        <MudSelectItem Value="@("ON")">ON only</MudSelectItem>
+        <MudSelectItem Value="@("OFF")">OFF only</MudSelectItem>
+        <MudSelectItem Value="@("CHANGES")">Changes only (ON/OFF)</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" OnClick="LoadData">Refresh</MudButton>
+</MudStack>
+
+@if (_logs == null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_logs.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No rule runs in selected time range.</MudAlert>
+}
+else
+{
+    <MudTable Items="_logs" Hover="true" Dense="true" Elevation="2" FixedHeader="true" Height="600px">
+        <HeaderContent>
+            <MudTh>Time</MudTh>
+            <MudTh>Rule</MudTh>
+            <MudTh>Action</MudTh>
+            <MudTh>SOC %</MudTh>
+            <MudTh>Solar W</MudTh>
+            <MudTh>Battery W</MudTh>
+            <MudTh>Reason</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")</MudTd>
+            <MudTd>@context.RuleName</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(context.Action == "ON" ? Color.Success : context.Action == "OFF" ? Color.Error : Color.Default)">
+                    @context.Action
+                </MudChip>
+            </MudTd>
+            <MudTd>@context.BatterySoc</MudTd>
+            <MudTd>@context.SolarProduction</MudTd>
+            <MudTd>@context.BatteryPower</MudTd>
+            <MudTd><MudText Typo="Typo.body2">@context.Reason</MudText></MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudText Typo="Typo.caption" Class="mt-2">Showing @_logs.Count entries</MudText>
+}
+
+@code {
+    private List<DeyeSolar.Web.Data.RuleRunLog>? _logs;
+    private int _hours = 6;
+    private string _filter = "ALL";
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var cutoff = DateTime.UtcNow.AddHours(-_hours);
+
+        IQueryable<DeyeSolar.Web.Data.RuleRunLog> query = db.RuleRunLogs
+            .Where(r => r.Timestamp >= cutoff);
+
+        if (_filter == "ON")
+            query = query.Where(r => r.Action == "ON");
+        else if (_filter == "OFF")
+            query = query.Where(r => r.Action == "OFF");
+        else if (_filter == "CHANGES")
+            query = query.Where(r => r.Action != "NO_CHANGE");
+
+        _logs = await query
+            .OrderByDescending(r => r.Timestamp)
+            .Take(1000)
+            .ToListAsync();
+    }
+}

@@ -10,3 +10,4 @@ obj/
 *.swp
 .DS_Store
 appsettings.*.local.json
+scripts/restore-creds.*

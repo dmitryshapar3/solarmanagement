@@ -67,7 +67,7 @@ public class TuyaCloudClient : ISocketController
     public async Task<List<TuyaDevice>> GetDevicesAsync(CancellationToken ct)
     {
         var response = await RequestAsync(HttpMethod.Get,
-            "/v2.0/cloud/thing/device?page_no=1&page_size=50", null, ct);
+            "/v2.0/cloud/thing/device?page_size=20", null, ct);
         var devices = new List<TuyaDevice>();
 
         if (response.TryGetProperty("result", out var result))

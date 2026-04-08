@@ -7,11 +7,12 @@ public class TriggerRule
     public string EntityId { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
     public int? SocTurnOnThreshold { get; set; }
-    public int? SocTurnOffThreshold { get; set; }
-    public int? MinSolarSurplusWatts { get; set; }
+    public int? MinSolarPowerWatts { get; set; }
+    public int? SolarSustainedMinutes { get; set; }
+    public int? DischargeSustainedMinutes { get; set; }
     public TimeOnly? ActiveFrom { get; set; }
     public TimeOnly? ActiveTo { get; set; }
-    public int CooldownSeconds { get; set; } = 60;
+    public int IntervalSeconds { get; set; } = 30;
     public bool CurrentState { get; set; }
-    public DateTimeOffset? LastTriggered { get; set; }
+    public DateTime? LastEvaluated { get; set; }
 }

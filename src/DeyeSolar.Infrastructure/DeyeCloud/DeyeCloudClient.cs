@@ -110,7 +110,14 @@ public class DeyeCloudClient : IInverterDataSource
         var response = await _httpClient.PostAsJsonAsync(
             $"{opts.BaseUrl}/device/latest",
             new { deviceList = new[] { opts.DeviceSn } }, ct);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError("DeyeCloud device/latest returned {Status}: {Body}",
+                (int)response.StatusCode, errorBody);
+            throw new InvalidOperationException($"DeyeCloud API error {(int)response.StatusCode}: {errorBody}");
+        }
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
         EnsureApiSuccess(json, "device/latest");
@@ -169,7 +176,13 @@ public class DeyeCloudClient : IInverterDataSource
 
         var response = await _httpClient.PostAsJsonAsync(
             $"{opts.BaseUrl}/account/token?appId={opts.AppId}", tokenRequest, ct);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            _logger.LogError("DeyeCloud token returned {Status}: {Body}", (int)response.StatusCode, errorBody);
+            throw new InvalidOperationException($"DeyeCloud auth error {(int)response.StatusCode}: {errorBody}");
+        }
 
         var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
 

@@ -1,7 +1,10 @@
 @page "/rules/edit"
 @page "/rules/edit/{Id:int}"
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject DeyeSolar.Infrastructure.Tuya.TuyaCloudClient TuyaClient
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @inject NavigationManager Nav
+@inject ISnackbar Snackbar
 
 <PageTitle>@(_isNew ? "New Rule" : "Edit Rule") - DeyeSolar</PageTitle>
 
@@ -12,27 +15,62 @@
         <MudTextField @bind-Value="_rule.Name" Label="Rule Name" Required="true"
                       RequiredError="Name is required" />
 
-        <MudTextField @bind-Value="_rule.EntityId" Label="Home Assistant Entity ID"
-                      Required="true" RequiredError="Entity ID is required"
-                      HelperText="e.g., switch.sp401m" Class="mt-3" />
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Target Device</MudText>
+        <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2">
+            <MudSelect T="string" @bind-Value="_rule.EntityId" Label="Device" Required="true"
+                       RequiredError="Select a device" Variant="Variant.Outlined" Style="flex:1">
+                @if (_devices != null)
+                {
+                    @foreach (var d in _devices)
+                    {
+                        <MudSelectItem T="string" Value="@d.Id">@d.Name (@d.Category) @(d.Online ? "" : "- offline")</MudSelectItem>
+                    }
+                }
+                @if (!string.IsNullOrEmpty(_rule.EntityId) && (_devices == null || !_devices.Any(d => d.Id == _rule.EntityId)))
+                {
+                    <MudSelectItem T="string" Value="@_rule.EntityId">@_rule.EntityId</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="LoadDevices"
+                       Disabled="_loadingDevices" Size="Size.Medium">
+                @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" /> }
+                Load
+            </MudButton>
+        </MudStack>
+        @if (!string.IsNullOrEmpty(_loadError))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_loadError</MudAlert>
+        }
+        else if (string.IsNullOrEmpty(_rule.EntityId))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                A device must be selected before the rule can be enabled.
+            </MudAlert>
+        }
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Battery SOC Thresholds</MudText>
-        <MudGrid>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Conditions (all must be met)</MudText>
+        <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Battery SOC above (%)"
+                         Min="0" Max="100" HelperText="Turn on when battery is above this level" />
+        <MudGrid Class="mt-2">
             <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Turn ON at (%)"
-                                 Min="0" Max="100" />
+                <MudNumericField @bind-Value="_rule.MinSolarPowerWatts" Label="Solar above (W)"
+                                 HelperText="e.g., 3000 for 3kW" />
             </MudItem>
             <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.SocTurnOffThreshold" Label="Turn OFF at (%)"
-                                 Min="0" Max="100" />
+                <MudNumericField @bind-Value="_rule.SolarSustainedMinutes" Label="Sustained for (min)"
+                                 Min="1" Max="120" HelperText="How long solar must stay above" />
             </MudItem>
         </MudGrid>
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Solar Surplus</MudText>
-        <MudNumericField @bind-Value="_rule.MinSolarSurplusWatts" Label="Minimum surplus (W)"
-                         HelperText="Solar production minus load" />
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn OFF Condition</MudText>
+        <MudNumericField @bind-Value="_rule.DischargeSustainedMinutes" Label="Discharging for (min)"
+                         Min="1" Max="60" HelperText="Turn off if battery discharging for this long" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Evaluation Interval</MudText>
+        <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Run every (seconds)"
+                         Min="10" Max="3600" HelperText="How often this rule is evaluated" />
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window (optional)</MudText>
         <MudGrid>
             <MudItem xs="6">
                 <MudTimePicker @bind-Time="_activeFrom" Label="Active From" />
@@ -42,15 +80,11 @@
             </MudItem>
         </MudGrid>
 
-        <MudNumericField @bind-Value="_rule.CooldownSeconds" Label="Cooldown (seconds)"
-                         Min="0" Class="mt-3" HelperText="Minimum time between toggles" />
-
-        <MudSwitch @bind-Value="_rule.Enabled" Label="Enabled" Color="Color.Primary" Class="mt-3" />
+        <MudSwitch @bind-Value="_rule.Enabled" Label="Enabled" Color="Color.Primary" Class="mt-3"
+                   Disabled="@string.IsNullOrEmpty(_rule.EntityId)" />
 
         <MudStack Row="true" Class="mt-4" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">
-                Save
-            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
             <MudButton Variant="Variant.Outlined" Href="/rules">Cancel</MudButton>
         </MudStack>
     </MudForm>
@@ -59,11 +93,13 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
-    private TriggerRule _rule = new() { CooldownSeconds = 60, Enabled = true, EntityId = "switch.sp401m" };
+    private TriggerRule _rule = new() { Enabled = false, IntervalSeconds = 30 };
     private bool _isNew => Id == null;
     private MudForm? _form;
     private TimeSpan? _activeFrom;
     private TimeSpan? _activeTo;
+    private List<DeyeSolar.Infrastructure.Tuya.TuyaDevice>? _devices;
+    private bool _loadingDevices;
 
     protected override async Task OnInitializedAsync()
     {
@@ -77,10 +113,39 @@
                 _activeTo = _rule.ActiveTo?.ToTimeSpan();
             }
         }
+
+        await LoadDevices();
+    }
+
+    private string? _loadError;
+
+    private async Task LoadDevices()
+    {
+        _loadingDevices = true;
+        _loadError = null;
+        try
+        {
+            _devices = await TuyaClient.GetDevicesAsync(CancellationToken.None);
+            if (_devices.Count == 0)
+                _loadError = "No devices found. Check Tuya settings.";
+        }
+        catch (Exception ex)
+        {
+            _devices = [];
+            _loadError = $"Failed to load devices: {ex.Message}";
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
     }
 
     private async Task Save()
     {
+        // Force disable if no device selected
+        if (string.IsNullOrEmpty(_rule.EntityId))
+            _rule.Enabled = false;
+
         if (_form != null)
         {
             await _form.Validate();

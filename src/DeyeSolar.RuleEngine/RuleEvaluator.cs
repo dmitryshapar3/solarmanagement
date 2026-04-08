@@ -4,7 +4,11 @@ namespace DeyeSolar.RuleEngine;
 
 public class RuleEvaluator
 {
-    public IReadOnlyList<RuleAction> Evaluate(InverterData data, IEnumerable<TriggerRule> rules, DateTimeOffset now)
+    public IReadOnlyList<RuleAction> Evaluate(
+        InverterData current,
+        IReadOnlyList<InverterData> recentReadings,
+        IEnumerable<TriggerRule> rules,
+        DateTimeOffset now)
     {
         var actions = new List<RuleAction>();
 
@@ -13,48 +17,96 @@ public class RuleEvaluator
             if (!IsInTimeWindow(rule, now))
                 continue;
 
-            if (IsInCooldown(rule, now))
-                continue;
+            bool onConditionsMet = CheckOnConditions(current, recentReadings, rule, now);
+            bool forceOff = CheckForceOff(recentReadings, rule, now);
 
-            bool shouldBeOn = EvaluateConditions(data, rule);
-
-            if (shouldBeOn && !rule.CurrentState)
+            if (!rule.CurrentState && onConditionsMet && !forceOff)
+            {
+                // Currently OFF, conditions say turn ON
                 actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
-            else if (!shouldBeOn && rule.CurrentState)
+            }
+            else if (rule.CurrentState && (!onConditionsMet || forceOff))
+            {
+                // Currently ON, but conditions no longer met OR force-off triggered
                 actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
+            }
         }
 
         return actions;
     }
 
-    private static bool EvaluateConditions(InverterData data, TriggerRule rule)
+    private static bool CheckOnConditions(
+        InverterData current,
+        IReadOnlyList<InverterData> readings,
+        TriggerRule rule,
+        DateTimeOffset now)
     {
-        bool hasSocCondition = rule.SocTurnOnThreshold.HasValue && rule.SocTurnOffThreshold.HasValue;
-        bool hasSurplusCondition = rule.MinSolarSurplusWatts.HasValue;
+        bool hasAnyCondition = false;
 
-        // If no conditions configured, rule doesn't trigger
-        if (!hasSocCondition && !hasSurplusCondition)
+        if (rule.SocTurnOnThreshold.HasValue)
+        {
+            hasAnyCondition = true;
+            if (current.BatterySoc < rule.SocTurnOnThreshold.Value)
+                return false;
+        }
+
+        if (rule.MinSolarPowerWatts.HasValue && rule.SolarSustainedMinutes.HasValue)
+        {
+            hasAnyCondition = true;
+            if (!IsSolarSustained(readings, rule.MinSolarPowerWatts.Value,
+                    rule.SolarSustainedMinutes.Value, now))
+                return false;
+        }
+
+        return hasAnyCondition;
+    }
+
+    private static bool CheckForceOff(
+        IReadOnlyList<InverterData> readings,
+        TriggerRule rule,
+        DateTimeOffset now)
+    {
+        if (rule.DischargeSustainedMinutes.HasValue)
+            return IsDischarging(readings, rule.DischargeSustainedMinutes.Value, now);
+
+        return false;
+    }
+
+    private static bool IsSolarSustained(
+        IReadOnlyList<InverterData> readings,
+        int minWatts,
+        int minutes,
+        DateTimeOffset now)
+    {
+        var cutoff = now.AddMinutes(-minutes);
+        var relevant = readings.Where(r => r.Timestamp >= cutoff).ToList();
+
+        if (relevant.Count < 3)
             return false;
 
-        // All configured conditions must be met (AND logic)
-        if (hasSocCondition)
-        {
-            bool socMet = rule.CurrentState
-                ? data.BatterySoc > rule.SocTurnOffThreshold!.Value  // stay on above off-threshold
-                : data.BatterySoc >= rule.SocTurnOnThreshold!.Value; // turn on at on-threshold
+        var earliest = relevant.Min(r => r.Timestamp);
+        if ((now - earliest).TotalMinutes < minutes - 1)
+            return false;
 
-            if (!socMet)
-                return false;
-        }
+        return relevant.All(r => r.SolarProduction >= minWatts);
+    }
 
-        if (hasSurplusCondition)
-        {
-            int surplus = data.SolarProduction - data.LoadPower;
-            if (surplus < rule.MinSolarSurplusWatts!.Value)
-                return false;
-        }
+    private static bool IsDischarging(
+        IReadOnlyList<InverterData> readings,
+        int minutes,
+        DateTimeOffset now)
+    {
+        var cutoff = now.AddMinutes(-minutes);
+        var relevant = readings.Where(r => r.Timestamp >= cutoff).ToList();
 
-        return true;
+        if (relevant.Count < 3)
+            return false;
+
+        var earliest = relevant.Min(r => r.Timestamp);
+        if ((now - earliest).TotalMinutes < minutes - 1)
+            return false;
+
+        return relevant.All(r => r.BatteryPower > 0);
     }
 
     private static bool IsInTimeWindow(TriggerRule rule, DateTimeOffset now)
@@ -67,15 +119,6 @@ public class RuleEvaluator
         if (rule.ActiveFrom.Value <= rule.ActiveTo.Value)
             return currentTime >= rule.ActiveFrom.Value && currentTime <= rule.ActiveTo.Value;
 
-        // Spans midnight (e.g., 22:00 to 06:00)
         return currentTime >= rule.ActiveFrom.Value || currentTime <= rule.ActiveTo.Value;
-    }
-
-    private static bool IsInCooldown(TriggerRule rule, DateTimeOffset now)
-    {
-        if (!rule.LastTriggered.HasValue)
-            return false;
-
-        return (now - rule.LastTriggered.Value).TotalSeconds < rule.CooldownSeconds;
     }
 }

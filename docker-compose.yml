@@ -3,12 +3,7 @@ services:
     build: .
     ports:
       - "8080:8080"
-    volumes:
-      - deye-data:/app/data
     environment:
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Data Source=/app/data/deye.db
+      - ConnectionStrings__DefaultConnection=Server=host.docker.internal,1433;Database=DeyeSolar;User Id=sa;Password=Dev@Password123!;TrustServerCertificate=True;MultipleActiveResultSets=true
     restart: unless-stopped
-
-volumes:
-  deye-data:

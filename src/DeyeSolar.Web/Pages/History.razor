@@ -39,7 +39,7 @@ else
             <MudTh>Source</MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd>@context.Timestamp.LocalDateTime.ToString("MM/dd HH:mm:ss")</MudTd>
+            <MudTd>@context.Timestamp.ToLocalTime().ToString("MM/dd HH:mm:ss")</MudTd>
             <MudTd>@context.BatterySoc</MudTd>
             <MudTd>@context.SolarProduction</MudTd>
             <MudTd>@context.BatteryPower</MudTd>
@@ -62,7 +62,7 @@ else
     private async Task LoadData()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        var cutoff = DateTimeOffset.UtcNow.AddHours(-_hours);
+        var cutoff = DateTime.UtcNow.AddHours(-_hours);
         _readings = await db.Readings
             .Where(r => r.Timestamp >= cutoff)
             .OrderByDescending(r => r.Timestamp)
