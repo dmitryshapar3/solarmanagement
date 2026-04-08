@@ -1,9 +1,11 @@
 using DeyeSolar.Domain.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Data;
 
-public class DeyeSolarDbContext : DbContext
+public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
 {
     public DeyeSolarDbContext(DbContextOptions<DeyeSolarDbContext> options) : base(options) { }
 
@@ -14,6 +16,7 @@ public class DeyeSolarDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Reading>(e =>
         {
             e.HasKey(r => r.Id);

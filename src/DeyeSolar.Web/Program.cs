@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
@@ -6,6 +7,7 @@ using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Workers;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 
@@ -15,14 +17,35 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required");
 
-// Load settings from DB into configuration pipeline
 ((IConfigurationBuilder)builder.Configuration).Add(new DbConfigurationSource(connectionString));
 
 builder.Services.AddDbContextFactory<DeyeSolarDbContext>(options =>
     options.UseSqlServer(connectionString));
+builder.Services.AddDbContext<DeyeSolarDbContext>(options =>
+    options.UseSqlServer(connectionString));
 builder.Services.AddSingleton<AppSettingsService>();
 
-// Configuration bindings (reads from appsettings.json + DB overlay)
+// Identity
+builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
+{
+    options.Password.RequireDigit = false;
+    options.Password.RequireLowercase = false;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequiredLength = 8;
+})
+.AddEntityFrameworkStores<DeyeSolarDbContext>()
+.AddDefaultTokenProviders();
+
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/login";
+    options.LogoutPath = "/logout";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+    options.SlidingExpiration = true;
+});
+
+// Configuration
 builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
 builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
@@ -77,6 +100,21 @@ using (var scope = app.Services.CreateScope())
         });
         await db.SaveChangesAsync();
     }
+
+    // Seed admin user
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+    var adminUser = await userManager.FindByNameAsync("admin");
+    if (adminUser == null)
+    {
+        var password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12))[..16];
+        adminUser = new IdentityUser { UserName = "admin", Email = "admin@deye.local" };
+        var result = await userManager.CreateAsync(adminUser, password);
+        if (result.Succeeded)
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning("=== Admin user created. Password: {Password} ===", password);
+        }
+    }
 }
 
 if (!app.Environment.IsDevelopment())
@@ -86,7 +124,10 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapBlazorHub();
+app.MapRazorPages();
 app.MapFallbackToPage("/_Host");
 
 app.Run();

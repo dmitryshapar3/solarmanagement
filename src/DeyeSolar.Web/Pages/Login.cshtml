@@ -1,0 +1,50 @@
+@page
+@model DeyeSolar.Web.Pages.LoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - DeyeSolar</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Roboto', sans-serif; background: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-card { background: #1e1e2e; border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .login-card h1 { font-size: 24px; margin-bottom: 8px; color: #42a5f5; }
+        .login-card p { font-size: 14px; margin-bottom: 24px; color: #888; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; margin-bottom: 6px; color: #aaa; }
+        .form-group input { width: 100%; padding: 12px; border: 1px solid #333; border-radius: 6px; background: #2a2a3a; color: #e0e0e0; font-size: 15px; outline: none; }
+        .form-group input:focus { border-color: #42a5f5; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; background: #42a5f5; color: #fff; font-size: 16px; cursor: pointer; margin-top: 8px; }
+        .btn:hover { background: #1976d2; }
+        .error { background: #5c2020; color: #ff8a80; padding: 10px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>DeyeSolar</h1>
+        <p>Solar Energy Management</p>
+
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="error">@Model.ErrorMessage</div>
+        }
+
+        <form method="post">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="Username" value="@Model.Username" required autofocus />
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="Password" required />
+            </div>
+            <button type="submit" class="btn">Sign In</button>
+            @Html.AntiForgeryToken()
+        </form>
+    </div>
+</body>
+</html>
