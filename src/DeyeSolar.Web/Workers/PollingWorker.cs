@@ -69,7 +69,10 @@ public class PollingWorker : BackgroundService
         _snapshot.Update(data);
         await SaveReadingAsync(data, ct);
 
-        var recentReadings = await GetRecentReadingsAsync(30, ct);
+        // Load enough readings for the largest monitoring window across all rules
+        var allRulesForWindow = await _ruleRepository.GetAllAsync(ct);
+        var maxWindow = allRulesForWindow.Where(r => r.Enabled).Select(r => r.MonitoringWindowMinutes).DefaultIfEmpty(15).Max();
+        var recentReadings = await GetRecentReadingsAsync(maxWindow + 5, ct);
         var allRules = await _ruleRepository.GetAllAsync(ct);
         var now = DateTime.UtcNow;
 
@@ -109,6 +112,8 @@ public class PollingWorker : BackgroundService
                 var rule = dueRules.First(r => r.Id == action.RuleId);
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
+                if (!action.TurnOn)
+                    rule.LastTurnedOff = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
 
                 _logger.LogInformation("Rule '{RuleName}' triggered: {Action} {EntityId}",
@@ -177,15 +182,15 @@ public class PollingWorker : BackgroundService
                 {
                     action = ruleAction.TurnOn ? "ON" : "OFF";
                     reason = ruleAction.TurnOn
-                        ? $"Conditions met: SOC={data.BatterySoc}% (>={rule.SocTurnOnThreshold}%), Solar={data.SolarProduction}W"
-                        : $"Conditions lost: SOC={data.BatterySoc}%, Solar={data.SolarProduction}W, BatteryPower={data.BatteryPower}W";
+                        ? $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed"
+                        : $"Consumption exceeded {rule.MaxConsumptionWh}Wh in {rule.MonitoringWindowMinutes}min. Cooldown {rule.CooldownMinutes}min starts.";
                 }
                 else
                 {
                     action = "NO_CHANGE";
                     reason = rule.CurrentState
-                        ? $"ON: SOC={data.BatterySoc}%, Solar={data.SolarProduction}W, BatteryPower={data.BatteryPower}W"
-                        : $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%), Solar={data.SolarProduction}W (need >={rule.MinSolarPowerWatts}W for {rule.SolarSustainedMinutes}min)";
+                        ? $"ON: SOC={data.BatterySoc}%, BatteryDraw={Math.Max(0, data.BatteryPower)}W, GridDraw={Math.Max(0, data.GridConsumption)}W"
+                        : $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%)";
                 }
 
                 db.RuleRunLogs.Add(new RuleRunLog

@@ -48,27 +48,28 @@
             </MudAlert>
         }
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Conditions (all must be met)</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Condition</MudText>
         <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Battery SOC above (%)"
-                         Min="0" Max="100" HelperText="Turn on when battery is above this level" />
-        <MudGrid Class="mt-2">
-            <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.MinSolarPowerWatts" Label="Solar above (W)"
-                                 HelperText="e.g., 3000 for 3kW" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.SolarSustainedMinutes" Label="Sustained for (min)"
-                                 Min="1" Max="120" HelperText="How long solar must stay above" />
-            </MudItem>
-        </MudGrid>
+                         Min="0" Max="100" HelperText="Turn on when battery charge is at or above this level" />
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn OFF Condition</MudText>
-        <MudNumericField @bind-Value="_rule.DischargeSustainedMinutes" Label="Discharging for (min)"
-                         Min="1" Max="60" HelperText="Turn off if battery discharging for this long" />
+        <MudNumericField @bind-Value="_rule.MaxConsumptionWh" Label="Max consumption from battery+grid (Wh)"
+                         Min="0" HelperText="Turn off if accumulated battery+grid consumption exceeds this" />
+        <MudNumericField @bind-Value="_rule.MonitoringWindowMinutes" Label="Monitoring window (min)"
+                         Min="1" Max="120" Class="mt-2"
+                         HelperText="Time window to accumulate consumption data" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Evaluation Interval</MudText>
-        <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Run every (seconds)"
-                         Min="10" Max="3600" HelperText="How often this rule is evaluated" />
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Cooldown & Timing</MudText>
+        <MudGrid>
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
+                                 Min="0" Max="120" HelperText="Wait before re-evaluating after turning OFF" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Evaluate every (sec)"
+                                 Min="10" Max="3600" HelperText="How often this rule runs" />
+            </MudItem>
+        </MudGrid>
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window (optional)</MudText>
         <MudGrid>
@@ -93,13 +94,14 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
-    private TriggerRule _rule = new() { Enabled = false, IntervalSeconds = 30 };
+    private TriggerRule _rule = new() { Enabled = false, IntervalSeconds = 30, MonitoringWindowMinutes = 15, CooldownMinutes = 15 };
     private bool _isNew => Id == null;
     private MudForm? _form;
     private TimeSpan? _activeFrom;
     private TimeSpan? _activeTo;
     private List<DeyeSolar.Infrastructure.Tuya.TuyaDevice>? _devices;
     private bool _loadingDevices;
+    private string? _loadError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,8 +118,6 @@
 
         await LoadDevices();
     }
-
-    private string? _loadError;
 
     private async Task LoadDevices()
     {
@@ -142,7 +142,6 @@
 
     private async Task Save()
     {
-        // Force disable if no device selected
         if (string.IsNullOrEmpty(_rule.EntityId))
             _rule.Enabled = false;
 

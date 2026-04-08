@@ -69,10 +69,10 @@ using (var scope = app.Services.CreateScope())
             Name = "Solar Battery Management",
             EntityId = "",
             Enabled = false,
-            SocTurnOnThreshold = 50,
-            MinSolarPowerWatts = 3000,
-            SolarSustainedMinutes = 30,
-            DischargeSustainedMinutes = 5,
+            SocTurnOnThreshold = 80,
+            MaxConsumptionWh = 500,
+            MonitoringWindowMinutes = 15,
+            CooldownMinutes = 15,
             IntervalSeconds = 30
         });
         await db.SaveChangesAsync();

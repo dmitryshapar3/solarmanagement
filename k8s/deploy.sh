@@ -95,13 +95,9 @@ test_connection() {
 
 # Build and push Docker image
 build_and_push() {
-    print_info "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
-    docker build -t "$IMAGE_NAME:$IMAGE_TAG" "$PROJECT_DIR"
-    print_status "Image built"
-
-    print_info "Pushing to GHCR..."
-    docker push "$IMAGE_NAME:$IMAGE_TAG"
-    print_status "Image pushed: $IMAGE_NAME:$IMAGE_TAG"
+    print_info "Building Docker image for linux/amd64: $IMAGE_NAME:$IMAGE_TAG"
+    docker buildx build --platform linux/amd64 -t "$IMAGE_NAME:$IMAGE_TAG" --push "$PROJECT_DIR"
+    print_status "Image built and pushed: $IMAGE_NAME:$IMAGE_TAG"
 }
 
 # Deploy K8s manifests
@@ -110,6 +106,10 @@ deploy_manifests() {
 
     remote_apply "$SCRIPT_DIR/namespace.yaml"
     print_status "Namespace applied"
+
+    # Copy GHCR pull secret from production namespace
+    remote_exec "kubectl get secret ghcr-secret -n production -o json | jq 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | jq '.metadata.namespace=\"$NAMESPACE\"' | kubectl apply -f - 2>/dev/null || true"
+    print_status "Image pull secret ensured"
 
     remote_apply "$SCRIPT_DIR/deployment.yaml"
     print_status "Deployment applied"

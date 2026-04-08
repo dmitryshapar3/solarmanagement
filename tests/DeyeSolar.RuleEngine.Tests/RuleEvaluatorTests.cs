@@ -8,52 +8,48 @@ public class RuleEvaluatorTests
     private readonly RuleEvaluator _evaluator = new();
     private readonly DateTimeOffset _now = new(2024, 6, 15, 12, 0, 0, TimeSpan.Zero);
 
-    private static InverterData MakeData(int soc = 50, int solar = 3500, int batteryPower = 0, DateTimeOffset? ts = null) => new()
+    private static InverterData MakeData(int soc = 90, int batteryPower = 0, int gridConsumption = 0, DateTimeOffset? ts = null) => new()
     {
         BatterySoc = soc,
-        SolarProduction = solar,
         BatteryPower = batteryPower,
+        GridConsumption = gridConsumption,
+        SolarProduction = 3000,
         LoadPower = 500,
         BatteryVoltage = 48.0,
         BatteryTemperature = 25.0,
         BatteryCurrent = 0,
-        GridConsumption = 0,
         Timestamp = ts ?? DateTimeOffset.UtcNow
     };
 
-    private List<InverterData> MakeSolarReadings(int solar, int minutes) =>
+    // Readings with battery+grid draw, spaced 1 min apart
+    private List<InverterData> MakeConsumptionReadings(int batteryW, int gridW, int minutes) =>
         Enumerable.Range(0, minutes)
-            .Select(i => MakeData(solar: solar, ts: _now.AddMinutes(-minutes + i)))
-            .ToList();
-
-    private List<InverterData> MakeDischargeReadings(int minutes, int soc = 60, int solar = 3500) =>
-        Enumerable.Range(0, minutes)
-            .Select(i => MakeData(soc: soc, solar: solar, batteryPower: 500, ts: _now.AddMinutes(-minutes + i)))
+            .Select(i => MakeData(batteryPower: batteryW, gridConsumption: gridW, ts: _now.AddMinutes(-minutes + i)))
             .ToList();
 
     private static TriggerRule MakeDefaultRule(bool currentState = false) => new()
     {
         Id = 1,
-        Name = "Solar Battery Management",
-        EntityId = "test",
+        Name = "Test Rule",
+        EntityId = "test-device",
         Enabled = true,
-        SocTurnOnThreshold = 50,
-        MinSolarPowerWatts = 3000,
-        SolarSustainedMinutes = 30,
-        DischargeSustainedMinutes = 5,
+        SocTurnOnThreshold = 80,
+        MaxConsumptionWh = 500,
+        MonitoringWindowMinutes = 15,
+        CooldownMinutes = 15,
+        IntervalSeconds = 30,
         CurrentState = currentState
     };
 
     // === Turn ON ===
 
     [Fact]
-    public void TurnOn_AllConditionsMet()
+    public void TurnOn_SocAboveThreshold()
     {
-        var data = MakeData(soc: 60, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Single(actions);
         Assert.True(actions[0].TurnOn);
@@ -62,47 +58,47 @@ public class RuleEvaluatorTests
     [Fact]
     public void NoTurnOn_SocBelowThreshold()
     {
-        var data = MakeData(soc: 40, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 70);
         var rule = MakeDefaultRule(currentState: false);
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Empty(actions);
     }
 
     [Fact]
-    public void NoTurnOn_SolarNotSustained()
+    public void NoTurnOn_DuringCooldown()
     {
-        var data = MakeData(soc: 60, solar: 3500);
-        var readings = MakeSolarReadings(3500, 20); // only 20 min, need 30
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
+        rule.LastTurnedOff = _now.AddMinutes(-5).DateTime; // 5 min ago, need 15
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Empty(actions);
     }
 
     [Fact]
-    public void NoTurnOn_SolarDippedDuringSustainedPeriod()
+    public void TurnOn_CooldownElapsed()
     {
-        var readings = MakeSolarReadings(3500, 30);
-        readings[15] = MakeData(solar: 2000, ts: _now.AddMinutes(-15));
-        var data = MakeData(soc: 60, solar: 3500);
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
+        rule.LastTurnedOff = _now.AddMinutes(-20).DateTime; // 20 min ago, cooldown is 15
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
-        Assert.Empty(actions);
+        Assert.Single(actions);
+        Assert.True(actions[0].TurnOn);
     }
 
-    // === Turn OFF: conditions lost ===
+    // === Turn OFF ===
 
     [Fact]
-    public void TurnOff_SocDroppedBelowThreshold()
+    public void TurnOff_ConsumptionExceedsThreshold()
     {
-        var data = MakeData(soc: 40, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85, batteryPower: 2000, gridConsumption: 500);
+        // 2500W total for 15 min = 2500 * 15/60 = 625 Wh > 500 Wh threshold
+        var readings = MakeConsumptionReadings(2000, 500, 16);
         var rule = MakeDefaultRule(currentState: true);
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
@@ -112,43 +108,11 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void TurnOff_SolarDropped()
+    public void StaysOn_ConsumptionBelowThreshold()
     {
-        var data = MakeData(soc: 60, solar: 1000);
-        var readings = MakeSolarReadings(1000, 35); // solar below threshold
-        var rule = MakeDefaultRule(currentState: true);
-
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
-
-        Assert.Single(actions);
-        Assert.False(actions[0].TurnOn);
-    }
-
-    // === Turn OFF: force-off by sustained discharge ===
-
-    [Fact]
-    public void TurnOff_ForceOff_DischargingSustained()
-    {
-        // ON conditions met, but discharge force-off overrides
-        var readings = MakeDischargeReadings(6, soc: 60, solar: 3500);
-        var data = MakeData(soc: 60, solar: 3500, batteryPower: 500);
-        var rule = MakeDefaultRule(currentState: true);
-
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
-
-        Assert.Single(actions);
-        Assert.False(actions[0].TurnOn);
-    }
-
-    [Fact]
-    public void StaysOn_DischargeNotLongEnough()
-    {
-        // ON conditions met, discharge too short -- stays ON
-        var readings = MakeSolarReadings(3500, 35);
-        // Add 3 min of discharge at the end (not enough for 5 min threshold)
-        for (int i = 0; i < 3; i++)
-            readings.Add(MakeData(soc: 60, solar: 3500, batteryPower: 500, ts: _now.AddMinutes(-3 + i)));
-        var data = MakeData(soc: 60, solar: 3500, batteryPower: 500);
+        var data = MakeData(soc: 85, batteryPower: 500, gridConsumption: 0);
+        // 500W for 15 min = 500 * 15/60 = 125 Wh < 500 Wh threshold
+        var readings = MakeConsumptionReadings(500, 0, 16);
         var rule = MakeDefaultRule(currentState: true);
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
@@ -157,15 +121,52 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void StaysOn_ConditionsMetAndNoDischarge()
+    public void StaysOn_BatteryCharging()
     {
-        var data = MakeData(soc: 60, solar: 3500, batteryPower: -200); // charging
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85, batteryPower: -500, gridConsumption: 0);
+        // Negative = charging, max(0, -500) = 0, so no consumption
+        var readings = MakeConsumptionReadings(-500, 0, 16);
         var rule = MakeDefaultRule(currentState: true);
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
         Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void StaysOn_NotEnoughReadings()
+    {
+        var data = MakeData(soc: 85, batteryPower: 5000);
+        // Only 1 reading -- not enough to calculate
+        var readings = new List<InverterData> { MakeData(batteryPower: 5000, ts: _now) };
+        var rule = MakeDefaultRule(currentState: true);
+
+        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+
+        Assert.Empty(actions);
+    }
+
+    // === Consumption calculation ===
+
+    [Fact]
+    public void CalculateConsumption_CorrectWh()
+    {
+        // 1000W battery + 500W grid = 1500W for 15 min
+        // Expected: 1500 * (15/60) = 375 Wh
+        var readings = MakeConsumptionReadings(1000, 500, 16);
+        var result = RuleEvaluator.CalculateAccumulatedConsumption(readings, 15, _now);
+
+        Assert.InRange(result, 350, 400); // approximate due to interval math
+    }
+
+    [Fact]
+    public void CalculateConsumption_NegativeValuesIgnored()
+    {
+        // Battery charging (-500) + grid exporting (-200) = both clamped to 0
+        var readings = MakeConsumptionReadings(-500, -200, 16);
+        var result = RuleEvaluator.CalculateAccumulatedConsumption(readings, 15, _now);
+
+        Assert.Equal(0, result);
     }
 
     // === Time window ===
@@ -173,13 +174,12 @@ public class RuleEvaluatorTests
     [Fact]
     public void TimeWindow_OutsideWindow_NoAction()
     {
-        var data = MakeData(soc: 60, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
         rule.ActiveFrom = new TimeOnly(22, 0);
         rule.ActiveTo = new TimeOnly(6, 0);
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Empty(actions);
     }
@@ -187,63 +187,27 @@ public class RuleEvaluatorTests
     [Fact]
     public void TimeWindow_InsideWindow_Triggers()
     {
-        var data = MakeData(soc: 60, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
         rule.ActiveFrom = new TimeOnly(8, 0);
         rule.ActiveTo = new TimeOnly(18, 0);
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Single(actions);
     }
 
-    // === Disabled ===
+    // === Disabled / no device ===
 
     [Fact]
     public void DisabledRule_Ignored()
     {
-        var data = MakeData(soc: 60, solar: 3500);
-        var readings = MakeSolarReadings(3500, 35);
+        var data = MakeData(soc: 85);
         var rule = MakeDefaultRule(currentState: false);
         rule.Enabled = false;
 
-        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
         Assert.Empty(actions);
-    }
-
-    // === SOC-only rule ===
-
-    [Fact]
-    public void SocOnlyRule_TurnsOn()
-    {
-        var data = MakeData(soc: 60);
-        var rule = new TriggerRule
-        {
-            Id = 2, Name = "SOC only", EntityId = "test", Enabled = true,
-            SocTurnOnThreshold = 50, CurrentState = false
-        };
-
-        var actions = _evaluator.Evaluate(data, Array.Empty<InverterData>(), new[] { rule }, _now);
-
-        Assert.Single(actions);
-        Assert.True(actions[0].TurnOn);
-    }
-
-    [Fact]
-    public void SocOnlyRule_TurnsOff_WhenSocDrops()
-    {
-        var data = MakeData(soc: 40);
-        var rule = new TriggerRule
-        {
-            Id = 2, Name = "SOC only", EntityId = "test", Enabled = true,
-            SocTurnOnThreshold = 50, CurrentState = true
-        };
-
-        var actions = _evaluator.Evaluate(data, Array.Empty<InverterData>(), new[] { rule }, _now);
-
-        Assert.Single(actions);
-        Assert.False(actions[0].TurnOn);
     }
 }

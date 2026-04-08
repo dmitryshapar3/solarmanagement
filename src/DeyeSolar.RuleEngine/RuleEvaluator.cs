@@ -17,96 +17,85 @@ public class RuleEvaluator
             if (!IsInTimeWindow(rule, now))
                 continue;
 
-            bool onConditionsMet = CheckOnConditions(current, recentReadings, rule, now);
-            bool forceOff = CheckForceOff(recentReadings, rule, now);
-
-            if (!rule.CurrentState && onConditionsMet && !forceOff)
+            if (!rule.CurrentState)
             {
-                // Currently OFF, conditions say turn ON
-                actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
+                if (ShouldTurnOn(current, rule, now))
+                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
             }
-            else if (rule.CurrentState && (!onConditionsMet || forceOff))
+            else
             {
-                // Currently ON, but conditions no longer met OR force-off triggered
-                actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
+                if (ShouldTurnOff(recentReadings, rule, now))
+                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
             }
         }
 
         return actions;
     }
 
-    private static bool CheckOnConditions(
-        InverterData current,
-        IReadOnlyList<InverterData> readings,
-        TriggerRule rule,
-        DateTimeOffset now)
+    private static bool ShouldTurnOn(InverterData current, TriggerRule rule, DateTimeOffset now)
     {
-        bool hasAnyCondition = false;
+        // Must have SOC threshold configured
+        if (!rule.SocTurnOnThreshold.HasValue)
+            return false;
 
-        if (rule.SocTurnOnThreshold.HasValue)
+        // SOC must be at or above threshold
+        if (current.BatterySoc < rule.SocTurnOnThreshold.Value)
+            return false;
+
+        // Cooldown: don't turn on if recently turned off
+        if (rule.LastTurnedOff.HasValue)
         {
-            hasAnyCondition = true;
-            if (current.BatterySoc < rule.SocTurnOnThreshold.Value)
+            var elapsed = (now - new DateTimeOffset(rule.LastTurnedOff.Value, TimeSpan.Zero)).TotalMinutes;
+            if (elapsed < rule.CooldownMinutes)
                 return false;
         }
 
-        if (rule.MinSolarPowerWatts.HasValue && rule.SolarSustainedMinutes.HasValue)
+        return true;
+    }
+
+    private static bool ShouldTurnOff(IReadOnlyList<InverterData> readings, TriggerRule rule, DateTimeOffset now)
+    {
+        if (!rule.MaxConsumptionWh.HasValue)
+            return false;
+
+        var consumptionWh = CalculateAccumulatedConsumption(readings, rule.MonitoringWindowMinutes, now);
+        return consumptionWh >= rule.MaxConsumptionWh.Value;
+    }
+
+    public static double CalculateAccumulatedConsumption(
+        IReadOnlyList<InverterData> readings,
+        int windowMinutes,
+        DateTimeOffset now)
+    {
+        var cutoff = now.AddMinutes(-windowMinutes);
+        var relevant = readings
+            .Where(r => r.Timestamp >= cutoff)
+            .OrderBy(r => r.Timestamp)
+            .ToList();
+
+        if (relevant.Count < 2)
+            return 0;
+
+        double totalWh = 0;
+
+        for (int i = 1; i < relevant.Count; i++)
         {
-            hasAnyCondition = true;
-            if (!IsSolarSustained(readings, rule.MinSolarPowerWatts.Value,
-                    rule.SolarSustainedMinutes.Value, now))
-                return false;
+            var prev = relevant[i - 1];
+            var curr = relevant[i];
+            var intervalHours = (curr.Timestamp - prev.Timestamp).TotalHours;
+
+            if (intervalHours <= 0 || intervalHours > 0.5) // skip gaps > 30 min
+                continue;
+
+            // Average power drawn from battery + grid between two readings
+            // BatteryPower > 0 = discharging, GridConsumption > 0 = importing
+            var avgBatteryDraw = (Math.Max(0, prev.BatteryPower) + Math.Max(0, curr.BatteryPower)) / 2.0;
+            var avgGridDraw = (Math.Max(0, prev.GridConsumption) + Math.Max(0, curr.GridConsumption)) / 2.0;
+
+            totalWh += (avgBatteryDraw + avgGridDraw) * intervalHours;
         }
 
-        return hasAnyCondition;
-    }
-
-    private static bool CheckForceOff(
-        IReadOnlyList<InverterData> readings,
-        TriggerRule rule,
-        DateTimeOffset now)
-    {
-        if (rule.DischargeSustainedMinutes.HasValue)
-            return IsDischarging(readings, rule.DischargeSustainedMinutes.Value, now);
-
-        return false;
-    }
-
-    private static bool IsSolarSustained(
-        IReadOnlyList<InverterData> readings,
-        int minWatts,
-        int minutes,
-        DateTimeOffset now)
-    {
-        var cutoff = now.AddMinutes(-minutes);
-        var relevant = readings.Where(r => r.Timestamp >= cutoff).ToList();
-
-        if (relevant.Count < 3)
-            return false;
-
-        var earliest = relevant.Min(r => r.Timestamp);
-        if ((now - earliest).TotalMinutes < minutes - 1)
-            return false;
-
-        return relevant.All(r => r.SolarProduction >= minWatts);
-    }
-
-    private static bool IsDischarging(
-        IReadOnlyList<InverterData> readings,
-        int minutes,
-        DateTimeOffset now)
-    {
-        var cutoff = now.AddMinutes(-minutes);
-        var relevant = readings.Where(r => r.Timestamp >= cutoff).ToList();
-
-        if (relevant.Count < 3)
-            return false;
-
-        var earliest = relevant.Min(r => r.Timestamp);
-        if ((now - earliest).TotalMinutes < minutes - 1)
-            return false;
-
-        return relevant.All(r => r.BatteryPower > 0);
+        return totalWh;
     }
 
     private static bool IsInTimeWindow(TriggerRule rule, DateTimeOffset now)
