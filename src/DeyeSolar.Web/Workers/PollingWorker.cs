@@ -211,8 +211,8 @@ public class PollingWorker : BackgroundService
 
             await db.SaveChangesAsync(ct);
 
-            // Cleanup data older than 30 days
-            var cutoff = DateTime.UtcNow.AddDays(-30);
+            // Cleanup data older than 3 days
+            var cutoff = DateTime.UtcNow.AddDays(-3);
             var old = db.RuleRunLogs.Where(r => r.Timestamp < cutoff);
             db.RuleRunLogs.RemoveRange(old);
             await db.SaveChangesAsync(ct);
@@ -243,8 +243,8 @@ public class PollingWorker : BackgroundService
             });
             await db.SaveChangesAsync(ct);
 
-            // Cleanup readings older than 30 days
-            var cutoff = DateTime.UtcNow.AddDays(-30);
+            // Cleanup readings older than 3 days
+            var cutoff = DateTime.UtcNow.AddDays(-3);
             var oldReadings = db.Readings.Where(r => r.Timestamp < cutoff);
             db.Readings.RemoveRange(oldReadings);
             await db.SaveChangesAsync(ct);
