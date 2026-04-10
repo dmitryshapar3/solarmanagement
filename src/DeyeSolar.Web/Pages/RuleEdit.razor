@@ -49,27 +49,39 @@
         }
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Condition</MudText>
-        <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Battery SOC above (%)"
-                         Min="0" Max="100" HelperText="Turn on when battery charge is at or above this level" />
+        <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Battery SOC at or above (%)"
+                         Min="0" Max="100"
+                         HelperText="Turn on when battery charge reaches this level" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn OFF Condition</MudText>
-        <MudNumericField @bind-Value="_rule.MaxConsumptionWh" Label="Max consumption from battery+grid (Wh)"
-                         Min="0" HelperText="Turn off if accumulated battery+grid consumption exceeds this" />
-        <MudNumericField @bind-Value="_rule.MonitoringWindowMinutes" Label="Monitoring window (min)"
-                         Min="1" Max="120" Class="mt-2"
-                         HelperText="Time window to accumulate consumption data" />
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn OFF Conditions</MudText>
+        <MudNumericField @bind-Value="_rule.MaxDrainWh" Label="Max net battery drain (Wh)"
+                         Min="0" Max="100000"
+                         HelperText="Turn off when net battery discharge over the window reaches this value. Battery charging cancels prior drain, so short cloud transients are absorbed." />
+        <MudNumericField @bind-Value="_rule.DrainWindowMinutes" Label="Drain window (min)"
+                         Min="1" Max="240" Class="mt-2"
+                         HelperText="Time window over which to accumulate net battery drain" />
+        <MudNumericField @bind-Value="_rule.SocFloor" Label="SOC safety floor (%)"
+                         Min="0" Max="100" Class="mt-2"
+                         HelperText="Hard cutoff: turn off immediately if battery drops to this level (overrides min-on time)" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Cooldown & Timing</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Anti-flapping</MudText>
         <MudGrid>
             <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
-                                 Min="0" Max="120" HelperText="Wait before re-evaluating after turning OFF" />
+                <MudNumericField @bind-Value="_rule.MinOnMinutes" Label="Min ON time (min)"
+                                 Min="0" Max="240"
+                                 HelperText="Keep ON at least this long after turning on (ignored by SOC floor)" />
             </MudItem>
             <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Evaluate every (sec)"
-                                 Min="10" Max="3600" HelperText="How often this rule runs" />
+                <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
+                                 Min="0" Max="240"
+                                 HelperText="Keep OFF at least this long before re-evaluating turn-on" />
             </MudItem>
         </MudGrid>
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Evaluation</MudText>
+        <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Evaluate every (sec)"
+                         Min="10" Max="3600"
+                         HelperText="How often this rule runs" />
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window (optional)</MudText>
         <MudGrid>
@@ -94,7 +106,17 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
-    private TriggerRule _rule = new() { Enabled = false, IntervalSeconds = 30, MonitoringWindowMinutes = 15, CooldownMinutes = 15 };
+    private TriggerRule _rule = new()
+    {
+        Enabled = false,
+        SocTurnOnThreshold = 80,
+        SocFloor = 55,
+        MaxDrainWh = 200,
+        DrainWindowMinutes = 15,
+        MinOnMinutes = 10,
+        CooldownMinutes = 15,
+        IntervalSeconds = 30
+    };
     private bool _isNew => Id == null;
     private MudForm? _form;
     private TimeSpan? _activeFrom;

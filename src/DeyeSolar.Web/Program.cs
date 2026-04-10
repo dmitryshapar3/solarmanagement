@@ -91,12 +91,14 @@ using (var scope = app.Services.CreateScope())
     {
         db.TriggerRules.Add(new DeyeSolar.Domain.Models.TriggerRule
         {
-            Name = "Solar Battery Management",
+            Name = "Solar Surplus Diverter",
             EntityId = "",
             Enabled = false,
             SocTurnOnThreshold = 80,
-            MaxConsumptionWh = 500,
-            MonitoringWindowMinutes = 15,
+            SocFloor = 55,
+            MaxDrainWh = 200,
+            DrainWindowMinutes = 15,
+            MinOnMinutes = 10,
             CooldownMinutes = 15,
             IntervalSeconds = 30
         });

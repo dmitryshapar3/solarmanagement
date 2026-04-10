@@ -18,15 +18,15 @@ public class RuleEvaluator
             if (!IsInTimeWindow(rule, now, timeZoneId))
                 continue;
 
-            if (!rule.CurrentState)
+            if (rule.CurrentState)
             {
-                if (ShouldTurnOn(current, rule, now))
-                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
+                if (ShouldTurnOff(current, recentReadings, rule, now))
+                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
             }
             else
             {
-                if (ShouldTurnOff(recentReadings, rule, now))
-                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
+                if (ShouldTurnOn(current, rule, now))
+                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
             }
         }
 
@@ -35,18 +35,18 @@ public class RuleEvaluator
 
     private static bool ShouldTurnOn(InverterData current, TriggerRule rule, DateTimeOffset now)
     {
-        // Must have SOC threshold configured
-        if (!rule.SocTurnOnThreshold.HasValue)
+        // SOC must be at or above turn-on threshold
+        if (current.BatterySoc < rule.SocTurnOnThreshold)
             return false;
 
-        // SOC must be at or above threshold
-        if (current.BatterySoc < rule.SocTurnOnThreshold.Value)
+        // Never turn on at or below the safety floor
+        if (current.BatterySoc <= rule.SocFloor)
             return false;
 
-        // Cooldown: don't turn on if recently turned off
-        if (rule.LastTurnedOff.HasValue)
+        // Cooldown: respect time since last turn-off
+        if (rule.CurrentStateChangedAt.HasValue)
         {
-            var elapsed = (now - new DateTimeOffset(rule.LastTurnedOff.Value, TimeSpan.Zero)).TotalMinutes;
+            var elapsed = (now - new DateTimeOffset(rule.CurrentStateChangedAt.Value, TimeSpan.Zero)).TotalMinutes;
             if (elapsed < rule.CooldownMinutes)
                 return false;
         }
@@ -54,16 +54,32 @@ public class RuleEvaluator
         return true;
     }
 
-    private static bool ShouldTurnOff(IReadOnlyList<InverterData> readings, TriggerRule rule, DateTimeOffset now)
+    private static bool ShouldTurnOff(
+        InverterData current,
+        IReadOnlyList<InverterData> readings,
+        TriggerRule rule,
+        DateTimeOffset now)
     {
-        if (!rule.MaxConsumptionWh.HasValue)
-            return false;
+        // Safety floor overrides everything, including MinOnMinutes
+        if (current.BatterySoc <= rule.SocFloor)
+            return true;
 
-        var consumptionWh = CalculateAccumulatedConsumption(readings, rule.MonitoringWindowMinutes, now);
-        return consumptionWh >= rule.MaxConsumptionWh.Value;
+        // Honor minimum on-time to prevent flapping on short cloud transients
+        if (rule.CurrentStateChangedAt.HasValue)
+        {
+            var elapsed = (now - new DateTimeOffset(rule.CurrentStateChangedAt.Value, TimeSpan.Zero)).TotalMinutes;
+            if (elapsed < rule.MinOnMinutes)
+                return false;
+        }
+
+        var drainWh = CalculateNetBatteryDrainWh(readings, rule.DrainWindowMinutes, now);
+        return drainWh >= rule.MaxDrainWh;
     }
 
-    public static double CalculateAccumulatedConsumption(
+    // Signed trapezoidal integral of BatteryPower over the window.
+    // Positive BatteryPower = discharging (drain), negative = charging (cancels prior drain).
+    // Grid import/export is deliberately ignored — only the battery matters for "don't drain the battery".
+    public static double CalculateNetBatteryDrainWh(
         IReadOnlyList<InverterData> readings,
         int windowMinutes,
         DateTimeOffset now)
@@ -88,12 +104,8 @@ public class RuleEvaluator
             if (intervalHours <= 0 || intervalHours > 0.5) // skip gaps > 30 min
                 continue;
 
-            // Average power drawn from battery + grid between two readings
-            // BatteryPower > 0 = discharging, GridConsumption > 0 = importing
-            var avgBatteryDraw = (Math.Max(0, prev.BatteryPower) + Math.Max(0, curr.BatteryPower)) / 2.0;
-            var avgGridDraw = (Math.Max(0, prev.GridConsumption) + Math.Max(0, curr.GridConsumption)) / 2.0;
-
-            totalWh += (avgBatteryDraw + avgGridDraw) * intervalHours;
+            var avgBatteryPower = (prev.BatteryPower + curr.BatteryPower) / 2.0;
+            totalWh += avgBatteryPower * intervalHours;
         }
 
         return totalWh;

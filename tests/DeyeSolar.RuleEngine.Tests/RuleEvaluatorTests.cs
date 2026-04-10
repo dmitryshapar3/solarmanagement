@@ -8,34 +8,36 @@ public class RuleEvaluatorTests
     private readonly RuleEvaluator _evaluator = new();
     private readonly DateTimeOffset _now = new(2024, 6, 15, 12, 0, 0, TimeSpan.Zero);
 
-    private static InverterData MakeData(int soc = 90, int batteryPower = 0, int gridConsumption = 0, DateTimeOffset? ts = null) => new()
+    private InverterData MakeData(int soc = 90, int batteryPower = 0, DateTimeOffset? ts = null) => new()
     {
         BatterySoc = soc,
         BatteryPower = batteryPower,
-        GridConsumption = gridConsumption,
+        GridConsumption = 0,
         SolarProduction = 3000,
         LoadPower = 500,
         BatteryVoltage = 48.0,
         BatteryTemperature = 25.0,
         BatteryCurrent = 0,
-        Timestamp = ts ?? DateTimeOffset.UtcNow
+        Timestamp = ts ?? _now
     };
 
-    // Readings with battery+grid draw, spaced 1 min apart
-    private List<InverterData> MakeConsumptionReadings(int batteryW, int gridW, int minutes) =>
-        Enumerable.Range(0, minutes)
-            .Select(i => MakeData(batteryPower: batteryW, gridConsumption: gridW, ts: _now.AddMinutes(-minutes + i)))
+    // Readings spaced 1 min apart covering `minutes` minutes, ending at _now
+    private List<InverterData> MakeReadings(int batteryPower, int minutes, int soc = 90) =>
+        Enumerable.Range(0, minutes + 1)
+            .Select(i => MakeData(soc: soc, batteryPower: batteryPower, ts: _now.AddMinutes(-minutes + i)))
             .ToList();
 
-    private static TriggerRule MakeDefaultRule(bool currentState = false) => new()
+    private static TriggerRule MakeRule(bool currentState = false) => new()
     {
         Id = 1,
         Name = "Test Rule",
         EntityId = "test-device",
         Enabled = true,
         SocTurnOnThreshold = 80,
-        MaxConsumptionWh = 500,
-        MonitoringWindowMinutes = 15,
+        SocFloor = 55,
+        MaxDrainWh = 200,
+        DrainWindowMinutes = 15,
+        MinOnMinutes = 10,
         CooldownMinutes = 15,
         IntervalSeconds = 30,
         CurrentState = currentState
@@ -44,10 +46,10 @@ public class RuleEvaluatorTests
     // === Turn ON ===
 
     [Fact]
-    public void TurnOn_SocAboveThreshold()
+    public void TurnOn_WhenSocAtThreshold()
     {
-        var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
+        var data = MakeData(soc: 80);
+        var rule = MakeRule(currentState: false);
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
@@ -56,10 +58,10 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void NoTurnOn_SocBelowThreshold()
+    public void NoTurnOn_WhenSocBelowThreshold()
     {
-        var data = MakeData(soc: 70);
-        var rule = MakeDefaultRule(currentState: false);
+        var data = MakeData(soc: 79);
+        var rule = MakeRule(currentState: false);
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
@@ -70,8 +72,8 @@ public class RuleEvaluatorTests
     public void NoTurnOn_DuringCooldown()
     {
         var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
-        rule.LastTurnedOff = _now.AddMinutes(-5).DateTime; // 5 min ago, need 15
+        var rule = MakeRule(currentState: false);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-5).UtcDateTime; // 5 min ago, cooldown is 15
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
@@ -79,11 +81,11 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void TurnOn_CooldownElapsed()
+    public void TurnOn_WhenCooldownElapsed()
     {
         var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
-        rule.LastTurnedOff = _now.AddMinutes(-20).DateTime; // 20 min ago, cooldown is 15
+        var rule = MakeRule(currentState: false);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-20).UtcDateTime; // past cooldown
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
@@ -91,15 +93,31 @@ public class RuleEvaluatorTests
         Assert.True(actions[0].TurnOn);
     }
 
-    // === Turn OFF ===
+    [Fact]
+    public void NoTurnOn_WhenSocAtFloor()
+    {
+        // SOC above turn-on threshold but at or below the safety floor — should not turn on
+        var rule = MakeRule(currentState: false);
+        rule.SocTurnOnThreshold = 50;
+        rule.SocFloor = 55;
+        var data = MakeData(soc: 55);
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Empty(actions);
+    }
+
+    // === Turn OFF: drain ===
 
     [Fact]
-    public void TurnOff_ConsumptionExceedsThreshold()
+    public void TurnOff_WhenNetDrainExceedsThreshold()
     {
-        var data = MakeData(soc: 85, batteryPower: 2000, gridConsumption: 500);
-        // 2500W total for 15 min = 2500 * 15/60 = 625 Wh > 500 Wh threshold
-        var readings = MakeConsumptionReadings(2000, 500, 16);
-        var rule = MakeDefaultRule(currentState: true);
+        // 1200W sustained discharge for 15 min = 300 Wh net drain > 200 Wh threshold
+        var readings = MakeReadings(batteryPower: 1200, minutes: 15);
+        var data = MakeData(soc: 75, batteryPower: 1200);
+
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime; // past min-on
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
@@ -108,12 +126,14 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void StaysOn_ConsumptionBelowThreshold()
+    public void StaysOn_WhenNetDrainBelowThreshold()
     {
-        var data = MakeData(soc: 85, batteryPower: 500, gridConsumption: 0);
-        // 500W for 15 min = 500 * 15/60 = 125 Wh < 500 Wh threshold
-        var readings = MakeConsumptionReadings(500, 0, 16);
-        var rule = MakeDefaultRule(currentState: true);
+        // 600W sustained for 15 min = 150 Wh < 200 Wh threshold
+        var readings = MakeReadings(batteryPower: 600, minutes: 15);
+        var data = MakeData(soc: 75, batteryPower: 600);
+
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
@@ -121,12 +141,14 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void StaysOn_BatteryCharging()
+    public void StaysOn_WhenBatteryCharging()
     {
-        var data = MakeData(soc: 85, batteryPower: -500, gridConsumption: 0);
-        // Negative = charging, max(0, -500) = 0, so no consumption
-        var readings = MakeConsumptionReadings(-500, 0, 16);
-        var rule = MakeDefaultRule(currentState: true);
+        // Net charging (-1000W) over window — net drain is strongly negative, far below threshold
+        var readings = MakeReadings(batteryPower: -1000, minutes: 15);
+        var data = MakeData(soc: 90, batteryPower: -1000);
+
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
@@ -134,38 +156,121 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void StaysOn_NotEnoughReadings()
+    public void StaysOn_WhenCloudTransientIsRecovered()
     {
-        var data = MakeData(soc: 85, batteryPower: 5000);
-        // Only 1 reading -- not enough to calculate
-        var readings = new List<InverterData> { MakeData(batteryPower: 5000, ts: _now) };
-        var rule = MakeDefaultRule(currentState: true);
+        // 5 min of 1500W discharge (cloud) = 125 Wh, then 10 min of -1500W charge = -250 Wh.
+        // Net drain over the 15-min window should be ~-125 Wh (net charge). Below 200 Wh threshold.
+        var readings = new List<InverterData>();
+        for (int i = 0; i <= 5; i++)
+            readings.Add(MakeData(soc: 78, batteryPower: 1500, ts: _now.AddMinutes(-15 + i)));
+        for (int i = 1; i <= 10; i++)
+            readings.Add(MakeData(soc: 80, batteryPower: -1500, ts: _now.AddMinutes(-10 + i)));
+
+        var data = MakeData(soc: 80, batteryPower: -1500);
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
         Assert.Empty(actions);
     }
 
-    // === Consumption calculation ===
+    // === Turn OFF: SOC floor override ===
 
     [Fact]
-    public void CalculateConsumption_CorrectWh()
+    public void TurnOff_WhenSocAtFloor_OverridesMinOn()
     {
-        // 1000W battery + 500W grid = 1500W for 15 min
-        // Expected: 1500 * (15/60) = 375 Wh
-        var readings = MakeConsumptionReadings(1000, 500, 16);
-        var result = RuleEvaluator.CalculateAccumulatedConsumption(readings, 15, _now);
+        // Just turned on 1 min ago (well within 10-min MinOnMinutes), but SOC hit the floor.
+        // SOC floor must override the hold.
+        var data = MakeData(soc: 55, batteryPower: 0);
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-1).UtcDateTime;
 
-        Assert.InRange(result, 350, 400); // approximate due to interval math
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
     }
 
     [Fact]
-    public void CalculateConsumption_NegativeValuesIgnored()
+    public void TurnOff_WhenSocBelowFloor()
     {
-        // Battery charging (-500) + grid exporting (-200) = both clamped to 0
-        var readings = MakeConsumptionReadings(-500, -200, 16);
-        var result = RuleEvaluator.CalculateAccumulatedConsumption(readings, 15, _now);
+        var data = MakeData(soc: 50, batteryPower: 0);
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
 
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    // === Turn OFF: MinOnMinutes ===
+
+    [Fact]
+    public void StaysOn_WithinMinOnWindow_EvenWithHighDrain()
+    {
+        // Very high drain (3000W over 15 min = 750 Wh), but device just turned on 5 min ago.
+        // MinOnMinutes=10 must hold it ON.
+        var readings = MakeReadings(batteryPower: 3000, minutes: 15);
+        var data = MakeData(soc: 75, batteryPower: 3000);
+
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-5).UtcDateTime;
+
+        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void TurnOff_WhenMinOnElapsed_AndDrainHigh()
+    {
+        var readings = MakeReadings(batteryPower: 3000, minutes: 15);
+        var data = MakeData(soc: 75, batteryPower: 3000);
+
+        var rule = MakeRule(currentState: true);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-11).UtcDateTime; // past min-on
+
+        var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    // === Drain calculation ===
+
+    [Fact]
+    public void CalculateNetDrain_SustainedDischarge()
+    {
+        // 1000W for 15 min = 250 Wh
+        var readings = MakeReadings(batteryPower: 1000, minutes: 15);
+        var result = RuleEvaluator.CalculateNetBatteryDrainWh(readings, 15, _now);
+
+        Assert.InRange(result, 240, 260);
+    }
+
+    [Fact]
+    public void CalculateNetDrain_ChargingIsNegative()
+    {
+        var readings = MakeReadings(batteryPower: -1000, minutes: 15);
+        var result = RuleEvaluator.CalculateNetBatteryDrainWh(readings, 15, _now);
+
+        Assert.InRange(result, -260, -240);
+    }
+
+    [Fact]
+    public void CalculateNetDrain_NoReadings_ReturnsZero()
+    {
+        var result = RuleEvaluator.CalculateNetBatteryDrainWh([], 15, _now);
+        Assert.Equal(0, result);
+    }
+
+    [Fact]
+    public void CalculateNetDrain_SingleReading_ReturnsZero()
+    {
+        var readings = new List<InverterData> { MakeData(batteryPower: 1000, ts: _now) };
+        var result = RuleEvaluator.CalculateNetBatteryDrainWh(readings, 15, _now);
         Assert.Equal(0, result);
     }
 
@@ -175,7 +280,7 @@ public class RuleEvaluatorTests
     public void TimeWindow_OutsideWindow_NoAction()
     {
         var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
+        var rule = MakeRule(currentState: false);
         rule.ActiveFrom = new TimeOnly(22, 0);
         rule.ActiveTo = new TimeOnly(6, 0);
 
@@ -188,7 +293,7 @@ public class RuleEvaluatorTests
     public void TimeWindow_InsideWindow_Triggers()
     {
         var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
+        var rule = MakeRule(currentState: false);
         rule.ActiveFrom = new TimeOnly(8, 0);
         rule.ActiveTo = new TimeOnly(18, 0);
 
@@ -197,13 +302,13 @@ public class RuleEvaluatorTests
         Assert.Single(actions);
     }
 
-    // === Disabled / no device ===
+    // === Disabled ===
 
     [Fact]
     public void DisabledRule_Ignored()
     {
         var data = MakeData(soc: 85);
-        var rule = MakeDefaultRule(currentState: false);
+        var rule = MakeRule(currentState: false);
         rule.Enabled = false;
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);

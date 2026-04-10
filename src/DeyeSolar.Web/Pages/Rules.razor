@@ -48,24 +48,10 @@ else
                 }
             </MudTd>
             <MudTd>
-                @if (context.SocTurnOnThreshold.HasValue)
-                {
-                    <span>SOC >= @context.SocTurnOnThreshold%</span>
-                }
-                else
-                {
-                    <span>-</span>
-                }
+                <span>SOC &ge; @context.SocTurnOnThreshold%</span>
             </MudTd>
             <MudTd>
-                @if (context.MaxConsumptionWh.HasValue)
-                {
-                    <span>> @(context.MaxConsumptionWh)Wh in @(context.MonitoringWindowMinutes)min</span>
-                }
-                else
-                {
-                    <span>-</span>
-                }
+                <span>drain &ge; @(context.MaxDrainWh)Wh / @(context.DrainWindowMinutes)min, or SOC &le; @(context.SocFloor)%</span>
             </MudTd>
             <MudTd>@(context.IntervalSeconds)s</MudTd>
             <MudTd>

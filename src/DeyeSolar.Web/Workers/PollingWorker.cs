@@ -72,11 +72,10 @@ public class PollingWorker : BackgroundService
         _snapshot.Update(data);
         await SaveReadingAsync(data, ct);
 
-        // Load enough readings for the largest monitoring window across all rules
-        var allRulesForWindow = await _ruleRepository.GetAllAsync(ct);
-        var maxWindow = allRulesForWindow.Where(r => r.Enabled).Select(r => r.MonitoringWindowMinutes).DefaultIfEmpty(15).Max();
-        var recentReadings = await GetRecentReadingsAsync(maxWindow + 5, ct);
+        // Load enough readings for the largest drain window across all rules
         var allRules = await _ruleRepository.GetAllAsync(ct);
+        var maxWindow = allRules.Where(r => r.Enabled).Select(r => r.DrainWindowMinutes).DefaultIfEmpty(15).Max();
+        var recentReadings = await GetRecentReadingsAsync(maxWindow + 5, ct);
         var now = DateTime.UtcNow;
 
         // Filter to rules that are due for evaluation based on their interval
@@ -102,7 +101,7 @@ public class PollingWorker : BackgroundService
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         var actions = _ruleEvaluator.Evaluate(data, recentReadings, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
 
-        await LogRuleRunsAsync(data, dueRules, actions, ct);
+        await LogRuleRunsAsync(data, recentReadings, dueRules, actions, ct);
 
         foreach (var action in actions)
         {
@@ -116,8 +115,6 @@ public class PollingWorker : BackgroundService
                 var rule = dueRules.First(r => r.Id == action.RuleId);
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
-                if (!action.TurnOn)
-                    rule.LastTurnedOff = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
 
                 _logger.LogInformation("Rule '{RuleName}' triggered: {Action} {EntityId}",
@@ -169,16 +166,23 @@ public class PollingWorker : BackgroundService
         }
     }
 
-    private async Task LogRuleRunsAsync(InverterData data, List<TriggerRule> rules,
-        IReadOnlyList<RuleAction> actions, CancellationToken ct)
+    private async Task LogRuleRunsAsync(
+        InverterData data,
+        IReadOnlyList<InverterData> recentReadings,
+        List<TriggerRule> rules,
+        IReadOnlyList<RuleAction> actions,
+        CancellationToken ct)
     {
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
             var actionsByRule = actions.ToDictionary(a => a.RuleId);
+            var nowOffset = DateTimeOffset.UtcNow;
 
             foreach (var rule in rules.Where(r => r.Enabled))
             {
+                var drainWh = RuleEvaluator.CalculateNetBatteryDrainWh(recentReadings, rule.DrainWindowMinutes, nowOffset);
+
                 string action;
                 string reason;
 
@@ -187,13 +191,15 @@ public class PollingWorker : BackgroundService
                     action = ruleAction.TurnOn ? "ON" : "OFF";
                     reason = ruleAction.TurnOn
                         ? $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed"
-                        : $"Consumption exceeded {rule.MaxConsumptionWh}Wh in {rule.MonitoringWindowMinutes}min. Cooldown {rule.CooldownMinutes}min starts.";
+                        : data.BatterySoc <= rule.SocFloor
+                            ? $"SOC floor hit: {data.BatterySoc}% <= {rule.SocFloor}%"
+                            : $"Net drain {drainWh:F0}Wh >= {rule.MaxDrainWh}Wh over {rule.DrainWindowMinutes}min. Cooldown {rule.CooldownMinutes}min starts.";
                 }
                 else
                 {
                     action = "NO_CHANGE";
                     reason = rule.CurrentState
-                        ? $"ON: SOC={data.BatterySoc}%, BatteryDraw={Math.Max(0, data.BatteryPower)}W, GridDraw={Math.Max(0, data.GridConsumption)}W"
+                        ? $"ON: SOC={data.BatterySoc}%, net drain {drainWh:F0}Wh / {rule.MaxDrainWh}Wh in {rule.DrainWindowMinutes}min"
                         : $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%)";
                 }
 
