@@ -1,5 +1,6 @@
 @page "/"
 @inject InverterDataSnapshot Snapshot
+@inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.TuyaOptions> TuyaOpts
@@ -145,6 +146,55 @@
                 }
             </MudPaper>
         </MudItem>
+
+        <!-- Smart Sockets -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Smart Sockets</MudText>
+                @if (_devices == null)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Waiting for first device poll...</MudText>
+                }
+                else if (_devices.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>State</th>
+                                <th>Power</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var dev in _devices)
+                            {
+                                <tr>
+                                    <td>@dev.Name</td>
+                                    <td>
+                                        @if (!dev.Online)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default">offline</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(dev.IsOn ? Color.Success : Color.Default)">
+                                                @(dev.IsOn ? "ON" : "OFF")
+                                            </MudChip>
+                                        }
+                                    </td>
+                                    <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
     }
 </MudGrid>
 
@@ -153,6 +203,7 @@
 @code {
     private InverterData? _data;
     private List<TriggerRule>? _rules;
+    private IReadOnlyList<DevicePowerInfo>? _devices;
     private string? _actionMessage;
     private Severity _actionSeverity;
     private string? _tz;
@@ -162,8 +213,10 @@
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _tz = display.TimeZoneId;
         _data = Snapshot.Current;
+        _devices = DeviceSnapshot.Current;
         _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
         Snapshot.OnDataUpdated += OnDataUpdated;
+        DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
     }
 
     private async void OnDataUpdated()
@@ -177,6 +230,12 @@
         {
             // keep previous rules on transient failure
         }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnDeviceSnapshotUpdated()
+    {
+        _devices = DeviceSnapshot.Current;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -214,5 +273,9 @@
         _ => Color.Error
     };
 
-    public void Dispose() => Snapshot.OnDataUpdated -= OnDataUpdated;
+    public void Dispose()
+    {
+        Snapshot.OnDataUpdated -= OnDataUpdated;
+        DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
+    }
 }

@@ -1,0 +1,91 @@
+@page "/devices"
+@inject DeviceStatusSnapshot DeviceSnapshot
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@using DeyeSolar.Web.Shared
+@implements IDisposable
+
+<PageTitle>Devices - DeyeSolar</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Smart Sockets</MudText>
+
+@if (DeviceSnapshot.LastUpdated.HasValue)
+{
+    <MudText Typo="Typo.caption" Class="mb-2">
+        Last update: @TimeHelper.ToUserTime(DeviceSnapshot.LastUpdated.Value.UtcDateTime, _tz).ToString("HH:mm:ss")
+    </MudText>
+}
+
+<MudPaper Class="pa-4" Elevation="2">
+    @if (_devices == null)
+    {
+        <MudAlert Severity="Severity.Info">Waiting for first device poll...</MudAlert>
+    }
+    else if (_devices.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found. Configure Tuya in Settings.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Online</th>
+                    <th>State</th>
+                    <th>Current Power</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var dev in _devices)
+                {
+                    <tr>
+                        <td>@dev.Name</td>
+                        <td>@(dev.Category ?? "-")</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(dev.Online ? Color.Success : Color.Default)">
+                                @(dev.Online ? "Yes" : "No")
+                            </MudChip>
+                        </td>
+                        <td>
+                            @if (!dev.Online)
+                            {
+                                <MudText Typo="Typo.body2">-</MudText>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(dev.IsOn ? Color.Success : Color.Default)">
+                                    @(dev.IsOn ? "ON" : "OFF")
+                                </MudChip>
+                            }
+                        </td>
+                        <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@code {
+    private IReadOnlyList<DevicePowerInfo>? _devices;
+    private string? _tz;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        _tz = display.TimeZoneId;
+        _devices = DeviceSnapshot.Current;
+        DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
+    }
+
+    private async void OnDeviceSnapshotUpdated()
+    {
+        _devices = DeviceSnapshot.Current;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
+}

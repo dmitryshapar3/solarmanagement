@@ -59,6 +59,7 @@ builder.Services.AddSingleton<ISocketController>(sp => sp.GetRequiredService<Tuy
 
 // Snapshot & Rule engine
 builder.Services.AddSingleton<InverterDataSnapshot>();
+builder.Services.AddSingleton<DeviceStatusSnapshot>();
 builder.Services.AddSingleton<RuleEvaluator>();
 builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
 

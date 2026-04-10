@@ -2,6 +2,7 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
+using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,10 @@ public class PollingWorker : BackgroundService
 {
     private readonly IInverterDataSource _dataSource;
     private readonly ISocketController _socketController;
+    private readonly TuyaCloudClient _tuyaClient;
     private readonly IRuleRepository _ruleRepository;
     private readonly InverterDataSnapshot _snapshot;
+    private readonly DeviceStatusSnapshot _deviceStatusSnapshot;
     private readonly RuleEvaluator _ruleEvaluator;
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
     private readonly IOptionsMonitor<PollingOptions> _pollingOptions;
@@ -24,8 +27,10 @@ public class PollingWorker : BackgroundService
     public PollingWorker(
         IInverterDataSource dataSource,
         ISocketController socketController,
+        TuyaCloudClient tuyaClient,
         IRuleRepository ruleRepository,
         InverterDataSnapshot snapshot,
+        DeviceStatusSnapshot deviceStatusSnapshot,
         RuleEvaluator ruleEvaluator,
         IDbContextFactory<DeyeSolarDbContext> dbFactory,
         IOptionsMonitor<PollingOptions> pollingOptions,
@@ -34,8 +39,10 @@ public class PollingWorker : BackgroundService
     {
         _dataSource = dataSource;
         _socketController = socketController;
+        _tuyaClient = tuyaClient;
         _ruleRepository = ruleRepository;
         _snapshot = snapshot;
+        _deviceStatusSnapshot = deviceStatusSnapshot;
         _ruleEvaluator = ruleEvaluator;
         _dbFactory = dbFactory;
         _pollingOptions = pollingOptions;
@@ -71,6 +78,7 @@ public class PollingWorker : BackgroundService
 
         _snapshot.Update(data);
         await SaveReadingAsync(data, ct);
+        await RefreshDeviceStatusesAsync(ct);
 
         // Load enough readings for the largest drain window across all rules
         var allRules = await _ruleRepository.GetAllAsync(ct);
@@ -226,6 +234,20 @@ public class PollingWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to log rule runs");
+        }
+    }
+
+    private async Task RefreshDeviceStatusesAsync(CancellationToken ct)
+    {
+        try
+        {
+            var devices = await _tuyaClient.GetDevicesWithStatusAsync(ct);
+            _deviceStatusSnapshot.Update(devices);
+            _logger.LogDebug("Refreshed status for {Count} Tuya device(s)", devices.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh Tuya device statuses");
         }
     }
 

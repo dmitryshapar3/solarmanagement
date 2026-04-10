@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DeyeSolar.Domain.Interfaces;
+using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,8 @@ using Microsoft.Extensions.Options;
 namespace DeyeSolar.Infrastructure.Tuya;
 
 public record TuyaDevice(string Id, string Name, string? Category, bool Online);
+
+public record TuyaDeviceStatus(bool IsOn, int? CurrentPowerW, double? VoltageV, double? CurrentA);
 
 public class TuyaCloudClient : ISocketController
 {
@@ -47,21 +50,80 @@ public class TuyaCloudClient : ISocketController
     }
 
     public async Task<bool> GetStateAsync(string entityId, CancellationToken ct)
+        => (await GetStatusAsync(entityId, ct)).IsOn;
+
+    public async Task<TuyaDeviceStatus> GetStatusAsync(string entityId, CancellationToken ct)
     {
         var deviceId = ResolveDeviceId(entityId);
         var response = await RequestAsync(HttpMethod.Get, $"/v1.0/devices/{deviceId}/status", null, ct);
+
+        bool isOn = false;
+        int? powerW = null;
+        double? voltageV = null;
+        double? currentA = null;
 
         if (response.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Array)
         {
             foreach (var status in result.EnumerateArray())
             {
                 var code = status.TryGetProperty("code", out var c) ? c.GetString() : "";
-                if (code == "switch_1")
-                    return status.TryGetProperty("value", out var v) && v.GetBoolean();
+                if (!status.TryGetProperty("value", out var value))
+                    continue;
+
+                switch (code)
+                {
+                    case "switch_1":
+                        if (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+                            isOn = value.GetBoolean();
+                        break;
+                    case "cur_power":
+                        // Tuya reports power in 0.1 W units
+                        if (value.ValueKind == JsonValueKind.Number)
+                            powerW = (int)Math.Round(value.GetDouble() / 10.0);
+                        break;
+                    case "cur_voltage":
+                        // 0.1 V units
+                        if (value.ValueKind == JsonValueKind.Number)
+                            voltageV = value.GetDouble() / 10.0;
+                        break;
+                    case "cur_current":
+                        // mA
+                        if (value.ValueKind == JsonValueKind.Number)
+                            currentA = value.GetDouble() / 1000.0;
+                        break;
+                }
             }
         }
 
-        return false;
+        return new TuyaDeviceStatus(isOn, powerW, voltageV, currentA);
+    }
+
+    public async Task<List<DevicePowerInfo>> GetDevicesWithStatusAsync(CancellationToken ct)
+    {
+        var devices = await GetDevicesAsync(ct);
+        var results = new List<DevicePowerInfo>(devices.Count);
+
+        foreach (var d in devices)
+        {
+            if (!d.Online)
+            {
+                results.Add(new DevicePowerInfo(d.Id, d.Name, d.Category, false, false, null));
+                continue;
+            }
+
+            try
+            {
+                var status = await GetStatusAsync(d.Id, ct);
+                results.Add(new DevicePowerInfo(d.Id, d.Name, d.Category, true, status.IsOn, status.CurrentPowerW));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Tuya: failed to fetch status for device {DeviceId}", d.Id);
+                results.Add(new DevicePowerInfo(d.Id, d.Name, d.Category, true, false, null));
+            }
+        }
+
+        return results;
     }
 
     public async Task<List<TuyaDevice>> GetDevicesAsync(CancellationToken ct)
