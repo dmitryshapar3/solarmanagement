@@ -36,6 +36,16 @@ public class RuleRepository : IRuleRepository
     public async Task UpdateAsync(TriggerRule rule, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var originalState = await db.TriggerRules
+            .AsNoTracking()
+            .Where(r => r.Id == rule.Id)
+            .Select(r => (bool?)r.CurrentState)
+            .FirstOrDefaultAsync(ct);
+
+        if (originalState.HasValue && originalState.Value != rule.CurrentState)
+            rule.CurrentStateChangedAt = DateTime.UtcNow;
+
         db.TriggerRules.Update(rule);
         await db.SaveChangesAsync(ct);
     }

@@ -14,6 +14,7 @@ public class TriggerRule
     public TimeOnly? ActiveTo { get; set; }
     public int IntervalSeconds { get; set; } = 30;
     public bool CurrentState { get; set; }
+    public DateTime? CurrentStateChangedAt { get; set; }
     public DateTime? LastEvaluated { get; set; }
     public DateTime? LastTurnedOff { get; set; }
 }

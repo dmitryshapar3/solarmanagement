@@ -1,6 +1,8 @@
 @page "/rules"
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @inject NavigationManager Nav
+@using DeyeSolar.Web.Shared
 
 <PageTitle>Rules - DeyeSolar</PageTitle>
 
@@ -29,6 +31,7 @@ else
             <MudTh>Turn OFF</MudTh>
             <MudTh>Interval</MudTh>
             <MudTh>State</MudTh>
+            <MudTh>Changed</MudTh>
             <MudTh>Enabled</MudTh>
             <MudTh>Actions</MudTh>
         </HeaderContent>
@@ -71,6 +74,18 @@ else
                 </MudChip>
             </MudTd>
             <MudTd>
+                @if (context.CurrentStateChangedAt.HasValue)
+                {
+                    <MudText Typo="Typo.body2">
+                        @TimeHelper.ToUserTime(context.CurrentStateChangedAt.Value, _tz).ToString("MM/dd HH:mm:ss")
+                    </MudText>
+                }
+                else
+                {
+                    <span>-</span>
+                }
+            </MudTd>
+            <MudTd>
                 <MudSwitch T="bool" Value="context.Enabled" ValueChanged="@(v => ToggleEnabled(context, v))"
                            Color="Color.Primary" />
             </MudTd>
@@ -86,9 +101,12 @@ else
 
 @code {
     private List<TriggerRule>? _rules;
+    private string? _tz;
 
     protected override async Task OnInitializedAsync()
     {
+        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        _tz = display.TimeZoneId;
         _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
     }
 
