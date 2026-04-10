@@ -43,6 +43,11 @@ public class RuleEvaluator
         if (current.BatterySoc <= rule.SocFloor)
             return false;
 
+        // Optional: require the battery to be actively charging (surplus solar)
+        // Sign convention: BatteryPower > 0 = discharging, < 0 = charging
+        if (rule.RequireBatteryCharging && current.BatteryPower >= 0)
+            return false;
+
         // Cooldown: respect time since last turn-off
         if (rule.CurrentStateChangedAt.HasValue)
         {

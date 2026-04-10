@@ -10,6 +10,9 @@ public class TriggerRule
     // Turn ON when battery SOC is at or above this percentage
     public int SocTurnOnThreshold { get; set; } = 80;
 
+    // If true, additionally require the battery to be charging (BatteryPower < 0) at turn-on time
+    public bool RequireBatteryCharging { get; set; } = false;
+
     // Hard safety floor: force OFF if SOC drops to this percentage (overrides MinOnMinutes)
     public int SocFloor { get; set; } = 55;
 

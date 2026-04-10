@@ -52,6 +52,11 @@
         <MudNumericField @bind-Value="_rule.SocTurnOnThreshold" Label="Battery SOC at or above (%)"
                          Min="0" Max="100"
                          HelperText="Turn on when battery charge reaches this level" />
+        <MudCheckBox @bind-Value="_rule.RequireBatteryCharging" Label="Require battery to be charging"
+                     Color="Color.Primary" Class="mt-2" />
+        <MudText Typo="Typo.caption" Class="ml-8" Style="display:block;">
+            Only turn on while the battery is actively charging (solar surplus present).
+        </MudText>
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn OFF Conditions</MudText>
         <MudNumericField @bind-Value="_rule.MaxDrainWh" Label="Max net battery drain (Wh)"
