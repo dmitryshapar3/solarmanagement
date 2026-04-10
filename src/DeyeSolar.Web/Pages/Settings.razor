@@ -243,9 +243,7 @@
         try
         {
             await SaveTuya();
-            _tuyaDevices = (await TuyaClient.GetDevicesAsync(CancellationToken.None))
-                .Where(d => d.Category is "cz" or "pc" or "kg")
-                .ToList();
+            _tuyaDevices = await TuyaClient.GetDevicesAsync(CancellationToken.None);
             if (_tuyaDevices.Count == 1) await SelectTuyaDevice(_tuyaDevices[0]);
         }
         catch (Exception ex) { _errorMessage = $"Failed: {ex.Message}"; }

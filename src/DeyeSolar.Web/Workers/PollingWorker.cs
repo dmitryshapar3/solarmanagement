@@ -194,21 +194,40 @@ public class PollingWorker : BackgroundService
                 string action;
                 string reason;
 
+                var anchor = rule.SocAtDrainStart?.ToString() ?? "-";
+                var drop = rule.SocAtDrainStart.HasValue ? rule.SocAtDrainStart.Value - data.BatterySoc : 0;
+
                 if (actionsByRule.TryGetValue(rule.Id, out var ruleAction))
                 {
                     action = ruleAction.TurnOn ? "ON" : "OFF";
-                    reason = ruleAction.TurnOn
-                        ? $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed"
-                        : data.BatterySoc <= rule.SocFloor
-                            ? $"SOC floor hit: {data.BatterySoc}% <= {rule.SocFloor}%"
-                            : $"Net drain {drainWh:F0}Wh >= {rule.MaxDrainWh}Wh over {rule.DrainWindowMinutes}min. Cooldown {rule.CooldownMinutes}min starts.";
+                    if (ruleAction.TurnOn)
+                    {
+                        reason = $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed";
+                    }
+                    else if (data.BatterySoc <= rule.SocFloor)
+                    {
+                        reason = $"SOC floor hit: {data.BatterySoc}% <= {rule.SocFloor}%";
+                    }
+                    else if (rule.SocAtDrainStart.HasValue && drop >= rule.MaxSocDropPercent)
+                    {
+                        reason = $"SOC drop {drop}% >= cap {rule.MaxSocDropPercent}% (anchor {anchor}% → {data.BatterySoc}%)";
+                    }
+                    else
+                    {
+                        reason = $"Net drain {drainWh:F0}Wh >= {rule.MaxDrainWh}Wh over {rule.DrainWindowMinutes}min";
+                    }
                 }
                 else
                 {
                     action = "NO_CHANGE";
-                    reason = rule.CurrentState
-                        ? $"ON: SOC={data.BatterySoc}%, net drain {drainWh:F0}Wh / {rule.MaxDrainWh}Wh in {rule.DrainWindowMinutes}min"
-                        : $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%)";
+                    if (rule.CurrentState)
+                    {
+                        reason = $"ON: SOC={data.BatterySoc}%, anchor={anchor}%, drop={drop}%/{rule.MaxSocDropPercent}%, drain={drainWh:F0}Wh/{rule.MaxDrainWh}Wh, floor={rule.SocFloor}%";
+                    }
+                    else
+                    {
+                        reason = $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%)";
+                    }
                 }
 
                 db.RuleRunLogs.Add(new RuleRunLog

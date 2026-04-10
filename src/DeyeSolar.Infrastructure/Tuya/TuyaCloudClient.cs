@@ -151,8 +151,9 @@ public class TuyaCloudClient : ISocketController
             }
         }
 
-        _logger.LogInformation("Fetched {Count} Tuya devices", devices.Count);
-        return devices;
+        var sockets = devices.Where(d => d.Category is "cz" or "pc" or "kg").ToList();
+        _logger.LogInformation("Fetched {Total} Tuya devices ({Sockets} smart sockets)", devices.Count, sockets.Count);
+        return sockets;
     }
 
     private async Task SendCommandAsync(string deviceId, string code, bool value, CancellationToken ct)

@@ -176,13 +176,12 @@ public class RuleEvaluatorTests
         Assert.Empty(actions);
     }
 
-    // === Turn OFF: SOC floor override ===
+    // === Turn OFF: SOC floor ===
 
     [Fact]
-    public void TurnOff_WhenSocAtFloor_OverridesMinOn()
+    public void TurnOff_WhenSocAtFloor_FiresImmediately()
     {
-        // Just turned on 1 min ago (well within 10-min MinOnMinutes), but SOC hit the floor.
-        // SOC floor must override the hold.
+        // SOC hit the floor just 1 min after turn-on — safety floor must fire immediately.
         var data = MakeData(soc: 55, batteryPower: 0);
         var rule = MakeRule(currentState: true);
         rule.CurrentStateChangedAt = _now.AddMinutes(-1).UtcDateTime;
@@ -206,13 +205,13 @@ public class RuleEvaluatorTests
         Assert.False(actions[0].TurnOn);
     }
 
-    // === Turn OFF: MinOnMinutes ===
+    // === Turn OFF: drain fires immediately regardless of MinOn ===
 
     [Fact]
-    public void StaysOn_WithinMinOnWindow_EvenWithHighDrain()
+    public void TurnOff_WhenDrainHigh_FiresEvenShortlyAfterTurnOn()
     {
-        // Very high drain (3000W over 15 min = 750 Wh), but device just turned on 5 min ago.
-        // MinOnMinutes=10 must hold it ON.
+        // High drain (3000W over 15 min = 750 Wh) just 5 min after turn-on.
+        // Turn-off safety must not be delayed by MinOnMinutes.
         var readings = MakeReadings(batteryPower: 3000, minutes: 15);
         var data = MakeData(soc: 75, batteryPower: 3000);
 
@@ -221,17 +220,18 @@ public class RuleEvaluatorTests
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
-        Assert.Empty(actions);
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
     }
 
     [Fact]
-    public void TurnOff_WhenMinOnElapsed_AndDrainHigh()
+    public void TurnOff_WhenDrainHigh_AndLongPastTurnOn()
     {
         var readings = MakeReadings(batteryPower: 3000, minutes: 15);
         var data = MakeData(soc: 75, batteryPower: 3000);
 
         var rule = MakeRule(currentState: true);
-        rule.CurrentStateChangedAt = _now.AddMinutes(-11).UtcDateTime; // past min-on
+        rule.CurrentStateChangedAt = _now.AddMinutes(-11).UtcDateTime;
 
         var actions = _evaluator.Evaluate(data, readings, new[] { rule }, _now);
 
@@ -475,10 +475,9 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
-    public void DrainAnchor_NotChecked_DuringMinOnHold()
+    public void TurnOff_WhenDropExceedsThreshold_FiresEvenShortlyAfterTurnOn()
     {
-        // Just turned on 1 min ago with 10-min MinOn; drop already exceeds threshold.
-        // MinOn should hold it ON (but anchor is still captured for later).
+        // Drop already exceeds threshold just 1 min after turn-on — must fire immediately.
         var data = MakeData(soc: 80, batteryPower: 500);
         var rule = MakeRule(currentState: true);
         rule.MaxSocDropPercent = 1;
@@ -487,6 +486,7 @@ public class RuleEvaluatorTests
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 
-        Assert.Empty(actions);
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
     }
 }

@@ -70,21 +70,12 @@
                          HelperText="Anchor SOC when battery starts draining. Turn off if it drops by more than this many percent before the battery recharges." />
         <MudNumericField @bind-Value="_rule.SocFloor" Label="SOC safety floor (%)"
                          Min="0" Max="100" Class="mt-2"
-                         HelperText="Hard cutoff: turn off immediately if battery drops to this level (overrides min-on time)" />
+                         HelperText="Hard cutoff: turn off immediately if battery drops to this level" />
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Anti-flapping</MudText>
-        <MudGrid>
-            <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.MinOnMinutes" Label="Min ON time (min)"
-                                 Min="0" Max="240"
-                                 HelperText="Keep ON at least this long after turning on (ignored by SOC floor)" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
-                                 Min="0" Max="240"
-                                 HelperText="Keep OFF at least this long before re-evaluating turn-on" />
-            </MudItem>
-        </MudGrid>
+        <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
+                         Min="0" Max="240"
+                         HelperText="Keep OFF at least this long before re-evaluating turn-on" />
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Evaluation</MudText>
         <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Evaluate every (sec)"

@@ -73,17 +73,9 @@ public class RuleEvaluator
         // clear when charging resumes so the next drain episode captures fresh.
         UpdateDrainAnchor(current, rule);
 
-        // Safety floor overrides everything, including MinOnMinutes
+        // Safety floor overrides everything
         if (current.BatterySoc <= rule.SocFloor)
             return true;
-
-        // Honor minimum on-time to prevent flapping on short cloud transients
-        if (rule.CurrentStateChangedAt.HasValue)
-        {
-            var elapsed = (now - new DateTimeOffset(rule.CurrentStateChangedAt.Value, TimeSpan.Zero)).TotalMinutes;
-            if (elapsed < rule.MinOnMinutes)
-                return false;
-        }
 
         // Per-episode SOC drop cap
         if (rule.SocAtDrainStart.HasValue &&
