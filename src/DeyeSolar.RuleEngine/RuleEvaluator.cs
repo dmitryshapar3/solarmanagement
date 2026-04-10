@@ -16,7 +16,11 @@ public class RuleEvaluator
         foreach (var rule in rules.Where(r => r.Enabled))
         {
             if (!IsInTimeWindow(rule, now, timeZoneId))
+            {
+                if (rule.CurrentState)
+                    actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
                 continue;
+            }
 
             if (rule.CurrentState)
             {

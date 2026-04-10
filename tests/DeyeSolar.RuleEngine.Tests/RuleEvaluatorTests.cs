@@ -303,6 +303,49 @@ public class RuleEvaluatorTests
         Assert.Single(actions);
     }
 
+    [Fact]
+    public void TimeWindow_OutsideWindow_WhenOn_ForcesOff()
+    {
+        var data = MakeData(soc: 85);
+        var rule = MakeRule(currentState: true);
+        rule.ActiveFrom = new TimeOnly(8, 0);
+        rule.ActiveTo = new TimeOnly(10, 0); // _now is 12:00 UTC, outside
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    [Fact]
+    public void TimeWindow_OutsideWindow_WhenOn_OverridesMinOnMinutes()
+    {
+        var data = MakeData(soc: 85);
+        var rule = MakeRule(currentState: true);
+        rule.ActiveFrom = new TimeOnly(8, 0);
+        rule.ActiveTo = new TimeOnly(10, 0);
+        rule.CurrentStateChangedAt = _now.AddMinutes(-1).UtcDateTime; // well inside MinOnMinutes
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    [Fact]
+    public void TimeWindow_WrappingWindow_OutsideForcesOff()
+    {
+        var data = MakeData(soc: 85);
+        var rule = MakeRule(currentState: true);
+        rule.ActiveFrom = new TimeOnly(22, 0);
+        rule.ActiveTo = new TimeOnly(6, 0); // wrap-around; _now 12:00 UTC is outside
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
     // === Disabled ===
 
     [Fact]
