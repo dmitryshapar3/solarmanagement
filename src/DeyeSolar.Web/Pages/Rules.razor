@@ -51,7 +51,7 @@ else
                 <span>SOC &ge; @context.SocTurnOnThreshold%</span>
             </MudTd>
             <MudTd>
-                <span>drain &ge; @(context.MaxDrainWh)Wh / @(context.DrainWindowMinutes)min, or SOC &le; @(context.SocFloor)%</span>
+                <span>drop &gt; @(context.MaxSocDropPercent)% per episode, drain &ge; @(context.MaxDrainWh)Wh / @(context.DrainWindowMinutes)min, SOC &le; @(context.SocFloor)%</span>
             </MudTd>
             <MudTd>@(context.IntervalSeconds)s</MudTd>
             <MudTd>

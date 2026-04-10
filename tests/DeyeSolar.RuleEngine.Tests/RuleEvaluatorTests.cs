@@ -37,6 +37,7 @@ public class RuleEvaluatorTests
         SocFloor = 55,
         MaxDrainWh = 200,
         DrainWindowMinutes = 15,
+        MaxSocDropPercent = 100, // disabled by default for tests that don't exercise it
         MinOnMinutes = 10,
         CooldownMinutes = 15,
         IntervalSeconds = 30,
@@ -310,6 +311,136 @@ public class RuleEvaluatorTests
         var data = MakeData(soc: 85);
         var rule = MakeRule(currentState: false);
         rule.Enabled = false;
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Empty(actions);
+    }
+
+    // === Drain-episode anchor (MaxSocDropPercent) ===
+
+    [Fact]
+    public void DrainAnchor_CapturedOnFirstDrainTick()
+    {
+        var data = MakeData(soc: 85, batteryPower: 300); // draining
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 5;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime; // past min-on
+        Assert.Null(rule.SocAtDrainStart);
+
+        _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Equal(85, rule.SocAtDrainStart);
+    }
+
+    [Fact]
+    public void DrainAnchor_NotCapturedWhenCharging()
+    {
+        var data = MakeData(soc: 85, batteryPower: -300); // charging
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 5;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Null(rule.SocAtDrainStart);
+    }
+
+    [Fact]
+    public void DrainAnchor_ClearedWhenChargingResumes()
+    {
+        var data = MakeData(soc: 86, batteryPower: -300); // charging now
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 5;
+        rule.SocAtDrainStart = 85; // had an anchor from before
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Null(rule.SocAtDrainStart);
+    }
+
+    [Fact]
+    public void DrainAnchor_PreservedWhenIdle()
+    {
+        var data = MakeData(soc: 85, batteryPower: 0); // idle
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 5;
+        rule.SocAtDrainStart = 85;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Equal(85, rule.SocAtDrainStart);
+    }
+
+    [Fact]
+    public void TurnOff_WhenSocDropExceedsThreshold()
+    {
+        // MaxSocDropPercent = 1, anchor at 85, now at 84 → drop = 1 → >= 1 → turn off
+        var data = MakeData(soc: 84, batteryPower: 500); // still draining
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 1;
+        rule.SocAtDrainStart = 85;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    [Fact]
+    public void StaysOn_WhenSocDropUnderThreshold()
+    {
+        // MaxSocDropPercent = 5, anchor at 85, now at 83 → drop = 2 → under threshold
+        var data = MakeData(soc: 83, batteryPower: 500);
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 5;
+        rule.SocAtDrainStart = 85;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
+
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void DrainAnchor_ReCaptureAfterChargeThenDrain()
+    {
+        // 1. Charging → anchor should be cleared
+        var charging = MakeData(soc: 90, batteryPower: -500);
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 2;
+        rule.SocAtDrainStart = 85; // stale anchor from an earlier episode
+        rule.CurrentStateChangedAt = _now.AddMinutes(-30).UtcDateTime;
+
+        _evaluator.Evaluate(charging, [], new[] { rule }, _now);
+        Assert.Null(rule.SocAtDrainStart);
+
+        // 2. Now battery is at 90% and draining → new anchor captured at 90
+        var draining = MakeData(soc: 90, batteryPower: 500);
+        _evaluator.Evaluate(draining, [], new[] { rule }, _now);
+        Assert.Equal(90, rule.SocAtDrainStart);
+
+        // 3. SOC drops to 88 → drop = 2 → triggers turn-off
+        var dropped = MakeData(soc: 88, batteryPower: 500);
+        var actions = _evaluator.Evaluate(dropped, [], new[] { rule }, _now);
+
+        Assert.Single(actions);
+        Assert.False(actions[0].TurnOn);
+    }
+
+    [Fact]
+    public void DrainAnchor_NotChecked_DuringMinOnHold()
+    {
+        // Just turned on 1 min ago with 10-min MinOn; drop already exceeds threshold.
+        // MinOn should hold it ON (but anchor is still captured for later).
+        var data = MakeData(soc: 80, batteryPower: 500);
+        var rule = MakeRule(currentState: true);
+        rule.MaxSocDropPercent = 1;
+        rule.SocAtDrainStart = 85;
+        rule.CurrentStateChangedAt = _now.AddMinutes(-1).UtcDateTime;
 
         var actions = _evaluator.Evaluate(data, [], new[] { rule }, _now);
 

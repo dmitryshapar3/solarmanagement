@@ -98,6 +98,7 @@ using (var scope = app.Services.CreateScope())
             SocFloor = 55,
             MaxDrainWh = 200,
             DrainWindowMinutes = 15,
+            MaxSocDropPercent = 1,
             MinOnMinutes = 10,
             CooldownMinutes = 15,
             IntervalSeconds = 30

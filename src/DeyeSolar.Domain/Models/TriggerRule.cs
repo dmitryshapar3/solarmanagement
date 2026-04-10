@@ -22,6 +22,10 @@ public class TriggerRule
     // Window over which net battery drain is accumulated (minutes)
     public int DrainWindowMinutes { get; set; } = 15;
 
+    // Max SOC drop allowed within a single drain episode (percent).
+    // Anchor is captured when battery first starts draining after turn-on (or after a charge interval).
+    public int MaxSocDropPercent { get; set; } = 1;
+
     // After turning ON, keep ON for at least this many minutes (unless SocFloor hit)
     public int MinOnMinutes { get; set; } = 10;
 
@@ -39,4 +43,7 @@ public class TriggerRule
     public bool CurrentState { get; set; }
     public DateTime? CurrentStateChangedAt { get; set; }
     public DateTime? LastEvaluated { get; set; }
+
+    // SOC captured at the start of the current drain episode (nullable = no active episode)
+    public int? SocAtDrainStart { get; set; }
 }

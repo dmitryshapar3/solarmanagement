@@ -65,6 +65,10 @@ public class RuleEvaluator
         TriggerRule rule,
         DateTimeOffset now)
     {
+        // Track drain-episode anchor. Capture SOC the moment battery starts draining;
+        // clear when charging resumes so the next drain episode captures fresh.
+        UpdateDrainAnchor(current, rule);
+
         // Safety floor overrides everything, including MinOnMinutes
         if (current.BatterySoc <= rule.SocFloor)
             return true;
@@ -77,8 +81,31 @@ public class RuleEvaluator
                 return false;
         }
 
+        // Per-episode SOC drop cap
+        if (rule.SocAtDrainStart.HasValue &&
+            (rule.SocAtDrainStart.Value - current.BatterySoc) >= rule.MaxSocDropPercent)
+        {
+            return true;
+        }
+
         var drainWh = CalculateNetBatteryDrainWh(readings, rule.DrainWindowMinutes, now);
         return drainWh >= rule.MaxDrainWh;
+    }
+
+    private static void UpdateDrainAnchor(InverterData current, TriggerRule rule)
+    {
+        if (current.BatteryPower > 0)
+        {
+            // Battery is draining — capture SOC if we don't already have an anchor
+            if (!rule.SocAtDrainStart.HasValue)
+                rule.SocAtDrainStart = current.BatterySoc;
+        }
+        else if (current.BatteryPower < 0)
+        {
+            // Battery is actively charging — end of drain episode, clear anchor
+            rule.SocAtDrainStart = null;
+        }
+        // BatteryPower == 0 (idle): leave anchor unchanged
     }
 
     // Signed trapezoidal integral of BatteryPower over the window.

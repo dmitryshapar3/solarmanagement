@@ -65,6 +65,9 @@
         <MudNumericField @bind-Value="_rule.DrainWindowMinutes" Label="Drain window (min)"
                          Min="1" Max="240" Class="mt-2"
                          HelperText="Time window over which to accumulate net battery drain" />
+        <MudNumericField @bind-Value="_rule.MaxSocDropPercent" Label="Max SOC drop per drain episode (%)"
+                         Min="0" Max="100" Class="mt-2"
+                         HelperText="Anchor SOC when battery starts draining. Turn off if it drops by more than this many percent before the battery recharges." />
         <MudNumericField @bind-Value="_rule.SocFloor" Label="SOC safety floor (%)"
                          Min="0" Max="100" Class="mt-2"
                          HelperText="Hard cutoff: turn off immediately if battery drops to this level (overrides min-on time)" />
@@ -118,6 +121,7 @@
         SocFloor = 55,
         MaxDrainWh = 200,
         DrainWindowMinutes = 15,
+        MaxSocDropPercent = 1,
         MinOnMinutes = 10,
         CooldownMinutes = 15,
         IntervalSeconds = 30
