@@ -1,7 +1,9 @@
 @page "/"
 @inject InverterDataSnapshot Snapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
+@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.TuyaOptions> TuyaOpts
+@using DeyeSolar.Web.Shared
 @implements IDisposable
 
 <PageTitle>Dashboard - DeyeSolar</PageTitle>
@@ -97,6 +99,52 @@
                 }
             </MudPaper>
         </MudItem>
+
+        <!-- Rules -->
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Rules</MudText>
+                @if (_rules == null || _rules.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No rules configured.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>State</th>
+                                <th>Last switched</th>
+                                <th>Last checked</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rule in _rules)
+                            {
+                                <tr>
+                                    <td>
+                                        @rule.Name
+                                        @if (!rule.Enabled)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">disabled</MudChip>
+                                        }
+                                    </td>
+                                    <td>
+                                        <MudChip T="string" Size="Size.Small"
+                                                 Color="@(rule.CurrentState ? Color.Success : Color.Default)">
+                                            @(rule.CurrentState ? "ON" : "OFF")
+                                        </MudChip>
+                                    </td>
+                                    <td>@FormatTimestamp(rule.CurrentStateChangedAt)</td>
+                                    <td>@FormatTimestamp(rule.LastEvaluated)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
     }
 </MudGrid>
 
@@ -104,6 +152,7 @@
 
 @code {
     private InverterData? _data;
+    private List<TriggerRule>? _rules;
     private string? _actionMessage;
     private Severity _actionSeverity;
     private string? _tz;
@@ -113,13 +162,29 @@
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _tz = display.TimeZoneId;
         _data = Snapshot.Current;
+        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
         Snapshot.OnDataUpdated += OnDataUpdated;
     }
 
     private async void OnDataUpdated()
     {
         _data = Snapshot.Current;
+        try
+        {
+            _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // keep previous rules on transient failure
+        }
         await InvokeAsync(StateHasChanged);
+    }
+
+    private string FormatTimestamp(DateTime? utc)
+    {
+        if (!utc.HasValue) return "-";
+        var local = TimeHelper.ToUserTime(utc.Value, _tz);
+        return local.ToString("MM/dd HH:mm:ss");
     }
 
     private async Task ManualToggle(bool turnOn)
