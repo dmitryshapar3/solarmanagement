@@ -1,0 +1,4 @@
+fastapi
+httpx
+tinytuya
+uvicorn[standard]

@@ -1,0 +1,22 @@
+services:
+  deye-home-bridge:
+    build:
+      context: ..
+      dockerfile: bridge/Dockerfile
+    # For Linux LAN discovery, consider uncommenting the next line and removing the ports block.
+    # network_mode: host
+    ports:
+      - "8081:8081"
+    environment:
+      DEYE_CLUSTER_BASE_URL: https://deye.example.com
+      DEYE_BRIDGE_ID: home-main
+      DEYE_BRIDGE_TOKEN: replace-me
+      DEYE_BRIDGE_CONFIG: /config/bridge-config.json
+      DEYE_BRIDGE_STATE: /state/bridge-state.json
+      DEYE_BRIDGE_POLL_INTERVAL: "2"
+      DEYE_BRIDGE_REQUEST_TIMEOUT: "10"
+      DEYE_BRIDGE_SCAN_TIMEOUT: "5"
+    volumes:
+      - ./bridge-config.json:/config/bridge-config.json
+      - ./bridge-state:/state
+    restart: unless-stopped

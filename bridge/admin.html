@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deye Home Bridge</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #10212b;
+      --muted: #5d6a73;
+      --line: #d7dee3;
+      --primary: #0f766e;
+      --primary-strong: #115e59;
+      --warning: #b45309;
+      --danger: #b91c1c;
+      --ok: #166534;
+      --shadow: 0 10px 30px rgba(16, 33, 43, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 30%),
+        linear-gradient(180deg, #f8fafb 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    h1, h2 {
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3rem);
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      margin-bottom: 16px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .hero {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .hero-card,
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(16, 33, 43, 0.08);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card {
+      padding: 24px;
+    }
+
+    .hero-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 20px;
+    }
+
+    .stat {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #f7fafb;
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat span {
+      font-weight: 600;
+      font-size: 0.98rem;
+      word-break: break-word;
+    }
+
+    .layout {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+      transform: none;
+    }
+
+    .primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .secondary {
+      background: #edf3f2;
+      color: var(--primary-strong);
+    }
+
+    .danger {
+      background: #fef2f2;
+      color: var(--danger);
+    }
+
+    .muted-box {
+      background: #f8fafb;
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      padding: 14px 16px;
+    }
+
+    .hint {
+      margin-top: 10px;
+      color: var(--warning);
+      font-size: 0.92rem;
+    }
+
+    .message {
+      display: none;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-weight: 600;
+    }
+
+    .message.ok {
+      display: block;
+      background: #ecfdf3;
+      color: var(--ok);
+    }
+
+    .message.error {
+      display: block;
+      background: #fef2f2;
+      color: var(--danger);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafb;
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid #c7d1d8;
+      border-radius: 10px;
+      padding: 10px 11px;
+      font: inherit;
+      background: #fff;
+      color: var(--text);
+    }
+
+    .scan-item {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      background: #fbfcfd;
+    }
+
+    .scan-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .scan-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .scan-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: #e9f5f3;
+      color: var(--primary-strong);
+    }
+
+    .chip.warn {
+      background: #fff7ed;
+      color: var(--warning);
+    }
+
+    .chip.muted {
+      background: #eef2f5;
+      color: var(--muted);
+    }
+
+    code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.92em;
+      background: #eef2f5;
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
+
+    .empty {
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      background: #fbfcfd;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="hero-card">
+      <h1>Home Bridge Admin</h1>
+      <p>Scan your LAN, pick devices, and save the routing config that the bridge uses for local Tuya control.</p>
+      <div class="hero-grid" id="stats"></div>
+    </div>
+  </section>
+
+  <section class="layout">
+    <div class="panel">
+      <h2>Configured Devices</h2>
+      <div id="message" class="message"></div>
+      <div class="actions">
+        <button class="primary" id="save-button">Save Config</button>
+        <button class="secondary" id="add-button">Add Blank Row</button>
+        <button class="secondary" id="refresh-button">Reload</button>
+      </div>
+      <div class="muted-box">
+        <p>Local keys are still required. Network scan can discover IDs, IPs, and protocol hints, but it cannot recover the Tuya local key.</p>
+      </div>
+      <div class="table-wrap" style="margin-top: 16px;">
+        <table>
+          <thead>
+          <tr>
+            <th>Name</th>
+            <th>Device ID</th>
+            <th>Local Key</th>
+            <th>Category</th>
+            <th>Protocol</th>
+            <th>IP</th>
+            <th>Action</th>
+          </tr>
+          </thead>
+          <tbody id="device-rows"></tbody>
+        </table>
+      </div>
+      <div id="device-empty" class="empty" style="display:none; margin-top: 16px;">
+        No devices configured yet. Scan the network or add a blank row.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Scan Network</h2>
+      <div class="actions">
+        <button class="primary" id="scan-button">Scan Now</button>
+      </div>
+      <div class="muted-box">
+        <p>Docker note: discovery uses LAN broadcast. Plain container bridge networking may not see your home LAN devices.</p>
+        <p class="hint" id="docker-hint"></p>
+      </div>
+      <div style="margin-top: 16px;">
+        <p id="scan-meta"></p>
+      </div>
+      <div id="scan-results" class="scan-list" style="margin-top: 16px;"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const state = {
+    devices: [],
+    scanResults: [],
+    status: null
+  };
+
+  const messageEl = document.getElementById('message');
+  const rowsEl = document.getElementById('device-rows');
+  const emptyEl = document.getElementById('device-empty');
+  const scanResultsEl = document.getElementById('scan-results');
+  const statsEl = document.getElementById('stats');
+  const dockerHintEl = document.getElementById('docker-hint');
+  const scanMetaEl = document.getElementById('scan-meta');
+  const saveButton = document.getElementById('save-button');
+  const scanButton = document.getElementById('scan-button');
+  const addButton = document.getElementById('add-button');
+  const refreshButton = document.getElementById('refresh-button');
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function formatTime(value) {
+    if (!value) return 'never';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
+  }
+
+  function showMessage(kind, text) {
+    messageEl.className = `message ${kind}`;
+    messageEl.textContent = text;
+  }
+
+  function clearMessage() {
+    messageEl.className = 'message';
+    messageEl.textContent = '';
+  }
+
+  function normalizeDevice(device) {
+    return {
+      name: device.name || '',
+      device_id: device.device_id || '',
+      local_key: device.local_key || '',
+      category: device.category || '',
+      protocol_version: device.protocol_version || '3.3',
+      ip: device.ip || ''
+    };
+  }
+
+  function renderStats() {
+    const status = state.status || {};
+    const cards = [
+      ['Bridge', status.bridgeId || '-'],
+      ['Cluster', status.clusterBaseUrl || '-'],
+      ['Configured', String(state.devices.length)],
+      ['Last Sync', formatTime(status.lastSyncAt)],
+      ['Last Scan', formatTime(status.lastScanAt)],
+      ['Config Path', status.configPath || '-']
+    ];
+
+    if (status.lastError) {
+      cards.push(['Last Error', status.lastError]);
+    }
+
+    statsEl.innerHTML = cards.map(([label, value]) => `
+      <div class="stat">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(value)}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderDevices() {
+    if (state.devices.length === 0) {
+      rowsEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    rowsEl.innerHTML = state.devices.map((device, index) => `
+      <tr>
+        <td><input data-index="${index}" data-field="name" value="${escapeHtml(device.name)}" placeholder="Solar Socket"></td>
+        <td><input data-index="${index}" data-field="device_id" value="${escapeHtml(device.device_id)}" placeholder="bf0a..."></td>
+        <td><input type="password" data-index="${index}" data-field="local_key" value="${escapeHtml(device.local_key)}" placeholder="required"></td>
+        <td><input data-index="${index}" data-field="category" value="${escapeHtml(device.category)}" placeholder="cz"></td>
+        <td><input data-index="${index}" data-field="protocol_version" value="${escapeHtml(device.protocol_version)}" placeholder="3.3"></td>
+        <td><input data-index="${index}" data-field="ip" value="${escapeHtml(device.ip)}" placeholder="192.168.1.50"></td>
+        <td><button class="danger" data-remove-index="${index}">Remove</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderScanResults() {
+    if (state.scanResults.length === 0) {
+      scanResultsEl.innerHTML = '<div class="empty">No scan results yet.</div>';
+      return;
+    }
+
+    scanResultsEl.innerHTML = state.scanResults.map((device, index) => `
+      <div class="scan-item">
+        <div class="scan-head">
+          <div>
+            <strong>${escapeHtml(device.name || device.device_id || 'Unknown device')}</strong>
+            <p style="margin-top:6px;">ID <code>${escapeHtml(device.device_id || '-')}</code> | IP <code>${escapeHtml(device.ip || '-')}</code></p>
+          </div>
+          <button class="secondary" data-apply-scan-index="${index}">${device.configured ? 'Update Row' : 'Add Device'}</button>
+        </div>
+        <div class="scan-meta">
+          <span class="chip">${escapeHtml(device.protocol_version || '3.3')}</span>
+          ${device.category ? `<span class="chip muted">${escapeHtml(device.category)}</span>` : ''}
+          ${device.product_key ? `<span class="chip muted">product ${escapeHtml(device.product_key)}</span>` : ''}
+          ${device.configured ? '<span class="chip">configured</span>' : '<span class="chip warn">not configured</span>'}
+          ${device.has_local_key ? '<span class="chip">local key saved</span>' : '<span class="chip warn">local key missing</span>'}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function render() {
+    renderStats();
+    renderDevices();
+    renderScanResults();
+    if (state.status) {
+      dockerHintEl.textContent = state.status.dockerDiscoveryHint || '';
+      scanMetaEl.textContent = `Last scan: ${formatTime(state.status.lastScanAt)}`;
+    }
+  }
+
+  async function fetchJson(url, options = {}) {
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      },
+      ...options
+    });
+
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+
+    if (!response.ok) {
+      throw new Error(payload.detail || payload.message || `Request failed (${response.status})`);
+    }
+
+    return payload;
+  }
+
+  async function reloadStatus() {
+    const payload = await fetchJson('/api/admin/status');
+    state.status = payload;
+    state.devices = (payload.devices || []).map(normalizeDevice);
+    state.scanResults = payload.lastScanResults || [];
+    render();
+  }
+
+  async function saveConfig() {
+    clearMessage();
+    saveButton.disabled = true;
+
+    try {
+      const cleaned = state.devices
+        .map(normalizeDevice)
+        .filter(device => device.device_id || device.name || device.local_key || device.ip);
+
+      if (cleaned.some(device => !device.device_id || !device.name || !device.local_key)) {
+        throw new Error('Each saved row needs device ID, name, and local key.');
+      }
+
+      const payload = await fetchJson('/api/admin/config', {
+        method: 'POST',
+        body: JSON.stringify({ devices: cleaned })
+      });
+
+      state.status = payload;
+      state.devices = (payload.devices || []).map(normalizeDevice);
+      state.scanResults = payload.lastScanResults || [];
+      showMessage('ok', 'Bridge config saved.');
+      render();
+    } catch (error) {
+      showMessage('error', error.message);
+    } finally {
+      saveButton.disabled = false;
+    }
+  }
+
+  async function runScan() {
+    clearMessage();
+    scanButton.disabled = true;
+
+    try {
+      const payload = await fetchJson('/api/admin/scan', { method: 'POST', body: '{}' });
+      state.scanResults = payload.devices || [];
+      if (state.status) {
+        state.status.lastScanAt = payload.lastScanAt;
+        state.status.dockerDiscoveryHint = payload.dockerDiscoveryHint;
+      }
+      showMessage('ok', `Scan finished. Found ${state.scanResults.length} device(s).`);
+      render();
+    } catch (error) {
+      showMessage('error', error.message);
+    } finally {
+      scanButton.disabled = false;
+    }
+  }
+
+  function addBlankDevice(prefill = {}) {
+    state.devices.push(normalizeDevice(prefill));
+    renderDevices();
+  }
+
+  function applyScanResult(index) {
+    const result = state.scanResults[index];
+    if (!result) return;
+
+    const existingIndex = state.devices.findIndex(device => device.device_id === result.device_id);
+    const existing = existingIndex >= 0 ? state.devices[existingIndex] : null;
+    const next = normalizeDevice({
+      ...(existing || {}),
+      name: existing?.name || result.name || '',
+      device_id: result.device_id || existing?.device_id || '',
+      category: existing?.category || result.category || '',
+      protocol_version: existing?.protocol_version || result.protocol_version || '3.3',
+      ip: result.ip || existing?.ip || '',
+      local_key: existing?.local_key || ''
+    });
+
+    if (existingIndex >= 0) {
+      state.devices[existingIndex] = next;
+    } else {
+      state.devices.push(next);
+    }
+
+    renderDevices();
+  }
+
+  rowsEl.addEventListener('input', (event) => {
+    const target = event.target;
+    const index = Number(target.dataset.index);
+    const field = target.dataset.field;
+    if (Number.isNaN(index) || !field || !state.devices[index]) return;
+    state.devices[index][field] = target.value;
+  });
+
+  rowsEl.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-remove-index]');
+    if (!button) return;
+    const index = Number(button.dataset.removeIndex);
+    if (Number.isNaN(index)) return;
+    state.devices.splice(index, 1);
+    renderDevices();
+  });
+
+  scanResultsEl.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-apply-scan-index]');
+    if (!button) return;
+    const index = Number(button.dataset.applyScanIndex);
+    if (Number.isNaN(index)) return;
+    applyScanResult(index);
+  });
+
+  saveButton.addEventListener('click', saveConfig);
+  scanButton.addEventListener('click', runScan);
+  addButton.addEventListener('click', () => addBlankDevice());
+  refreshButton.addEventListener('click', async () => {
+    clearMessage();
+    try {
+      await reloadStatus();
+    } catch (error) {
+      showMessage('error', error.message);
+    }
+  });
+
+  reloadStatus().catch((error) => showMessage('error', error.message));
+</script>
+</body>
+</html>

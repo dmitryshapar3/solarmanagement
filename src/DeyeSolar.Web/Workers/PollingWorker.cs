@@ -2,7 +2,6 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +13,7 @@ public class PollingWorker : BackgroundService
 {
     private readonly IInverterDataSource _dataSource;
     private readonly ISocketController _socketController;
-    private readonly TuyaCloudClient _tuyaClient;
+    private readonly ISocketInventoryService _socketInventoryService;
     private readonly IRuleRepository _ruleRepository;
     private readonly InverterDataSnapshot _snapshot;
     private readonly DeviceStatusSnapshot _deviceStatusSnapshot;
@@ -27,7 +26,7 @@ public class PollingWorker : BackgroundService
     public PollingWorker(
         IInverterDataSource dataSource,
         ISocketController socketController,
-        TuyaCloudClient tuyaClient,
+        ISocketInventoryService socketInventoryService,
         IRuleRepository ruleRepository,
         InverterDataSnapshot snapshot,
         DeviceStatusSnapshot deviceStatusSnapshot,
@@ -39,7 +38,7 @@ public class PollingWorker : BackgroundService
     {
         _dataSource = dataSource;
         _socketController = socketController;
-        _tuyaClient = tuyaClient;
+        _socketInventoryService = socketInventoryService;
         _ruleRepository = ruleRepository;
         _snapshot = snapshot;
         _deviceStatusSnapshot = deviceStatusSnapshot;
@@ -273,13 +272,13 @@ public class PollingWorker : BackgroundService
     {
         try
         {
-            var devices = await _tuyaClient.GetDevicesWithStatusAsync(ct);
+            var devices = await _socketInventoryService.GetCachedDevicesAsync(ct);
             _deviceStatusSnapshot.Update(devices);
-            _logger.LogDebug("Refreshed status for {Count} Tuya device(s)", devices.Count);
+            _logger.LogDebug("Refreshed status for {Count} smart socket(s)", devices.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to refresh Tuya device statuses");
+            _logger.LogWarning(ex, "Failed to refresh smart socket statuses");
         }
     }
 
