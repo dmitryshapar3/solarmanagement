@@ -108,11 +108,12 @@ public class PollingWorker : BackgroundService
 
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         var actions = _ruleEvaluator.Evaluate(data, recentReadings, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
-
-        await LogRuleRunsAsync(data, recentReadings, dueRules, actions, ct);
+        var successfulActions = new HashSet<int>();
+        var failedActions = new Dictionary<int, string>();
 
         foreach (var action in actions)
         {
+            var rule = dueRules.First(r => r.Id == action.RuleId);
             try
             {
                 if (action.TurnOn)
@@ -120,16 +121,19 @@ public class PollingWorker : BackgroundService
                 else
                     await _socketController.TurnOffAsync(action.EntityId, ct);
 
-                var rule = dueRules.First(r => r.Id == action.RuleId);
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
+                successfulActions.Add(action.RuleId);
 
                 _logger.LogInformation("Rule '{RuleName}' triggered: {Action} {EntityId}",
                     rule.Name, action.TurnOn ? "ON" : "OFF", action.EntityId);
             }
             catch (Exception ex)
             {
+                rule.LastEvaluated = now;
+                await _ruleRepository.UpdateAsync(rule, ct);
+                failedActions[action.RuleId] = $"{(action.TurnOn ? "ON" : "OFF")} failed: {ex.Message}";
                 _logger.LogError(ex, "Failed to execute action for rule {RuleId}", action.RuleId);
             }
         }
@@ -143,6 +147,8 @@ public class PollingWorker : BackgroundService
                 await _ruleRepository.UpdateAsync(rule, ct);
             }
         }
+
+        await LogRuleRunsAsync(data, recentReadings, dueRules, actions, successfulActions, failedActions, ct);
     }
 
     private static bool IsDueForEvaluation(TriggerRule rule, DateTime now)
@@ -179,6 +185,8 @@ public class PollingWorker : BackgroundService
         IReadOnlyList<InverterData> recentReadings,
         List<TriggerRule> rules,
         IReadOnlyList<RuleAction> actions,
+        IReadOnlySet<int> successfulActions,
+        IReadOnlyDictionary<int, string> failedActions,
         CancellationToken ct)
     {
         try
@@ -193,11 +201,11 @@ public class PollingWorker : BackgroundService
 
                 string action;
                 string reason;
-
                 var anchor = rule.SocAtDrainStart?.ToString() ?? "-";
                 var drop = rule.SocAtDrainStart.HasValue ? rule.SocAtDrainStart.Value - data.BatterySoc : 0;
 
-                if (actionsByRule.TryGetValue(rule.Id, out var ruleAction))
+                if (actionsByRule.TryGetValue(rule.Id, out var ruleAction) &&
+                    successfulActions.Contains(rule.Id))
                 {
                     action = ruleAction.TurnOn ? "ON" : "OFF";
                     if (ruleAction.TurnOn)
@@ -216,6 +224,11 @@ public class PollingWorker : BackgroundService
                     {
                         reason = $"Net drain {drainWh:F0}Wh >= {rule.MaxDrainWh}Wh over {rule.DrainWindowMinutes}min";
                     }
+                }
+                else if (failedActions.TryGetValue(rule.Id, out var failureReason))
+                {
+                    action = "ERROR";
+                    reason = failureReason;
                 }
                 else
                 {
