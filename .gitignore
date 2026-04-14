@@ -11,3 +11,4 @@ obj/
 .DS_Store
 appsettings.*.local.json
 scripts/restore-creds.*
+bridge/__pycache__/
