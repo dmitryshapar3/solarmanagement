@@ -1,0 +1,21 @@
+{
+  "cluster_base_url": "http://157.250.198.4:30880",
+  "bridge_id": "home-main",
+  "bridge_token": "replace-me",
+  "bridge_config_path": "bridge-config.json",
+  "bridge_state_path": "bridge-state.json",
+  "cloud_config_path": "cloud-config.json",
+  "local_key_hook_timeout": 30,
+  "discovery_mode": "task-helper",
+  "discovery_task_name": "DeyeHomeBridgeDiscovery",
+  "discovery_request_path": "discovery-request.json",
+  "discovery_result_path": "discovery-result.json",
+  "discovery_wait_timeout": 25,
+  "bind_host": "127.0.0.1",
+  "port": 8081,
+  "poll_interval": 2,
+  "request_timeout": 10,
+  "scan_timeout": 15,
+  "log_level": "info",
+  "log_path": "bridge-service.log"
+}

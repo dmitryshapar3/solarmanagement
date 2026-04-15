@@ -2,7 +2,12 @@ import asyncio
 import json
 import logging
 import os
+import queue
 import socket
+import subprocess
+import threading
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,13 +17,15 @@ import httpx
 import tinytuya
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from local_key_hook import LocalKeyRequest, LocalKeyResult, resolve_local_key
 
 
+BASE_DIR = Path(__file__).resolve().parent
 BRIDGE_VERSION = "1.1.0"
-ADMIN_UI_PATH = Path(__file__).with_name("admin.html")
-DOCKER_DISCOVERY_HINT = (
-    "TinyTuya discovery inside Docker may need host or macvlan networking. "
-    "If scans return no devices, enter IPs and local keys manually or change the container network mode."
+ADMIN_UI_PATH = BASE_DIR / "admin.html"
+DISCOVERY_HINT = (
+    "Network scan discovers device IDs, IPs, and protocol hints. "
+    "If a local key hook or Cloud Key Assist is configured, scan can also fill local keys."
 )
 LOGGER = logging.getLogger("deye-home-bridge")
 
@@ -72,26 +79,76 @@ class DeviceConfig:
         }
 
 
+@dataclass
+class CloudKeyConfig:
+    api_region: str = ""
+    api_key: str = ""
+    api_secret: str = ""
+    api_device_id: str = ""
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "CloudKeyConfig":
+        payload = payload or {}
+        return cls(
+            api_region=str(payload.get("apiRegion", "")).strip(),
+            api_key=str(payload.get("apiKey", "")).strip(),
+            api_secret=str(payload.get("apiSecret", "")).strip(),
+            api_device_id=str(payload.get("apiDeviceID", "")).strip(),
+        )
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_region and self.api_key and self.api_secret)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "apiRegion": self.api_region,
+            "apiKey": self.api_key,
+            "apiSecret": self.api_secret,
+            "apiDeviceID": self.api_device_id,
+        }
+
+
 class BridgeRuntime:
     def __init__(self) -> None:
         self.cluster_base_url = get_env("DEYE_CLUSTER_BASE_URL", required=True).rstrip("/")
         self.bridge_id = get_env("DEYE_BRIDGE_ID", "home-main")
         self.bridge_token = get_env("DEYE_BRIDGE_TOKEN", required=True)
-        self.config_path = Path(get_env("DEYE_BRIDGE_CONFIG", "/config/bridge-config.json"))
-        self.state_path = Path(get_env("DEYE_BRIDGE_STATE", "/state/bridge-state.json"))
+        self.config_path = Path(get_env("DEYE_BRIDGE_CONFIG", str(BASE_DIR / "bridge-config.json")))
+        self.state_path = Path(get_env("DEYE_BRIDGE_STATE", str(BASE_DIR / "bridge-state.json")))
+        self.cloud_config_path = Path(get_env("DEYE_BRIDGE_CLOUD_CONFIG", str(BASE_DIR / "cloud-config.json")))
         self.poll_interval = max(1.0, float(get_env("DEYE_BRIDGE_POLL_INTERVAL", "2")))
         self.request_timeout = max(1.0, float(get_env("DEYE_BRIDGE_REQUEST_TIMEOUT", "10")))
-        self.scan_timeout = max(1, int(float(get_env("DEYE_BRIDGE_SCAN_TIMEOUT", "5"))))
+        self.scan_timeout = max(1, int(float(get_env("DEYE_BRIDGE_SCAN_TIMEOUT", "15"))))
+        self.local_key_hook_timeout = max(0.0, float(get_env("DEYE_BRIDGE_LOCAL_KEY_HOOK_TIMEOUT", "30")))
+        self.discovery_mode = get_env("DEYE_BRIDGE_DISCOVERY_MODE", "direct").strip().lower() or "direct"
+        self.discovery_task_name = get_env("DEYE_BRIDGE_DISCOVERY_TASK_NAME", "DeyeHomeBridgeDiscovery")
+        self.discovery_request_path = Path(
+            get_env("DEYE_BRIDGE_DISCOVERY_REQUEST_PATH", str(BASE_DIR / "discovery-request.json"))
+        )
+        self.discovery_result_path = Path(
+            get_env("DEYE_BRIDGE_DISCOVERY_RESULT_PATH", str(BASE_DIR / "discovery-result.json"))
+        )
+        self.discovery_wait_timeout = max(
+            float(self.scan_timeout) + 5.0,
+            float(get_env("DEYE_BRIDGE_DISCOVERY_WAIT_TIMEOUT", str(float(self.scan_timeout) + 10.0))),
+        )
         self.devices: dict[str, DeviceConfig] = {}
         self.completed_commands: list[dict[str, Any]] = []
         self.last_sync_at: str | None = None
         self.last_error: str | None = None
         self.last_scan_at: str | None = None
         self.last_scan_results: list[dict[str, Any]] = []
+        self.last_cloud_lookup_at: str | None = None
+        self.last_cloud_lookup_error: str | None = None
+        self.last_local_key_hook_at: str | None = None
+        self.last_local_key_hook_error: str | None = None
+        self.cloud_key_config = CloudKeyConfig()
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
 
     async def start(self) -> None:
+        self.load_cloud_config()
         self.load_config()
         if self.devices:
             await asyncio.to_thread(self.refresh_device_ips)
@@ -128,6 +185,26 @@ class BridgeRuntime:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
+    def read_cloud_config_payload(self) -> dict[str, Any]:
+        if not self.cloud_config_path.exists():
+            return {}
+
+        try:
+            payload = json.loads(self.cloud_config_path.read_text())
+        except json.JSONDecodeError as exc:
+            LOGGER.warning("Cloud config file is invalid JSON, treating as empty: %s", exc)
+            return {}
+
+        if not isinstance(payload, dict):
+            LOGGER.warning("Cloud config file is not an object, treating as empty.")
+            return {}
+
+        return payload
+
+    def write_cloud_config_payload(self, payload: dict[str, Any]) -> None:
+        self.cloud_config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.cloud_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
     def load_config(self) -> None:
         payload = self.read_config_payload()
         cached_ips = self.load_state_cache()
@@ -146,6 +223,31 @@ class BridgeRuntime:
 
         self.devices = loaded
         LOGGER.info("Loaded %s configured device(s)", len(self.devices))
+
+    def load_cloud_config(self) -> None:
+        self.cloud_key_config = CloudKeyConfig.from_dict(self.read_cloud_config_payload())
+
+    def save_cloud_config(self, config: CloudKeyConfig) -> None:
+        self.cloud_key_config = config
+        self.write_cloud_config_payload(config.to_dict())
+        self.last_cloud_lookup_error = None
+
+    def cloud_config_state(self) -> dict[str, Any]:
+        return {
+            **self.cloud_key_config.to_dict(),
+            "configPath": str(self.cloud_config_path),
+            "configured": self.cloud_key_config.is_configured,
+            "lastLookupAt": self.last_cloud_lookup_at,
+            "lastLookupError": self.last_cloud_lookup_error,
+        }
+
+    def local_key_hook_state(self) -> dict[str, Any]:
+        return {
+            "modulePath": str(BASE_DIR / "local_key_hook.py"),
+            "timeoutSeconds": self.local_key_hook_timeout,
+            "lastLookupAt": self.last_local_key_hook_at,
+            "lastLookupError": self.last_local_key_hook_error,
+        }
 
     def save_config(self) -> None:
         payload = {
@@ -208,10 +310,282 @@ class BridgeRuntime:
         LOGGER.info("Replaced bridge config with %s device(s)", len(self.devices))
 
     def _scan_raw(self) -> dict[str, Any]:
+        if self.discovery_mode == "task-helper":
+            return self._scan_via_task_helper()
         discovered = tinytuya.deviceScan(False, self.scan_timeout)
         if not isinstance(discovered, dict):
             raise RuntimeError("TinyTuya discovery returned an unexpected payload.")
         return discovered
+
+    def _load_cloud_devices(self, discovered: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        config = self.cloud_key_config
+        if not config.is_configured:
+            return {}
+
+        sample_device_id = config.api_device_id
+        if not sample_device_id:
+            for key, details in discovered.items():
+                if not isinstance(details, dict):
+                    continue
+                sample_device_id = str(
+                    details.get("gwId")
+                    or details.get("id")
+                    or details.get("device_id")
+                    or ""
+                ).strip()
+                if sample_device_id:
+                    break
+
+        cloud = tinytuya.Cloud(
+            apiRegion=config.api_region,
+            apiKey=config.api_key,
+            apiSecret=config.api_secret,
+            apiDeviceID=sample_device_id or None,
+        )
+        if cloud.error:
+            err = cloud.error.get("Payload") or cloud.error
+            raise RuntimeError(str(err))
+
+        devices = cloud.getdevices(False, include_map=False)
+        if not isinstance(devices, list):
+            err = devices.get("Payload") if isinstance(devices, dict) else devices
+            raise RuntimeError(str(err or "Unable to get device list from Tuya Cloud."))
+
+        mapped: dict[str, dict[str, Any]] = {}
+        for item in devices:
+            if not isinstance(item, dict):
+                continue
+            device_id = str(item.get("id", "")).strip()
+            if not device_id:
+                continue
+            mapped[device_id] = item
+
+        self.last_cloud_lookup_at = datetime.now(timezone.utc).isoformat()
+        self.last_cloud_lookup_error = None
+        return mapped
+
+    def _enrich_discovery_with_cloud_keys(self, discovered: dict[str, Any]) -> dict[str, Any]:
+        if not discovered or not self.cloud_key_config.is_configured:
+            return discovered
+
+        try:
+            cloud_devices = self._load_cloud_devices(discovered)
+        except Exception as exc:
+            self.last_cloud_lookup_error = str(exc)
+            LOGGER.warning("Cloud key lookup failed: %s", exc)
+            return discovered
+
+        enriched: dict[str, Any] = {}
+        for key, details in discovered.items():
+            if not isinstance(details, dict):
+                continue
+
+            copied = dict(details)
+            existing_local_key = str(
+                copied.get("local_key")
+                or copied.get("localKey")
+                or copied.get("key")
+                or ""
+            ).strip()
+            if existing_local_key:
+                enriched[str(key)] = copied
+                continue
+
+            device_id = str(
+                copied.get("gwId")
+                or copied.get("id")
+                or copied.get("device_id")
+                or ""
+            ).strip()
+            cloud_device = cloud_devices.get(device_id)
+            if cloud_device:
+                local_key = str(cloud_device.get("key", "")).strip()
+                if local_key:
+                    copied["local_key"] = local_key
+                    copied["localKeySource"] = "cloud"
+                if not copied.get("name") and cloud_device.get("name"):
+                    copied["name"] = cloud_device["name"]
+                if not copied.get("category") and cloud_device.get("category"):
+                    copied["category"] = cloud_device["category"]
+                if not copied.get("productKey") and cloud_device.get("product_id"):
+                    copied["productKey"] = cloud_device["product_id"]
+
+            enriched[str(key)] = copied
+
+        return enriched
+
+    def _resolve_local_key_via_hook(self, request: LocalKeyRequest) -> LocalKeyResult | None:
+        if self.local_key_hook_timeout <= 0:
+            return None
+
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+
+        def run_hook() -> None:
+            try:
+                result_queue.put(("result", resolve_local_key(request)))
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        worker = threading.Thread(
+            target=run_hook,
+            name=f"local-key-hook-{request.ip}",
+            daemon=True,
+        )
+        worker.start()
+
+        try:
+            status, raw_result = result_queue.get(timeout=self.local_key_hook_timeout)
+        except queue.Empty as exc:
+            raise TimeoutError(
+                f"Timed out waiting for local key hook after {self.local_key_hook_timeout:.0f}s."
+            ) from exc
+
+        if status == "error":
+            raise raw_result
+
+        if raw_result is None:
+            return None
+
+        if isinstance(raw_result, str):
+            normalized = LocalKeyResult(local_key=raw_result, source="hook")
+        elif isinstance(raw_result, LocalKeyResult):
+            normalized = raw_result
+        else:
+            raise RuntimeError(
+                "local_key_hook.resolve_local_key() must return None, a string local key, or LocalKeyResult."
+            )
+
+        local_key = str(normalized.local_key).strip()
+        if not local_key:
+            return None
+
+        source = str(normalized.source or "hook").strip() or "hook"
+        return LocalKeyResult(local_key=local_key, source=source)
+
+    def _enrich_discovery_with_local_key_hook(self, discovered: dict[str, Any]) -> dict[str, Any]:
+        if not discovered:
+            return discovered
+
+        enriched: dict[str, Any] = {}
+        last_error: str | None = None
+        resolved_any = False
+
+        for key, details in discovered.items():
+            if not isinstance(details, dict):
+                continue
+
+            copied = dict(details)
+            existing_local_key = str(
+                copied.get("local_key")
+                or copied.get("localKey")
+                or copied.get("key")
+                or ""
+            ).strip()
+            if existing_local_key:
+                enriched[str(key)] = copied
+                continue
+
+            request = LocalKeyRequest(
+                ip=str(copied.get("ip") or copied.get("ip_address") or key or "").strip(),
+                device_id=str(
+                    copied.get("gwId")
+                    or copied.get("id")
+                    or copied.get("device_id")
+                    or ""
+                ).strip(),
+                name=str(
+                    copied.get("name")
+                    or copied.get("product_name")
+                    or copied.get("productName")
+                    or ""
+                ).strip(),
+                category=str(copied.get("category") or "").strip(),
+                product_key=str(copied.get("productKey") or copied.get("product_key") or "").strip(),
+                protocol_version=str(copied.get("version") or copied.get("ver") or "3.3").strip() or "3.3",
+                raw_scan_result=dict(copied),
+            )
+
+            if not request.ip:
+                enriched[str(key)] = copied
+                continue
+
+            try:
+                resolved = self._resolve_local_key_via_hook(request)
+            except Exception as exc:
+                last_error = f"{request.ip}: {exc}"
+                LOGGER.warning("Local key hook failed for %s: %s", request.ip, exc)
+                enriched[str(key)] = copied
+                continue
+
+            if resolved is not None:
+                copied["local_key"] = resolved.local_key
+                copied["localKeySource"] = resolved.source
+                resolved_any = True
+
+            enriched[str(key)] = copied
+
+        self.last_local_key_hook_at = datetime.now(timezone.utc).isoformat()
+        self.last_local_key_hook_error = last_error
+        if resolved_any and not last_error:
+            self.last_local_key_hook_error = None
+        return enriched
+
+    def _scan_via_task_helper(self) -> dict[str, Any]:
+        request_id = uuid.uuid4().hex
+        request_payload = {
+            "requestId": request_id,
+            "scanTimeout": self.scan_timeout,
+            "requestedAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+        self.discovery_request_path.parent.mkdir(parents=True, exist_ok=True)
+        self.discovery_result_path.parent.mkdir(parents=True, exist_ok=True)
+        self.discovery_request_path.write_text(json.dumps(request_payload, indent=2, sort_keys=True))
+        if self.discovery_result_path.exists():
+            self.discovery_result_path.unlink()
+
+        LOGGER.info("Starting discovery helper task %s", self.discovery_task_name)
+        result = subprocess.run(
+            ["schtasks.exe", "/run", "/tn", self.discovery_task_name],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip() or f"exit code {result.returncode}"
+            raise RuntimeError(
+                f"Failed to start discovery helper task '{self.discovery_task_name}': {detail}"
+            )
+
+        deadline = time.monotonic() + self.discovery_wait_timeout
+        while time.monotonic() < deadline:
+            if self.discovery_result_path.exists():
+                try:
+                    payload = json.loads(self.discovery_result_path.read_text())
+                except json.JSONDecodeError:
+                    time.sleep(0.25)
+                    continue
+
+                if str(payload.get("requestId", "")).strip() != request_id:
+                    time.sleep(0.25)
+                    continue
+
+                error = str(payload.get("error", "")).strip()
+                if error:
+                    raise RuntimeError(f"Discovery helper failed: {error}")
+
+                discovered = payload.get("discovered", {})
+                if not isinstance(discovered, dict):
+                    raise RuntimeError("Discovery helper returned an unexpected payload.")
+                return discovered
+
+            time.sleep(0.25)
+
+        raise RuntimeError(
+            f"Timed out waiting for discovery helper task '{self.discovery_task_name}'. "
+            "Make sure the DeyeHomeBridgeDiscovery task is installed and the user is logged in."
+        )
 
     def refresh_device_ips(self) -> None:
         if not self.devices:
@@ -227,6 +601,9 @@ class BridgeRuntime:
         except Exception as exc:
             LOGGER.warning("TinyTuya discovery failed: %s", exc)
             return
+
+        discovered = self._enrich_discovery_with_local_key_hook(discovered)
+        discovered = self._enrich_discovery_with_cloud_keys(discovered)
 
         known_ids = set(self.devices.keys())
         updated = 0
@@ -252,6 +629,8 @@ class BridgeRuntime:
     def scan_network(self) -> list[dict[str, Any]]:
         LOGGER.info("Running admin discovery scan")
         discovered = self._scan_raw()
+        discovered = self._enrich_discovery_with_local_key_hook(discovered)
+        discovered = self._enrich_discovery_with_cloud_keys(discovered)
         results = self._normalize_scan_results(discovered)
         self.last_scan_results = results
         self.last_scan_at = datetime.now(timezone.utc).isoformat()
@@ -290,8 +669,18 @@ class BridgeRuntime:
         ).strip()
         category = str(details.get("category") or "").strip()
         product_key = str(details.get("productKey") or details.get("product_key") or "").strip()
+        discovered_local_key = str(
+            details.get("local_key")
+            or details.get("localKey")
+            or details.get("key")
+            or ""
+        ).strip()
 
         existing = self.devices.get(device_id)
+        effective_local_key = existing.local_key if existing else discovered_local_key
+        local_key_source = "configured" if existing and existing.local_key else ""
+        if not local_key_source and discovered_local_key:
+            local_key_source = str(details.get("localKeySource") or "hook").strip() or "hook"
         return {
             "device_id": device_id,
             "ip": ip,
@@ -300,7 +689,9 @@ class BridgeRuntime:
             "protocol_version": existing.protocol_version if existing else version,
             "product_key": product_key,
             "configured": existing is not None,
-            "has_local_key": bool(existing and existing.local_key),
+            "local_key": effective_local_key,
+            "has_local_key": bool(effective_local_key),
+            "local_key_source": local_key_source,
         }
 
     async def _run_loop(self) -> None:
@@ -443,10 +834,13 @@ class BridgeRuntime:
             "clusterBaseUrl": self.cluster_base_url,
             "configPath": str(self.config_path),
             "statePath": str(self.state_path),
+            "discoveryMode": self.discovery_mode,
             "lastSyncAt": self.last_sync_at,
             "lastError": self.last_error,
             "lastScanAt": self.last_scan_at,
-            "dockerDiscoveryHint": DOCKER_DISCOVERY_HINT,
+            "discoveryHint": DISCOVERY_HINT,
+            "localKeyHook": self.local_key_hook_state(),
+            "cloudConfig": self.cloud_config_state(),
             "devices": [
                 config.to_dict()
                 for config in sorted(self.devices.values(), key=lambda item: item.name.lower())
@@ -522,7 +916,21 @@ async def admin_status() -> dict[str, Any]:
 
 
 @app.post("/api/admin/scan")
-async def admin_scan() -> dict[str, Any]:
+async def admin_scan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    if payload is None:
+        payload = {}
+
+    cloud_payload = payload.get("cloudConfig")
+    if cloud_payload is not None:
+        if not isinstance(cloud_payload, dict):
+            raise HTTPException(status_code=400, detail="'cloudConfig' must be an object.")
+
+        try:
+            cloud_config = CloudKeyConfig.from_dict(cloud_payload)
+            await asyncio.to_thread(runtime.save_cloud_config, cloud_config)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     try:
         results = await asyncio.to_thread(runtime.scan_network)
     except Exception as exc:
@@ -531,7 +939,8 @@ async def admin_scan() -> dict[str, Any]:
     return {
         "lastScanAt": runtime.last_scan_at,
         "devices": results,
-        "dockerDiscoveryHint": DOCKER_DISCOVERY_HINT,
+        "discoveryHint": DISCOVERY_HINT,
+        "cloudConfig": runtime.cloud_config_state(),
     }
 
 
@@ -548,6 +957,20 @@ async def admin_save_config(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         await asyncio.to_thread(runtime.replace_devices, devices, True)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return runtime.admin_state()
+
+
+@app.post("/api/admin/cloud-config")
+async def admin_save_cloud_config(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Cloud config payload must be an object.")
+
+    try:
+        config = CloudKeyConfig.from_dict(payload)
+        await asyncio.to_thread(runtime.save_cloud_config, config)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
