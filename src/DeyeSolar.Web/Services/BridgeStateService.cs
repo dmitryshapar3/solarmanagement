@@ -247,8 +247,7 @@ public class BridgeStateService
     private void UpdateLiveSnapshotIfActive(BridgeSyncRequest request)
     {
         var options = _backendOptions.CurrentValue;
-        if (!SocketBackendModes.IsHomeBridge(options.Mode) ||
-            !string.Equals(options.BridgeId, request.BridgeId, StringComparison.Ordinal))
+        if (!string.Equals(options.BridgeId, request.BridgeId, StringComparison.Ordinal))
         {
             return;
         }

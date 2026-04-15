@@ -364,6 +364,31 @@
       background: #fbfcfd;
     }
 
+    .log-meta {
+      display: grid;
+      gap: 6px;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .log-output {
+      margin-top: 16px;
+      min-height: 180px;
+      max-height: 360px;
+      overflow: auto;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #0f1720;
+      color: #d9e2ea;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.84rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     @media (max-width: 980px) {
       .layout {
         grid-template-columns: 1fr;
@@ -391,7 +416,7 @@
         <button class="secondary" id="refresh-button">Reload</button>
       </div>
       <div class="muted-box">
-        <p>Local keys are still required for control. Scan can fill them automatically only when Cloud Key Assist is configured and your Tuya app account is linked to the cloud project.</p>
+        <p>Local keys are still required for control. Scan can fill them automatically only when Tuya Cloud is configured for this bridge and that cloud project can read the scanned device ID.</p>
       </div>
       <div class="table-wrap" style="margin-top: 16px;">
         <table>
@@ -421,7 +446,7 @@
           <button class="primary" id="scan-button">Scan Now</button>
         </div>
         <div class="muted-box">
-          <p>LAN scan finds device IDs, IPs, and protocol hints. A local key hook or Cloud Key Assist can add matching local keys to the same results.</p>
+          <p>LAN scan finds device IDs, IPs, and protocol hints. When Tuya Cloud is configured, the bridge asks Tuya Cloud for each scanned device ID and tries to attach the returned local key.</p>
           <p class="hint" id="discovery-hint"></p>
         </div>
         <div style="margin-top: 16px;">
@@ -433,31 +458,30 @@
       <div class="panel">
         <h2>Cloud Key Assist</h2>
         <div class="actions">
-          <button class="primary" id="cloud-save-button">Save Cloud Config</button>
+          <button class="secondary" id="cloud-save-button">Save Cloud Config</button>
         </div>
         <div class="muted-box">
-          <p>Optional. Enter Tuya IoT cloud credentials if you want scan results to include the device local key.</p>
-          <p style="margin-top:8px;">Your Tuya app account must already be linked to that cloud project. A sample device ID is optional, but it can help older Tuya API paths. Scan uses the current values from this form.</p>
+          <p>When configured, the bridge calls Tuya Cloud device detail for the scanned device ID and uses the returned `local_key` when the project has permission to that device.</p>
         </div>
-        <div id="cloud-status" class="status-box muted"></div>
         <div class="form-grid">
           <label class="field">
-            <strong>Region</strong>
-            <input id="cloud-region" placeholder="eu, us, us-e, eu-w, in, sg, cn">
+            <strong>API Region</strong>
+            <input id="cloud-api-region" placeholder="eu">
           </label>
           <label class="field">
             <strong>API Key</strong>
-            <input id="cloud-key" placeholder="Tuya API key">
+            <input id="cloud-api-key" placeholder="Tuya API key">
           </label>
           <label class="field">
             <strong>API Secret</strong>
-            <input id="cloud-secret" type="password" placeholder="Tuya API secret">
+            <input id="cloud-api-secret" type="password" placeholder="Tuya API secret">
           </label>
           <label class="field">
-            <strong>Sample Device ID</strong>
-            <input id="cloud-device-id" placeholder="Optional">
+            <strong>Seed Device ID</strong>
+            <input id="cloud-api-device-id" placeholder="optional">
           </label>
         </div>
+        <div id="cloud-status" class="status-box muted"></div>
       </div>
     </div>
   </section>
@@ -481,13 +505,13 @@
   const saveButton = document.getElementById('save-button');
   const scanButton = document.getElementById('scan-button');
   const cloudSaveButton = document.getElementById('cloud-save-button');
+  const cloudApiRegionEl = document.getElementById('cloud-api-region');
+  const cloudApiKeyEl = document.getElementById('cloud-api-key');
+  const cloudApiSecretEl = document.getElementById('cloud-api-secret');
+  const cloudApiDeviceIdEl = document.getElementById('cloud-api-device-id');
+  const cloudStatusEl = document.getElementById('cloud-status');
   const addButton = document.getElementById('add-button');
   const refreshButton = document.getElementById('refresh-button');
-  const cloudRegionEl = document.getElementById('cloud-region');
-  const cloudKeyEl = document.getElementById('cloud-key');
-  const cloudSecretEl = document.getElementById('cloud-secret');
-  const cloudDeviceIdEl = document.getElementById('cloud-device-id');
-  const cloudStatusEl = document.getElementById('cloud-status');
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -526,27 +550,34 @@
     };
   }
 
-  function normalizeCloudConfig(config) {
+  function normalizeCloudConfig(payload) {
     return {
-      apiRegion: config?.apiRegion || '',
-      apiKey: config?.apiKey || '',
-      apiSecret: config?.apiSecret || '',
-      apiDeviceID: config?.apiDeviceID || '',
-      configured: Boolean(config?.configured),
-      configPath: config?.configPath || '',
-      lastLookupAt: config?.lastLookupAt || null,
-      lastLookupError: config?.lastLookupError || ''
+      path: payload?.path || '',
+      configured: Boolean(payload?.configured),
+      apiRegion: payload?.apiRegion || '',
+      apiKey: payload?.apiKey || '',
+      apiSecret: payload?.apiSecret || '',
+      apiDeviceId: payload?.apiDeviceId || '',
+      lastLookupAt: payload?.lastLookupAt || null,
+      lastLookupError: payload?.lastLookupError || null
     };
+  }
+
+  function localKeyBadgeLabel(device) {
+    if (!device.has_local_key) return 'local key missing';
+    if (device.local_key_source === 'configured') return 'local key saved';
+    if (!device.local_key_source) return 'local key saved';
+    if (device.local_key_source.startsWith('local key')) return device.local_key_source;
+    return `local key from ${device.local_key_source}`;
   }
 
   function renderStats() {
     const status = state.status || {};
-    const localKeyHook = status.localKeyHook || {};
+    const cloudConfig = state.cloudConfig || {};
     const cards = [
       ['Bridge', status.bridgeId || '-'],
       ['Cluster', status.clusterBaseUrl || '-'],
-      ['Cloud Keys', state.cloudConfig?.configured ? 'enabled' : 'off'],
-      ['Hook Timeout', localKeyHook.timeoutSeconds ? `${localKeyHook.timeoutSeconds}s` : 'off'],
+      ['Cloud', cloudConfig.configured ? 'configured' : 'disabled'],
       ['Configured', String(state.devices.length)],
       ['Last Sync', formatTime(status.lastSyncAt)],
       ['Last Scan', formatTime(status.lastScanAt)],
@@ -556,11 +587,8 @@
     if (status.lastError) {
       cards.push(['Last Error', status.lastError]);
     }
-    if (localKeyHook.lastLookupError) {
-      cards.push(['Hook Error', localKeyHook.lastLookupError]);
-    }
-    if (state.cloudConfig?.lastLookupError) {
-      cards.push(['Cloud Error', state.cloudConfig.lastLookupError]);
+    if (cloudConfig.lastLookupError) {
+      cards.push(['Cloud Error', cloudConfig.lastLookupError]);
     }
 
     statsEl.innerHTML = cards.map(([label, value]) => `
@@ -612,53 +640,43 @@
           ${device.category ? `<span class="chip muted">${escapeHtml(device.category)}</span>` : ''}
           ${device.product_key ? `<span class="chip muted">product ${escapeHtml(device.product_key)}</span>` : ''}
           ${device.configured ? '<span class="chip">configured</span>' : '<span class="chip warn">not configured</span>'}
-          ${device.has_local_key ? `<span class="chip">${escapeHtml(device.local_key_source === 'cloud' ? 'local key from cloud' : device.local_key_source === 'hook' ? 'local key from hook' : 'local key saved')}</span>` : '<span class="chip warn">local key missing</span>'}
+          ${device.has_local_key ? `<span class="chip">${escapeHtml(localKeyBadgeLabel(device))}</span>` : '<span class="chip warn">local key missing</span>'}
         </div>
       </div>
     `).join('');
   }
 
-  function renderCloudStatus() {
+  function renderCloudConfig() {
     const cloudConfig = state.cloudConfig || normalizeCloudConfig({});
-    let kind = 'muted';
-    let title = 'Cloud Key Assist is off';
-    let details = 'Scan will only use LAN discovery until valid Tuya Cloud credentials are configured.';
+    cloudApiRegionEl.value = cloudConfig.apiRegion;
+    cloudApiKeyEl.value = cloudConfig.apiKey;
+    cloudApiSecretEl.value = cloudConfig.apiSecret;
+    cloudApiDeviceIdEl.value = cloudConfig.apiDeviceId;
+
+    if (!cloudConfig.configured) {
+    cloudStatusEl.className = 'status-box muted';
+    cloudStatusEl.innerHTML = '<strong>Cloud Lookup Disabled</strong><p>Fill `apiRegion`, `apiKey`, and `apiSecret` to enable Tuya Cloud lookup during scan. Leave the fields blank and save to clear it.</p>';
+    return;
+  }
 
     if (cloudConfig.lastLookupError) {
-      kind = 'error';
-      title = 'Tuya Cloud Lookup Failed';
-      details = cloudConfig.lastLookupError;
-    } else if (cloudConfig.configured && cloudConfig.lastLookupAt) {
-      kind = 'ok';
-      title = 'Cloud lookup succeeded';
-      details = `Last successful lookup: ${formatTime(cloudConfig.lastLookupAt)}. Matching devices can receive local keys during scan.`;
-    } else if (cloudConfig.configured) {
-      kind = 'warn';
-      title = 'Cloud config saved';
-      details = 'Scan will try Tuya Cloud for local keys on the next request.';
+      cloudStatusEl.className = 'status-box error';
+      cloudStatusEl.innerHTML = `<strong>Last Cloud Lookup Failed</strong><p>${escapeHtml(cloudConfig.lastLookupError)}</p><p style="margin-top:6px;">Last attempt: ${escapeHtml(formatTime(cloudConfig.lastLookupAt))}</p>`;
+      return;
     }
 
-    cloudStatusEl.className = `status-box ${kind}`;
-    cloudStatusEl.innerHTML = `
-      <strong>${escapeHtml(title)}</strong>
-      <p>${escapeHtml(details)}</p>
-    `;
+    cloudStatusEl.className = 'status-box ok';
+    cloudStatusEl.innerHTML = `<strong>Cloud Lookup Ready</strong><p>Saved in ${escapeHtml(cloudConfig.path || 'cloud-config.json')}.</p><p style="margin-top:6px;">Last lookup: ${escapeHtml(formatTime(cloudConfig.lastLookupAt))}</p>`;
   }
 
   function render() {
     renderStats();
     renderDevices();
     renderScanResults();
-    renderCloudStatus();
+    renderCloudConfig();
     if (state.status) {
       discoveryHintEl.textContent = state.status.discoveryHint || '';
       scanMetaEl.textContent = `Last scan: ${formatTime(state.status.lastScanAt)}`;
-    }
-    if (state.cloudConfig) {
-      cloudRegionEl.value = state.cloudConfig.apiRegion || '';
-      cloudKeyEl.value = state.cloudConfig.apiKey || '';
-      cloudSecretEl.value = state.cloudConfig.apiSecret || '';
-      cloudDeviceIdEl.value = state.cloudConfig.apiDeviceID || '';
     }
   }
 
@@ -684,10 +702,38 @@
   async function reloadStatus() {
     const payload = await fetchJson('/api/admin/status');
     state.status = payload;
+    state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || {});
     state.devices = (payload.devices || []).map(normalizeDevice);
     state.scanResults = payload.lastScanResults || [];
-    state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || {});
     render();
+  }
+
+  async function saveCloudConfig() {
+    clearMessage();
+    cloudSaveButton.disabled = true;
+
+    try {
+      const payload = await fetchJson('/api/admin/cloud-config', {
+        method: 'POST',
+        body: JSON.stringify({
+          apiRegion: cloudApiRegionEl.value.trim(),
+          apiKey: cloudApiKeyEl.value.trim(),
+          apiSecret: cloudApiSecretEl.value.trim(),
+          apiDeviceId: cloudApiDeviceIdEl.value.trim()
+        })
+      });
+
+      state.status = payload;
+      state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || {});
+      state.devices = (payload.devices || []).map(normalizeDevice);
+      state.scanResults = payload.lastScanResults || [];
+      showMessage('ok', state.cloudConfig.configured ? 'Cloud config saved.' : 'Cloud config cleared.');
+      render();
+    } catch (error) {
+      showMessage('error', error.message);
+    } finally {
+      cloudSaveButton.disabled = false;
+    }
   }
 
   async function saveConfig() {
@@ -711,7 +757,6 @@
       state.status = payload;
       state.devices = (payload.devices || []).map(normalizeDevice);
       state.scanResults = payload.lastScanResults || [];
-      state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || {});
       showMessage('ok', 'Bridge config saved.');
       render();
     } catch (error) {
@@ -724,32 +769,25 @@
   async function runScan() {
     clearMessage();
     scanButton.disabled = true;
+    cloudSaveButton.disabled = true;
+    showMessage('ok', 'Scan started. Running LAN discovery and Tuya Cloud key lookup.');
 
     try {
-      const cloudConfig = normalizeCloudConfig({
-        ...(state.cloudConfig || {}),
-        apiRegion: cloudRegionEl.value,
-        apiKey: cloudKeyEl.value,
-        apiSecret: cloudSecretEl.value,
-        apiDeviceID: cloudDeviceIdEl.value
-      });
-      const hasCloudInput = [cloudConfig.apiRegion, cloudConfig.apiKey, cloudConfig.apiSecret, cloudConfig.apiDeviceID]
-        .some((value) => String(value || '').trim() !== '');
-
-      const payload = await fetchJson('/api/admin/scan', {
-        method: 'POST',
-        body: JSON.stringify(hasCloudInput ? { cloudConfig } : {})
-      });
+      const payload = await fetchJson('/api/admin/scan', { method: 'POST', body: '{}' });
       state.scanResults = payload.devices || [];
-      state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || state.cloudConfig || {});
       if (state.status) {
         state.status.lastScanAt = payload.lastScanAt;
         state.status.discoveryHint = payload.discoveryHint;
         state.status.cloudConfig = payload.cloudConfig || state.status.cloudConfig;
       }
+      state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || state.cloudConfig || {});
       const keyedCount = state.scanResults.filter(device => device.local_key).length;
+      const issues = [];
       if (state.cloudConfig?.lastLookupError) {
-        showMessage('error', `Scan found ${state.scanResults.length} device(s), but Tuya Cloud key lookup failed: ${state.cloudConfig.lastLookupError}`);
+        issues.push(`cloud lookup failed: ${state.cloudConfig.lastLookupError}`);
+      }
+      if (issues.length) {
+        showMessage('error', `Scan found ${state.scanResults.length} device(s); ${keyedCount} include local keys. ${issues.join(' ')}`);
       } else {
         showMessage('ok', `Scan finished. Found ${state.scanResults.length} device(s); ${keyedCount} include local keys.`);
       }
@@ -758,28 +796,6 @@
       showMessage('error', error.message);
     } finally {
       scanButton.disabled = false;
-    }
-  }
-
-  async function saveCloudConfig() {
-    clearMessage();
-    cloudSaveButton.disabled = true;
-
-    try {
-      const payload = await fetchJson('/api/admin/cloud-config', {
-        method: 'POST',
-        body: JSON.stringify(state.cloudConfig || {})
-      });
-
-      state.status = payload;
-      state.devices = (payload.devices || []).map(normalizeDevice);
-      state.scanResults = payload.lastScanResults || [];
-      state.cloudConfig = normalizeCloudConfig(payload.cloudConfig || {});
-      showMessage('ok', state.cloudConfig.configured ? 'Cloud Key Assist saved.' : 'Cloud Key Assist cleared.');
-      render();
-    } catch (error) {
-      showMessage('error', error.message);
-    } finally {
       cloudSaveButton.disabled = false;
     }
   }
@@ -850,18 +866,6 @@
     } catch (error) {
       showMessage('error', error.message);
     }
-  });
-
-  [cloudRegionEl, cloudKeyEl, cloudSecretEl, cloudDeviceIdEl].forEach((input) => {
-    input.addEventListener('input', () => {
-      state.cloudConfig = normalizeCloudConfig({
-        ...(state.cloudConfig || {}),
-        apiRegion: cloudRegionEl.value,
-        apiKey: cloudKeyEl.value,
-        apiSecret: cloudSecretEl.value,
-        apiDeviceID: cloudDeviceIdEl.value
-      });
-    });
   });
 
   reloadStatus().catch((error) => showMessage('error', error.message));

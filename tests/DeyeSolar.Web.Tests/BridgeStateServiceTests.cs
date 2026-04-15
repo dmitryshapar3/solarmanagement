@@ -16,7 +16,6 @@ public class BridgeStateServiceTests
         var dbFactory = TestDbFactory.Create(nameof(SyncAsync_UpsertsDevices_CompletesCommands_AndReturnsPendingForBridgeOnly));
         var options = new TestOptionsMonitor<SocketBackendOptions>(new SocketBackendOptions
         {
-            Mode = SocketBackendModes.HomeBridge,
             BridgeId = "home-main"
         });
 

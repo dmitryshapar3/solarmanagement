@@ -69,6 +69,28 @@ public class HomeBridgeSocketControllerTests
     }
 
     [Fact]
+    public async Task TurnOnAsync_UsesDefaultDeviceId_WhenEntityIdIsBlank()
+    {
+        var dbFactory = TestDbFactory.Create(nameof(TurnOnAsync_UsesDefaultDeviceId_WhenEntityIdIsBlank));
+        var bridgeOptions = new TestOptionsMonitor<SocketBackendOptions>(new SocketBackendOptions
+        {
+            BridgeId = "home-main",
+            DefaultDeviceId = "device-default",
+            CommandTimeoutSeconds = 2
+        });
+        var controller = CreateController(dbFactory, bridgeOptions);
+
+        var completionTask = CompleteNextCommandAsync(dbFactory, BridgeCommandStatuses.Succeeded, null);
+
+        await controller.TurnOnAsync(string.Empty, CancellationToken.None);
+        await completionTask;
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var command = await db.BridgeCommands.SingleAsync();
+        Assert.Equal("device-default", command.DeviceId);
+    }
+
+    [Fact]
     public async Task GetStateAsync_Throws_WhenStateIsStale()
     {
         var dbFactory = TestDbFactory.Create(nameof(GetStateAsync_Throws_WhenStateIsStale));
@@ -110,8 +132,7 @@ public class HomeBridgeSocketControllerTests
 
         return new HomeBridgeSocketController(
             bridgeState,
-            bridgeOptions,
-            new TestOptionsMonitor<TuyaOptions>(new TuyaOptions()));
+            bridgeOptions);
     }
 
     private static Task CompleteNextCommandAsync(

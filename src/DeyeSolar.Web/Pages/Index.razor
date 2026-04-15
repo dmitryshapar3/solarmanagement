@@ -1,236 +1,168 @@
 @page "/"
-@inject InverterDataSnapshot Snapshot
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
-@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
-@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.TuyaOptions> TuyaOpts
+@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SocketBackendOptions> SocketBackendOpts
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @using DeyeSolar.Web.Shared
 @implements IDisposable
 
 <PageTitle>Dashboard - DeyeSolar</PageTitle>
 
 <MudGrid>
-    @if (_data == null)
-    {
-        <MudItem xs="12">
-            <MudAlert Severity="Severity.Info">Waiting for first data reading...</MudAlert>
-        </MudItem>
-    }
-    else
-    {
-        <MudItem xs="12">
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Dense="true">
+            Bridge-only mode is active. This dashboard reflects the latest state reported by the home bridge.
+        </MudAlert>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudText Typo="Typo.caption" Class="mb-2">
+            Last device update:
+            @if (DeviceSnapshot.LastUpdated.HasValue)
+            {
+                <text>@TimeHelper.ToUserTime(DeviceSnapshot.LastUpdated.Value.UtcDateTime, _tz).ToString("HH:mm:ss")</text>
+            }
+            else
+            {
+                <text>waiting for bridge heartbeat</text>
+            }
+        </MudText>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle2" Color="Color.Primary">Configured Bridge</MudText>
+            <MudText Typo="Typo.h5">@(!string.IsNullOrWhiteSpace(_bridgeId) ? _bridgeId : "not set")</MudText>
+            <MudText Typo="Typo.caption">Use Settings to change the active bridge.</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle2" Color="Color.Info">Known Devices</MudText>
+            <MudText Typo="Typo.h4">@(_devices?.Count ?? 0)</MudText>
+            <MudText Typo="Typo.caption">Currently reported by the bridge.</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle2" Color="Color.Success">Online</MudText>
+            <MudText Typo="Typo.h4">@(_devices?.Count(d => d.Online) ?? 0)</MudText>
+            <MudText Typo="Typo.caption">Bridge devices responding.</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle2" Color="Color.Warning">Active Load</MudText>
+            <MudText Typo="Typo.h4">@((_devices?.Where(d => d.CurrentPowerW.HasValue).Sum(d => d.CurrentPowerW ?? 0) ?? 0)) W</MudText>
+            <MudText Typo="Typo.caption">Sum of reported bridge device power.</MudText>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
             <MudText Typo="Typo.caption" Class="mb-2">
-                Last update: @TimeHelper.ToUserTime(_data.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss")
-                | Source: DeyeCloud
+                Manual override for the default bridge device configured in Settings.
             </MudText>
-        </MudItem>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                           Disabled="@string.IsNullOrWhiteSpace(_defaultDeviceId)"
+                           OnClick="@(() => ManualToggle(true))">
+                    Socket ON
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error"
+                           Disabled="@string.IsNullOrWhiteSpace(_defaultDeviceId)"
+                           OnClick="@(() => ManualToggle(false))">
+                    Socket OFF
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.caption" Class="mt-2">
+                Default device:
+                @if (string.IsNullOrWhiteSpace(_defaultDeviceId))
+                {
+                    <text>not selected</text>
+                }
+                else
+                {
+                    <code>@_defaultDeviceId</code>
+                }
+            </MudText>
+            @if (!string.IsNullOrEmpty(_actionMessage))
+            {
+                <MudAlert Severity="@_actionSeverity" Class="mt-2">@_actionMessage</MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
 
-        <!-- Battery SOC -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Primary">Battery SOC</MudText>
-                <MudProgressLinear Color="@GetSocColor(_data.BatterySoc)" Value="@_data.BatterySoc" Class="my-2" />
-                <MudText Typo="Typo.h4">@_data.BatterySoc%</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Solar Production -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Warning">Solar Production</MudText>
-                <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@_data.SolarProduction W</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Battery Power -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Battery Power</MudText>
-                <MudIcon Icon="@(_data.BatteryPower < 0 ? Icons.Material.Filled.BatteryChargingFull : Icons.Material.Filled.Battery5Bar)"
-                         Color="@(_data.BatteryPower < 0 ? Color.Success : Color.Warning)" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@Math.Abs(_data.BatteryPower) W</MudText>
-                <MudText Typo="Typo.caption">@(_data.BatteryPower < 0 ? "Charging" : _data.BatteryPower > 0 ? "Discharging" : "Idle")</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Grid -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Info">Grid</MudText>
-                <MudIcon Icon="@Icons.Material.Filled.ElectricalServices" Color="Color.Info" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@Math.Abs(_data.GridConsumption) W</MudText>
-                <MudText Typo="Typo.caption">@(_data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle")</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Battery Details -->
-        <MudItem xs="12" sm="6">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Battery Details</MudText>
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Smart Sockets</MudText>
+            @if (_devices == null)
+            {
+                <MudAlert Severity="Severity.Info">Waiting for first bridge device update...</MudAlert>
+            }
+            else if (_devices.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">No bridge devices found. Configure and scan the bridge in Settings.</MudText>
+            }
+            else
+            {
                 <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>State</th>
+                            <th>Power</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        <tr><td>Voltage</td><td>@_data.BatteryVoltage.ToString("F1") V</td></tr>
-                        <tr><td>Current</td><td>@_data.BatteryCurrent.ToString("F1") A</td></tr>
-                        <tr><td>Temperature</td><td>@_data.BatteryTemperature.ToString("F1") C</td></tr>
-                        <tr><td>Load Power</td><td>@_data.LoadPower W</td></tr>
+                        @foreach (var dev in _devices)
+                        {
+                            <tr>
+                                <td>@dev.Name</td>
+                                <td>
+                                    @if (!dev.Online)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default">offline</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small"
+                                                 Color="@(dev.IsOn ? Color.Success : Color.Default)">
+                                            @(dev.IsOn ? "ON" : "OFF")
+                                        </MudChip>
+                                    }
+                                </td>
+                                <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
+                            </tr>
+                        }
                     </tbody>
                 </MudSimpleTable>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Quick Actions -->
-        <MudItem xs="12" sm="6">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
-                <MudText Typo="Typo.caption" Class="mb-2">Manual override (rules will correct on next cycle)</MudText>
-                <MudStack Row="true" Spacing="2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Success"
-                               OnClick="@(() => ManualToggle(true))">
-                        Socket ON
-                    </MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Error"
-                               OnClick="@(() => ManualToggle(false))">
-                        Socket OFF
-                    </MudButton>
-                </MudStack>
-                @if (!string.IsNullOrEmpty(_actionMessage))
-                {
-                    <MudAlert Severity="@_actionSeverity" Class="mt-2">@_actionMessage</MudAlert>
-                }
-            </MudPaper>
-        </MudItem>
-
-        <!-- Rules -->
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Rules</MudText>
-                @if (_rules == null || _rules.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No rules configured.</MudText>
-                }
-                else
-                {
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>State</th>
-                                <th>Last switched</th>
-                                <th>Last checked</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var rule in _rules)
-                            {
-                                <tr>
-                                    <td>
-                                        @rule.Name
-                                        @if (!rule.Enabled)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">disabled</MudChip>
-                                        }
-                                    </td>
-                                    <td>
-                                        <MudChip T="string" Size="Size.Small"
-                                                 Color="@(rule.CurrentState ? Color.Success : Color.Default)">
-                                            @(rule.CurrentState ? "ON" : "OFF")
-                                        </MudChip>
-                                    </td>
-                                    <td>@FormatTimestamp(rule.CurrentStateChangedAt)</td>
-                                    <td>@FormatTimestamp(rule.LastEvaluated)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-            </MudPaper>
-        </MudItem>
-
-        <!-- Smart Sockets -->
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Smart Sockets</MudText>
-                @if (_devices == null)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Waiting for first device poll...</MudText>
-                }
-                else if (_devices.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found.</MudText>
-                }
-                else
-                {
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>State</th>
-                                <th>Power</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var dev in _devices)
-                            {
-                                <tr>
-                                    <td>@dev.Name</td>
-                                    <td>
-                                        @if (!dev.Online)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Default">offline</MudChip>
-                                        }
-                                        else
-                                        {
-                                            <MudChip T="string" Size="Size.Small"
-                                                     Color="@(dev.IsOn ? Color.Success : Color.Default)">
-                                                @(dev.IsOn ? "ON" : "OFF")
-                                            </MudChip>
-                                        }
-                                    </td>
-                                    <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-            </MudPaper>
-        </MudItem>
-    }
+            }
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
-
 @code {
-    private InverterData? _data;
-    private List<TriggerRule>? _rules;
     private IReadOnlyList<DevicePowerInfo>? _devices;
     private string? _actionMessage;
     private Severity _actionSeverity;
     private string? _tz;
+    private string _bridgeId = string.Empty;
+    private string _defaultDeviceId = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        var socketBackend = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.SocketBackendOptions>("SocketBackend");
         _tz = display.TimeZoneId;
-        _data = Snapshot.Current;
+        _bridgeId = socketBackend.BridgeId;
+        _defaultDeviceId = socketBackend.DefaultDeviceId;
         _devices = DeviceSnapshot.Current;
-        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
-        Snapshot.OnDataUpdated += OnDataUpdated;
         DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
-    }
-
-    private async void OnDataUpdated()
-    {
-        _data = Snapshot.Current;
-        try
-        {
-            _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
-        }
-        catch
-        {
-            // keep previous rules on transient failure
-        }
-        await InvokeAsync(StateHasChanged);
     }
 
     private async void OnDeviceSnapshotUpdated()
@@ -239,23 +171,17 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private string FormatTimestamp(DateTime? utc)
-    {
-        if (!utc.HasValue) return "-";
-        var local = TimeHelper.ToUserTime(utc.Value, _tz);
-        return local.ToString("MM/dd HH:mm:ss");
-    }
-
     private async Task ManualToggle(bool turnOn)
     {
         try
         {
-            var entityId = TuyaOpts.CurrentValue.DeviceId;
+            var entityId = SocketBackendOpts.CurrentValue.DefaultDeviceId;
             if (turnOn)
                 await SocketController.TurnOnAsync(entityId, CancellationToken.None);
             else
                 await SocketController.TurnOffAsync(entityId, CancellationToken.None);
 
+            _defaultDeviceId = entityId;
             _actionMessage = turnOn ? "Socket turned ON" : "Socket turned OFF";
             _actionSeverity = Severity.Success;
         }
@@ -266,16 +192,8 @@
         }
     }
 
-    private Color GetSocColor(int soc) => soc switch
-    {
-        >= 80 => Color.Success,
-        >= 40 => Color.Warning,
-        _ => Color.Error
-    };
-
     public void Dispose()
     {
-        Snapshot.OnDataUpdated -= OnDataUpdated;
         DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
     }
 }

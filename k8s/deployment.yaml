@@ -27,6 +27,10 @@ spec:
               value: "http://+:8080"
             - name: ConnectionStrings__DefaultConnection
               value: "Server=sqlserver-service.production.svc.cluster.local,1433;Database=DeyeSolar;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;MultipleActiveResultSets=true"
+            - name: SocketBackend__BridgeId
+              value: "home-main"
+            - name: SocketBackend__BearerToken
+              value: "f720fe1314b1946c76b936b7a509f84601baeb53573fb8880e7ca5db1e9e6e78"
           resources:
             requests:
               memory: "256Mi"

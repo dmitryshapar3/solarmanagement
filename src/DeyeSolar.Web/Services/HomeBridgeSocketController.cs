@@ -1,7 +1,6 @@
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
-using DeyeSolar.Infrastructure.Tuya;
 using Microsoft.Extensions.Options;
 
 namespace DeyeSolar.Web.Services;
@@ -10,16 +9,13 @@ public class HomeBridgeSocketController : ISocketController
 {
     private readonly BridgeStateService _bridgeState;
     private readonly IOptionsMonitor<SocketBackendOptions> _backendOptions;
-    private readonly IOptionsMonitor<TuyaOptions> _tuyaOptions;
 
     public HomeBridgeSocketController(
         BridgeStateService bridgeState,
-        IOptionsMonitor<SocketBackendOptions> backendOptions,
-        IOptionsMonitor<TuyaOptions> tuyaOptions)
+        IOptionsMonitor<SocketBackendOptions> backendOptions)
     {
         _bridgeState = bridgeState;
         _backendOptions = backendOptions;
-        _tuyaOptions = tuyaOptions;
     }
 
     public Task TurnOnAsync(string entityId, CancellationToken ct)
@@ -72,10 +68,10 @@ public class HomeBridgeSocketController : ISocketController
         if (!string.IsNullOrWhiteSpace(entityId))
             return entityId;
 
-        var configuredDeviceId = _tuyaOptions.CurrentValue.DeviceId;
+        var configuredDeviceId = _backendOptions.CurrentValue.DefaultDeviceId;
         if (!string.IsNullOrWhiteSpace(configuredDeviceId))
             return configuredDeviceId;
 
-        throw new InvalidOperationException("DeviceId is not configured. Select a device in Settings.");
+        throw new InvalidOperationException("Device ID is not configured. Select a default bridge device in Settings.");
     }
 }

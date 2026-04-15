@@ -5,7 +5,6 @@
   "bridge_config_path": "bridge-config.json",
   "bridge_state_path": "bridge-state.json",
   "cloud_config_path": "cloud-config.json",
-  "local_key_hook_timeout": 30,
   "discovery_mode": "task-helper",
   "discovery_task_name": "DeyeHomeBridgeDiscovery",
   "discovery_request_path": "discovery-request.json",
