@@ -15,12 +15,13 @@ LOG_FILE_PATH = os.environ.get("DEYE_BRIDGE_LOCAL_KEY_LOG_FILE", DEFAULT_LOG_FIL
 LOGGER = logging.getLogger(__name__)
 
 
-def _log_to_file(message: str, level: str = "INFO") -> None:
+def _log_to_file(message: str, level: str = "INFO", clear_first: bool = False) -> None:
     """Log a message to the updatable log file."""
     timestamp = datetime.now().isoformat()
     log_entry = f"[{timestamp}] [{level}] {message}\n"
     try:
-        with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+        mode = "w" if clear_first else "a"
+        with open(LOG_FILE_PATH, mode, encoding="utf-8") as f:
             f.write(log_entry)
     except Exception as e:
         LOGGER.warning(f"Failed to write to log file {LOG_FILE_PATH}: {e}")
@@ -115,9 +116,9 @@ def resolve_local_key(request: LocalKeyRequest) -> str | LocalKeyResult | None:
         str: The extracted local_key string.
         LocalKeyResult: If found, with a custom source label.
     """
-    # Get timeout from environment or use default
+    # Get timeout from environment or use default (60 seconds for extended interval)
     timeout = float(
-        os.environ.get("DEYE_BRIDGE_LOCAL_KEY_TIMEOUT", "5")
+        os.environ.get("DEYE_BRIDGE_LOCAL_KEY_TIMEOUT", "60")
     )
 
     # Validate input IP
@@ -130,7 +131,9 @@ def resolve_local_key(request: LocalKeyRequest) -> str | LocalKeyResult | None:
     found_key: str | None = None
     stop_event: list[bool] = [False]
 
-    _log_to_file(f"Starting local_key interception for device {request.device_id} ({request.name}) at IP {target_ip}, timeout={timeout}s")
+    # Clear log file on each new interception attempt
+    _log_to_file(f"=== Starting new local_key interception session ===", "INFO", clear_first=True)
+    _log_to_file(f"Device: {request.device_id} ({request.name}), IP: {target_ip}, Timeout: {timeout}s", "INFO")
 
     # Try to import scapy; return None gracefully if unavailable
     try:
@@ -195,6 +198,7 @@ def resolve_local_key(request: LocalKeyRequest) -> str | LocalKeyResult | None:
         bpf_filter = f"host {target_ip}"
 
         _log_to_file(f"Starting packet sniff with BPF filter: {bpf_filter}, timeout: {timeout}s")
+        LOGGER.info("Starting packet sniff for device %s at %s with timeout %ds", request.device_id, target_ip, timeout)
 
         # Sniff packets with timeout
         sniff(
@@ -218,9 +222,9 @@ def resolve_local_key(request: LocalKeyRequest) -> str | LocalKeyResult | None:
         return None
 
     if found_key:
-        _log_to_file(f"Returning local_key for device {request.device_id} from local key from hook")
+        _log_to_file(f"Returning local_key for device {request.device_id}: {found_key[:8]}... (source: local key from hook)")
         return LocalKeyResult(local_key=found_key, source="local key from hook")
 
-    _log_to_file(f"No local_key found for device {request.device_id} ({request.name}) at {target_ip} within {timeout}s timeout", "DEBUG")
-    LOGGER.debug("No local_key found for device %s at %s within timeout", request.device_id, target_ip)
+    _log_to_file(f"No local_key found for device {request.device_id} ({request.name}) at {target_ip} within {timeout}s timeout", "INFO")
+    LOGGER.info("No local_key found for device %s at %s within %ds timeout", request.device_id, target_ip, timeout)
     return None
