@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,12 @@ using Microsoft.Extensions.Options;
 namespace DeyeSolar.Infrastructure.Tuya;
 
 public record TuyaDevice(string Id, string Name, string? Category, bool Online);
+public record TuyaDeviceStatus(
+    bool IsOn,
+    int? CurrentPowerW,
+    double? VoltageV,
+    double? CurrentA,
+    IReadOnlyDictionary<string, string> OtherValues);
 
 public class TuyaCloudClient : ISocketController
 {
@@ -47,7 +54,62 @@ public class TuyaCloudClient : ISocketController
     }
 
     public async Task<bool> GetStateAsync(string entityId, CancellationToken ct)
-        => throw new NotSupportedException("Socket state polling is disabled in cloud-control mode.");
+        => (await GetStatusAsync(entityId, ct)).IsOn;
+
+    public async Task<TuyaDeviceStatus> GetStatusAsync(string entityId, CancellationToken ct)
+    {
+        var deviceId = ResolveDeviceId(entityId);
+        var response = await RequestAsync(HttpMethod.Get, $"/v1.0/devices/{deviceId}/status", null, ct);
+
+        bool isOn = false;
+        int? powerW = null;
+        double? voltageV = null;
+        double? currentA = null;
+        var otherValues = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (response.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var status in result.EnumerateArray())
+            {
+                var code = status.TryGetProperty("code", out var c) ? c.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(code) || !status.TryGetProperty("value", out var value))
+                    continue;
+
+                switch (code)
+                {
+                    case "switch_1":
+                        if (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+                            isOn = value.GetBoolean();
+                        else
+                            otherValues[code] = FormatStatusValue(value);
+                        break;
+                    case "cur_power":
+                        if (value.ValueKind == JsonValueKind.Number)
+                            powerW = (int)Math.Round(value.GetDouble() / 10.0);
+                        else
+                            otherValues[code] = FormatStatusValue(value);
+                        break;
+                    case "cur_voltage":
+                        if (value.ValueKind == JsonValueKind.Number)
+                            voltageV = value.GetDouble() / 10.0;
+                        else
+                            otherValues[code] = FormatStatusValue(value);
+                        break;
+                    case "cur_current":
+                        if (value.ValueKind == JsonValueKind.Number)
+                            currentA = value.GetDouble() / 1000.0;
+                        else
+                            otherValues[code] = FormatStatusValue(value);
+                        break;
+                    default:
+                        otherValues[code] = FormatStatusValue(value);
+                        break;
+                }
+            }
+        }
+
+        return new TuyaDeviceStatus(isOn, powerW, voltageV, currentA, otherValues);
+    }
 
     public async Task<List<TuyaDevice>> GetDevicesAsync(CancellationToken ct)
     {
@@ -183,6 +245,16 @@ public class TuyaCloudClient : ISocketController
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    private static string FormatStatusValue(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Number => value.GetDouble().ToString("0.###", CultureInfo.InvariantCulture),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null => "null",
+        _ => value.GetRawText()
+    };
 
     private string ResolveDeviceId(string entityId)
     {

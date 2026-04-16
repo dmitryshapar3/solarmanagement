@@ -1,46 +1,209 @@
 @page "/devices"
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Infrastructure.Tuya.TuyaCloudClient TuyaClient
+@inject ISnackbar Snackbar
+@using DeyeSolar.Infrastructure.Tuya
 
 <PageTitle>Devices - DeyeSolar</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Socket Control</MudText>
+<MudText Typo="Typo.h5" Class="mb-4">Smart Sockets</MudText>
 
 <MudPaper Class="pa-4" Elevation="2">
-    @if (string.IsNullOrWhiteSpace(_deviceId))
+    @if (!_isTuyaConfigured)
     {
         <MudAlert Severity="Severity.Warning">
-            No Tuya socket is selected yet. Configure the cloud credentials and pick a device in Settings.
+            Tuya Cloud is not configured yet. Add the cloud credentials in Settings first.
         </MudAlert>
     }
     else
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-            Cloud-control mode is active. The app sends ON/OFF commands to Tuya Cloud but does not poll live socket power or status.
+            Cloud-control mode is active. Live socket status is fetched only when you request it here. There is no background polling.
         </MudAlert>
 
-        <MudSimpleTable Dense="true">
-            <thead>
-                <tr>
-                    <th>Setting</th>
-                    <th>Value</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>Region</td><td>@_baseUrl</td></tr>
-                <tr><td>Device ID</td><td><code>@_deviceId</code></td></tr>
-            </tbody>
-        </MudSimpleTable>
+        <MudStack Row="true" Spacing="2" Class="mb-3">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       OnClick="LoadDevices"
+                       Disabled="_loadingDevices">
+                @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Load Devices
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="FetchStatuses"
+                       Disabled="_loadingStatuses || _devices.Count == 0">
+                @if (_loadingStatuses) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Fetch Live Data
+            </MudButton>
+        </MudStack>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@_errorMessage</MudAlert>
+        }
+
+        @if (_lastStatusRefresh.HasValue)
+        {
+            <MudText Typo="Typo.caption" Class="mb-2 d-block">
+                Last live fetch: @_lastStatusRefresh.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            </MudText>
+        }
+
+        @if (_devices.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                No Tuya socket devices loaded yet. Click <strong>Load Devices</strong>.
+            </MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Cloud</th>
+                        <th>Live State</th>
+                        <th>Power</th>
+                        <th>Voltage</th>
+                        <th>Current</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var device in _devices)
+                    {
+                        var hasStatus = _statuses.TryGetValue(device.Id, out var status);
+                        var hasError = _statusErrors.TryGetValue(device.Id, out var statusError);
+                        <tr>
+                            <td>
+                                @device.Name
+                                @if (device.Id == _deviceId)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-2">selected</MudChip>
+                                }
+                                <MudText Typo="Typo.caption" Class="d-block"><code>@device.Id</code></MudText>
+                            </td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(device.Online ? Color.Success : Color.Default)">
+                                    @(device.Online ? "cloud online" : "cloud offline")
+                                </MudChip>
+                            </td>
+                            <td>
+                                @if (hasError)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Error">error</MudChip>
+                                    <MudText Typo="Typo.caption" Class="d-block">@statusError</MudText>
+                                }
+                                else if (!hasStatus)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default">not fetched</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@(status!.IsOn ? Color.Success : Color.Default)">
+                                        @(status!.IsOn ? "ON" : "OFF")
+                                    </MudChip>
+                                }
+                            </td>
+                            <td>@(hasStatus && status!.CurrentPowerW.HasValue ? $"{status!.CurrentPowerW.Value} W" : "-")</td>
+                            <td>@(hasStatus && status!.VoltageV.HasValue ? $"{status!.VoltageV.Value:F1} V" : "-")</td>
+                            <td>@(hasStatus && status!.CurrentA.HasValue ? $"{status!.CurrentA.Value:F3} A" : "-")</td>
+                            <td>@FormatOtherValues(hasStatus ? status!.OtherValues : null)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
     }
 </MudPaper>
 
 @code {
     private string? _deviceId;
     private string? _baseUrl;
+    private string? _accessId;
+    private readonly List<TuyaDevice> _devices = [];
+    private readonly Dictionary<string, TuyaDeviceStatus> _statuses = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _statusErrors = new(StringComparer.Ordinal);
+    private bool _loadingDevices;
+    private bool _loadingStatuses;
+    private string? _errorMessage;
+    private DateTimeOffset? _lastStatusRefresh;
+    private bool _isTuyaConfigured;
 
     protected override async Task OnInitializedAsync()
     {
         var tuya = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.TuyaOptions>("Tuya");
         _deviceId = tuya.DeviceId;
         _baseUrl = tuya.BaseUrl;
+        _accessId = tuya.AccessId;
+        _isTuyaConfigured = !string.IsNullOrWhiteSpace(_baseUrl)
+            && !string.IsNullOrWhiteSpace(_accessId);
+
+        if (_isTuyaConfigured)
+            await LoadDevices();
+    }
+
+    private async Task LoadDevices()
+    {
+        _loadingDevices = true;
+        _errorMessage = null;
+        try
+        {
+            _devices.Clear();
+            _devices.AddRange(await TuyaClient.GetDevicesAsync(CancellationToken.None));
+            Snackbar.Add($"Loaded {_devices.Count} Tuya device(s).", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _devices.Clear();
+            _errorMessage = $"Failed to load devices: {ex.Message}";
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
+    }
+
+    private async Task FetchStatuses()
+    {
+        _loadingStatuses = true;
+        _errorMessage = null;
+        _statuses.Clear();
+        _statusErrors.Clear();
+
+        try
+        {
+            foreach (var device in _devices)
+            {
+                try
+                {
+                    _statuses[device.Id] = await TuyaClient.GetStatusAsync(device.Id, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _statusErrors[device.Id] = ex.Message;
+                }
+            }
+
+            _lastStatusRefresh = DateTimeOffset.UtcNow;
+            Snackbar.Add("Live device data fetched from Tuya Cloud.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to fetch live data: {ex.Message}";
+        }
+        finally
+        {
+            _loadingStatuses = false;
+        }
+    }
+
+    private static string FormatOtherValues(IReadOnlyDictionary<string, string>? values)
+    {
+        if (values == null || values.Count == 0)
+            return "-";
+
+        return string.Join(", ", values.Select(kv => $"{kv.Key}={kv.Value}"));
     }
 }
