@@ -2,10 +2,11 @@ using System.Security.Cryptography;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
+using DeyeSolar.Infrastructure.DeyeCloud;
+using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
-using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
-using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Workers;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
@@ -45,20 +46,24 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 // Configuration
-builder.Services.Configure<SocketBackendOptions>(builder.Configuration.GetSection(SocketBackendOptions.Section));
+builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
+builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
+builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
 builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
 
-// Bridge infrastructure
-builder.Services.AddSingleton<BridgeStateService>();
-builder.Services.AddSingleton<HomeBridgeSocketController>();
-builder.Services.AddSingleton<HomeBridgeInventoryService>();
-builder.Services.AddSingleton<ISocketController>(sp => sp.GetRequiredService<HomeBridgeSocketController>());
-builder.Services.AddSingleton<ISocketInventoryService>(sp => sp.GetRequiredService<HomeBridgeInventoryService>());
+// Infrastructure
+builder.Services.AddHttpClient<DeyeCloudClient>();
+builder.Services.AddSingleton<IInverterDataSource>(sp => sp.GetRequiredService<DeyeCloudClient>());
+builder.Services.AddHttpClient<TuyaCloudClient>();
+builder.Services.AddSingleton<ISocketController>(sp => sp.GetRequiredService<TuyaCloudClient>());
 
 // Snapshot & Rule engine
-builder.Services.AddSingleton<DeviceStatusSnapshot>();
+builder.Services.AddSingleton<InverterDataSnapshot>();
 builder.Services.AddSingleton<RuleEvaluator>();
 builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
+
+// Background worker
+builder.Services.AddHostedService<PollingWorker>();
 
 // Blazor + MudBlazor
 builder.Services.AddRazorPages();
@@ -76,9 +81,10 @@ using (var scope = app.Services.CreateScope())
 
     // Seed settings
     var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
-    await settingsService.SeedSectionAsync<SocketBackendOptions>(SocketBackendOptions.Section);
+    await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
+    await settingsService.SeedSectionAsync<TuyaOptions>(TuyaOptions.Section);
+    await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
     await settingsService.SeedSectionAsync<DisplayOptions>(DisplayOptions.Section);
-    await settingsService.ApplyConfigurationOverridesAsync<SocketBackendOptions>(SocketBackendOptions.Section);
 
     // Seed default rule
     if (!db.TriggerRules.Any())
@@ -130,11 +136,8 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapBridgeApi();
 app.MapBlazorHub();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
-
-public partial class Program;

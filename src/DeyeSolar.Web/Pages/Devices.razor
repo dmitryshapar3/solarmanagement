@@ -1,91 +1,46 @@
 @page "/devices"
-@inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
-@using DeyeSolar.Web.Shared
-@implements IDisposable
 
 <PageTitle>Devices - DeyeSolar</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Smart Sockets</MudText>
-
-@if (DeviceSnapshot.LastUpdated.HasValue)
-{
-    <MudText Typo="Typo.caption" Class="mb-2">
-        Last update: @TimeHelper.ToUserTime(DeviceSnapshot.LastUpdated.Value.UtcDateTime, _tz).ToString("HH:mm:ss")
-    </MudText>
-}
+<MudText Typo="Typo.h5" Class="mb-4">Socket Control</MudText>
 
 <MudPaper Class="pa-4" Elevation="2">
-    @if (_devices == null)
+    @if (string.IsNullOrWhiteSpace(_deviceId))
     {
-        <MudAlert Severity="Severity.Info">Waiting for first device poll...</MudAlert>
-    }
-    else if (_devices.Count == 0)
-    {
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found. Configure the socket backend in Settings.</MudText>
+        <MudAlert Severity="Severity.Warning">
+            No Tuya socket is selected yet. Configure the cloud credentials and pick a device in Settings.
+        </MudAlert>
     }
     else
     {
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Cloud-control mode is active. The app sends ON/OFF commands to Tuya Cloud but does not poll live socket power or status.
+        </MudAlert>
+
+        <MudSimpleTable Dense="true">
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>Online</th>
-                    <th>State</th>
-                    <th>Current Power</th>
+                    <th>Setting</th>
+                    <th>Value</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var dev in _devices)
-                {
-                    <tr>
-                        <td>@dev.Name</td>
-                        <td>@(dev.Category ?? "-")</td>
-                        <td>
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@(dev.Online ? Color.Success : Color.Default)">
-                                @(dev.Online ? "Yes" : "No")
-                            </MudChip>
-                        </td>
-                        <td>
-                            @if (!dev.Online)
-                            {
-                                <MudText Typo="Typo.body2">-</MudText>
-                            }
-                            else
-                            {
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(dev.IsOn ? Color.Success : Color.Default)">
-                                    @(dev.IsOn ? "ON" : "OFF")
-                                </MudChip>
-                            }
-                        </td>
-                        <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
-                    </tr>
-                }
+                <tr><td>Region</td><td>@_baseUrl</td></tr>
+                <tr><td>Device ID</td><td><code>@_deviceId</code></td></tr>
             </tbody>
         </MudSimpleTable>
     }
 </MudPaper>
 
 @code {
-    private IReadOnlyList<DevicePowerInfo>? _devices;
-    private string? _tz;
+    private string? _deviceId;
+    private string? _baseUrl;
 
     protected override async Task OnInitializedAsync()
     {
-        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        _tz = display.TimeZoneId;
-        _devices = DeviceSnapshot.Current;
-        DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
+        var tuya = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.TuyaOptions>("Tuya");
+        _deviceId = tuya.DeviceId;
+        _baseUrl = tuya.BaseUrl;
     }
-
-    private async void OnDeviceSnapshotUpdated()
-    {
-        _devices = DeviceSnapshot.Current;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    public void Dispose() => DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
 }

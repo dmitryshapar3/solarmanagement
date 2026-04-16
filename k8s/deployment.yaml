@@ -27,10 +27,14 @@ spec:
               value: "http://+:8080"
             - name: ConnectionStrings__DefaultConnection
               value: "Server=sqlserver-service.production.svc.cluster.local,1433;Database=DeyeSolar;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;MultipleActiveResultSets=true"
-            - name: SocketBackend__BridgeId
-              value: "home-main"
-            - name: SocketBackend__BearerToken
-              value: "f720fe1314b1946c76b936b7a509f84601baeb53573fb8880e7ca5db1e9e6e78"
+            - name: Tuya__BaseUrl
+              value: "https://openapi.tuyaeu.com"
+            - name: Tuya__AccessId
+              value: "fyr4m9uxqadjuw4rvmdc"
+            - name: Tuya__AccessSecret
+              value: "c3099c3843f846bba8419ef873881191"
+            - name: Tuya__DeviceId
+              value: "bf116cf4ab715a97583cmi"
           resources:
             requests:
               memory: "256Mi"

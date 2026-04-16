@@ -77,11 +77,10 @@ public class AppSettingsService
     public async Task SeedSectionAsync<T>(string section) where T : new()
     {
         await using var db = await _dbFactory.CreateDbContextAsync();
-        var existingKeys = await db.AppSettings
+        var existingSettings = await db.AppSettings
             .Where(s => s.Section == section)
-            .Select(s => s.Key)
             .ToListAsync();
-        var existingKeySet = new HashSet<string>(existingKeys);
+        var existingByKey = existingSettings.ToDictionary(s => s.Key, s => s);
 
         var defaults = new T();
         var configSection = _configuration.GetSection(section);
@@ -91,56 +90,21 @@ public class AppSettingsService
             if (prop.Name == "Section" || !prop.CanRead)
                 continue;
 
-            if (existingKeySet.Contains(prop.Name))
-                continue;
-
             var configValue = configSection[prop.Name];
             var defaultValue = prop.GetValue(defaults)?.ToString() ?? "";
-            var value = !string.IsNullOrEmpty(configValue) ? configValue : defaultValue;
+            var hasConfigOverride = !string.IsNullOrEmpty(configValue);
+            var value = hasConfigOverride ? configValue! : defaultValue;
+
+            if (existingByKey.TryGetValue(prop.Name, out var existing))
+            {
+                if (hasConfigOverride && !string.Equals(existing.Value, value, StringComparison.Ordinal))
+                    existing.Value = value;
+                continue;
+            }
 
             db.AppSettings.Add(new AppSetting { Section = section, Key = prop.Name, Value = value });
         }
 
         await db.SaveChangesAsync();
-    }
-
-    public async Task ApplyConfigurationOverridesAsync<T>(string section) where T : new()
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var configSection = _configuration.GetSection(section);
-        var changed = false;
-
-        foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (prop.Name == "Section" || !prop.CanRead)
-                continue;
-
-            var envKey = $"{section}__{prop.Name}";
-            var configValue = Environment.GetEnvironmentVariable(envKey) ?? configSection[prop.Name];
-            if (string.IsNullOrWhiteSpace(configValue))
-                continue;
-
-            var existing = await db.AppSettings
-                .FirstOrDefaultAsync(s => s.Section == section && s.Key == prop.Name);
-
-            if (existing == null)
-            {
-                db.AppSettings.Add(new AppSetting { Section = section, Key = prop.Name, Value = configValue });
-                changed = true;
-                continue;
-            }
-
-            if (!string.Equals(existing.Value, configValue, StringComparison.Ordinal))
-            {
-                existing.Value = configValue;
-                changed = true;
-            }
-        }
-
-        if (!changed)
-            return;
-
-        await db.SaveChangesAsync();
-        _dbProvider?.Reload();
     }
 }

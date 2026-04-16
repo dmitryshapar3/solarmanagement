@@ -1,7 +1,8 @@
 @page "/rules/edit"
 @page "/rules/edit/{Id:int}"
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
-@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
+@inject DeyeSolar.Infrastructure.Tuya.TuyaCloudClient TuyaClient
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
@@ -120,10 +121,9 @@
     private MudForm? _form;
     private TimeSpan? _activeFrom;
     private TimeSpan? _activeTo;
-    private IReadOnlyList<DeyeSolar.Domain.Models.DevicePowerInfo>? _devices;
+    private List<DeyeSolar.Infrastructure.Tuya.TuyaDevice>? _devices;
     private bool _loadingDevices;
     private string? _loadError;
-
     protected override async Task OnInitializedAsync()
     {
         if (Id.HasValue)
@@ -137,29 +137,18 @@
             }
         }
 
-        await LoadDevices(forceRefresh: false);
+        await LoadDevices();
     }
 
     private async Task LoadDevices()
-        => await LoadDevices(forceRefresh: true);
-
-    private async Task LoadDevices(bool forceRefresh)
     {
         _loadingDevices = true;
         _loadError = null;
         try
         {
-            _devices = forceRefresh
-                ? await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None)
-                : await SocketInventoryService.GetCachedDevicesAsync(CancellationToken.None);
-
-            if (!forceRefresh && (_devices == null || _devices.Count == 0))
-            {
-                _devices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
-            }
-
+            _devices = await TuyaClient.GetDevicesAsync(CancellationToken.None);
             if (_devices.Count == 0)
-                _loadError = "No devices found. Check the home bridge settings.";
+                _loadError = "No devices found. Check Tuya settings.";
         }
         catch (Exception ex)
         {

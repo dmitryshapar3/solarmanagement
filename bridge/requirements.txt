@@ -1,5 +1,0 @@
-fastapi
-httpx
-pywin32
-tinytuya
-uvicorn[standard]

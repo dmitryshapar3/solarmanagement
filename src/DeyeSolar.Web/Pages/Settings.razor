@@ -1,83 +1,114 @@
 @page "/settings"
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
-@inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
-@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
+@inject DeyeSolar.Infrastructure.DeyeCloud.DeyeCloudClient DeyeClient
+@inject DeyeSolar.Infrastructure.Tuya.TuyaCloudClient TuyaClient
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 
 <PageTitle>Settings - DeyeSolar</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
 
 <MudGrid>
+    <!-- DeyeCloud -->
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Home Bridge</MudText>
-            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                Bridge-only mode is enabled. Device discovery, local key lookup, and Tuya cloud access now live in the host bridge service, not in this web app.
-            </MudAlert>
-
-            <MudTextField @bind-Value="_socketBackend.BridgeId" Label="Bridge ID" />
-            <MudTextField @bind-Value="_socketBackend.BearerToken" Label="Bridge Bearer Token" Class="mt-2" InputType="InputType.Password" />
-            <MudNumericField @bind-Value="_socketBackend.CommandTimeoutSeconds" Label="Command Timeout (sec)" Min="1" Max="60" Class="mt-2" />
-            <MudNumericField @bind-Value="_socketBackend.StateStaleAfterSeconds" Label="State Stale After (sec)" Min="5" Max="300" Class="mt-2" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSocketBackend" Class="mt-3">
-                Save Bridge
+            <MudText Typo="Typo.h6" Class="mb-3">Inverter (DeyeCloud)</MudText>
+            <MudTextField @bind-Value="_deye.BaseUrl" Label="Base URL" />
+            <MudTextField @bind-Value="_deye.AppId" Label="App ID" Class="mt-2" />
+            <MudTextField @bind-Value="_deye.AppSecret" Label="App Secret" Class="mt-2" InputType="InputType.Password" />
+            <MudTextField @bind-Value="_deye.Email" Label="Email" Class="mt-2" />
+            <MudTextField @bind-Value="_deye.Password" Label="Password" Class="mt-2" InputType="InputType.Password" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDeye" Class="mt-3">
+                Save
             </MudButton>
-
-            @if (_bridgeHeartbeat != null)
-            {
-                <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">
-                    Bridge @_bridgeHeartbeat.BridgeId last seen @FormatBridgeHeartbeat(_bridgeHeartbeat)
-                    @if (!string.IsNullOrWhiteSpace(_bridgeHeartbeat.BridgeVersion))
-                    {
-                        <text> | v@_bridgeHeartbeat.BridgeVersion</text>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_bridgeHeartbeat.HostName))
-                    {
-                        <text> | @_bridgeHeartbeat.HostName</text>
-                    }
-                </MudAlert>
-            }
-            else
-            {
-                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
-                    No bridge heartbeat received yet.
-                </MudAlert>
-            }
 
             <MudDivider Class="my-3" />
 
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Bridge Devices</MudText>
-            <MudText Typo="Typo.caption" Class="mb-2">
-                Select a default bridge device for dashboard quick actions and manual testing.
-            </MudText>
-
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchSocketDevices"
-                       Disabled="_loadingSocketDevices" FullWidth="true">
-                @if (_loadingSocketDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-                Fetch Devices
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchStations"
+                       Disabled="_loadingStations" FullWidth="true">
+                @if (_loadingStations) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Fetch Stations & Devices
             </MudButton>
 
-            @if (_socketDevices?.Count > 0)
+            @if (_stations?.Count > 0)
+            {
+                <MudSelect T="long" @bind-Value="_selectedStationId" Label="Station" Class="mt-2" Variant="Variant.Outlined" Dense="true">
+                    @foreach (var s in _stations)
+                    {
+                        <MudSelectItem T="long" Value="s.Id">@s.Name @(s.Address != null ? $"({s.Address})" : "")</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchDevices"
+                           Disabled="_loadingDevices || _selectedStationId == 0" Class="mt-2" FullWidth="true">
+                    @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                    Fetch Devices
+                </MudButton>
+            }
+
+            @if (_devices?.Count > 0)
             {
                 <MudStack Spacing="1" Class="mt-2">
-                    @foreach (var d in _socketDevices)
+                    @foreach (var d in _devices)
                     {
-                        <MudChip T="string"
-                                 Color="@(d.Online ? Color.Success : Color.Default)"
-                                 Variant="Variant.Outlined"
-                                 OnClick="@(() => SelectSocketDevice(d))"
-                                 Style="cursor:pointer">
-                            @d.Name (@d.Category) @(d.Online ? (d.IsOn ? "- ON" : "- OFF") : "- offline")
+                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined"
+                                 OnClick="@(() => SelectDevice(d))" Style="cursor:pointer">
+                            @d.DeviceType - SN: @d.SerialNumber
                         </MudChip>
                     }
                 </MudStack>
             }
 
-            <MudTextField @bind-Value="_socketBackend.DefaultDeviceId" Label="Default Device ID" Class="mt-2" ReadOnly="true" />
+            @if (!string.IsNullOrEmpty(_deye.DeviceSn))
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                    Active: Station @_deye.StationId, Device SN @_deye.DeviceSn
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
 
-            @if (!string.IsNullOrWhiteSpace(_socketBackend.DefaultDeviceId))
+    <!-- Tuya Smart Socket -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Smart Socket (Tuya)</MudText>
+            <MudSelect @bind-Value="_tuya.BaseUrl" Label="Region" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("https://openapi.tuyaeu.com")">Europe</MudSelectItem>
+                <MudSelectItem Value="@("https://openapi.tuyaus.com")">Americas</MudSelectItem>
+                <MudSelectItem Value="@("https://openapi.tuyacn.com")">China</MudSelectItem>
+                <MudSelectItem Value="@("https://openapi.tuyain.com")">India</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="_tuya.AccessId" Label="Access ID" Class="mt-2" />
+            <MudTextField @bind-Value="_tuya.AccessSecret" Label="Access Secret" Class="mt-2" InputType="InputType.Password" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTuya" Class="mt-3">
+                Save
+            </MudButton>
+
+            <MudDivider Class="my-3" />
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchTuyaDevices"
+                       Disabled="_loadingTuya" FullWidth="true">
+                @if (_loadingTuya) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                Fetch Devices from Tuya
+            </MudButton>
+
+            @if (_tuyaDevices?.Count > 0)
+            {
+                <MudStack Spacing="1" Class="mt-2">
+                    @foreach (var d in _tuyaDevices)
+                    {
+                        <MudChip T="string" Color="@(d.Online ? Color.Success : Color.Default)"
+                                 Variant="Variant.Outlined"
+                                 OnClick="@(() => SelectTuyaDevice(d))" Style="cursor:pointer">
+                            @d.Name (@d.Category) @(d.Online ? "" : "- offline")
+                        </MudChip>
+                    }
+                </MudStack>
+            }
+
+            <MudTextField @bind-Value="_tuya.DeviceId" Label="Device ID" Class="mt-2" ReadOnly="true" />
+
+            @if (!string.IsNullOrEmpty(_tuya.DeviceId))
             {
                 <MudStack Row="true" Spacing="2" Class="mt-3">
                     <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="TestOn" Size="Size.Small">Test ON</MudButton>
@@ -87,6 +118,16 @@
         </MudPaper>
     </MudItem>
 
+    <!-- Polling -->
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Polling</MudText>
+            <MudNumericField @bind-Value="_polling.IntervalSeconds" Label="Interval (seconds)" Min="5" Max="300" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">Save</MudButton>
+        </MudPaper>
+    </MudItem>
+
+    <!-- Display -->
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">Display</MudText>
@@ -102,22 +143,30 @@
     <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _errorMessage = null">@_errorMessage</MudAlert>
 }
 
+@inject IJSRuntime JS
+
 @code {
-    private DeyeSolar.Domain.Options.SocketBackendOptions _socketBackend = new();
+    private DeyeSolar.Domain.Options.DeyeCloudOptions _deye = new();
+    private DeyeSolar.Domain.Options.TuyaOptions _tuya = new();
+    private DeyeSolar.Domain.Options.PollingOptions _polling = new();
     private DeyeSolar.Domain.Options.DisplayOptions _display = new();
 
-    private IReadOnlyList<DeyeSolar.Domain.Models.DevicePowerInfo>? _socketDevices;
-    private DeyeSolar.Domain.Models.BridgeHeartbeatInfo? _bridgeHeartbeat;
-    private bool _loadingSocketDevices;
+    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeStation>? _stations;
+    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice>? _devices;
+    private List<DeyeSolar.Infrastructure.Tuya.TuyaDevice>? _tuyaDevices;
+    private long _selectedStationId;
+    private bool _loadingStations, _loadingDevices, _loadingTuya;
     private string? _errorMessage;
     private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones()
         .Select(tz => tz.Id).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
-        _socketBackend = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.SocketBackendOptions>("SocketBackend");
+        _deye = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DeyeCloudOptions>("DeyeCloud");
+        _tuya = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.TuyaOptions>("Tuya");
+        _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
         _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        _bridgeHeartbeat = await SocketInventoryService.GetBridgeHeartbeatAsync(CancellationToken.None);
+        _selectedStationId = _deye.StationId;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -134,81 +183,100 @@
                     StateHasChanged();
                 }
             }
-            catch
-            {
-            }
+            catch { }
         }
     }
 
-    private async Task SaveSocketBackend()
-        => await SaveSocketBackend(showSnackbar: true);
-
-    private async Task SaveSocketBackend(bool showSnackbar)
+    // -- DeyeCloud --
+    private async Task SaveDeye()
     {
-        await SettingsService.SaveSectionAsync("SocketBackend", _socketBackend);
-        _bridgeHeartbeat = await SocketInventoryService.GetBridgeHeartbeatAsync(CancellationToken.None);
-        if (showSnackbar)
-            Snackbar.Add("Bridge settings saved", Severity.Success);
+        await SettingsService.SaveSectionAsync("DeyeCloud", _deye);
+        DeyeClient.InvalidateToken();
+        Snackbar.Add("DeyeCloud settings saved", Severity.Success);
     }
 
-    private async Task FetchSocketDevices()
+    private async Task FetchStations()
     {
-        _loadingSocketDevices = true;
-        _errorMessage = null;
-        _socketDevices = null;
-
+        _loadingStations = true; _errorMessage = null; _stations = null; _devices = null;
         try
         {
-            await SaveSocketBackend(showSnackbar: false);
-            _socketDevices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
-            _bridgeHeartbeat = await SocketInventoryService.GetBridgeHeartbeatAsync(CancellationToken.None);
-
-            if (_socketDevices.Count == 1)
-                await SelectSocketDevice(_socketDevices[0]);
+            await SaveDeye();
+            _stations = await DeyeClient.GetStationsWithDevicesAsync(CancellationToken.None);
+            if (_stations.Count == 1) _selectedStationId = _stations[0].Id;
         }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Failed: {ex.Message}";
-        }
-        finally
-        {
-            _loadingSocketDevices = false;
-        }
+        catch (Exception ex) { _errorMessage = $"Failed: {ex.Message}"; }
+        finally { _loadingStations = false; }
     }
 
-    private async Task SelectSocketDevice(DeyeSolar.Domain.Models.DevicePowerInfo device)
+    private async Task FetchDevices()
     {
-        _socketBackend.DefaultDeviceId = device.Id;
-        await SaveSocketBackend(showSnackbar: false);
+        _loadingDevices = true; _errorMessage = null; _devices = null;
+        try
+        {
+            _devices = await DeyeClient.GetDevicesForStationAsync(_selectedStationId, CancellationToken.None);
+            var inverters = _devices.Where(d => d.DeviceType == "INVERTER").ToList();
+            if (inverters.Count == 1) await SelectDevice(inverters[0]);
+        }
+        catch (Exception ex) { _errorMessage = $"Failed: {ex.Message}"; }
+        finally { _loadingDevices = false; }
+    }
+
+    private async Task SelectDevice(DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice device)
+    {
+        _deye.StationId = _selectedStationId;
+        _deye.DeviceSn = device.SerialNumber;
+        await SaveDeye();
+        Snackbar.Add($"Selected: {device.DeviceType} SN {device.SerialNumber}", Severity.Info);
+    }
+
+    // -- Tuya --
+    private async Task SaveTuya()
+    {
+        await SettingsService.SaveSectionAsync("Tuya", _tuya);
+        TuyaClient.InvalidateToken();
+        Snackbar.Add("Tuya settings saved", Severity.Success);
+    }
+
+    private async Task FetchTuyaDevices()
+    {
+        _loadingTuya = true; _errorMessage = null; _tuyaDevices = null;
+        try
+        {
+            await SaveTuya();
+            _tuyaDevices = await TuyaClient.GetDevicesAsync(CancellationToken.None);
+            if (_tuyaDevices.Count == 1) await SelectTuyaDevice(_tuyaDevices[0]);
+        }
+        catch (Exception ex) { _errorMessage = $"Failed: {ex.Message}"; }
+        finally { _loadingTuya = false; }
+    }
+
+    private async Task SelectTuyaDevice(DeyeSolar.Infrastructure.Tuya.TuyaDevice device)
+    {
+        _tuya.DeviceId = device.Id;
+        await SaveTuya();
         Snackbar.Add($"Selected: {device.Name} ({device.Id})", Severity.Info);
     }
 
     private async Task TestOn()
     {
-        try
-        {
-            await SocketController.TurnOnAsync(_socketBackend.DefaultDeviceId, CancellationToken.None);
-            Snackbar.Add("ON", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
+        try { await TuyaClient.TurnOnAsync(_tuya.DeviceId, CancellationToken.None); Snackbar.Add("ON", Severity.Success); }
+        catch (Exception ex) { _errorMessage = ex.Message; }
     }
 
     private async Task TestOff()
     {
-        try
-        {
-            await SocketController.TurnOffAsync(_socketBackend.DefaultDeviceId, CancellationToken.None);
-            Snackbar.Add("OFF", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
+        try { await TuyaClient.TurnOffAsync(_tuya.DeviceId, CancellationToken.None); Snackbar.Add("OFF", Severity.Success); }
+        catch (Exception ex) { _errorMessage = ex.Message; }
     }
 
+    // -- Polling --
+    private async Task SavePolling()
+    {
+        await SettingsService.SaveSectionAsync("Polling", _polling);
+        Snackbar.Add("Polling settings saved", Severity.Success);
+    }
+
+    // -- Display --
     private async Task SaveDisplay()
     {
         await SettingsService.SaveSectionAsync("Display", _display);
@@ -219,21 +287,7 @@
     {
         if (string.IsNullOrEmpty(value))
             return Task.FromResult(_allTimeZones.AsEnumerable());
-
         return Task.FromResult(_allTimeZones
             .Where(tz => tz.Contains(value, StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private string FormatBridgeHeartbeat(DeyeSolar.Domain.Models.BridgeHeartbeatInfo heartbeat)
-    {
-        try
-        {
-            var timeZone = TimeZoneInfo.FindSystemTimeZoneById(_display.TimeZoneId);
-            return TimeZoneInfo.ConvertTime(heartbeat.LastSeenAt, timeZone).ToString("yyyy-MM-dd HH:mm:ss");
-        }
-        catch
-        {
-            return heartbeat.LastSeenAt.UtcDateTime.ToString("u");
-        }
     }
 }

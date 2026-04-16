@@ -13,9 +13,6 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     public DbSet<TriggerRule> TriggerRules => Set<TriggerRule>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<RuleRunLog> RuleRunLogs => Set<RuleRunLog>();
-    public DbSet<BridgeDeviceShadow> BridgeDeviceShadows => Set<BridgeDeviceShadow>();
-    public DbSet<BridgeCommand> BridgeCommands => Set<BridgeCommand>();
-    public DbSet<BridgeHeartbeat> BridgeHeartbeats => Set<BridgeHeartbeat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,30 +44,6 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
             e.Property(r => r.ActiveTo).HasConversion(
                 v => v.HasValue ? v.Value.ToString("HH:mm") : null,
                 v => v != null ? TimeOnly.Parse(v) : null);
-        });
-
-        modelBuilder.Entity<BridgeDeviceShadow>(e =>
-        {
-            e.HasKey(d => new { d.BridgeId, d.DeviceId });
-            e.Property(d => d.Name).HasMaxLength(256);
-            e.Property(d => d.Category).HasMaxLength(64);
-            e.HasIndex(d => d.LastSeenAt);
-        });
-
-        modelBuilder.Entity<BridgeCommand>(e =>
-        {
-            e.HasKey(c => c.Id);
-            e.Property(c => c.CommandType).HasMaxLength(64);
-            e.Property(c => c.Status).HasMaxLength(32);
-            e.HasIndex(c => new { c.BridgeId, c.Status, c.RequestedAt });
-            e.HasIndex(c => c.LeaseExpiresAt);
-        });
-
-        modelBuilder.Entity<BridgeHeartbeat>(e =>
-        {
-            e.HasKey(h => h.BridgeId);
-            e.Property(h => h.BridgeVersion).HasMaxLength(64);
-            e.Property(h => h.HostName).HasMaxLength(256);
         });
     }
 }
