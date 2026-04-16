@@ -90,7 +90,7 @@ public class AppSettingsService
             if (prop.Name == "Section" || !prop.CanRead)
                 continue;
 
-            var configValue = configSection[prop.Name];
+            var configValue = ResolveConfigOverride(section, prop.Name) ?? configSection[prop.Name];
             var defaultValue = prop.GetValue(defaults)?.ToString() ?? "";
             var hasConfigOverride = !string.IsNullOrEmpty(configValue);
             var value = hasConfigOverride ? configValue! : defaultValue;
@@ -106,5 +106,12 @@ public class AppSettingsService
         }
 
         await db.SaveChangesAsync();
+    }
+
+    private static string? ResolveConfigOverride(string section, string key)
+    {
+        var environmentKey = $"{section}__{key}";
+        var environmentValue = Environment.GetEnvironmentVariable(environmentKey);
+        return string.IsNullOrWhiteSpace(environmentValue) ? null : environmentValue;
     }
 }
