@@ -46,4 +46,8 @@ public class TriggerRule
 
     // SOC captured at the start of the current drain episode (nullable = no active episode)
     public int? SocAtDrainStart { get; set; }
+
+    // Consecutive action failures since the last success. Used to back off hammering
+    // a broken device (e.g. Tuya 1106 permission deny).
+    public int ConsecutiveFailures { get; set; }
 }

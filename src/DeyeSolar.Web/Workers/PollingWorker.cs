@@ -100,6 +100,8 @@ public class PollingWorker : BackgroundService
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
 
+        const int MaxConsecutiveFailures = 5;
+
         foreach (var action in actions)
         {
             var rule = dueRules.First(r => r.Id == action.RuleId);
@@ -112,6 +114,7 @@ public class PollingWorker : BackgroundService
 
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
+                rule.ConsecutiveFailures = 0;
                 await _ruleRepository.UpdateAsync(rule, ct);
                 successfulActions.Add(action.RuleId);
 
@@ -121,9 +124,18 @@ public class PollingWorker : BackgroundService
             catch (Exception ex)
             {
                 rule.LastEvaluated = now;
+                rule.ConsecutiveFailures++;
+                if (rule.ConsecutiveFailures >= MaxConsecutiveFailures)
+                {
+                    rule.Enabled = false;
+                    _logger.LogWarning(
+                        "Rule '{RuleName}' disabled after {Count} consecutive failures. Last error: {Error}",
+                        rule.Name, rule.ConsecutiveFailures, ex.Message);
+                }
                 await _ruleRepository.UpdateAsync(rule, ct);
                 failedActions[action.RuleId] = $"{(action.TurnOn ? "ON" : "OFF")} failed: {ex.Message}";
-                _logger.LogError(ex, "Failed to execute action for rule {RuleId}", action.RuleId);
+                _logger.LogError(ex, "Failed to execute action for rule {RuleId} (failure {Count}/{Max})",
+                    action.RuleId, rule.ConsecutiveFailures, MaxConsecutiveFailures);
             }
         }
 
