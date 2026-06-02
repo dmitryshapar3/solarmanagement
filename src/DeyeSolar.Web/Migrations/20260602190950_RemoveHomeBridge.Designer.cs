@@ -4,6 +4,7 @@ using DeyeSolar.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeyeSolar.Web.Migrations
 {
     [DbContext(typeof(DeyeSolarDbContext))]
-    partial class DeyeSolarDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260602190950_RemoveHomeBridge")]
+    partial class RemoveHomeBridge
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -62,14 +65,8 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("SocTurnOffThreshold")
-                        .HasColumnType("int");
-
                     b.Property<int>("SocTurnOnThreshold")
                         .HasColumnType("int");
-
-                    b.Property<bool>("UseSeparateSocTurnOffThreshold")
-                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 

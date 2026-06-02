@@ -46,8 +46,6 @@ public class RuleRepository : IRuleRepository
         if (originalState.HasValue && originalState.Value != rule.CurrentState)
         {
             rule.CurrentStateChangedAt = DateTime.UtcNow;
-            // Drain episode is tied to the current ON-cycle — reset across any state transition
-            rule.SocAtDrainStart = null;
         }
 
         db.TriggerRules.Update(rule);

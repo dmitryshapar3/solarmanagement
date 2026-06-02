@@ -79,10 +79,7 @@ public class PollingWorker : BackgroundService
         await SaveReadingAsync(data, ct);
         await RefreshDeviceStatusesAsync(ct);
 
-        // Load enough readings for the largest drain window across all rules
         var allRules = await _ruleRepository.GetAllAsync(ct);
-        var maxWindow = allRules.Where(r => r.Enabled).Select(r => r.DrainWindowMinutes).DefaultIfEmpty(15).Max();
-        var recentReadings = await GetRecentReadingsAsync(maxWindow + 5, ct);
         var now = DateTime.UtcNow;
 
         // Filter to rules that are due for evaluation based on their interval
@@ -99,14 +96,13 @@ public class PollingWorker : BackgroundService
         if (dueRules.Count == 0)
             return;
 
-        _logger.LogInformation("Evaluating {Count} rule(s), {Readings} recent readings available",
-            dueRules.Count, recentReadings.Count);
+        _logger.LogInformation("Evaluating {Count} rule(s)", dueRules.Count);
 
         // Sync actual device state for due rules
         await SyncDeviceStateAsync(dueRules, ct);
 
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        var actions = _ruleEvaluator.Evaluate(data, recentReadings, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
+        var actions = _ruleEvaluator.Evaluate(data, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
 
@@ -147,7 +143,7 @@ public class PollingWorker : BackgroundService
             }
         }
 
-        await LogRuleRunsAsync(data, recentReadings, dueRules, actions, successfulActions, failedActions, ct);
+        await LogRuleRunsAsync(data, dueRules, actions, successfulActions, failedActions, ct);
     }
 
     private static bool IsDueForEvaluation(TriggerRule rule, DateTime now)
@@ -181,7 +177,6 @@ public class PollingWorker : BackgroundService
 
     private async Task LogRuleRunsAsync(
         InverterData data,
-        IReadOnlyList<InverterData> recentReadings,
         List<TriggerRule> rules,
         IReadOnlyList<RuleAction> actions,
         IReadOnlySet<int> successfulActions,
@@ -192,36 +187,28 @@ public class PollingWorker : BackgroundService
         {
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
             var actionsByRule = actions.ToDictionary(a => a.RuleId);
-            var nowOffset = DateTimeOffset.UtcNow;
 
             foreach (var rule in rules.Where(r => r.Enabled))
             {
-                var drainWh = RuleEvaluator.CalculateNetBatteryDrainWh(recentReadings, rule.DrainWindowMinutes, nowOffset);
-
                 string action;
                 string reason;
-                var anchor = rule.SocAtDrainStart?.ToString() ?? "-";
-                var drop = rule.SocAtDrainStart.HasValue ? rule.SocAtDrainStart.Value - data.BatterySoc : 0;
 
                 if (actionsByRule.TryGetValue(rule.Id, out var ruleAction) &&
                     successfulActions.Contains(rule.Id))
                 {
                     action = ruleAction.TurnOn ? "ON" : "OFF";
+                    var turnOffThreshold = GetSocTurnOffThreshold(rule);
                     if (ruleAction.TurnOn)
                     {
                         reason = $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed";
                     }
-                    else if (data.BatterySoc <= rule.SocFloor)
+                    else if (data.BatterySoc <= turnOffThreshold)
                     {
-                        reason = $"SOC floor hit: {data.BatterySoc}% <= {rule.SocFloor}%";
-                    }
-                    else if (rule.SocAtDrainStart.HasValue && drop >= rule.MaxSocDropPercent)
-                    {
-                        reason = $"SOC drop {drop}% >= cap {rule.MaxSocDropPercent}% (anchor {anchor}% → {data.BatterySoc}%)";
+                        reason = $"SOC={data.BatterySoc}% <= turn-off threshold {turnOffThreshold}%";
                     }
                     else
                     {
-                        reason = $"Net drain {drainWh:F0}Wh >= {rule.MaxDrainWh}Wh over {rule.DrainWindowMinutes}min";
+                        reason = "Outside active time window";
                     }
                 }
                 else if (failedActions.TryGetValue(rule.Id, out var failureReason))
@@ -234,7 +221,7 @@ public class PollingWorker : BackgroundService
                     action = "NO_CHANGE";
                     if (rule.CurrentState)
                     {
-                        reason = $"ON: SOC={data.BatterySoc}%, anchor={anchor}%, drop={drop}%/{rule.MaxSocDropPercent}%, drain={drainWh:F0}Wh/{rule.MaxDrainWh}Wh, floor={rule.SocFloor}%";
+                        reason = $"ON: SOC={data.BatterySoc}% (turn off <= {GetSocTurnOffThreshold(rule)}%)";
                     }
                     else
                     {
@@ -267,6 +254,9 @@ public class PollingWorker : BackgroundService
             _logger.LogWarning(ex, "Failed to log rule runs");
         }
     }
+
+    private static int GetSocTurnOffThreshold(TriggerRule rule)
+        => rule.UseSeparateSocTurnOffThreshold ? rule.SocTurnOffThreshold : rule.SocTurnOnThreshold;
 
     private async Task RefreshDeviceStatusesAsync(CancellationToken ct)
     {
@@ -311,37 +301,6 @@ public class PollingWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to save reading to database");
-        }
-    }
-
-    private async Task<IReadOnlyList<InverterData>> GetRecentReadingsAsync(int minutes, CancellationToken ct)
-    {
-        try
-        {
-            await using var db = await _dbFactory.CreateDbContextAsync(ct);
-            var cutoff = DateTime.UtcNow.AddMinutes(-minutes);
-            var readings = await db.Readings
-                .Where(r => r.Timestamp >= cutoff)
-                .OrderBy(r => r.Timestamp)
-                .ToListAsync(ct);
-
-            return readings.Select(r => new InverterData
-            {
-                BatterySoc = r.BatterySoc,
-                BatteryPower = r.BatteryPower,
-                BatteryVoltage = r.BatteryVoltage,
-                BatteryTemperature = r.BatteryTemperature,
-                BatteryCurrent = r.BatteryCurrent,
-                SolarProduction = r.SolarProduction,
-                GridConsumption = r.GridConsumption,
-                LoadPower = r.LoadPower,
-                Timestamp = new DateTimeOffset(r.Timestamp, TimeSpan.Zero)
-            }).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load recent readings");
-            return Array.Empty<InverterData>();
         }
     }
 }

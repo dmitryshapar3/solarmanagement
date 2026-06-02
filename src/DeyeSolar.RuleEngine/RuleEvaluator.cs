@@ -6,7 +6,6 @@ public class RuleEvaluator
 {
     public IReadOnlyList<RuleAction> Evaluate(
         InverterData current,
-        IReadOnlyList<InverterData> recentReadings,
         IEnumerable<TriggerRule> rules,
         DateTimeOffset now,
         string? timeZoneId = null)
@@ -24,7 +23,7 @@ public class RuleEvaluator
 
             if (rule.CurrentState)
             {
-                if (ShouldTurnOff(current, recentReadings, rule, now))
+                if (ShouldTurnOff(current, rule))
                     actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: false));
             }
             else
@@ -43,15 +42,6 @@ public class RuleEvaluator
         if (current.BatterySoc < rule.SocTurnOnThreshold)
             return false;
 
-        // Never turn on at or below the safety floor
-        if (current.BatterySoc <= rule.SocFloor)
-            return false;
-
-        // Optional: require the battery to be actively charging (surplus solar)
-        // Sign convention: BatteryPower > 0 = discharging, < 0 = charging
-        if (rule.RequireBatteryCharging && current.BatteryPower >= 0)
-            return false;
-
         // Cooldown: respect time since last turn-off
         if (rule.CurrentStateChangedAt.HasValue)
         {
@@ -63,81 +53,14 @@ public class RuleEvaluator
         return true;
     }
 
-    private static bool ShouldTurnOff(
-        InverterData current,
-        IReadOnlyList<InverterData> readings,
-        TriggerRule rule,
-        DateTimeOffset now)
+    private static bool ShouldTurnOff(InverterData current, TriggerRule rule)
     {
-        // Track drain-episode anchor. Capture SOC the moment battery starts draining;
-        // clear when charging resumes so the next drain episode captures fresh.
-        UpdateDrainAnchor(current, rule);
-
-        // Safety floor overrides everything
-        if (current.BatterySoc <= rule.SocFloor)
-            return true;
-
-        // Per-episode SOC drop cap
-        if (rule.SocAtDrainStart.HasValue &&
-            (rule.SocAtDrainStart.Value - current.BatterySoc) >= rule.MaxSocDropPercent)
-        {
-            return true;
-        }
-
-        var drainWh = CalculateNetBatteryDrainWh(readings, rule.DrainWindowMinutes, now);
-        return drainWh >= rule.MaxDrainWh;
+        var threshold = GetSocTurnOffThreshold(rule);
+        return current.BatterySoc <= threshold;
     }
 
-    private static void UpdateDrainAnchor(InverterData current, TriggerRule rule)
-    {
-        if (current.BatteryPower > 0)
-        {
-            // Battery is draining — capture SOC if we don't already have an anchor
-            if (!rule.SocAtDrainStart.HasValue)
-                rule.SocAtDrainStart = current.BatterySoc;
-        }
-        else if (current.BatteryPower < 0)
-        {
-            // Battery is actively charging — end of drain episode, clear anchor
-            rule.SocAtDrainStart = null;
-        }
-        // BatteryPower == 0 (idle): leave anchor unchanged
-    }
-
-    // Signed trapezoidal integral of BatteryPower over the window.
-    // Positive BatteryPower = discharging (drain), negative = charging (cancels prior drain).
-    // Grid import/export is deliberately ignored — only the battery matters for "don't drain the battery".
-    public static double CalculateNetBatteryDrainWh(
-        IReadOnlyList<InverterData> readings,
-        int windowMinutes,
-        DateTimeOffset now)
-    {
-        var cutoff = now.AddMinutes(-windowMinutes);
-        var relevant = readings
-            .Where(r => r.Timestamp >= cutoff)
-            .OrderBy(r => r.Timestamp)
-            .ToList();
-
-        if (relevant.Count < 2)
-            return 0;
-
-        double totalWh = 0;
-
-        for (int i = 1; i < relevant.Count; i++)
-        {
-            var prev = relevant[i - 1];
-            var curr = relevant[i];
-            var intervalHours = (curr.Timestamp - prev.Timestamp).TotalHours;
-
-            if (intervalHours <= 0 || intervalHours > 0.5) // skip gaps > 30 min
-                continue;
-
-            var avgBatteryPower = (prev.BatteryPower + curr.BatteryPower) / 2.0;
-            totalWh += avgBatteryPower * intervalHours;
-        }
-
-        return totalWh;
-    }
+    private static int GetSocTurnOffThreshold(TriggerRule rule)
+        => rule.UseSeparateSocTurnOffThreshold ? rule.SocTurnOffThreshold : rule.SocTurnOnThreshold;
 
     private static bool IsInTimeWindow(TriggerRule rule, DateTimeOffset now, string? timeZoneId)
     {

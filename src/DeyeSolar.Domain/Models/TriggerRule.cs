@@ -10,24 +10,11 @@ public class TriggerRule
     // Turn ON when battery SOC is at or above this percentage
     public int SocTurnOnThreshold { get; set; } = 80;
 
-    // If true, additionally require the battery to be charging (BatteryPower < 0) at turn-on time
-    public bool RequireBatteryCharging { get; set; } = false;
+    // When disabled, the turn-off threshold is the same as SocTurnOnThreshold
+    public bool UseSeparateSocTurnOffThreshold { get; set; }
 
-    // Hard safety floor: force OFF if SOC drops to this percentage (overrides MinOnMinutes)
-    public int SocFloor { get; set; } = 55;
-
-    // Turn OFF when net battery drain over the window reaches this many Wh
-    public int MaxDrainWh { get; set; } = 200;
-
-    // Window over which net battery drain is accumulated (minutes)
-    public int DrainWindowMinutes { get; set; } = 15;
-
-    // Max SOC drop allowed within a single drain episode (percent).
-    // Anchor is captured when battery first starts draining after turn-on (or after a charge interval).
-    public int MaxSocDropPercent { get; set; } = 1;
-
-    // After turning ON, keep ON for at least this many minutes (unless SocFloor hit)
-    public int MinOnMinutes { get; set; } = 10;
+    // Turn OFF when battery SOC is at or below this percentage
+    public int SocTurnOffThreshold { get; set; } = 80;
 
     // After turning OFF, keep OFF for at least this many minutes before re-evaluating turn-on
     public int CooldownMinutes { get; set; } = 15;
@@ -43,7 +30,4 @@ public class TriggerRule
     public bool CurrentState { get; set; }
     public DateTime? CurrentStateChangedAt { get; set; }
     public DateTime? LastEvaluated { get; set; }
-
-    // SOC captured at the start of the current drain episode (nullable = no active episode)
-    public int? SocAtDrainStart { get; set; }
 }

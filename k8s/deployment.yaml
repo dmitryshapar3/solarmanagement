@@ -27,6 +27,30 @@ spec:
               value: "http://+:8080"
             - name: ConnectionStrings__DefaultConnection
               value: "Server=sqlserver-service.production.svc.cluster.local,1433;Database=DeyeSolar;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;MultipleActiveResultSets=true"
+            - name: SocketBackend__Mode
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-shelly
+                  key: backend-mode
+                  optional: true
+            - name: Shelly__ServerUri
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-shelly
+                  key: server-uri
+                  optional: true
+            - name: Shelly__AuthKey
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-shelly
+                  key: auth-key
+                  optional: true
+            - name: Shelly__DeviceId
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-shelly
+                  key: device-id
+                  optional: true
           resources:
             requests:
               memory: "256Mi"

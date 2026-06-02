@@ -1,20 +1,20 @@
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
-using DeyeSolar.Infrastructure.Tuya;
+using DeyeSolar.Infrastructure.Shelly;
 
 namespace DeyeSolar.Web.Services;
 
-public class CloudSocketInventoryService : ISocketInventoryService
+public class ShellySocketInventoryService : ISocketInventoryService
 {
-    private readonly TuyaCloudClient _tuyaClient;
+    private readonly ShellyCloudClient _shellyClient;
 
-    public CloudSocketInventoryService(TuyaCloudClient tuyaClient)
+    public ShellySocketInventoryService(ShellyCloudClient shellyClient)
     {
-        _tuyaClient = tuyaClient;
+        _shellyClient = shellyClient;
     }
 
     public async Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct)
-        => await _tuyaClient.GetDevicesWithStatusAsync(ct);
+        => await _shellyClient.GetDevicesWithStatusAsync(ct);
 
     public Task<IReadOnlyList<DevicePowerInfo>> RefreshDevicesAsync(CancellationToken ct)
         => GetCachedDevicesAsync(ct);

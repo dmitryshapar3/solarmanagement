@@ -4,6 +4,7 @@ using DeyeSolar.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeyeSolar.Web.Migrations
 {
     [DbContext(typeof(DeyeSolarDbContext))]
-    partial class DeyeSolarDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260602141746_SimplifyTriggerRules")]
+    partial class SimplifyTriggerRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -62,14 +65,8 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("SocTurnOffThreshold")
-                        .HasColumnType("int");
-
                     b.Property<int>("SocTurnOnThreshold")
                         .HasColumnType("int");
-
-                    b.Property<bool>("UseSeparateSocTurnOffThreshold")
-                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -102,6 +99,117 @@ namespace DeyeSolar.Web.Migrations
                         .IsUnique();
 
                     b.ToTable("AppSettings");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.BridgeCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BridgeId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("CommandType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool?>("DesiredState")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LeasedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResultMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeaseExpiresAt");
+
+                    b.HasIndex("BridgeId", "Status", "RequestedAt");
+
+                    b.ToTable("BridgeCommands");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.BridgeDeviceShadow", b =>
+                {
+                    b.Property<string>("BridgeId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DeviceId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("CurrentPowerW")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsOn")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("Online")
+                        .HasColumnType("bit");
+
+                    b.HasKey("BridgeId", "DeviceId");
+
+                    b.HasIndex("LastSeenAt");
+
+                    b.ToTable("BridgeDeviceShadows");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.BridgeHeartbeat", b =>
+                {
+                    b.Property<string>("BridgeId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("BridgeVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("HostName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("BridgeId");
+
+                    b.ToTable("BridgeHeartbeats");
                 });
 
             modelBuilder.Entity("DeyeSolar.Web.Data.Reading", b =>

@@ -3,9 +3,9 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
+using DeyeSolar.Infrastructure.Shelly;
 using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
-using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
@@ -50,6 +50,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 // Configuration
 builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
 builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
+builder.Services.Configure<ShellyOptions>(builder.Configuration.GetSection(ShellyOptions.Section));
 builder.Services.Configure<SocketBackendOptions>(builder.Configuration.GetSection(SocketBackendOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
 builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
@@ -58,10 +59,9 @@ builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(Disp
 builder.Services.AddHttpClient<DeyeCloudClient>();
 builder.Services.AddSingleton<IInverterDataSource>(sp => sp.GetRequiredService<DeyeCloudClient>());
 builder.Services.AddHttpClient<TuyaCloudClient>();
-builder.Services.AddSingleton<BridgeStateService>();
+builder.Services.AddHttpClient<ShellyCloudClient>();
 builder.Services.AddSingleton<CloudSocketInventoryService>();
-builder.Services.AddSingleton<HomeBridgeSocketController>();
-builder.Services.AddSingleton<HomeBridgeInventoryService>();
+builder.Services.AddSingleton<ShellySocketInventoryService>();
 builder.Services.AddSingleton<ISocketController, BackendSocketController>();
 builder.Services.AddSingleton<ISocketInventoryService, BackendSocketInventoryService>();
 
@@ -92,6 +92,7 @@ using (var scope = app.Services.CreateScope())
     var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
     await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
     await settingsService.SeedSectionAsync<TuyaOptions>(TuyaOptions.Section);
+    await settingsService.SeedSectionAsync<ShellyOptions>(ShellyOptions.Section);
     await settingsService.SeedSectionAsync<SocketBackendOptions>(SocketBackendOptions.Section);
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
     await settingsService.SeedSectionAsync<DisplayOptions>(DisplayOptions.Section);
@@ -105,11 +106,8 @@ using (var scope = app.Services.CreateScope())
             EntityId = "",
             Enabled = false,
             SocTurnOnThreshold = 80,
-            SocFloor = 55,
-            MaxDrainWh = 200,
-            DrainWindowMinutes = 15,
-            MaxSocDropPercent = 1,
-            MinOnMinutes = 10,
+            UseSeparateSocTurnOffThreshold = false,
+            SocTurnOffThreshold = 80,
             CooldownMinutes = 15,
             IntervalSeconds = 30
         });
@@ -146,7 +144,6 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapBridgeApi();
 app.MapBlazorHub();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");

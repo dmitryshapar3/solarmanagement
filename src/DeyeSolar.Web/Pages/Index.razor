@@ -3,7 +3,6 @@
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
-@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.TuyaOptions> TuyaOpts
 @using DeyeSolar.Web.Shared
 @implements IDisposable
 
@@ -84,12 +83,25 @@
             <MudPaper Class="pa-4" Elevation="2">
                 <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
                 <MudText Typo="Typo.caption" Class="mb-2">Manual override (rules will correct on next cycle)</MudText>
+                <MudSelect T="string" @bind-Value="_manualDeviceId" Label="Device" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                    @if (_devices != null)
+                    {
+                        @foreach (var d in _devices)
+                        {
+                            <MudSelectItem T="string" Value="@d.Id">
+                                @d.Name (@d.Category) @(d.Online ? (d.IsOn ? "- ON" : "- OFF") : "- offline")
+                            </MudSelectItem>
+                        }
+                    }
+                </MudSelect>
                 <MudStack Row="true" Spacing="2">
                     <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               Disabled="@string.IsNullOrWhiteSpace(_manualDeviceId)"
                                OnClick="@(() => ManualToggle(true))">
                         Socket ON
                     </MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Error"
+                               Disabled="@string.IsNullOrWhiteSpace(_manualDeviceId)"
                                OnClick="@(() => ManualToggle(false))">
                         Socket OFF
                     </MudButton>
@@ -204,6 +216,7 @@
     private InverterData? _data;
     private List<TriggerRule>? _rules;
     private IReadOnlyList<DevicePowerInfo>? _devices;
+    private string? _manualDeviceId;
     private string? _actionMessage;
     private Severity _actionSeverity;
     private string? _tz;
@@ -214,6 +227,7 @@
         _tz = display.TimeZoneId;
         _data = Snapshot.Current;
         _devices = DeviceSnapshot.Current;
+        SelectDefaultManualDevice();
         _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
         Snapshot.OnDataUpdated += OnDataUpdated;
         DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
@@ -236,6 +250,7 @@
     private async void OnDeviceSnapshotUpdated()
     {
         _devices = DeviceSnapshot.Current;
+        SelectDefaultManualDevice();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -250,13 +265,21 @@
     {
         try
         {
-            var entityId = TuyaOpts.CurrentValue.DeviceId;
+            var entityId = _manualDeviceId;
+            if (string.IsNullOrWhiteSpace(entityId))
+            {
+                _actionMessage = "Select a device first.";
+                _actionSeverity = Severity.Warning;
+                return;
+            }
+
             if (turnOn)
                 await SocketController.TurnOnAsync(entityId, CancellationToken.None);
             else
                 await SocketController.TurnOffAsync(entityId, CancellationToken.None);
 
-            _actionMessage = turnOn ? "Socket turned ON" : "Socket turned OFF";
+            var deviceName = _devices?.FirstOrDefault(d => d.Id == entityId)?.Name ?? entityId;
+            _actionMessage = turnOn ? $"{deviceName} turned ON" : $"{deviceName} turned OFF";
             _actionSeverity = Severity.Success;
         }
         catch (Exception ex)
@@ -264,6 +287,25 @@
             _actionMessage = $"Error: {ex.Message}";
             _actionSeverity = Severity.Error;
         }
+    }
+
+    private void SelectDefaultManualDevice()
+    {
+        if (_devices == null || _devices.Count == 0)
+        {
+            _manualDeviceId = null;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_manualDeviceId) &&
+            _devices.Any(d => d.Id == _manualDeviceId))
+        {
+            return;
+        }
+
+        _manualDeviceId =
+            _devices.FirstOrDefault(d => d.Online)?.Id ??
+            _devices[0].Id;
     }
 
     private Color GetSocColor(int soc) => soc switch

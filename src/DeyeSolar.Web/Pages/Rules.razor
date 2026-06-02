@@ -29,7 +29,9 @@ else
             <MudTh>Device</MudTh>
             <MudTh>Turn ON</MudTh>
             <MudTh>Turn OFF</MudTh>
+            <MudTh>Cooldown</MudTh>
             <MudTh>Interval</MudTh>
+            <MudTh>Time Window</MudTh>
             <MudTh>State</MudTh>
             <MudTh>Changed</MudTh>
             <MudTh>Enabled</MudTh>
@@ -51,9 +53,11 @@ else
                 <span>SOC &ge; @context.SocTurnOnThreshold%</span>
             </MudTd>
             <MudTd>
-                <span>drop &gt; @(context.MaxSocDropPercent)% per episode, drain &ge; @(context.MaxDrainWh)Wh / @(context.DrainWindowMinutes)min, SOC &le; @(context.SocFloor)%</span>
+                <span>@FormatTurnOffThreshold(context)</span>
             </MudTd>
+            <MudTd>@(context.CooldownMinutes) min</MudTd>
             <MudTd>@(context.IntervalSeconds)s</MudTd>
+            <MudTd>@FormatTimeWindow(context)</MudTd>
             <MudTd>
                 <MudChip T="string" Color="@(context.CurrentState ? Color.Success : Color.Default)" Size="Size.Small">
                     @(context.CurrentState ? "ON" : "OFF")
@@ -94,6 +98,25 @@ else
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _tz = display.TimeZoneId;
         _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+    }
+
+    private static string FormatTimeWindow(TriggerRule rule)
+    {
+        if (!rule.ActiveFrom.HasValue || !rule.ActiveTo.HasValue)
+            return "-";
+
+        return $"{rule.ActiveFrom.Value:HH:mm} - {rule.ActiveTo.Value:HH:mm}";
+    }
+
+    private static string FormatTurnOffThreshold(TriggerRule rule)
+    {
+        var threshold = rule.UseSeparateSocTurnOffThreshold
+            ? rule.SocTurnOffThreshold
+            : rule.SocTurnOnThreshold;
+
+        return rule.UseSeparateSocTurnOffThreshold
+            ? $"SOC <= {threshold}%"
+            : $"SOC <= {threshold}% (same)";
     }
 
     private async Task ToggleEnabled(TriggerRule rule, bool enabled)
