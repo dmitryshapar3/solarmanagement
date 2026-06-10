@@ -84,6 +84,64 @@ public class RuleEvaluatorTests
     }
 
     [Fact]
+    public void TurnOn_WhenSolarAverageAtThresholdAndSocBelowBypassThreshold()
+    {
+        var data = MakeData(soc: 90);
+        var rule = MakeRule(currentState: false);
+        rule.UseSolarProductionThreshold = true;
+        rule.MinAverageSolarProductionWatts = 3000;
+        var context = new RuleEvaluationContext(AverageSolarProductionWatts: 3000);
+
+        var actions = _evaluator.Evaluate(data, new[] { rule }, _now, context: context);
+
+        Assert.Single(actions);
+        Assert.True(actions[0].TurnOn);
+    }
+
+    [Fact]
+    public void NoTurnOn_WhenSolarAverageBelowThresholdAndSocBelowBypassThreshold()
+    {
+        var data = MakeData(soc: 90);
+        var rule = MakeRule(currentState: false);
+        rule.UseSolarProductionThreshold = true;
+        rule.MinAverageSolarProductionWatts = 3000;
+        var context = new RuleEvaluationContext(AverageSolarProductionWatts: 2999);
+
+        var actions = _evaluator.Evaluate(data, new[] { rule }, _now, context: context);
+
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void NoTurnOn_WhenSolarAverageUnavailableAndSocBelowBypassThreshold()
+    {
+        var data = MakeData(soc: 90);
+        var rule = MakeRule(currentState: false);
+        rule.UseSolarProductionThreshold = true;
+        rule.MinAverageSolarProductionWatts = 3000;
+        var context = new RuleEvaluationContext(AverageSolarProductionWatts: null);
+
+        var actions = _evaluator.Evaluate(data, new[] { rule }, _now, context: context);
+
+        Assert.Empty(actions);
+    }
+
+    [Fact]
+    public void TurnOn_WhenSolarThresholdEnabledAndSocAtBypassThreshold()
+    {
+        var data = MakeData(soc: 95);
+        var rule = MakeRule(currentState: false);
+        rule.UseSolarProductionThreshold = true;
+        rule.MinAverageSolarProductionWatts = 3000;
+        var context = new RuleEvaluationContext(AverageSolarProductionWatts: null);
+
+        var actions = _evaluator.Evaluate(data, new[] { rule }, _now, context: context);
+
+        Assert.Single(actions);
+        Assert.True(actions[0].TurnOn);
+    }
+
+    [Fact]
     public void StaysOn_WhenInsideTimeWindow()
     {
         var data = MakeData(soc: 90);

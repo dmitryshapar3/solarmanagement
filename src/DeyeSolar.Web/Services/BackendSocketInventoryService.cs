@@ -8,22 +8,16 @@ namespace DeyeSolar.Web.Services;
 
 public class BackendSocketInventoryService : ISocketInventoryService
 {
-    private readonly IOptionsMonitor<TuyaOptions> _tuyaOptions;
     private readonly IOptionsMonitor<ShellyOptions> _shellyOptions;
-    private readonly CloudSocketInventoryService _cloudInventoryService;
     private readonly ShellySocketInventoryService _shellyInventoryService;
     private readonly ILogger<BackendSocketInventoryService> _logger;
 
     public BackendSocketInventoryService(
-        IOptionsMonitor<TuyaOptions> tuyaOptions,
         IOptionsMonitor<ShellyOptions> shellyOptions,
-        CloudSocketInventoryService cloudInventoryService,
         ShellySocketInventoryService shellyInventoryService,
         ILogger<BackendSocketInventoryService> logger)
     {
-        _tuyaOptions = tuyaOptions;
         _shellyOptions = shellyOptions;
-        _cloudInventoryService = cloudInventoryService;
         _shellyInventoryService = shellyInventoryService;
         _logger = logger;
     }
@@ -38,18 +32,6 @@ public class BackendSocketInventoryService : ISocketInventoryService
     {
         var devices = new List<DevicePowerInfo>();
         var errors = new List<Exception>();
-
-        if (IsTuyaConfigured())
-        {
-            await AddDevicesAsync(
-                devices,
-                errors,
-                _cloudInventoryService,
-                SocketDeviceSources.Tuya,
-                "Tuya",
-                forceRefresh,
-                ct);
-        }
 
         if (IsShellyConfigured())
         {
@@ -110,13 +92,6 @@ public class BackendSocketInventoryService : ISocketInventoryService
                 d.IsOn,
                 d.CurrentPowerW))
             .ToList();
-
-    private bool IsTuyaConfigured()
-    {
-        var opts = _tuyaOptions.CurrentValue;
-        return !string.IsNullOrWhiteSpace(opts.AccessId) &&
-            !string.IsNullOrWhiteSpace(opts.AccessSecret);
-    }
 
     private bool IsShellyConfigured()
     {

@@ -2,6 +2,7 @@
 @page "/rules/edit/{Id:int}"
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
+@inject DeviceStatusSnapshot DeviceSnapshot
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
@@ -61,6 +62,14 @@
                          Disabled="@(!_rule.UseSeparateSocTurnOffThreshold)"
                          Error="@IsSocTurnOffInvalid" ErrorText="@SocTurnOffErrorText"
                          HelperText="@(_rule.UseSeparateSocTurnOffThreshold ? "Turn off when battery charge drops to this level" : "Uses the turn-on SOC when disabled")" />
+        <MudCheckBox T="bool" Value="_rule.UseSolarProductionThreshold" ValueChanged="OnUseSolarProductionThresholdChanged"
+                     Label="Require average PV production"
+                     Color="Color.Primary" Class="mt-2" />
+        <MudNumericField @bind-Value="_rule.MinAverageSolarProductionWatts" Label="Average PV last hour at least (W)"
+                         Min="1" Max="30000" Class="mt-2"
+                         Disabled="@(!_rule.UseSolarProductionThreshold)"
+                         Error="@IsSolarProductionThresholdInvalid" ErrorText="Average PV threshold must be between 1 and 30000 W"
+                         HelperText="Checked only while battery SOC is below 95%; bypassed at 95% or above" />
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Anti-flapping</MudText>
         <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
@@ -110,6 +119,8 @@
         SocTurnOnThreshold = 80,
         UseSeparateSocTurnOffThreshold = false,
         SocTurnOffThreshold = 80,
+        UseSolarProductionThreshold = false,
+        MinAverageSolarProductionWatts = 3000,
         CooldownMinutes = 15,
         IntervalSeconds = 30
     };
@@ -126,6 +137,8 @@
     private bool IsSocTurnOffInvalid =>
         _rule.UseSeparateSocTurnOffThreshold &&
         (_rule.SocTurnOffThreshold is < 0 or > 100 || _rule.SocTurnOffThreshold > _rule.SocTurnOnThreshold);
+    private bool IsSolarProductionThresholdInvalid =>
+        _rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts is (< 1 or > 30000);
     private bool IsCooldownInvalid => _rule.CooldownMinutes is < 1 or > 240;
     private bool IsIntervalInvalid => _rule.IntervalSeconds is < 10 or > 3600;
     private bool IsTimeWindowInvalid => _activeFrom.HasValue != _activeTo.HasValue;
@@ -176,6 +189,9 @@
                 _devices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
             }
 
+            if (_devices.Count > 0)
+                DeviceSnapshot.Update(_devices);
+
             if (_devices.Count == 0)
                 _loadError = "No devices found. Check the socket backend in Settings.";
         }
@@ -204,6 +220,13 @@
             _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
     }
 
+    private void OnUseSolarProductionThresholdChanged(bool value)
+    {
+        _rule.UseSolarProductionThreshold = value;
+        if (value && _rule.MinAverageSolarProductionWatts <= 0)
+            _rule.MinAverageSolarProductionWatts = 3000;
+    }
+
     private async Task Save()
     {
         _validationError = null;
@@ -213,6 +236,9 @@
 
         if (!_rule.UseSeparateSocTurnOffThreshold)
             _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
+
+        if (_rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts <= 0)
+            _rule.MinAverageSolarProductionWatts = 3000;
 
         if (_form != null)
         {
@@ -245,6 +271,12 @@
         if (IsSocTurnOffInvalid)
         {
             _validationError = SocTurnOffErrorText;
+            return false;
+        }
+
+        if (IsSolarProductionThresholdInvalid)
+        {
+            _validationError = "Average PV threshold must be between 1 and 30000 W.";
             return false;
         }
 

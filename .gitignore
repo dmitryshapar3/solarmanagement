@@ -12,3 +12,9 @@ obj/
 appsettings.*.local.json
 scripts/restore-creds.*
 bridge/__pycache__/
+node_modules/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/.env.local
+mobile/expo.*.log

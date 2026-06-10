@@ -16,6 +16,10 @@ public class TriggerRule
     // Turn OFF when battery SOC is at or below this percentage
     public int SocTurnOffThreshold { get; set; } = 80;
 
+    // When enabled and current SOC is below 95%, require the last-hour average PV power to meet this threshold
+    public bool UseSolarProductionThreshold { get; set; }
+    public int MinAverageSolarProductionWatts { get; set; } = 3000;
+
     // After turning OFF, keep OFF for at least this many minutes before re-evaluating turn-on
     public int CooldownMinutes { get; set; } = 15;
 

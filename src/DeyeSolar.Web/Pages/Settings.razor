@@ -1,9 +1,10 @@
 @page "/settings"
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @inject DeyeSolar.Infrastructure.DeyeCloud.DeyeCloudClient DeyeClient
-@inject DeyeSolar.Infrastructure.Tuya.TuyaCloudClient TuyaClient
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
+@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject DeviceStatusSnapshot DeviceSnapshot
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
@@ -74,31 +75,6 @@
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-3">Smart Socket Cloud</MudText>
 
-            <MudSelect T="string" @bind-Value="_socketBackend.Mode" Label="Default Control Provider" Variant="Variant.Outlined">
-                <MudSelectItem T="string" Value="@DeyeSolar.Domain.Options.SocketBackendModes.CloudTuya">Cloud Tuya</MudSelectItem>
-                <MudSelectItem T="string" Value="@DeyeSolar.Domain.Options.SocketBackendModes.CloudShelly">Cloud Shelly</MudSelectItem>
-            </MudSelect>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSocketBackend" Class="mt-3">
-                Save Default Provider
-            </MudButton>
-
-            <MudDivider Class="my-3" />
-
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Cloud Tuya</MudText>
-            <MudSelect T="string" @bind-Value="_tuya.BaseUrl" Label="Region" Variant="Variant.Outlined">
-                <MudSelectItem T="string" Value="@("https://openapi.tuyaeu.com")">Europe</MudSelectItem>
-                <MudSelectItem T="string" Value="@("https://openapi.tuyaus.com")">Americas</MudSelectItem>
-                <MudSelectItem T="string" Value="@("https://openapi.tuyacn.com")">China</MudSelectItem>
-                <MudSelectItem T="string" Value="@("https://openapi.tuyain.com")">India</MudSelectItem>
-            </MudSelect>
-            <MudTextField @bind-Value="_tuya.AccessId" Label="Access ID" Class="mt-2" />
-            <MudTextField @bind-Value="_tuya.AccessSecret" Label="Access Secret" Class="mt-2" InputType="InputType.Password" />
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveTuya" Class="mt-3">
-                Save Tuya Cloud
-            </MudButton>
-
-            <MudDivider Class="my-3" />
-
             <MudText Typo="Typo.subtitle1" Class="mb-2">Cloud Shelly</MudText>
             <MudTextField @bind-Value="_shelly.ServerUri" Label="Server URI" Class="mt-2" />
             <MudTextField @bind-Value="_shelly.AuthKey" Label="Authorization Cloud Key" Class="mt-2" InputType="InputType.Password" />
@@ -167,9 +143,7 @@
 
 @code {
     private DeyeSolar.Domain.Options.DeyeCloudOptions _deye = new();
-    private DeyeSolar.Domain.Options.TuyaOptions _tuya = new();
     private DeyeSolar.Domain.Options.ShellyOptions _shelly = new();
-    private DeyeSolar.Domain.Options.SocketBackendOptions _socketBackend = new();
     private DeyeSolar.Domain.Options.PollingOptions _polling = new();
     private DeyeSolar.Domain.Options.DisplayOptions _display = new();
 
@@ -187,9 +161,7 @@
     protected override async Task OnInitializedAsync()
     {
         _deye = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DeyeCloudOptions>("DeyeCloud");
-        _tuya = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.TuyaOptions>("Tuya");
         _shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
-        _socketBackend = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.SocketBackendOptions>("SocketBackend");
         _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
         _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _selectedStationId = _deye.StationId;
@@ -277,27 +249,6 @@
         Snackbar.Add($"Selected: {device.DeviceType} SN {device.SerialNumber}", Severity.Info);
     }
 
-    private async Task SaveSocketBackend()
-        => await SaveSocketBackend(showSnackbar: true);
-
-    private async Task SaveSocketBackend(bool showSnackbar)
-    {
-        await SettingsService.SaveSectionAsync("SocketBackend", _socketBackend);
-        if (showSnackbar)
-            Snackbar.Add("Socket default provider saved", Severity.Success);
-    }
-
-    private async Task SaveTuya()
-        => await SaveTuya(showSnackbar: true);
-
-    private async Task SaveTuya(bool showSnackbar)
-    {
-        await SettingsService.SaveSectionAsync("Tuya", _tuya);
-        TuyaClient.InvalidateToken();
-        if (showSnackbar)
-            Snackbar.Add("Tuya settings saved", Severity.Success);
-    }
-
     private async Task SaveShelly()
         => await SaveShelly(showSnackbar: true);
 
@@ -316,11 +267,10 @@
 
         try
         {
-            await SaveSocketBackend(showSnackbar: false);
-            await SaveTuya(showSnackbar: false);
             await SaveShelly(showSnackbar: false);
 
             _socketDevices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
+            DeviceSnapshot.Update(_socketDevices);
 
             if (_socketDevices.Count == 1)
                 await SelectSocketDevice(_socketDevices[0]);
@@ -337,25 +287,10 @@
 
     private async Task SelectSocketDevice(DeyeSolar.Domain.Models.DevicePowerInfo device)
     {
-        var source = string.Empty;
-        var rawId = device.Id;
-        DeyeSolar.Domain.Models.SocketEntityIds.TryParse(device.Id, out source, out rawId);
+        var rawId = DeyeSolar.Domain.Models.SocketEntityIds.RawIdOrSelf(device.Id);
 
-        if (source == DeyeSolar.Domain.Models.SocketDeviceSources.Shelly ||
-            (string.IsNullOrEmpty(source) && DeyeSolar.Domain.Options.SocketBackendModes.IsCloudShelly(_socketBackend.Mode)))
-        {
-            _shelly.DeviceId = rawId;
-            _socketBackend.Mode = DeyeSolar.Domain.Options.SocketBackendModes.CloudShelly;
-            await SaveSocketBackend(showSnackbar: false);
-            await SaveShelly(showSnackbar: false);
-        }
-        else
-        {
-            _tuya.DeviceId = rawId;
-            _socketBackend.Mode = DeyeSolar.Domain.Options.SocketBackendModes.CloudTuya;
-            await SaveSocketBackend(showSnackbar: false);
-            await SaveTuya(showSnackbar: false);
-        }
+        _shelly.DeviceId = rawId;
+        await SaveShelly(showSnackbar: false);
 
         Snackbar.Add($"Selected: {device.Name} ({rawId})", Severity.Info);
     }
@@ -364,7 +299,9 @@
     {
         try
         {
-            await SocketController.TurnOnAsync(CurrentSocketDeviceId, CancellationToken.None);
+            var entityId = CurrentSocketEntityId;
+            await SocketController.TurnOnAsync(entityId, CancellationToken.None);
+            await MarkSocketState(entityId, isOn: true);
             Snackbar.Add("ON", Severity.Success);
         }
         catch (Exception ex)
@@ -377,7 +314,9 @@
     {
         try
         {
-            await SocketController.TurnOffAsync(CurrentSocketDeviceId, CancellationToken.None);
+            var entityId = CurrentSocketEntityId;
+            await SocketController.TurnOffAsync(entityId, CancellationToken.None);
+            await MarkSocketState(entityId, isOn: false);
             Snackbar.Add("OFF", Severity.Success);
         }
         catch (Exception ex)
@@ -408,7 +347,42 @@
     }
 
     private string CurrentSocketDeviceId
-        => DeyeSolar.Domain.Options.SocketBackendModes.IsCloudShelly(_socketBackend.Mode)
-            ? _shelly.DeviceId
-            : _tuya.DeviceId;
+        => _shelly.DeviceId;
+
+    private string CurrentSocketEntityId
+    {
+        get
+        {
+            var rawId = CurrentSocketDeviceId;
+            if (string.IsNullOrWhiteSpace(rawId))
+                return string.Empty;
+
+            return DeyeSolar.Domain.Models.SocketEntityIds.Create(
+                DeyeSolar.Domain.Models.SocketDeviceSources.Shelly, rawId);
+        }
+    }
+
+    private async Task MarkSocketState(string entityId, bool isOn)
+    {
+        DeviceSnapshot.SetDeviceState(entityId, isOn);
+
+        if (_socketDevices != null)
+        {
+            _socketDevices = _socketDevices
+                .Select(device => string.Equals(device.Id, entityId, StringComparison.OrdinalIgnoreCase)
+                    ? device with { Online = true, IsOn = isOn }
+                    : device)
+                .ToList();
+        }
+
+        var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        foreach (var rule in rules.Where(r => string.Equals(r.EntityId, entityId, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (rule.CurrentState == isOn)
+                continue;
+
+            rule.CurrentState = isOn;
+            await RuleRepo.UpdateAsync(rule, CancellationToken.None);
+        }
+    }
 }

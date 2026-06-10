@@ -33,6 +33,7 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         {
             e.HasKey(r => r.Id);
             e.HasIndex(r => r.Timestamp);
+            e.Property(r => r.ConditionKey).HasMaxLength(160);
         });
 
         modelBuilder.Entity<TriggerRule>(e =>
@@ -70,6 +71,7 @@ public class RuleRunLog
     public DateTime Timestamp { get; set; }
     public string RuleName { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty;
+    public string ConditionKey { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public int BatterySoc { get; set; }
     public int SolarProduction { get; set; }

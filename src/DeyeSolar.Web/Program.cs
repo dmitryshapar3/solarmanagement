@@ -4,11 +4,12 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Infrastructure.Shelly;
-using DeyeSolar.Infrastructure.Tuya;
 using DeyeSolar.RuleEngine;
+using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
@@ -39,6 +40,11 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
 .AddEntityFrameworkStores<DeyeSolarDbContext>()
 .AddDefaultTokenProviders();
 
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(
+        MobileBearerAuthenticationHandler.SchemeName,
+        _ => { });
+
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/login";
@@ -49,18 +55,14 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 // Configuration
 builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
-builder.Services.Configure<TuyaOptions>(builder.Configuration.GetSection(TuyaOptions.Section));
 builder.Services.Configure<ShellyOptions>(builder.Configuration.GetSection(ShellyOptions.Section));
-builder.Services.Configure<SocketBackendOptions>(builder.Configuration.GetSection(SocketBackendOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
 builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
 
 // Infrastructure
 builder.Services.AddHttpClient<DeyeCloudClient>();
 builder.Services.AddSingleton<IInverterDataSource>(sp => sp.GetRequiredService<DeyeCloudClient>());
-builder.Services.AddHttpClient<TuyaCloudClient>();
 builder.Services.AddHttpClient<ShellyCloudClient>();
-builder.Services.AddSingleton<CloudSocketInventoryService>();
 builder.Services.AddSingleton<ShellySocketInventoryService>();
 builder.Services.AddSingleton<ISocketController, BackendSocketController>();
 builder.Services.AddSingleton<ISocketInventoryService, BackendSocketInventoryService>();
@@ -70,6 +72,9 @@ builder.Services.AddSingleton<InverterDataSnapshot>();
 builder.Services.AddSingleton<DeviceStatusSnapshot>();
 builder.Services.AddSingleton<RuleEvaluator>();
 builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
+builder.Services.AddSingleton<MobileSessionStore>();
+builder.Services.AddScoped<MobileAuthService>();
+builder.Services.AddScoped<MobileSocketCommandService>();
 
 // Background worker
 builder.Services.AddHostedService<PollingWorker>();
@@ -91,9 +96,7 @@ using (var scope = app.Services.CreateScope())
     // Seed settings
     var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
     await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-    await settingsService.SeedSectionAsync<TuyaOptions>(TuyaOptions.Section);
     await settingsService.SeedSectionAsync<ShellyOptions>(ShellyOptions.Section);
-    await settingsService.SeedSectionAsync<SocketBackendOptions>(SocketBackendOptions.Section);
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
     await settingsService.SeedSectionAsync<DisplayOptions>(DisplayOptions.Section);
 
@@ -108,6 +111,8 @@ using (var scope = app.Services.CreateScope())
             SocTurnOnThreshold = 80,
             UseSeparateSocTurnOffThreshold = false,
             SocTurnOffThreshold = 80,
+            UseSolarProductionThreshold = false,
+            MinAverageSolarProductionWatts = 3000,
             CooldownMinutes = 15,
             IntervalSeconds = 30
         });
@@ -144,6 +149,7 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapMobileApi();
 app.MapBlazorHub();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");

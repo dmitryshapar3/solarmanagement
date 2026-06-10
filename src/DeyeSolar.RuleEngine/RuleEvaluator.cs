@@ -4,11 +4,15 @@ namespace DeyeSolar.RuleEngine;
 
 public class RuleEvaluator
 {
+    public const int SolarProductionBypassSocThreshold = 95;
+    public const int SolarProductionAverageWindowMinutes = 60;
+
     public IReadOnlyList<RuleAction> Evaluate(
         InverterData current,
         IEnumerable<TriggerRule> rules,
         DateTimeOffset now,
-        string? timeZoneId = null)
+        string? timeZoneId = null,
+        RuleEvaluationContext? context = null)
     {
         var actions = new List<RuleAction>();
 
@@ -28,7 +32,7 @@ public class RuleEvaluator
             }
             else
             {
-                if (ShouldTurnOn(current, rule, now))
+                if (ShouldTurnOn(current, rule, now, context))
                     actions.Add(new RuleAction(rule.Id, rule.EntityId, TurnOn: true));
             }
         }
@@ -36,7 +40,11 @@ public class RuleEvaluator
         return actions;
     }
 
-    private static bool ShouldTurnOn(InverterData current, TriggerRule rule, DateTimeOffset now)
+    private static bool ShouldTurnOn(
+        InverterData current,
+        TriggerRule rule,
+        DateTimeOffset now,
+        RuleEvaluationContext? context)
     {
         // SOC must be at or above turn-on threshold
         if (current.BatterySoc < rule.SocTurnOnThreshold)
@@ -50,7 +58,22 @@ public class RuleEvaluator
                 return false;
         }
 
-        return true;
+        return IsSolarProductionConditionSatisfied(current, rule, context);
+    }
+
+    public static bool IsSolarProductionConditionSatisfied(
+        InverterData current,
+        TriggerRule rule,
+        RuleEvaluationContext? context)
+    {
+        if (!rule.UseSolarProductionThreshold)
+            return true;
+
+        if (current.BatterySoc >= SolarProductionBypassSocThreshold)
+            return true;
+
+        var averageWatts = context?.AverageSolarProductionWatts;
+        return averageWatts.HasValue && averageWatts.Value >= rule.MinAverageSolarProductionWatts;
     }
 
     private static bool ShouldTurnOff(InverterData current, TriggerRule rule)

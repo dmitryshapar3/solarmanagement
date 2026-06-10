@@ -2,7 +2,6 @@ namespace DeyeSolar.Domain.Models;
 
 public static class SocketDeviceSources
 {
-    public const string Tuya = "tuya";
     public const string Shelly = "shelly";
 }
 
@@ -21,8 +20,7 @@ public static class SocketEntityIds
             return false;
 
         var candidateSource = entityId[..separatorIndex].ToLowerInvariant();
-        if (candidateSource is not SocketDeviceSources.Tuya and
-            not SocketDeviceSources.Shelly)
+        if (candidateSource is not SocketDeviceSources.Shelly)
         {
             return false;
         }

@@ -1,5 +1,6 @@
 @page "/devices"
 @inject DeviceStatusSnapshot DeviceSnapshot
+@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @using DeyeSolar.Web.Shared
 @implements IDisposable
@@ -7,6 +8,12 @@
 <PageTitle>Devices - DeyeSolar</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-4">Smart Sockets</MudText>
+
+<MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RefreshDevices"
+           Disabled="_loadingDevices" StartIcon="@Icons.Material.Filled.Refresh" Class="mb-3">
+    @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+    Refresh Devices
+</MudButton>
 
 @if (DeviceSnapshot.LastUpdated.HasValue)
 {
@@ -69,9 +76,16 @@
     }
 </MudPaper>
 
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <MudAlert Severity="Severity.Error" Class="mt-3">@_errorMessage</MudAlert>
+}
+
 @code {
     private IReadOnlyList<DevicePowerInfo>? _devices;
     private string? _tz;
+    private bool _loadingDevices;
+    private string? _errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -79,6 +93,27 @@
         _tz = display.TimeZoneId;
         _devices = DeviceSnapshot.Current;
         DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
+    }
+
+    private async Task RefreshDevices()
+    {
+        _loadingDevices = true;
+        _errorMessage = null;
+
+        try
+        {
+            var devices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
+            DeviceSnapshot.Update(devices);
+            _devices = devices;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loadingDevices = false;
+        }
     }
 
     private async void OnDeviceSnapshotUpdated()

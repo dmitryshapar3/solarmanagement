@@ -13,7 +13,6 @@ public class PollingWorker : BackgroundService
 {
     private readonly IInverterDataSource _dataSource;
     private readonly ISocketController _socketController;
-    private readonly ISocketInventoryService _socketInventoryService;
     private readonly IRuleRepository _ruleRepository;
     private readonly InverterDataSnapshot _snapshot;
     private readonly DeviceStatusSnapshot _deviceStatusSnapshot;
@@ -26,7 +25,6 @@ public class PollingWorker : BackgroundService
     public PollingWorker(
         IInverterDataSource dataSource,
         ISocketController socketController,
-        ISocketInventoryService socketInventoryService,
         IRuleRepository ruleRepository,
         InverterDataSnapshot snapshot,
         DeviceStatusSnapshot deviceStatusSnapshot,
@@ -38,7 +36,6 @@ public class PollingWorker : BackgroundService
     {
         _dataSource = dataSource;
         _socketController = socketController;
-        _socketInventoryService = socketInventoryService;
         _ruleRepository = ruleRepository;
         _snapshot = snapshot;
         _deviceStatusSnapshot = deviceStatusSnapshot;
@@ -77,7 +74,6 @@ public class PollingWorker : BackgroundService
 
         _snapshot.Update(data);
         await SaveReadingAsync(data, ct);
-        await RefreshDeviceStatusesAsync(ct);
 
         var allRules = await _ruleRepository.GetAllAsync(ct);
         var now = DateTime.UtcNow;
@@ -98,11 +94,10 @@ public class PollingWorker : BackgroundService
 
         _logger.LogInformation("Evaluating {Count} rule(s)", dueRules.Count);
 
-        // Sync actual device state for due rules
-        await SyncDeviceStateAsync(dueRules, ct);
+        var evaluationContext = await BuildEvaluationContextAsync(now, ct);
 
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        var actions = _ruleEvaluator.Evaluate(data, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId);
+        var actions = _ruleEvaluator.Evaluate(data, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
 
@@ -119,6 +114,7 @@ public class PollingWorker : BackgroundService
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
+                _deviceStatusSnapshot.SetDeviceState(action.EntityId, action.TurnOn);
                 successfulActions.Add(action.RuleId);
 
                 _logger.LogInformation("Rule '{RuleName}' triggered: {Action} {EntityId}",
@@ -143,7 +139,7 @@ public class PollingWorker : BackgroundService
             }
         }
 
-        await LogRuleRunsAsync(data, dueRules, actions, successfulActions, failedActions, ct);
+        await LogRuleRunsAsync(data, evaluationContext, dueRules, actions, successfulActions, failedActions, ct);
     }
 
     private static bool IsDueForEvaluation(TriggerRule rule, DateTime now)
@@ -153,30 +149,9 @@ public class PollingWorker : BackgroundService
         return (now - rule.LastEvaluated.Value).TotalSeconds >= rule.IntervalSeconds;
     }
 
-    private async Task SyncDeviceStateAsync(List<TriggerRule> rules, CancellationToken ct)
-    {
-        foreach (var rule in rules.Where(r => r.Enabled && !string.IsNullOrEmpty(r.EntityId)))
-        {
-            try
-            {
-                var actualState = await _socketController.GetStateAsync(rule.EntityId, ct);
-                if (rule.CurrentState != actualState)
-                {
-                    _logger.LogInformation("Rule '{Name}' state synced: {Old} -> {New}",
-                        rule.Name, rule.CurrentState ? "ON" : "OFF", actualState ? "ON" : "OFF");
-                    rule.CurrentState = actualState;
-                    await _ruleRepository.UpdateAsync(rule, ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not sync device state for rule {RuleId}", rule.Id);
-            }
-        }
-    }
-
     private async Task LogRuleRunsAsync(
         InverterData data,
+        RuleEvaluationContext evaluationContext,
         List<TriggerRule> rules,
         IReadOnlyList<RuleAction> actions,
         IReadOnlySet<int> successfulActions,
@@ -192,6 +167,7 @@ public class PollingWorker : BackgroundService
             {
                 string action;
                 string reason;
+                string conditionKey;
 
                 if (actionsByRule.TryGetValue(rule.Id, out var ruleAction) &&
                     successfulActions.Contains(rule.Id))
@@ -200,14 +176,20 @@ public class PollingWorker : BackgroundService
                     var turnOffThreshold = GetSocTurnOffThreshold(rule);
                     if (ruleAction.TurnOn)
                     {
+                        conditionKey = "action:on";
                         reason = $"SOC={data.BatterySoc}% >= {rule.SocTurnOnThreshold}%, cooldown elapsed";
+                        var solarReason = DescribeSolarProductionCondition(data, rule, evaluationContext);
+                        if (!string.IsNullOrEmpty(solarReason))
+                            reason += $"; {solarReason}";
                     }
                     else if (data.BatterySoc <= turnOffThreshold)
                     {
+                        conditionKey = "action:off:soc-threshold";
                         reason = $"SOC={data.BatterySoc}% <= turn-off threshold {turnOffThreshold}%";
                     }
                     else
                     {
+                        conditionKey = "action:off:time-window";
                         reason = "Outside active time window";
                     }
                 }
@@ -215,30 +197,39 @@ public class PollingWorker : BackgroundService
                 {
                     action = "ERROR";
                     reason = failureReason;
+                    conditionKey = $"error:{failureReason}";
                 }
                 else
                 {
                     action = "NO_CHANGE";
                     if (rule.CurrentState)
                     {
+                        conditionKey = "no-change:on";
                         reason = $"ON: SOC={data.BatterySoc}% (turn off <= {GetSocTurnOffThreshold(rule)}%)";
+                    }
+                    else if (data.BatterySoc < rule.SocTurnOnThreshold)
+                    {
+                        conditionKey = "no-change:off:soc-below-threshold";
+                        reason = $"OFF: SOC={data.BatterySoc}% (need >= {rule.SocTurnOnThreshold}%)";
+                    }
+                    else if (TryDescribeCooldown(rule, DateTimeOffset.UtcNow, out var cooldownReason))
+                    {
+                        conditionKey = "no-change:off:cooldown";
+                        reason = cooldownReason;
+                    }
+                    else if (ShouldDescribeBlockedSolarProduction(data, rule, evaluationContext))
+                    {
+                        conditionKey = GetBlockedSolarProductionConditionKey(evaluationContext);
+                        reason = $"OFF: {DescribeSolarProductionCondition(data, rule, evaluationContext)}";
                     }
                     else
                     {
-                        reason = $"OFF: SOC={data.BatterySoc}% (need >={rule.SocTurnOnThreshold}%)";
+                        conditionKey = "no-change:off:conditions-not-met";
+                        reason = "OFF: conditions not met";
                     }
                 }
 
-                db.RuleRunLogs.Add(new RuleRunLog
-                {
-                    Timestamp = DateTime.UtcNow,
-                    RuleName = rule.Name,
-                    Action = action,
-                    Reason = reason,
-                    BatterySoc = data.BatterySoc,
-                    SolarProduction = data.SolarProduction,
-                    BatteryPower = data.BatteryPower
-                });
+                await UpsertRuleRunLogAsync(db, rule.Name, action, conditionKey, reason, data, ct);
             }
 
             await db.SaveChangesAsync(ct);
@@ -258,18 +249,113 @@ public class PollingWorker : BackgroundService
     private static int GetSocTurnOffThreshold(TriggerRule rule)
         => rule.UseSeparateSocTurnOffThreshold ? rule.SocTurnOffThreshold : rule.SocTurnOnThreshold;
 
-    private async Task RefreshDeviceStatusesAsync(CancellationToken ct)
+    private static async Task UpsertRuleRunLogAsync(
+        DeyeSolarDbContext db,
+        string ruleName,
+        string action,
+        string conditionKey,
+        string reason,
+        InverterData data,
+        CancellationToken ct)
     {
-        try
+        conditionKey = NormalizeConditionKey(conditionKey);
+
+        var latest = await db.RuleRunLogs
+            .Where(r => r.RuleName == ruleName)
+            .OrderByDescending(r => r.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (latest != null &&
+            latest.Action == action &&
+            latest.ConditionKey == conditionKey)
         {
-            var devices = await _socketInventoryService.GetCachedDevicesAsync(ct);
-            _deviceStatusSnapshot.Update(devices);
-            _logger.LogDebug("Refreshed status for {Count} smart socket(s)", devices.Count);
+            latest.Timestamp = DateTime.UtcNow;
+            latest.Reason = reason;
+            latest.BatterySoc = data.BatterySoc;
+            latest.SolarProduction = data.SolarProduction;
+            latest.BatteryPower = data.BatteryPower;
+            return;
         }
-        catch (Exception ex)
+
+        db.RuleRunLogs.Add(new RuleRunLog
         {
-            _logger.LogWarning(ex, "Failed to refresh smart socket statuses");
+            Timestamp = DateTime.UtcNow,
+            RuleName = ruleName,
+            Action = action,
+            ConditionKey = conditionKey,
+            Reason = reason,
+            BatterySoc = data.BatterySoc,
+            SolarProduction = data.SolarProduction,
+            BatteryPower = data.BatteryPower
+        });
+    }
+
+    private static string NormalizeConditionKey(string conditionKey)
+        => conditionKey.Length <= 160 ? conditionKey : conditionKey[..160];
+
+    private static bool TryDescribeCooldown(TriggerRule rule, DateTimeOffset now, out string reason)
+    {
+        reason = string.Empty;
+        if (!rule.CurrentStateChangedAt.HasValue)
+            return false;
+
+        var changedAt = new DateTimeOffset(rule.CurrentStateChangedAt.Value, TimeSpan.Zero);
+        var elapsed = now - changedAt;
+        var cooldown = TimeSpan.FromMinutes(rule.CooldownMinutes);
+        if (elapsed >= cooldown)
+            return false;
+
+        var remaining = cooldown - elapsed;
+        reason = $"OFF: cooldown active ({Math.Ceiling(remaining.TotalMinutes)} min remaining)";
+        return true;
+    }
+
+    private async Task<RuleEvaluationContext> BuildEvaluationContextAsync(DateTime now, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var cutoff = now.AddMinutes(-RuleEvaluator.SolarProductionAverageWindowMinutes);
+
+        var averageSolar = await db.Readings
+            .Where(r => r.Timestamp >= cutoff &&
+                r.BatterySoc < RuleEvaluator.SolarProductionBypassSocThreshold)
+            .AverageAsync(r => (double?)r.SolarProduction, ct);
+
+        return new RuleEvaluationContext(
+            averageSolar.HasValue ? (int)Math.Round(averageSolar.Value) : null);
+    }
+
+    private static bool ShouldDescribeBlockedSolarProduction(
+        InverterData data,
+        TriggerRule rule,
+        RuleEvaluationContext context)
+        => rule.UseSolarProductionThreshold &&
+            data.BatterySoc >= rule.SocTurnOnThreshold &&
+            data.BatterySoc < RuleEvaluator.SolarProductionBypassSocThreshold &&
+            !RuleEvaluator.IsSolarProductionConditionSatisfied(data, rule, context);
+
+    private static string GetBlockedSolarProductionConditionKey(RuleEvaluationContext context)
+        => context.AverageSolarProductionWatts.HasValue
+            ? "no-change:off:solar-average-below-threshold"
+            : "no-change:off:solar-average-unavailable";
+
+    private static string DescribeSolarProductionCondition(
+        InverterData data,
+        TriggerRule rule,
+        RuleEvaluationContext context)
+    {
+        if (!rule.UseSolarProductionThreshold)
+            return string.Empty;
+
+        if (data.BatterySoc >= RuleEvaluator.SolarProductionBypassSocThreshold)
+            return $"PV avg threshold bypassed at SOC >= {RuleEvaluator.SolarProductionBypassSocThreshold}%";
+
+        var averageWatts = context.AverageSolarProductionWatts;
+        if (!averageWatts.HasValue)
+        {
+            return $"PV avg last {RuleEvaluator.SolarProductionAverageWindowMinutes}m unavailable while SOC < {RuleEvaluator.SolarProductionBypassSocThreshold}%";
         }
+
+        return $"PV avg last {RuleEvaluator.SolarProductionAverageWindowMinutes}m={averageWatts.Value}W (need >= {rule.MinAverageSolarProductionWatts}W while SOC < {RuleEvaluator.SolarProductionBypassSocThreshold}%)";
     }
 
     private async Task SaveReadingAsync(InverterData data, CancellationToken ct)

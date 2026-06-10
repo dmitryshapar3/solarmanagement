@@ -1,6 +1,5 @@
 @page "/"
 @inject InverterDataSnapshot Snapshot
-@inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @using DeyeSolar.Web.Shared
@@ -89,7 +88,7 @@
                         @foreach (var d in _devices)
                         {
                             <MudSelectItem T="string" Value="@d.Id">
-                                @d.Name (@d.Category) @(d.Online ? (d.IsOn ? "- ON" : "- OFF") : "- offline")
+                                @d.Name (@d.Category)
                             </MudSelectItem>
                         }
                     }
@@ -158,55 +157,6 @@
                 }
             </MudPaper>
         </MudItem>
-
-        <!-- Smart Sockets -->
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Smart Sockets</MudText>
-                @if (_devices == null)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Waiting for first device poll...</MudText>
-                }
-                else if (_devices.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found.</MudText>
-                }
-                else
-                {
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>State</th>
-                                <th>Power</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var dev in _devices)
-                            {
-                                <tr>
-                                    <td>@dev.Name</td>
-                                    <td>
-                                        @if (!dev.Online)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Default">offline</MudChip>
-                                        }
-                                        else
-                                        {
-                                            <MudChip T="string" Size="Size.Small"
-                                                     Color="@(dev.IsOn ? Color.Success : Color.Default)">
-                                                @(dev.IsOn ? "ON" : "OFF")
-                                            </MudChip>
-                                        }
-                                    </td>
-                                    <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-            </MudPaper>
-        </MudItem>
     }
 </MudGrid>
 
@@ -220,17 +170,15 @@
     private string? _actionMessage;
     private Severity _actionSeverity;
     private string? _tz;
+    private DeyeSolar.Domain.Options.ShellyOptions _shelly = new();
 
     protected override async Task OnInitializedAsync()
     {
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         _tz = display.TimeZoneId;
         _data = Snapshot.Current;
-        _devices = DeviceSnapshot.Current;
-        SelectDefaultManualDevice();
-        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        await LoadRulesAndManualDevices();
         Snapshot.OnDataUpdated += OnDataUpdated;
-        DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
     }
 
     private async void OnDataUpdated()
@@ -238,19 +186,12 @@
         _data = Snapshot.Current;
         try
         {
-            _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+            await LoadRulesAndManualDevices();
         }
         catch
         {
             // keep previous rules on transient failure
         }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async void OnDeviceSnapshotUpdated()
-    {
-        _devices = DeviceSnapshot.Current;
-        SelectDefaultManualDevice();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -278,6 +219,9 @@
             else
                 await SocketController.TurnOffAsync(entityId, CancellationToken.None);
 
+            await UpdateMatchingRuleStates(entityId, turnOn);
+            MarkManualDeviceState(entityId, turnOn);
+
             var deviceName = _devices?.FirstOrDefault(d => d.Id == entityId)?.Name ?? entityId;
             _actionMessage = turnOn ? $"{deviceName} turned ON" : $"{deviceName} turned OFF";
             _actionSeverity = Severity.Success;
@@ -287,6 +231,91 @@
             _actionMessage = $"Error: {ex.Message}";
             _actionSeverity = Severity.Error;
         }
+    }
+
+    private async Task UpdateMatchingRuleStates(string entityId, bool isOn)
+    {
+        var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        foreach (var rule in rules.Where(r => string.Equals(r.EntityId, entityId, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (rule.CurrentState == isOn)
+                continue;
+
+            rule.CurrentState = isOn;
+            await RuleRepo.UpdateAsync(rule, CancellationToken.None);
+        }
+
+        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        _devices = BuildManualDevices(_rules);
+    }
+
+    private async Task LoadRulesAndManualDevices()
+    {
+        _shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
+        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        _devices = BuildManualDevices(_rules);
+        SelectDefaultManualDevice();
+    }
+
+    private IReadOnlyList<DevicePowerInfo> BuildManualDevices(IReadOnlyList<TriggerRule> rules)
+    {
+        var devices = new Dictionary<string, DevicePowerInfo>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in rules
+            .Where(r => !string.IsNullOrWhiteSpace(r.EntityId))
+            .GroupBy(r => r.EntityId, StringComparer.OrdinalIgnoreCase))
+        {
+            var names = string.Join(", ", group.Select(r => r.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct());
+            var isOn = group.Any(r => r.CurrentState);
+            devices[group.Key] = new DevicePowerInfo(
+                group.Key,
+                string.IsNullOrWhiteSpace(names) ? FormatDeviceName(group.Key) : names,
+                FormatDeviceCategory(group.Key),
+                Online: true,
+                IsOn: isOn,
+                CurrentPowerW: null);
+        }
+
+        AddConfiguredDevice(devices, _shelly.DeviceId, SocketDeviceSources.Shelly, "Shelly configured socket");
+
+        return devices.Values.ToList();
+    }
+
+    private static void AddConfiguredDevice(
+        Dictionary<string, DevicePowerInfo> devices,
+        string rawId,
+        string source,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(rawId))
+            return;
+
+        var entityId = SocketEntityIds.TryParse(rawId, out _, out _)
+            ? rawId
+            : SocketEntityIds.Create(source, rawId);
+
+        if (devices.ContainsKey(entityId))
+            return;
+
+        devices[entityId] = new DevicePowerInfo(
+            entityId,
+            name,
+            FormatDeviceCategory(entityId),
+            Online: true,
+            IsOn: false,
+            CurrentPowerW: null);
+    }
+
+    private void MarkManualDeviceState(string entityId, bool isOn)
+    {
+        if (_devices == null)
+            return;
+
+        _devices = _devices
+            .Select(device => string.Equals(device.Id, entityId, StringComparison.OrdinalIgnoreCase)
+                ? device with { IsOn = isOn }
+                : device)
+            .ToList();
     }
 
     private void SelectDefaultManualDevice()
@@ -304,8 +333,23 @@
         }
 
         _manualDeviceId =
-            _devices.FirstOrDefault(d => d.Online)?.Id ??
+            _devices.FirstOrDefault(d => d.IsOn)?.Id ??
             _devices[0].Id;
+    }
+
+    private static string FormatDeviceName(string entityId)
+        => SocketEntityIds.TryParse(entityId, out _, out var rawId) ? rawId : entityId;
+
+    private static string FormatDeviceCategory(string entityId)
+    {
+        if (!SocketEntityIds.TryParse(entityId, out var source, out _))
+            return "Configured";
+
+        return source switch
+        {
+            SocketDeviceSources.Shelly => "Shelly",
+            _ => "Configured"
+        };
     }
 
     private Color GetSocColor(int soc) => soc switch
@@ -318,6 +362,5 @@
     public void Dispose()
     {
         Snapshot.OnDataUpdated -= OnDataUpdated;
-        DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
     }
 }

@@ -28,6 +28,7 @@ else
             <MudTh>Name</MudTh>
             <MudTh>Device</MudTh>
             <MudTh>Turn ON</MudTh>
+            <MudTh>PV Avg</MudTh>
             <MudTh>Turn OFF</MudTh>
             <MudTh>Cooldown</MudTh>
             <MudTh>Interval</MudTh>
@@ -52,6 +53,7 @@ else
             <MudTd>
                 <span>SOC &ge; @context.SocTurnOnThreshold%</span>
             </MudTd>
+            <MudTd>@FormatSolarProductionThreshold(context)</MudTd>
             <MudTd>
                 <span>@FormatTurnOffThreshold(context)</span>
             </MudTd>
@@ -118,6 +120,11 @@ else
             ? $"SOC <= {threshold}%"
             : $"SOC <= {threshold}% (same)";
     }
+
+    private static string FormatSolarProductionThreshold(TriggerRule rule)
+        => rule.UseSolarProductionThreshold
+            ? $">= {rule.MinAverageSolarProductionWatts} W (SOC < 95%)"
+            : "-";
 
     private async Task ToggleEnabled(TriggerRule rule, bool enabled)
     {

@@ -4,6 +4,7 @@ using DeyeSolar.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeyeSolar.Web.Migrations
 {
     [DbContext(typeof(DeyeSolarDbContext))]
-    partial class DeyeSolarDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260603112222_AddSolarProductionThreshold")]
+    partial class AddSolarProductionThreshold
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -173,11 +176,6 @@ namespace DeyeSolar.Web.Migrations
 
                     b.Property<int>("BatterySoc")
                         .HasColumnType("int");
-
-                    b.Property<string>("ConditionKey")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
 
                     b.Property<string>("Reason")
                         .IsRequired()
