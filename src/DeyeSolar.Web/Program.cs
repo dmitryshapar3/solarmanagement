@@ -103,7 +103,11 @@ builder.Services.AddHostedService<PollingWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SolarEstimateService>());
 
 // Blazor + MudBlazor
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages(options =>
+{
+    options.Conventions.AllowAnonymousToPage("/Privacy");
+    options.Conventions.AllowAnonymousToPage("/Support");
+});
 builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
 

@@ -91,3 +91,4 @@ Legacy Kubernetes manifests and deployment tooling are under `k8s`. Review the t
 
 - [Solar generation model and history](docs/solar-expected-power.md)
 - [Electricity export estimates, storage and upgrades](docs/solar-sales.md)
+- [Public backend pages and App Store release checks](docs/app-store-backend.md)

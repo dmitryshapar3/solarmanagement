@@ -21,6 +21,8 @@
         .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; background: #42a5f5; color: #fff; font-size: 16px; cursor: pointer; margin-top: 8px; }
         .btn:hover { background: #1976d2; }
         .error { background: #5c2020; color: #ff8a80; padding: 10px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+        .public-links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; font-size: 13px; }
+        .public-links a { color: #90caf9; }
     </style>
 </head>
 <body>
@@ -45,6 +47,10 @@
             <button type="submit" class="btn">Sign In</button>
             @Html.AntiForgeryToken()
         </form>
+        <nav class="public-links" aria-label="Public information">
+            <a href="/privacy">Privacy policy</a>
+            <a href="/support">Support</a>
+        </nav>
     </div>
 </body>
 </html>
