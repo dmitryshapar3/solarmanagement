@@ -1,5 +1,9 @@
 @page "/"
+@using System.Globalization
+@using DeyeSolar.Web.Services
 @inject InverterDataSnapshot Snapshot
+@inject IInverterRefreshService InverterRefresh
+@inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @using DeyeSolar.Web.Shared
@@ -8,77 +12,74 @@
 <PageTitle>Dashboard - DeyeSolar</PageTitle>
 
 <MudGrid>
-    @if (_data == null)
+    <MudItem xs="12">
+        <MudPaper Class="energy-status" Elevation="2">
+            <section aria-labelledby="energy-status-title" aria-busy="@_refreshing.ToString().ToLowerInvariant()" data-testid="energy-status">
+                <div class="energy-status-heading">
+                    <div>
+                        <h2 id="energy-status-title">Energy status</h2>
+                        <span class="energy-status-source">DeyeCloud</span>
+                        @if (_data is { } reading)
+                        {
+                            <span class="energy-status-updated" title="Poll time; the Deye measurement may be older.">Last Deye poll <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
+                        }
+                    </div>
+                    <button type="button" class="energy-status-refresh" @onclick="RefreshInverterAsync" disabled="@_refreshing"
+                            aria-label="Refresh inverter data" title="Fetch the latest Deye readings">
+                        <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
+                        @(_refreshing ? "Refreshing…" : "Refresh")
+                    </button>
+                </div>
+                <div class="energy-status-metrics">
+                    <div class="energy-status-metric energy-status-battery" data-testid="battery-soc">
+                        <span class="energy-status-label">Battery SOC</span>
+                        <strong>@(_data?.BatterySoc.ToString(CultureInfo.InvariantCulture) ?? "—")<small>%</small></strong>
+                        @if (_data is not null)
+                        {
+                            <div class="energy-status-charge" role="progressbar" aria-label="Battery charge" aria-valuenow="@_data.BatterySoc" aria-valuemin="0" aria-valuemax="100">
+                                <span class="@SocClass(_data.BatterySoc)" style="@($"width: {Math.Clamp(_data.BatterySoc, 0, 100)}%")"></span>
+                            </div>
+                        }
+                    </div>
+                    <div class="energy-status-metric" data-testid="battery-power">
+                        <span class="energy-status-label">Battery power</span>
+                        <strong>@Power(_data?.BatteryPower)<small>W</small></strong>
+                        <span class="energy-status-direction @BatteryClass">@BatteryDirection</span>
+                    </div>
+                    <div class="energy-status-metric" data-testid="grid-power">
+                        <span class="energy-status-label">Grid</span>
+                        <strong>@Power(_data?.GridConsumption)<small>W</small></strong>
+                        <span class="energy-status-direction @GridClass">@GridDirection</span>
+                    </div>
+                </div>
+                @if (_data is null)
+                {
+                    <p class="energy-status-message" role="status">Waiting for the first Deye reading.</p>
+                }
+                @if (_refreshError is not null)
+                {
+                    <p class="energy-status-error" role="alert">@_refreshError</p>
+                }
+            </section>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <section class="dashboard-charts" aria-label="Generation and electricity sales" data-testid="dashboard-charts">
+            <div class="dashboard-chart-column" data-testid="dashboard-generation">
+                <SolarHistoryChart Overview="true" />
+            </div>
+            <div class="dashboard-chart-column" data-testid="dashboard-sales">
+                <SalesStatistics Overview="true" />
+            </div>
+        </section>
+    </MudItem>
+
+    @if (_data is not null)
     {
-        <MudItem xs="12">
-            <MudAlert Severity="Severity.Info">Waiting for first data reading...</MudAlert>
-        </MudItem>
-    }
-    else
-    {
-        <MudItem xs="12">
-            <MudText Typo="Typo.caption" Class="mb-2">
-                Last update: @TimeHelper.ToUserTime(_data.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss")
-                | Source: DeyeCloud
-            </MudText>
-        </MudItem>
-
-        <!-- Battery SOC -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Primary">Battery SOC</MudText>
-                <MudProgressLinear Color="@GetSocColor(_data.BatterySoc)" Value="@_data.BatterySoc" Class="my-2" />
-                <MudText Typo="Typo.h4">@_data.BatterySoc%</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Solar Production -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Warning">Solar Production</MudText>
-                <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@_data.SolarProduction W</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Battery Power -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Battery Power</MudText>
-                <MudIcon Icon="@(_data.BatteryPower < 0 ? Icons.Material.Filled.BatteryChargingFull : Icons.Material.Filled.Battery5Bar)"
-                         Color="@(_data.BatteryPower < 0 ? Color.Success : Color.Warning)" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@Math.Abs(_data.BatteryPower) W</MudText>
-                <MudText Typo="Typo.caption">@(_data.BatteryPower < 0 ? "Charging" : _data.BatteryPower > 0 ? "Discharging" : "Idle")</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Grid -->
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Info">Grid</MudText>
-                <MudIcon Icon="@Icons.Material.Filled.ElectricalServices" Color="Color.Info" Size="Size.Large" />
-                <MudText Typo="Typo.h4">@Math.Abs(_data.GridConsumption) W</MudText>
-                <MudText Typo="Typo.caption">@(_data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle")</MudText>
-            </MudPaper>
-        </MudItem>
-
-        <!-- Battery Details -->
-        <MudItem xs="12" sm="6">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Battery Details</MudText>
-                <MudSimpleTable Dense="true" Hover="true">
-                    <tbody>
-                        <tr><td>Voltage</td><td>@_data.BatteryVoltage.ToString("F1") V</td></tr>
-                        <tr><td>Current</td><td>@_data.BatteryCurrent.ToString("F1") A</td></tr>
-                        <tr><td>Temperature</td><td>@_data.BatteryTemperature.ToString("F1") C</td></tr>
-                        <tr><td>Load Power</td><td>@_data.LoadPower W</td></tr>
-                    </tbody>
-                </MudSimpleTable>
-            </MudPaper>
-        </MudItem>
 
         <!-- Quick Actions -->
-        <MudItem xs="12" sm="6">
+        <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
                 <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
                 <MudText Typo="Typo.caption" Class="mb-2">Manual override (rules will correct on next cycle)</MudText>
@@ -171,28 +172,73 @@
     private Severity _actionSeverity;
     private string? _tz;
     private DeyeSolar.Domain.Options.ShellyOptions _shelly = new();
+    private bool _refreshing;
+    private bool _disposed;
+    private string? _refreshError;
+    private readonly CancellationTokenSource _lifetime = new();
+    private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.InvariantCulture) : "—";
+    private string BatteryDirection => _data is null ? "Awaiting reading" : _data.BatteryPower < 0 ? "Charging" : _data.BatteryPower > 0 ? "Discharging" : "Idle";
+    private string GridDirection => _data is null ? "Awaiting reading" : _data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle";
+    private string BatteryClass => _data?.BatteryPower < 0 ? "energy-status-positive" : _data?.BatteryPower > 0 ? "energy-status-active" : "";
+    private string GridClass => _data?.GridConsumption < 0 ? "energy-status-positive" : _data?.GridConsumption > 0 ? "energy-status-active" : "";
+    private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
 
     protected override async Task OnInitializedAsync()
     {
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        if (_disposed) return;
         _tz = display.TimeZoneId;
         _data = Snapshot.Current;
         await LoadRulesAndManualDevices();
+        if (_disposed) return;
         Snapshot.OnDataUpdated += OnDataUpdated;
+        _data = Snapshot.Current;
     }
 
-    private async void OnDataUpdated()
+    private void OnDataUpdated()
     {
+        if (_disposed) return;
+        _ = InvokeAsync(UpdateSnapshotAsync);
+    }
+
+    private async Task UpdateSnapshotAsync()
+    {
+        if (_disposed) return;
         _data = Snapshot.Current;
+        _refreshError = null;
+        StateHasChanged();
         try
         {
             await LoadRulesAndManualDevices();
         }
         catch
         {
-            // keep previous rules on transient failure
+            // Keep previous rules on transient failure; the inverter reading is already available.
         }
-        await InvokeAsync(StateHasChanged);
+        if (!_disposed) StateHasChanged();
+    }
+
+    private async Task RefreshInverterAsync()
+    {
+        if (_disposed || _refreshing) return;
+        _refreshing = true;
+        _refreshError = null;
+        try
+        {
+            await InverterRefresh.RefreshAsync(_lifetime.Token);
+            if (!_disposed) _data = Snapshot.Current;
+        }
+        catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (!_disposed) _refreshError = _data is null
+                ? "Could not fetch Deye readings. Please try again."
+                : "Could not refresh Deye readings. Showing the last successful reading; please try again.";
+        }
+        finally
+        {
+            if (!_disposed) _refreshing = false;
+        }
     }
 
     private string FormatTimestamp(DateTime? utc)
@@ -251,60 +297,18 @@
 
     private async Task LoadRulesAndManualDevices()
     {
-        _shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
-        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        var shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
+        if (_disposed) return;
+        var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
+        if (_disposed) return;
+        _shelly = shelly;
+        _rules = rules;
         _devices = BuildManualDevices(_rules);
         SelectDefaultManualDevice();
     }
 
     private IReadOnlyList<DevicePowerInfo> BuildManualDevices(IReadOnlyList<TriggerRule> rules)
-    {
-        var devices = new Dictionary<string, DevicePowerInfo>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var group in rules
-            .Where(r => !string.IsNullOrWhiteSpace(r.EntityId))
-            .GroupBy(r => r.EntityId, StringComparer.OrdinalIgnoreCase))
-        {
-            var names = string.Join(", ", group.Select(r => r.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct());
-            var isOn = group.Any(r => r.CurrentState);
-            devices[group.Key] = new DevicePowerInfo(
-                group.Key,
-                string.IsNullOrWhiteSpace(names) ? FormatDeviceName(group.Key) : names,
-                FormatDeviceCategory(group.Key),
-                Online: true,
-                IsOn: isOn,
-                CurrentPowerW: null);
-        }
-
-        AddConfiguredDevice(devices, _shelly.DeviceId, SocketDeviceSources.Shelly, "Shelly configured socket");
-
-        return devices.Values.ToList();
-    }
-
-    private static void AddConfiguredDevice(
-        Dictionary<string, DevicePowerInfo> devices,
-        string rawId,
-        string source,
-        string name)
-    {
-        if (string.IsNullOrWhiteSpace(rawId))
-            return;
-
-        var entityId = SocketEntityIds.TryParse(rawId, out _, out _)
-            ? rawId
-            : SocketEntityIds.Create(source, rawId);
-
-        if (devices.ContainsKey(entityId))
-            return;
-
-        devices[entityId] = new DevicePowerInfo(
-            entityId,
-            name,
-            FormatDeviceCategory(entityId),
-            Online: true,
-            IsOn: false,
-            CurrentPowerW: null);
-    }
+        => ManualSocketDevices.Build(rules, _shelly.DeviceId, DeviceSnapshot.Current);
 
     private void MarkManualDeviceState(string entityId, bool isOn)
     {
@@ -337,30 +341,12 @@
             _devices[0].Id;
     }
 
-    private static string FormatDeviceName(string entityId)
-        => SocketEntityIds.TryParse(entityId, out _, out var rawId) ? rawId : entityId;
-
-    private static string FormatDeviceCategory(string entityId)
-    {
-        if (!SocketEntityIds.TryParse(entityId, out var source, out _))
-            return "Configured";
-
-        return source switch
-        {
-            SocketDeviceSources.Shelly => "Shelly",
-            _ => "Configured"
-        };
-    }
-
-    private Color GetSocColor(int soc) => soc switch
-    {
-        >= 80 => Color.Success,
-        >= 40 => Color.Warning,
-        _ => Color.Error
-    };
-
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         Snapshot.OnDataUpdated -= OnDataUpdated;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
     }
 }

@@ -2,9 +2,11 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { History, LayoutDashboard, PlugZap, Settings, SlidersHorizontal } from "lucide-react-native";
+import { Banknote, History, LayoutDashboard, MoreHorizontal, PlugZap, Settings, SlidersHorizontal, SunMedium } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "./AuthContext";
-import { RulesStackParamList } from "./navigationTypes";
+import { MoreStackParamList, RootTabsParamList } from "./navigationTypes";
+import { AppButton, Card, Header, Screen } from "../core/components";
 import { colors } from "../core/theme";
 import { LoginScreen } from "../features/auth/LoginScreen";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
@@ -13,17 +15,12 @@ import { HistoryScreen } from "../features/history/HistoryScreen";
 import { RuleEditorScreen } from "../features/rules/RuleEditorScreen";
 import { RulesScreen } from "../features/rules/RulesScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
-
-type RootTabsParamList = {
-  Dashboard: undefined;
-  Devices: undefined;
-  Rules: undefined;
-  History: undefined;
-  Settings: undefined;
-};
+import { GenerationScreen } from "../features/generation/GenerationScreen";
+import { SalesScreen } from "../features/sales/SalesScreen";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 const Tab = createBottomTabNavigator<RootTabsParamList>();
-const RulesStack = createNativeStackNavigator<RulesStackParamList>();
+const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 
 const navigationTheme = {
   ...DarkTheme,
@@ -39,6 +36,7 @@ const navigationTheme = {
 
 export function AppNavigator() {
   const { isAuthenticated, isBootstrapping } = useAuth();
+  const insets = useSafeAreaInsets();
 
   if (isBootstrapping) {
     return (
@@ -58,7 +56,7 @@ export function AppNavigator() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [styles.tabBar, { height: 56 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }],
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.subtle,
           tabBarLabelStyle: styles.tabLabel
@@ -68,7 +66,22 @@ export function AppNavigator() {
           name="Dashboard"
           component={DashboardScreen}
           options={{
+            tabBarLabel: "Home",
             tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />
+          }}
+        />
+        <Tab.Screen
+          name="Generation"
+          component={GenerationScreen}
+          options={{
+            tabBarIcon: ({ color, size }) => <SunMedium color={color} size={size} />
+          }}
+        />
+        <Tab.Screen
+          name="Sales"
+          component={SalesScreen}
+          options={{
+            tabBarIcon: ({ color, size }) => <Banknote color={color} size={size} />
           }}
         />
         <Tab.Screen
@@ -79,24 +92,10 @@ export function AppNavigator() {
           }}
         />
         <Tab.Screen
-          name="Rules"
-          component={RulesStackNavigator}
+          name="More"
+          component={MoreStackNavigator}
           options={{
-            tabBarIcon: ({ color, size }) => <SlidersHorizontal color={color} size={size} />
-          }}
-        />
-        <Tab.Screen
-          name="History"
-          component={HistoryScreen}
-          options={{
-            tabBarIcon: ({ color, size }) => <History color={color} size={size} />
-          }}
-        />
-        <Tab.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{
-            tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />
+            tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />
           }}
         />
       </Tab.Navigator>
@@ -104,19 +103,38 @@ export function AppNavigator() {
   );
 }
 
-function RulesStackNavigator() {
+function MoreStackNavigator() {
   return (
-    <RulesStack.Navigator
+    <MoreStack.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.text,
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.background }
+        contentStyle: { backgroundColor: colors.background },
+        headerBackButtonDisplayMode: "minimal",
+        title: ""
       }}
     >
-      <RulesStack.Screen name="RulesList" component={RulesScreen} options={{ headerShown: false }} />
-      <RulesStack.Screen name="RuleEditor" component={RuleEditorScreen} options={{ title: "Rule" }} />
-    </RulesStack.Navigator>
+      <MoreStack.Screen name="MoreHome" component={MoreScreen} options={{ headerShown: false }} />
+      <MoreStack.Screen name="RulesList" component={RulesScreen} />
+      <MoreStack.Screen name="RuleEditor" component={RuleEditorScreen} options={{ title: "Rule" }} />
+      <MoreStack.Screen name="History" component={HistoryScreen} />
+      <MoreStack.Screen name="Settings" component={SettingsScreen} />
+    </MoreStack.Navigator>
+  );
+}
+
+function MoreScreen({ navigation }: NativeStackScreenProps<MoreStackParamList, "MoreHome">) {
+  const { username } = useAuth();
+  return (
+    <Screen>
+      <Header title="More" subtitle={username ? `Signed in as ${username}` : "Your Solar installation"} />
+      <Card>
+        <AppButton label="Automation rules" icon={SlidersHorizontal} variant="ghost" onPress={() => navigation.navigate("RulesList")} />
+        <AppButton label="Readings & run history" icon={History} variant="ghost" onPress={() => navigation.navigate("History")} />
+        <AppButton label="Settings & account" icon={Settings} variant="ghost" onPress={() => navigation.navigate("Settings")} />
+      </Card>
+    </Screen>
   );
 }
 
@@ -134,9 +152,7 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   tabBar: {
-    height: 68,
     paddingTop: 8,
-    paddingBottom: 10,
     backgroundColor: colors.surface,
     borderTopColor: colors.border
   },

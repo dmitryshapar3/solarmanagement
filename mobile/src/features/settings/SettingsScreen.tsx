@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { LogOut, Power, RefreshCcw, Save } from "lucide-react-native";
+import { LogOut, MapPin, Power, RefreshCcw, Save } from "lucide-react-native";
 import {
   AppButton,
   Card,
@@ -21,13 +21,24 @@ import {
   Settings,
   ShellySettings
 } from "../../core/api/types";
+import { setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
+
+const deviceTimeZone = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+})();
 
 export function SettingsScreen() {
   const { api, apiBaseUrl, updateApiBaseUrl, logout } = useAuth();
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [shellyIntervalText, setShellyIntervalText] = useState("");
+  const [pollingIntervalText, setPollingIntervalText] = useState("");
   const [stations, setStations] = useState<DeyeStation[]>([]);
   const [selectedStationId, setSelectedStationId] = useState<number>(0);
   const [deyeDevices, setDeyeDevices] = useState<DeyeDevice[]>([]);
@@ -40,9 +51,24 @@ export function SettingsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const next = await api.getSettings();
+      let next = await api.getSettings();
+
+      // Mirror the web's first-load auto-detect: adopt the device timezone
+      // while the stored value is still the "UTC" default.
+      if (next.display.timeZoneId === "UTC" && deviceTimeZone && deviceTimeZone !== "UTC") {
+        try {
+          await api.saveDisplay({ timeZoneId: deviceTimeZone });
+          next = { ...next, display: { timeZoneId: deviceTimeZone } };
+        } catch {
+          // keep UTC if the server rejects the detected timezone
+        }
+      }
+
       setSettings(next);
+      setShellyIntervalText(String(next.shelly.requestIntervalMilliseconds));
+      setPollingIntervalText(String(next.polling.intervalSeconds));
       setSelectedStationId(next.deyeCloud.stationId);
+      setDisplayTimeZone(next.display.timeZoneId);
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Unable to load settings.");
     } finally {
@@ -95,6 +121,98 @@ export function SettingsScreen() {
     );
   }
 
+  const shellyPayload = (): ShellySettings => {
+    const parsed = Number.parseInt(shellyIntervalText, 10);
+    if (Number.isNaN(parsed) || parsed < 100 || parsed > 60000) {
+      throw new Error("Shelly request interval must be between 100 and 60000 milliseconds.");
+    }
+    return { ...settings.shelly, requestIntervalMilliseconds: parsed };
+  };
+
+  const saveShelly = async (): Promise<void> => {
+    const payload = shellyPayload();
+    await api.saveShelly(payload);
+    setSettings((current) => current && { ...current, shelly: payload });
+    setShellyIntervalText(String(payload.requestIntervalMilliseconds));
+  };
+
+  const savePolling = async (): Promise<void> => {
+    const parsed = Number.parseInt(pollingIntervalText, 10);
+    if (Number.isNaN(parsed) || parsed < 5 || parsed > 300) {
+      throw new Error("Polling interval must be between 5 and 300 seconds.");
+    }
+
+    await api.savePolling({ intervalSeconds: parsed });
+    setSettings((current) => current && { ...current, polling: { intervalSeconds: parsed } });
+    setPollingIntervalText(String(parsed));
+  };
+
+  const saveDisplay = async (): Promise<void> => {
+    const timeZoneId = settings.display.timeZoneId.trim();
+    await api.saveDisplay({ timeZoneId });
+    setSettings((current) => current && { ...current, display: { timeZoneId } });
+    setDisplayTimeZone(timeZoneId);
+  };
+
+  const selectDeyeDevice = async (device: DeyeDevice): Promise<void> => {
+    const deyeCloud = await api.selectDeyeDevice({
+      stationId: selectedStationId || device.stationId,
+      serialNumber: device.serialNumber
+    });
+    patchDeyeCloud(deyeCloud);
+  };
+
+  const fetchStations = async (): Promise<void> => {
+    setStations([]);
+    setDeyeDevices([]);
+    await api.saveDeyeCloud(settings.deyeCloud);
+    const nextStations = await api.fetchDeyeStations();
+    setStations(nextStations);
+    if (nextStations.length === 1) {
+      setSelectedStationId(nextStations[0]?.id ?? 0);
+    }
+  };
+
+  const fetchDeyeDevices = async (): Promise<void> => {
+    setDeyeDevices([]);
+    const fetched = await api.fetchDeyeDevices(selectedStationId);
+    setDeyeDevices(fetched);
+
+    const inverters = fetched.filter((device) => device.deviceType === "INVERTER");
+    const onlyInverter = inverters.length === 1 ? inverters[0] : undefined;
+    if (onlyInverter) {
+      await selectDeyeDevice(onlyInverter);
+    }
+  };
+
+  const selectSocket = async (entityId: string): Promise<void> => {
+    const updated = await api.selectSocketDevice(entityId);
+    setSettings((current) => current && {
+      ...current,
+      shelly: { ...current.shelly, deviceId: updated.shelly.deviceId }
+    });
+  };
+
+  const fetchSocketDevices = async (): Promise<void> => {
+    setSocketDevices([]);
+    await saveShelly();
+    const result = await api.getDevices(true);
+    setSocketDevices(result.devices);
+    const onlyDevice = result.devices.length === 1 ? result.devices[0] : undefined;
+    if (onlyDevice) {
+      await selectSocket(onlyDevice.id);
+    }
+  };
+
+  const testSocket = async (isOn: boolean): Promise<void> => {
+    const response = await api.setDeviceState(currentSocketEntityId, isOn);
+    setSocketDevices((current) => current.map((device) =>
+      device.id.toLowerCase() === response.entityId.toLowerCase()
+        ? { ...device, online: true, isOn: response.isOn }
+        : device
+    ));
+  };
+
   return (
     <Screen refreshing={busy === "refresh"} onRefresh={() => void runBusy("refresh", load)}>
       <Header
@@ -123,6 +241,11 @@ export function SettingsScreen() {
         <TextField label="Email" value={settings.deyeCloud.email} onChangeText={(email) => patchDeyeCloud({ email })} />
         <TextField label="Password" value={settings.deyeCloud.password} onChangeText={(password) => patchDeyeCloud({ password })} secureTextEntry />
         <TextField label="Device SN" value={settings.deyeCloud.deviceSn} onChangeText={(deviceSn) => patchDeyeCloud({ deviceSn })} />
+        {settings.deyeCloud.deviceSn ? (
+          <Text style={styles.activeInfo}>
+            {`Active: Station ${settings.deyeCloud.stationId}, Device SN ${settings.deyeCloud.deviceSn}`}
+          </Text>
+        ) : null}
         <AppButton
           label="Save DeyeCloud"
           icon={Save}
@@ -133,14 +256,7 @@ export function SettingsScreen() {
           label="Fetch Stations"
           icon={RefreshCcw}
           variant="secondary"
-          onPress={() => void runBusy("stations", async () => {
-            await api.saveDeyeCloud(settings.deyeCloud);
-            const nextStations = await api.fetchDeyeStations();
-            setStations(nextStations);
-            if (nextStations.length === 1) {
-              setSelectedStationId(nextStations[0]?.id ?? 0);
-            }
-          })}
+          onPress={() => void runBusy("stations", fetchStations)}
           loading={busy === "stations"}
         />
       </Card>
@@ -165,9 +281,7 @@ export function SettingsScreen() {
             icon={RefreshCcw}
             variant="secondary"
             disabled={!selectedStationId}
-            onPress={() => void runBusy("deye-devices", async () => {
-              setDeyeDevices(await api.fetchDeyeDevices(selectedStationId));
-            })}
+            onPress={() => void runBusy("deye-devices", fetchDeyeDevices)}
             loading={busy === "deye-devices"}
           />
         </View>
@@ -178,13 +292,7 @@ export function SettingsScreen() {
           {deyeDevices.map((device) => (
             <Pressable
               key={`${device.stationId}-${device.serialNumber}`}
-              onPress={() => void runBusy("select-deye-device", async () => {
-                const deyeCloud = await api.selectDeyeDevice({
-                  stationId: selectedStationId || device.stationId,
-                  serialNumber: device.serialNumber
-                });
-                patchDeyeCloud(deyeCloud);
-              })}
+              onPress={() => void runBusy("select-deye-device", () => selectDeyeDevice(device))}
               style={styles.choice}
             >
               <View style={styles.choiceCopy}>
@@ -203,15 +311,15 @@ export function SettingsScreen() {
         <TextField label="Auth Key" value={settings.shelly.authKey} onChangeText={(authKey) => patchShelly({ authKey })} secureTextEntry />
         <TextField label="Device ID" value={settings.shelly.deviceId} onChangeText={(deviceId) => patchShelly({ deviceId })} />
         <TextField
-          label="Request interval ms"
-          value={String(settings.shelly.requestIntervalMilliseconds)}
+          label="Request interval ms (100-60000)"
+          value={shellyIntervalText}
           keyboardType="number-pad"
-          onChangeText={(value) => patchShelly({ requestIntervalMilliseconds: Number.parseInt(value, 10) || 0 })}
+          onChangeText={setShellyIntervalText}
         />
         <AppButton
           label="Save Shelly"
           icon={Save}
-          onPress={() => void runBusy("save-shelly", () => api.saveShelly(settings.shelly))}
+          onPress={() => void runBusy("save-shelly", saveShelly)}
           loading={busy === "save-shelly"}
         />
       </Card>
@@ -221,10 +329,7 @@ export function SettingsScreen() {
           label="Fetch Socket Devices"
           icon={RefreshCcw}
           variant="secondary"
-          onPress={() => void runBusy("socket-devices", async () => {
-            await api.saveShelly(settings.shelly);
-            setSocketDevices(await api.getDevices(true));
-          })}
+          onPress={() => void runBusy("socket-devices", fetchSocketDevices)}
           loading={busy === "socket-devices"}
         />
         {currentSocketEntityId ? (
@@ -232,7 +337,7 @@ export function SettingsScreen() {
             <AppButton
               label="Test ON"
               icon={Power}
-              onPress={() => void runBusy("test-on", () => api.setDeviceState(currentSocketEntityId, true).then(() => undefined))}
+              onPress={() => void runBusy("test-on", () => testSocket(true))}
               loading={busy === "test-on"}
               compact
             />
@@ -240,7 +345,7 @@ export function SettingsScreen() {
               label="Test OFF"
               icon={Power}
               variant="danger"
-              onPress={() => void runBusy("test-off", () => api.setDeviceState(currentSocketEntityId, false).then(() => undefined))}
+              onPress={() => void runBusy("test-off", () => testSocket(false))}
               loading={busy === "test-off"}
               compact
             />
@@ -253,9 +358,7 @@ export function SettingsScreen() {
           {socketDevices.map((device) => (
             <Pressable
               key={device.id}
-              onPress={() => void runBusy("select-socket", async () => {
-                setSettings(await api.selectSocketDevice(device.id));
-              })}
+              onPress={() => void runBusy("select-socket", () => selectSocket(device.id))}
               style={styles.choice}
             >
               <View style={styles.choiceCopy}>
@@ -271,20 +374,15 @@ export function SettingsScreen() {
       <SectionTitle title="Polling" />
       <Card style={styles.form}>
         <TextField
-          label="Interval seconds"
-          value={String(settings.polling.intervalSeconds)}
+          label="Interval seconds (5-300)"
+          value={pollingIntervalText}
           keyboardType="number-pad"
-          onChangeText={(value) =>
-            setSettings((current) => current && {
-              ...current,
-              polling: { intervalSeconds: Number.parseInt(value, 10) || 0 }
-            })
-          }
+          onChangeText={setPollingIntervalText}
         />
         <AppButton
           label="Save Polling"
           icon={Save}
-          onPress={() => void runBusy("save-polling", () => api.savePolling(settings.polling))}
+          onPress={() => void runBusy("save-polling", savePolling)}
           loading={busy === "save-polling"}
         />
       </Card>
@@ -298,10 +396,20 @@ export function SettingsScreen() {
             setSettings((current) => current && { ...current, display: { timeZoneId } })
           }
         />
+        {deviceTimeZone ? (
+          <AppButton
+            label={`Use device timezone (${deviceTimeZone})`}
+            icon={MapPin}
+            variant="secondary"
+            onPress={() =>
+              setSettings((current) => current && { ...current, display: { timeZoneId: deviceTimeZone } })
+            }
+          />
+        ) : null}
         <AppButton
           label="Save Display"
           icon={Save}
-          onPress={() => void runBusy("save-display", () => api.saveDisplay(settings.display))}
+          onPress={() => void runBusy("save-display", saveDisplay)}
           loading={busy === "save-display"}
         />
       </Card>
@@ -345,6 +453,10 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   choiceSubtitle: {
+    color: colors.muted,
+    fontSize: typography.caption
+  },
+  activeInfo: {
     color: colors.muted,
     fontSize: typography.caption
   },

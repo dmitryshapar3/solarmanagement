@@ -4,6 +4,8 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Infrastructure.Shelly;
+using DeyeSolar.Infrastructure.Solar;
+using DeyeSolar.Infrastructure.Settlement;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
@@ -58,17 +60,37 @@ builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(De
 builder.Services.Configure<ShellyOptions>(builder.Configuration.GetSection(ShellyOptions.Section));
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
 builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
+builder.Services.Configure<SolarEstimateOptions>(builder.Configuration.GetSection(SolarEstimateOptions.Section));
+builder.Services.Configure<SolarSalesOptions>(builder.Configuration.GetSection(SolarSalesOptions.Section));
 
 // Infrastructure
 builder.Services.AddHttpClient<DeyeCloudClient>();
 builder.Services.AddSingleton<IInverterDataSource>(sp => sp.GetRequiredService<DeyeCloudClient>());
+builder.Services.AddSingleton<IExportGridHistorySource>(sp => sp.GetRequiredService<DeyeCloudClient>());
+builder.Services.AddSingleton<ExportReadingStore>();
+builder.Services.AddSingleton<IExportReadingStore>(sp => sp.GetRequiredService<ExportReadingStore>());
+builder.Services.AddSingleton<IExportPriceStore, ExportPriceStore>();
+builder.Services.AddHttpClient<PseExportPriceClient>().RemoveAllLoggers()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<IExportPriceSource>(sp => sp.GetRequiredService<PseExportPriceClient>());
+builder.Services.AddSingleton<IExportSalesService, ExportSalesService>();
 builder.Services.AddHttpClient<ShellyCloudClient>();
 builder.Services.AddSingleton<ShellySocketInventoryService>();
 builder.Services.AddSingleton<ISocketController, BackendSocketController>();
 builder.Services.AddSingleton<ISocketInventoryService, BackendSocketInventoryService>();
+builder.Services.AddHttpClient<OpenMeteoCurrentSolarClient>().RemoveAllLoggers();
+builder.Services.AddSingleton<ISolarRadiationSource>(sp => sp.GetRequiredService<OpenMeteoCurrentSolarClient>());
+builder.Services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<SolarEstimateService>();
+builder.Services.AddHttpClient<OpenMeteoSolarHistoryClient>().RemoveAllLoggers();
+builder.Services.AddSingleton<ISolarHistoryRadiationSource>(sp => sp.GetRequiredService<OpenMeteoSolarHistoryClient>());
+builder.Services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();
+builder.Services.AddSingleton<ISolarHistoryService, SolarHistoryService>();
 
 // Snapshot & Rule engine
 builder.Services.AddSingleton<InverterDataSnapshot>();
+builder.Services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
 builder.Services.AddSingleton<DeviceStatusSnapshot>();
 builder.Services.AddSingleton<RuleEvaluator>();
 builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
@@ -78,6 +100,7 @@ builder.Services.AddScoped<MobileSocketCommandService>();
 
 // Background worker
 builder.Services.AddHostedService<PollingWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SolarEstimateService>());
 
 // Blazor + MudBlazor
 builder.Services.AddRazorPages();
@@ -150,6 +173,7 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapMobileApi();
+app.MapExportSalesApi();
 app.MapBlazorHub();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");

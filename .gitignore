@@ -17,4 +17,15 @@ mobile/node_modules/
 mobile/.expo/
 mobile/dist/
 mobile/.env.local
+mobile/.env*
+!mobile/.env.example
+mobile/credentials.json
 mobile/expo.*.log
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/ios/.xcode.env.local
+**/xcuserdata/
+*.xcuserstate
+*.p12
+*.p8
+*.mobileprovision

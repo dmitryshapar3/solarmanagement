@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { RefreshCcw } from "lucide-react-native";
 import {
   AppButton,
@@ -31,22 +31,34 @@ export function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
 
   const load = useCallback(async (refresh = false) => {
+    const requestId = ++requestSeq.current;
     setError(null);
     refresh ? setRefreshing(true) : setLoading(true);
 
     try {
       if (mode === "readings") {
-        setReadings(await api.getReadings(Number(hours)));
+        const result = await api.getReadings(Number(hours));
+        if (requestId === requestSeq.current) {
+          setReadings(result);
+        }
       } else {
-        setRuns(await api.getRuleRuns(Number(hours), filter));
+        const result = await api.getRuleRuns(Number(hours), filter);
+        if (requestId === requestSeq.current) {
+          setRuns(result);
+        }
       }
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to load history.");
+      if (requestId === requestSeq.current) {
+        setError(ex instanceof Error ? ex.message : "Unable to load history.");
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestSeq.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [api, filter, hours, mode]);
 
@@ -54,73 +66,77 @@ export function HistoryScreen() {
     void load(false);
   }, [load]);
 
-  if (loading) {
-    return (
-      <Screen scroll={false}>
-        <LoadingState label="Loading history..." />
-      </Screen>
-    );
-  }
+  const items: Array<Reading | RuleRunLog> = loading
+    ? []
+    : mode === "readings"
+      ? readings
+      : runs;
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void load(true)}>
-      <Header
-        title="History"
-        subtitle={mode === "readings" ? `${readings.length} readings` : `${runs.length} rule runs`}
-        action={<AppButton label="Refresh" icon={RefreshCcw} onPress={() => void load(true)} variant="secondary" compact />}
-      />
-      <SegmentedControl
-        value={mode}
-        onChange={setMode}
-        options={[
-          { label: "Runs", value: "runs" },
-          { label: "Readings", value: "readings" }
-        ]}
-      />
-      <SegmentedControl
-        value={hours}
-        onChange={setHours}
-        options={[
-          { label: "1h", value: "1" },
-          { label: "6h", value: "6" },
-          { label: "24h", value: "24" },
-          { label: "7d", value: "168" }
-        ]}
-      />
-      {mode === "runs" ? (
-        <SegmentedControl
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { label: "All", value: "ALL" },
-            { label: "ON", value: "ON" },
-            { label: "OFF", value: "OFF" },
-            { label: "Changes", value: "CHANGES" }
-          ]}
-        />
-      ) : null}
-
-      <ErrorBanner message={error} />
-
-      {mode === "readings" ? (
-        readings.length ? (
-          <View style={styles.list}>
-            {readings.map((reading) => (
-              <ReadingCard key={reading.id} reading={reading} />
-            ))}
+    <Screen scroll={false} style={styles.screen}>
+      <FlatList
+        data={items}
+        keyExtractor={(item) => `${mode}-${item.id}`}
+        renderItem={({ item }) =>
+          mode === "readings"
+            ? <ReadingCard reading={item as Reading} />
+            : <RunCard run={item as RuleRunLog} />
+        }
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void load(true)}
+            tintColor={colors.primary}
+          />
+        )}
+        ListHeaderComponent={(
+          <View style={styles.controls}>
+            <Header
+              title="History"
+              subtitle={mode === "readings" ? `${readings.length} readings` : `${runs.length} rule runs`}
+              action={<AppButton label="Refresh" icon={RefreshCcw} onPress={() => void load(true)} loading={refreshing} disabled={refreshing} variant="secondary" compact />}
+            />
+            <SegmentedControl
+              value={mode}
+              onChange={setMode}
+              options={[
+                { label: "Runs", value: "runs" },
+                { label: "Readings", value: "readings" }
+              ]}
+            />
+            <SegmentedControl
+              value={hours}
+              onChange={setHours}
+              options={[
+                { label: "1h", value: "1" },
+                { label: "6h", value: "6" },
+                { label: "24h", value: "24" },
+                { label: "7d", value: "168" }
+              ]}
+            />
+            {mode === "runs" ? (
+              <SegmentedControl
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { label: "All", value: "ALL" },
+                  { label: "ON", value: "ON" },
+                  { label: "OFF", value: "OFF" },
+                  { label: "Changes", value: "CHANGES" }
+                ]}
+              />
+            ) : null}
+            <ErrorBanner message={error} />
           </View>
-        ) : (
-          <EmptyState title="No readings in range." />
-        )
-      ) : runs.length ? (
-        <View style={styles.list}>
-          {runs.map((run) => (
-            <RunCard key={run.id} run={run} />
-          ))}
-        </View>
-      ) : (
-        <EmptyState title="No rule runs in range." />
-      )}
+        )}
+        ListEmptyComponent={
+          loading
+            ? <LoadingState label="Loading history..." />
+            : <EmptyState title={mode === "readings" ? "No readings in range." : "No rule runs in range."} />
+        }
+      />
     </Screen>
   );
 }
@@ -138,6 +154,7 @@ function ReadingCard({ reading }: { reading: Reading }) {
         <DataPoint label="Battery" value={formatWatts(reading.batteryPower)} />
         <DataPoint label="Grid" value={formatWatts(reading.gridConsumption)} />
         <DataPoint label="Load" value={formatWatts(reading.loadPower)} />
+        <DataPoint label="Voltage" value={`${reading.batteryVoltage.toFixed(1)} V`} />
         <DataPoint label="Temp" value={`${reading.batteryTemperature.toFixed(1)} C`} />
       </View>
     </Card>
@@ -177,8 +194,20 @@ function DataPoint({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  list: {
+  screen: {
+    flex: 1,
+    paddingHorizontal: 0,
+    paddingTop: 0
+  },
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: 112,
     gap: spacing.md
+  },
+  controls: {
+    gap: spacing.lg,
+    marginBottom: spacing.xs
   },
   card: {
     gap: spacing.md

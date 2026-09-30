@@ -54,7 +54,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
         api.getDevices(false),
         ruleId ? api.getRule(ruleId) : Promise.resolve(null)
       ]);
-      setDevices(deviceList);
+      setDevices(deviceList.devices);
       if (loadedRule) {
         setRule(toRequest(loadedRule));
       }
@@ -77,6 +77,8 @@ export function RuleEditorScreen({ route, navigation }: Props) {
     const parsed = Number.parseInt(value, 10);
     setField(key, (Number.isNaN(parsed) ? 0 : parsed) as RuleRequest[K]);
   }
+
+  const unknownSelection = Boolean(rule.entityId) && !devices.some((device) => device.id === rule.entityId);
 
   async function save() {
     const message = validate(rule);
@@ -127,8 +129,17 @@ export function RuleEditorScreen({ route, navigation }: Props) {
       </Card>
 
       <SectionTitle title="Target Device" />
-      {devices.length ? (
+      {devices.length || unknownSelection ? (
         <View style={styles.deviceList}>
+          {unknownSelection ? (
+            <Pressable style={[styles.deviceChoice, styles.deviceChoiceSelected]}>
+              <View style={styles.deviceCopy}>
+                <Text style={styles.deviceName} numberOfLines={1}>{rule.entityId}</Text>
+                <Text style={styles.deviceCategory}>Unknown device</Text>
+              </View>
+              <StatusPill label="Selected" tone="info" />
+            </Pressable>
+          ) : null}
           {devices.map((device) => (
             <Pressable
               key={device.id}
@@ -175,17 +186,25 @@ export function RuleEditorScreen({ route, navigation }: Props) {
           value={String(rule.socTurnOffThreshold)}
           onChangeText={(value) => setNumberField("socTurnOffThreshold", value)}
           keyboardType="number-pad"
+          editable={rule.useSeparateSocTurnOffThreshold}
         />
         <SwitchRow
           title="Require average PV"
+          subtitle="Checked only while battery SOC is below 95%; bypassed at 95% or above"
           value={rule.useSolarProductionThreshold}
-          onValueChange={(value) => setField("useSolarProductionThreshold", value)}
+          onValueChange={(value) => {
+            setField("useSolarProductionThreshold", value);
+            if (value && rule.minAverageSolarProductionWatts <= 0) {
+              setField("minAverageSolarProductionWatts", 3000);
+            }
+          }}
         />
         <TextField
-          label="Average PV watts"
+          label="Average PV last hour (W)"
           value={String(rule.minAverageSolarProductionWatts)}
           onChangeText={(value) => setNumberField("minAverageSolarProductionWatts", value)}
           keyboardType="number-pad"
+          editable={rule.useSolarProductionThreshold}
         />
       </Card>
 
@@ -252,7 +271,6 @@ function normalizeRule(rule: RuleRequest): RuleRequest {
     entityId: rule.entityId.trim(),
     enabled: Boolean(rule.entityId) && rule.enabled,
     socTurnOffThreshold: rule.useSeparateSocTurnOffThreshold ? rule.socTurnOffThreshold : rule.socTurnOnThreshold,
-    minAverageSolarProductionWatts: rule.useSolarProductionThreshold ? rule.minAverageSolarProductionWatts : 3000,
     activeFrom: rule.activeFrom?.trim() || null,
     activeTo: rule.activeTo?.trim() || null
   };
@@ -261,6 +279,10 @@ function normalizeRule(rule: RuleRequest): RuleRequest {
 function validate(rule: RuleRequest): string | null {
   if (!rule.name.trim()) {
     return "Rule name is required.";
+  }
+
+  if (!rule.entityId.trim()) {
+    return "Select a target device.";
   }
 
   if (rule.socTurnOnThreshold < 0 || rule.socTurnOnThreshold > 100) {

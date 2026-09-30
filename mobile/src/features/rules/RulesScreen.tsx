@@ -56,6 +56,9 @@ export function RulesScreen({ navigation }: Props) {
     try {
       const updated = await api.setRuleEnabled(rule.id, enabled);
       setRules((current) => current.map((item) => (item.id === rule.id ? updated : item)));
+      if (enabled && !updated.enabled) {
+        setError("Select a device before enabling this rule.");
+      }
     } catch (ex) {
       setRules((current) => current.map((item) => (item.id === rule.id ? rule : item)));
       setError(ex instanceof Error ? ex.message : "Unable to update rule.");
@@ -147,7 +150,7 @@ function RuleCard({
 
       <View style={styles.chips}>
         <StatusPill label={rule.currentState ? "ON" : "OFF"} tone={rule.currentState ? "success" : "neutral"} />
-        {rule.useSolarProductionThreshold ? <StatusPill label={`PV >= ${formatWatts(rule.minAverageSolarProductionWatts)}`} tone="warning" /> : null}
+        {rule.useSolarProductionThreshold ? <StatusPill label={`PV >= ${formatWatts(rule.minAverageSolarProductionWatts)} (SOC < 95%)`} tone="warning" /> : null}
         {rule.activeFrom && rule.activeTo ? <StatusPill label={`${rule.activeFrom} - ${rule.activeTo}`} tone="info" /> : null}
       </View>
 
@@ -159,7 +162,14 @@ function RuleCard({
       </View>
 
       <Text style={styles.timestamp}>Changed {formatDateTime(rule.currentStateChangedAt)}</Text>
-      <SwitchRow title="Enabled" value={rule.enabled} onValueChange={onToggle} />
+      <SwitchRow
+        title="Enabled"
+        value={rule.enabled}
+        onValueChange={onToggle}
+        disabled={!rule.entityId}
+        subtitle={rule.entityId ? undefined : "Select a device before enabling"}
+      />
+
     </Card>
   );
 }

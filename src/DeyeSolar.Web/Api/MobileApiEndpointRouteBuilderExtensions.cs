@@ -4,8 +4,7 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Data;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+using DeyeSolar.Web.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Api;
@@ -16,11 +15,6 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
     public static void MapMobileApi(this WebApplication app)
     {
-        var authenticatedSchemes = string.Join(
-            ',',
-            IdentityConstants.ApplicationScheme,
-            MobileBearerAuthenticationHandler.SchemeName);
-
         var api = app.MapGroup("/api");
 
         api.MapPost("/auth/login", async Task<IResult> (
@@ -41,7 +35,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
         .AllowAnonymous();
 
         var authorized = api.MapGroup("")
-            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = authenticatedSchemes });
+            .RequireAuthorization(ApiAuthorization.AuthenticatedUser);
 
         authorized.MapGet("/auth/session", (HttpContext context)
             => Results.Ok(new MobileSessionResponse(
@@ -54,24 +48,49 @@ public static class MobileApiEndpointRouteBuilderExtensions
             return Results.NoContent();
         });
 
-        authorized.MapGet("/dashboard", async (
+        authorized.MapGet("/dashboard", ReadDashboardAsync);
+
+        authorized.MapPost("/dashboard/refresh", async Task<IResult> (
+            IInverterRefreshService refresh,
             InverterDataSnapshot inverterSnapshot,
             DeviceStatusSnapshot deviceSnapshot,
             IRuleRepository ruleRepository,
             AppSettingsService settings,
             CancellationToken ct) =>
         {
-            var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
-            var rules = await ruleRepository.GetAllAsync(ct);
-            var devices = deviceSnapshot.Current ?? Array.Empty<DevicePowerInfo>();
+            try
+            {
+                await refresh.RefreshAsync(ct);
+                return Results.Ok(await ReadDashboardAsync(inverterSnapshot, deviceSnapshot, ruleRepository, settings, ct));
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                return Results.Json(new ApiError("Could not refresh Deye readings. Please try again."), statusCode: 503);
+            }
+        });
 
-            return Results.Ok(new MobileDashboardResponse(
-                inverterSnapshot.Current?.ToDto(),
-                deviceSnapshot.Current != null,
-                deviceSnapshot.LastUpdated,
-                devices.Select(d => d.ToDto()).ToList(),
-                rules.Select(r => r.ToSummaryDto()).ToList(),
-                display.TimeZoneId));
+        authorized.MapGet("/solar/estimate", (SolarEstimateService service) => Results.Ok(service.Current));
+        authorized.MapGet("/solar/history", async Task<IResult> (
+            HttpContext context, ISolarHistoryService history, CancellationToken ct) =>
+        {
+            var query = context.Request.Query;
+            var periodText = query["period"];
+            var dateText = query["date"];
+            DateOnly? date = null;
+            if (periodText.Count != 1
+                || !Enum.GetNames<SolarHistoryPeriod>().Contains(periodText.ToString(), StringComparer.Ordinal))
+                return Results.BadRequest(new ApiError("Choose a valid generation period and date."));
+            if (query.ContainsKey("date"))
+            {
+                if (dateText.Count != 1 || !DateOnly.TryParseExact(dateText, "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed))
+                    return Results.BadRequest(new ApiError("Choose a valid generation period and date."));
+                date = parsed;
+            }
+            var period = Enum.Parse<SolarHistoryPeriod>(periodText.ToString());
+            try { return Results.Ok(await history.ReadAsync(period, ct, date)); }
+            catch (ArgumentException)
+            { return Results.BadRequest(new ApiError("Choose a generation date within the last 30 local calendar dates.")); }
         });
 
         authorized.MapGet("/devices", async Task<IResult> (
@@ -87,7 +106,9 @@ public static class MobileApiEndpointRouteBuilderExtensions
             if (refresh.GetValueOrDefault() || snapshot.Current == null)
                 snapshot.Update(devices);
 
-            return Results.Ok(devices.Select(d => d.ToDto()).ToList());
+            return Results.Ok(new DeviceListResponse(
+                devices.Select(d => d.ToDto()).ToList(),
+                snapshot.LastUpdated));
         });
 
         authorized.MapPost("/devices/state", async Task<IResult> (
@@ -277,10 +298,13 @@ public static class MobileApiEndpointRouteBuilderExtensions
             return Results.Ok(deye.ToDto());
         });
 
-        authorized.MapPut("/settings/shelly", async (
+        authorized.MapPut("/settings/shelly", async Task<IResult> (
             ShellySettingsDto request,
             AppSettingsService settings) =>
         {
+            if (request.RequestIntervalMilliseconds is < 100 or > 60000)
+                return Results.BadRequest(new ApiError("Shelly request interval must be between 100 and 60000 milliseconds."));
+
             await settings.SaveSectionAsync(ShellyOptions.Section, request.ToOptions());
             return Results.NoContent();
         });
@@ -303,7 +327,11 @@ public static class MobileApiEndpointRouteBuilderExtensions
             if (string.IsNullOrWhiteSpace(request.TimeZoneId))
                 return Results.BadRequest(new ApiError("TimeZoneId is required."));
 
-            await settings.SaveSectionAsync(DisplayOptions.Section, request.ToOptions());
+            var timeZoneId = request.TimeZoneId.Trim();
+            if (!TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out _))
+                return Results.BadRequest(new ApiError($"Unknown timezone '{request.TimeZoneId}'."));
+
+            await settings.SaveSectionAsync(DisplayOptions.Section, new DisplayOptions { TimeZoneId = timeZoneId });
             return Results.NoContent();
         });
 
@@ -325,6 +353,21 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 (await settings.LoadSectionAsync<PollingOptions>(PollingOptions.Section)).ToDto(),
                 (await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section)).ToDto()));
         });
+    }
+
+    private static async Task<MobileDashboardResponse> ReadDashboardAsync(
+        InverterDataSnapshot inverterSnapshot, DeviceStatusSnapshot deviceSnapshot,
+        IRuleRepository ruleRepository, AppSettingsService settings, CancellationToken ct)
+    {
+        var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
+        var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
+        var rules = await ruleRepository.GetAllAsync(ct);
+        var devices = deviceSnapshot.Current ?? Array.Empty<DevicePowerInfo>();
+        var manualDevices = ManualSocketDevices.Build(rules, shelly.DeviceId, deviceSnapshot.Current);
+        return new(
+            inverterSnapshot.Current?.ToDto(), deviceSnapshot.Current != null, deviceSnapshot.LastUpdated,
+            devices.Select(d => d.ToDto()).ToList(), manualDevices.Select(d => d.ToDto()).ToList(),
+            rules.Select(r => r.ToSummaryDto()).ToList(), display.TimeZoneId);
     }
 
     private static IResult? TryBuildRule(

@@ -23,21 +23,52 @@ export function formatPercent(value?: number | null): string {
   return value === null || value === undefined ? "-" : `${value}%`;
 }
 
+let displayTimeZone: string | undefined;
+
+export function setDisplayTimeZone(timeZoneId?: string | null) {
+  displayTimeZone = timeZoneId || undefined;
+}
+
+// API DateTime fields (readings, rule-run logs, rule state timestamps) are UTC
+// but serialize without an offset suffix; JS would parse them as local time.
+function parseApiDate(value: string): Date {
+  const hasOffset = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+  const normalized = value.includes("T") && !hasOffset ? `${value}Z` : value;
+  return new Date(normalized);
+}
+
+function formatInDisplayTimeZone(
+  date: Date,
+  format: (options: Intl.DateTimeFormatOptions) => string,
+  options: Intl.DateTimeFormatOptions
+): string {
+  if (displayTimeZone) {
+    try {
+      return format({ ...options, timeZone: displayTimeZone });
+    } catch {
+      // unsupported timezone id on this device - fall back to device timezone
+    }
+  }
+
+  return format(options);
+}
+
 export function formatDateTime(value?: string | null): string {
   if (!value) {
     return "-";
   }
 
-  const date = new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) {
     return "-";
   }
 
-  return date.toLocaleString(undefined, {
+  return formatInDisplayTimeZone(date, (options) => date.toLocaleString(undefined, options), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    second: "2-digit"
   });
 }
 
@@ -46,12 +77,12 @@ export function formatTime(value?: string | null): string {
     return "-";
   }
 
-  const date = new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) {
     return "-";
   }
 
-  return date.toLocaleTimeString(undefined, {
+  return formatInDisplayTimeZone(date, (options) => date.toLocaleTimeString(undefined, options), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"

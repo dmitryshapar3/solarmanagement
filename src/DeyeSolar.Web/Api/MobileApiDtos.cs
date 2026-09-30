@@ -19,6 +19,7 @@ public sealed record MobileDashboardResponse(
     bool DevicesLoaded,
     DateTimeOffset? DeviceLastUpdated,
     IReadOnlyList<DeviceDto> Devices,
+    IReadOnlyList<DeviceDto> ManualDevices,
     IReadOnlyList<RuleSummaryDto> Rules,
     string TimeZoneId);
 
@@ -41,6 +42,10 @@ public sealed record DeviceDto(
     bool Online,
     bool IsOn,
     int? CurrentPowerW);
+
+public sealed record DeviceListResponse(
+    IReadOnlyList<DeviceDto> Devices,
+    DateTimeOffset? LastUpdated);
 
 public sealed record RuleSummaryDto(
     int Id,

@@ -1,14 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
+import { fetch as expoFetch } from "expo/fetch";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { ApiClient, normalizeBaseUrl } from "../core/api/ApiClient";
+import { DEFAULT_API_BASE_URL } from "../core/api/config";
 import { DeyeSolarApi } from "../core/api/DeyeSolarApi";
+import { SessionOperations, SessionStorage } from "./sessionStorage";
 
-type LoginInput = {
-  baseUrl: string;
-  username: string;
-  password: string;
-};
+type LoginInput = { baseUrl: string; username: string; password: string };
 
 type AuthContextValue = {
   api: DeyeSolarApi;
@@ -16,6 +16,7 @@ type AuthContextValue = {
   username: string | null;
   isAuthenticated: boolean;
   isBootstrapping: boolean;
+  authError: string | null;
   login: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
   updateApiBaseUrl: (baseUrl: string) => Promise<void>;
@@ -23,125 +24,160 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const tokenKey = "deyeSolar.mobile.token";
-const usernameKey = "deyeSolar.mobile.username";
-const apiBaseUrlKey = "deyeSolar.mobile.apiBaseUrl";
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
+  const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
   const [token, setToken] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const unauthorized = useRef<() => void>(() => {});
+  const mounted = useRef(true);
+  const [operations] = useState(() => new SessionOperations());
+  const [storage] = useState(() => new SessionStorage(AsyncStorage, Platform.OS === "web" ? null : {
+    getItem: key => SecureStore.getItemAsync(key),
+    setItem: (key, value) => SecureStore.setItemAsync(key, value, {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+    }),
+    removeItem: key => SecureStore.deleteItemAsync(key)
+  }));
+  const [client] = useState(() => new ApiClient({
+    baseUrl: DEFAULT_API_BASE_URL,
+    // Expo fetch enforces redirect:error on iOS/Android; React Native's XHR fetch does not.
+    transport: expoFetch,
+    onUnauthorized: () => unauthorized.current()
+  }));
+  const api = useMemo(() => new DeyeSolarApi(client), [client]);
 
-  const clearSession = useCallback(async () => {
+  const beginSessionChange = useCallback(() => {
+    const signal = operations.begin();
+    client.setToken(null);
     setToken(null);
     setUsername(null);
-    clientRef.current.setToken(null);
-    await Promise.all([
-      AsyncStorage.removeItem(tokenKey),
-      AsyncStorage.removeItem(usernameKey)
-    ]);
-  }, []);
+    setIsBootstrapping(false);
+    setAuthError(null);
+    return signal;
+  }, [client, operations]);
 
-  const clientRef = useRef(
-    new ApiClient({
-      baseUrl: apiBaseUrl,
-      onUnauthorized: () => {
-        void clearSession();
+  unauthorized.current = () => {
+    if (!mounted.current) return;
+    const signal = beginSessionChange();
+    setAuthError("Session expired. Sign in again.");
+    void storage.clear().catch(() => {
+      if (mounted.current && operations.isCurrent(signal)) {
+        setAuthError("Session expired. Local session storage could not be cleared; please sign in again.");
       }
-    })
-  );
-
-  const api = useMemo(() => new DeyeSolarApi(clientRef.current), []);
+    });
+  };
 
   useEffect(() => {
-    let mounted = true;
-
+    mounted.current = true;
+    const signal = operations.begin();
+    const current = () => mounted.current && operations.isCurrent(signal);
     async function loadSession() {
-      const [storedBaseUrl, storedToken, storedUsername] = await Promise.all([
-        AsyncStorage.getItem(apiBaseUrlKey),
-        AsyncStorage.getItem(tokenKey),
-        AsyncStorage.getItem(usernameKey)
-      ]);
-
-      if (!mounted) {
-        return;
+      try {
+        const restored = await storage.load(DEFAULT_API_BASE_URL);
+        if (!current()) return;
+        client.setBaseUrl(restored.baseUrl);
+        client.setToken(restored.session?.token);
+        setApiBaseUrl(restored.baseUrl);
+        setToken(restored.session?.token ?? null);
+        setUsername(restored.session?.username ?? null);
+        if (restored.session) {
+          try {
+            await client.request("/api/auth/session", { signal, timeoutMs: 3000 });
+          } catch {
+            // The matching 401 handler signs out. Offline startup keeps an already bound secure session.
+          }
+        }
+      } catch {
+        if (current()) {
+          client.setToken(null);
+          setToken(null);
+          setUsername(null);
+          setAuthError("Stored sign-in could not be loaded safely. Please sign in again.");
+        }
+      } finally {
+        if (current()) setIsBootstrapping(false);
       }
-
-      const nextBaseUrl = normalizeBaseUrl(storedBaseUrl || defaultApiBaseUrl);
-      setApiBaseUrl(nextBaseUrl);
-      setToken(storedToken ?? null);
-      setUsername(storedUsername ?? null);
-      clientRef.current.setBaseUrl(nextBaseUrl);
-      clientRef.current.setToken(storedToken);
-      setIsBootstrapping(false);
     }
-
     void loadSession();
-
     return () => {
-      mounted = false;
+      mounted.current = false;
+      operations.cancel();
+      client.setToken(null);
     };
-  }, []);
+  }, [client, operations, storage]);
 
   const login = useCallback(async (input: LoginInput) => {
     const nextBaseUrl = normalizeBaseUrl(input.baseUrl);
-    clientRef.current.setBaseUrl(nextBaseUrl);
-    clientRef.current.setToken(null);
-
-    const session = await api.login(input.username.trim(), input.password);
-
+    if (!input.username.trim() || !input.password) throw new Error("Enter your username and password.");
+    const signal = beginSessionChange();
+    client.setBaseUrl(nextBaseUrl);
     setApiBaseUrl(nextBaseUrl);
-    setToken(session.token);
-    setUsername(session.username);
-    clientRef.current.setToken(session.token);
-    await Promise.all([
-      AsyncStorage.setItem(apiBaseUrlKey, nextBaseUrl),
-      AsyncStorage.setItem(tokenKey, session.token),
-      AsyncStorage.setItem(usernameKey, session.username)
-    ]);
-  }, [api]);
+    const ensureCurrent = () => {
+      if (!mounted.current || !operations.isCurrent(signal)) {
+        const error = new Error("Sign-in was canceled.");
+        error.name = "AbortError";
+        throw error;
+      }
+    };
+    try {
+      await storage.changeBaseUrl(nextBaseUrl);
+      ensureCurrent();
+      const session = await api.login(input.username.trim(), input.password, signal);
+      ensureCurrent();
+      await storage.save({ baseUrl: nextBaseUrl, token: session.token, username: session.username });
+      ensureCurrent();
+      client.setToken(session.token);
+      setToken(session.token);
+      setUsername(session.username);
+    } catch (error) {
+      if (mounted.current && operations.isCurrent(signal)) {
+        setAuthError(error instanceof Error ? error.message : "Unable to sign in.");
+      }
+      throw error;
+    }
+  }, [api, beginSessionChange, client, operations, storage]);
 
   const logout = useCallback(async () => {
+    // Revocation uses a captured client so its eventual result cannot expire a later sign-in.
+    const revocation = token ? new ApiClient({ baseUrl: apiBaseUrl, token, transport: expoFetch })
+      .request("/api/auth/logout", { method: "POST", timeoutMs: 5000 }).catch(() => {}) : Promise.resolve();
+    const signal = beginSessionChange();
     try {
-      if (token) {
-        await api.logout();
+      await storage.clear();
+    } catch (error) {
+      if (mounted.current && operations.isCurrent(signal)) {
+        setAuthError(error instanceof Error ? error.message : "Unable to clear local session storage.");
       }
-    } finally {
-      await clearSession();
     }
-  }, [api, clearSession, token]);
+    await revocation;
+  }, [apiBaseUrl, beginSessionChange, operations, storage, token]);
 
   const updateApiBaseUrl = useCallback(async (baseUrl: string) => {
     const nextBaseUrl = normalizeBaseUrl(baseUrl);
+    if (nextBaseUrl === apiBaseUrl) return;
+    const signal = beginSessionChange();
+    client.setBaseUrl(nextBaseUrl);
     setApiBaseUrl(nextBaseUrl);
-    clientRef.current.setBaseUrl(nextBaseUrl);
-    await AsyncStorage.setItem(apiBaseUrlKey, nextBaseUrl);
-  }, []);
+    try {
+      await storage.changeBaseUrl(nextBaseUrl);
+    } catch (error) {
+      if (mounted.current && operations.isCurrent(signal)) {
+        setAuthError(error instanceof Error ? error.message : "Unable to save the server address.");
+      }
+      throw error;
+    }
+  }, [apiBaseUrl, beginSessionChange, client, operations, storage]);
 
-  const value: AuthContextValue = {
-    api,
-    apiBaseUrl,
-    username,
-    isAuthenticated: Boolean(token),
-    isBootstrapping,
-    login,
-    logout,
-    updateApiBaseUrl
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{
+    api, apiBaseUrl, username, isAuthenticated: Boolean(token), isBootstrapping, authError,
+    login, logout, updateApiBaseUrl
+  }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider.");
-  }
-
+  if (!context) throw new Error("useAuth must be used inside AuthProvider.");
   return context;
 }
-
-const defaultApiBaseUrl = normalizeBaseUrl(
-  Platform.OS === "android" ? "http://10.0.2.2:5000" : "http://localhost:5000"
-);

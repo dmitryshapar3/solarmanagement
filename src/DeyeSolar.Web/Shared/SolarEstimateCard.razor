@@ -1,0 +1,174 @@
+@using System.Globalization
+@using DeyeSolar.Domain.Options
+@using DeyeSolar.Web.Services
+@using Microsoft.Extensions.Options
+@inject SolarEstimateService EstimateService
+@inject InverterDataSnapshot InverterSnapshot
+@inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
+@inject IOptionsMonitor<DeyeCloudOptions> DeyeOptions
+@implements IAsyncDisposable
+
+<MudPaper Class="pa-4" Elevation="2">
+    <section class="solar-card" aria-labelledby="solar-card-title">
+        <div class="solar-heading">
+            <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Small" />
+            <h2 id="solar-card-title">Solar power now</h2>
+            <details class="solar-info @(HasWarning ? "solar-info-warning" : "")">
+                <summary aria-label="Data sources and timestamps" title="Data sources and timestamps">
+                    <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
+                </summary>
+                <div class="solar-info-panel">
+                    <strong>@CurrentOptions.LocationLabel</strong>
+                    <p>@EstimateInfo</p>
+                    @if (IsWeatherModel && SourceTimestamp is { } sourceAt)
+                    {
+                        <p>Weather retrieved at @FormatTime(sourceAt).</p>
+                    }
+                    @if (EstimateNotice is { } estimateNotice)
+                    {
+                        <p class="solar-info-notice">@estimateNotice</p>
+                    }
+                    <p>@ActualInfo</p>
+                    @if (!DeyePvDcConfirmed)
+                    {
+                        <p class="solar-info-notice">The Deye power type is unconfirmed. Values are not compared.</p>
+                    }
+                    <div class="solar-attribution">
+                        <a href="@(IsWeatherModel ? "https://open-meteo.com/en/docs" : "https://open-meteo.com/en/docs/satellite-radiation-api")"
+                           target="_blank" rel="noopener noreferrer">@(IsWeatherModel ? "Open-Meteo" : "Open-Meteo · DWD / EUMETSAT")</a>
+                        · <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>
+                    </div>
+                </div>
+            </details>
+        </div>
+        <div class="solar-readings">
+            <div class="solar-reading solar-reading-possible">
+                <span class="solar-label" id="solar-possible-label">Possible</span>
+                <output class="solar-value" aria-labelledby="solar-possible-label" data-testid="solar-possible">
+                    @if (HasUsableEstimate && Estimate is { } estimate)
+                    {
+                        @Number(estimate.CentralKw)<span class="solar-unit">kW</span>
+                    }
+                    else
+                    {
+                        <span class="solar-unavailable" aria-label="Estimate unavailable">—</span>
+                    }
+                </output>
+            </div>
+            <div class="solar-reading solar-reading-actual">
+                <span class="solar-label" id="solar-actual-label">Actual</span>
+                <output class="solar-value" aria-labelledby="solar-actual-label" data-testid="solar-actual">
+                    @if (HasUsableActual && CurrentActual is { } actual)
+                    {
+                        @Number(actual.SolarProduction / 1000d)<span class="solar-unit">kW</span>
+                    }
+                    else
+                    {
+                        <span class="solar-unavailable" aria-label="The Deye reading is unavailable">—</span>
+                    }
+                </output>
+            </div>
+        </div>
+    </section>
+</MudPaper>
+
+@code {
+    [Parameter] public SolarEstimateState? State { get; set; }
+    [Parameter] public InverterData? Actual { get; set; }
+    [Parameter] public SolarEstimateOptions? Options { get; set; }
+    [Parameter] public DateTimeOffset? Now { get; set; }
+
+    private static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("en-GB");
+    private readonly CancellationTokenSource _stop = new();
+    private DateTimeOffset _clock = DateTimeOffset.UtcNow;
+    private Task? _clockTask;
+    private bool _disposed;
+
+    private SolarEstimateState CurrentState => State ?? EstimateService.Current;
+    private InverterData? CurrentActual => Actual ?? InverterSnapshot.Current;
+    private SolarEstimateOptions CurrentOptions => Options ?? EstimateOptions.CurrentValue;
+    private DateTimeOffset ClockNow => Now ?? _clock;
+    private SolarPowerEstimate? Estimate => CurrentState.Estimate;
+    private bool DeyePvDcConfirmed => CurrentOptions.DeyeSolarPowerIsPvDcConfirmed
+        && !string.IsNullOrWhiteSpace(CurrentOptions.DeyeConfirmedDeviceSn)
+        && CurrentOptions.DeyeConfirmedDeviceSn == DeyeOptions.CurrentValue.DeviceSn;
+    private bool IsWeatherModel => Estimate is null || Estimate.Observation.Kind == SolarRadiationKind.WeatherModel;
+    private DateTimeOffset? SourceTimestamp => IsWeatherModel
+        ? Estimate?.Observation.RetrievedAt ?? Estimate?.Timestamp : Estimate?.Timestamp;
+    private int StaleAfterMinutes => IsWeatherModel ? CurrentOptions.NowcastStaleAfterMinutes : CurrentOptions.StaleAfterMinutes;
+    private int MaximumAgeMinutes => IsWeatherModel ? CurrentOptions.NowcastMaximumAgeMinutes : CurrentOptions.MaximumAgeMinutes;
+    private int ActualMaximumAgeMinutes => CurrentOptions.NowcastActualMaximumAgeMinutes;
+    private bool EvaluationStopped => IsWeatherModel && Estimate is { } estimate && (ClockNow - estimate.Timestamp).TotalMinutes > 2;
+    private bool HasUsableEstimate => Estimate is { } estimate && double.IsFinite(estimate.CentralKw) && estimate.CentralKw >= 0
+        && estimate.Timestamp <= ClockNow && !EvaluationStopped
+        && SourceTimestamp is { } sourceAt && sourceAt <= ClockNow && (ClockNow - sourceAt).TotalMinutes <= MaximumAgeMinutes;
+    private string? ActualDeviceIssue => string.IsNullOrWhiteSpace(CurrentActual?.SolarDeviceSn)
+        || string.IsNullOrWhiteSpace(DeyeOptions.CurrentValue.DeviceSn) ? "The Deye reading's device is unverified"
+        : CurrentActual.SolarDeviceSn != DeyeOptions.CurrentValue.DeviceSn ? "The reading belongs to another inverter" : null;
+    private bool HasUsableActual => ActualDeviceIssue is null && CurrentActual is { SolarObservedAt: { } observedAt, SolarProduction: >= 0 }
+        && observedAt <= ClockNow && (ClockNow - observedAt).TotalMinutes <= ActualMaximumAgeMinutes;
+    private string? EstimateNotice => EvaluationStopped ? "The calculation has stopped updating. The estimate is unavailable."
+        : !HasUsableEstimate ? "The estimate is unavailable. Waiting for fresh data."
+        : CurrentState.RefreshFailed ? "Weather refresh failed. The latest available data is used."
+        : SourceTimestamp is { } sourceAt && (ClockNow - sourceAt).TotalMinutes > StaleAfterMinutes ? "Weather data is stale. The estimate is approximate."
+        : null;
+    private bool HasWarning => EstimateNotice is not null || !HasUsableActual || !DeyePvDcConfirmed;
+    private string EstimateInfo => Estimate is { } estimate
+        ? $"{(IsWeatherModel ? "Weather estimate" : "Satellite estimate")} · {(estimate.Basis == SolarPowerBasis.Ac ? "AC" : "PV DC")}. At {FormatTime(estimate.Timestamp)}."
+        : "No weather estimate has been received yet.";
+    private string ActualInfo => CurrentActual is not { SolarProduction: >= 0 } actual ? "The Deye reading is unavailable."
+        : ActualDeviceIssue is { } deviceIssue ? deviceIssue + "."
+        : actual.SolarObservedAt is not { } observedAt ? "The Deye measurement time is unverified."
+        : observedAt > ClockNow ? "The Deye measurement time is invalid."
+        : $"{((ClockNow - observedAt).TotalMinutes > ActualMaximumAgeMinutes ? "The Deye reading is stale" : DeyePvDcConfirmed ? "Deye · PV DC" : "Deye")}. Measured at {FormatTime(observedAt)}.";
+
+    protected override void OnInitialized()
+    {
+        EstimateService.OnUpdated += OnUpdated;
+        InverterSnapshot.OnDataUpdated += OnUpdated;
+        _clockTask = UpdateClockAsync();
+    }
+
+    private void OnUpdated() => _ = RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                _clock = DateTimeOffset.UtcNow;
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) when (_disposed) { }
+        catch (InvalidOperationException) when (_disposed) { }
+    }
+
+    private async Task UpdateClockAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_stop.Token)) await RefreshAsync();
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+    }
+
+    private static string Number(double value) => value.ToString("F1", DisplayCulture);
+    private string FormatTime(DateTimeOffset timestamp) => TimeZoneInfo.ConvertTime(timestamp,
+        TimeZoneInfo.FindSystemTimeZoneById(CurrentOptions.TimeZoneId)).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", DisplayCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        EstimateService.OnUpdated -= OnUpdated;
+        InverterSnapshot.OnDataUpdated -= OnUpdated;
+        await _stop.CancelAsync();
+        if (_clockTask is not null) await _clockTask;
+        _stop.Dispose();
+    }
+}

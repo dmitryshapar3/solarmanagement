@@ -1,22 +1,61 @@
 # DeyeSolar Mobile
 
-Expo React Native client for Android and iOS.
+React Native / Expo client for the existing Solar server. All app screens use English.
 
 ## Run
 
 ```powershell
 cd mobile
-npm install
+npm ci
 npm start
 ```
 
-Default API URL:
+The default server is `https://solar.dshapar.com`. Sign in with the existing Solar account. A custom server URL can be entered on the login screen.
 
-- Android emulator: `http://10.0.2.2:5000`
-- iOS simulator / local web: `http://localhost:5000`
+The Home screen combines battery SOC, battery power and grid power with a forced refresh button. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
 
-For a physical phone, enter the LAN URL of the ASP.NET backend on the login screen.
+Focused screens refresh every five minutes while the app is in the foreground. Missing values are not displayed as zero. Financial values come from the server; the app does not recalculate settlement prices or revenue.
+
+## Verify
+
+Use Node 22.15.0 or another version supported by the pinned React Native dependencies.
+
+```powershell
+npm ci
+npm run typecheck
+npm test
+npx expo-doctor
+npm run export:ios
+```
+
+The iOS export verifies the JavaScript bundle and assets. It does not compile, sign or test an iOS binary. Native Keychain, charts, navigation and app lifecycle behavior still require an iPhone or simulator check. The repository workflow runs the type check, permanent regression tests and iOS bundle export.
+
+Expo Doctor reports an app-config synchronization warning because this repository intentionally contains the native Xcode project as well as `app.json`. Native plugin/configuration changes must be applied and reviewed using the prebuild command below; Xcode alone does not sync them.
+
+## Build in Xcode and upload to TestFlight
+
+Use the existing checkout on the Mac. Install Xcode, Node.js 22.15.0 (or a compatible Node 22 release) and CocoaPods. Open Xcode once to finish installing its components and accepting its license. Sign in with the Apple Developer account in Xcode Settings > Accounts.
+
+From the repository root:
+
+```bash
+bash mobile/prepare-xcode.command
+```
+
+The script installs locked JavaScript dependencies, runs the mobile checks, installs CocoaPods dependencies and opens `mobile/ios/DeyeSolar.xcworkspace`. It uses the checked-in native project when available. No Expo account or EAS cloud build is required. Expo remains an application dependency.
+
+1. Select the **DeyeSolar** target, then **Signing & Capabilities**. Enable automatic signing and choose the Apple Developer team. The bundle identifier is `com.dshapar.solar`.
+2. Run on an iPhone or simulator first. Check sign-in, foreground/background refresh, tab navigation, generation dates, signed/unknown revenue and logout. Device switching sends real commands to configured devices.
+3. In App Store Connect, create the iOS app record with the same bundle identifier if it does not already exist.
+4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
+5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
+
+Version `1.0.0` starts with build number `1`; increment the build number for each subsequent upload. Keep the native target and `app.json` values aligned. Do not commit signing credentials or local Xcode user data. When changing Expo native plugins, apply the configuration with `npx expo prebuild --platform ios --no-clean --no-install`, inspect the native diff, then run `pod install` again. Do not overwrite local signing changes without reviewing them.
+
+Native compilation, signing and TestFlight upload must be completed on the Mac; a successful JavaScript export alone does not establish those results. See Apple's [upload guide](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/).
 
 ## Backend API
 
-The app uses bearer tokens from `POST /api/auth/login` and calls the new `/api/...` endpoints in `DeyeSolar.Web`.
+The app uses bearer tokens from `POST /api/auth/login`. On iOS the session is stored in Keychain through SecureStore and bound to the exact configured endpoint. Passwords are not persisted. Older plaintext sessions require one new sign-in and are removed during startup. Web preview sessions remain in memory only. Native requests use `expo/fetch` to reject redirects before forwarding credentials.
+
+The dashboard uses `/api/dashboard` and `/api/dashboard/refresh`; generation uses `/api/solar/estimate` and `/api/solar/history`; sales uses `/api/sales`. These routes require authenticated access and preserve the web server's time-zone, calculation and accounting rules.

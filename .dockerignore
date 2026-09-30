@@ -1,0 +1,13 @@
+.git
+.vs
+.idea
+**/bin
+**/obj
+**/node_modules
+mobile/.expo
+mobile/dist
+**/*.user
+**/*.suo
+**/appsettings.*.local.json
+scripts/restore-creds.*
+.env*

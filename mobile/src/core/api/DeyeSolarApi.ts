@@ -1,8 +1,8 @@
-import { ApiClient } from "./ApiClient";
+import { ApiClient, ApiError } from "./ApiClient";
 import {
   AuthResponse,
   Dashboard,
-  Device,
+  DeviceList,
   DeyeDevice,
   DeyeStation,
   DisplaySettings,
@@ -12,10 +12,12 @@ import {
   Rule,
   RuleRequest,
   RuleRunLog,
+  SessionResponse,
   Settings,
   ShellySettings,
   SocketStateResponse
 } from "./types";
+import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "./types";
 
 type DeyeDeviceSelectionRequest = {
   stationId: number;
@@ -25,23 +27,52 @@ type DeyeDeviceSelectionRequest = {
 export class DeyeSolarApi {
   constructor(private readonly client: ApiClient) {}
 
-  login(username: string, password: string): Promise<AuthResponse> {
-    return this.client.request<AuthResponse>("/api/auth/login", {
-      method: "POST",
-      body: { username, password }
-    });
+  async login(username: string, password: string, signal?: AbortSignal): Promise<AuthResponse> {
+    try {
+      return await this.client.request<AuthResponse>("/api/auth/login", {
+        method: "POST",
+        body: { username, password },
+        skipUnauthorizedHandler: true,
+        signal
+      });
+    } catch (ex) {
+      if (ex instanceof ApiError && ex.status === 401) {
+        throw new ApiError(401, "Invalid username or password.");
+      }
+      throw ex;
+    }
   }
 
-  logout(): Promise<void> {
-    return this.client.request<void>("/api/auth/logout", { method: "POST" });
+  getSession(signal?: AbortSignal): Promise<SessionResponse> {
+    return this.client.request<SessionResponse>("/api/auth/session", { signal });
   }
 
-  getDashboard(): Promise<Dashboard> {
-    return this.client.request<Dashboard>("/api/dashboard");
+  logout(signal?: AbortSignal): Promise<void> {
+    return this.client.request<void>("/api/auth/logout", { method: "POST", signal });
   }
 
-  getDevices(refresh = false): Promise<Device[]> {
-    return this.client.request<Device[]>("/api/devices", {
+  getDashboard(signal?: AbortSignal): Promise<Dashboard> {
+    return this.client.request<Dashboard>("/api/dashboard", { signal });
+  }
+
+  refreshDashboard(signal?: AbortSignal): Promise<Dashboard> {
+    return this.client.request<Dashboard>("/api/dashboard/refresh", { method: "POST", signal });
+  }
+
+  getSolarEstimate(signal?: AbortSignal): Promise<SolarEstimateState> {
+    return this.client.request<SolarEstimateState>("/api/solar/estimate", { signal });
+  }
+
+  getSolarHistory(period: SolarHistoryPeriod, date?: string, signal?: AbortSignal): Promise<SolarHistoryResult> {
+    return this.client.request<SolarHistoryResult>("/api/solar/history", { query: { period, date }, signal });
+  }
+
+  getSales(period: ExportSalesPeriod, date: string, signal?: AbortSignal): Promise<ExportSalesResult> {
+    return this.client.request<ExportSalesResult>("/api/sales", { query: { period, date }, signal });
+  }
+
+  getDevices(refresh = false): Promise<DeviceList> {
+    return this.client.request<DeviceList>("/api/devices", {
       query: { refresh }
     });
   }

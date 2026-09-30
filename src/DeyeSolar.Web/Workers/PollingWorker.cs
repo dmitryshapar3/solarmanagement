@@ -4,6 +4,7 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -11,10 +12,11 @@ namespace DeyeSolar.Web.Workers;
 
 public class PollingWorker : BackgroundService
 {
-    private readonly IInverterDataSource _dataSource;
+    private const int HistoryRetentionDays = 31;
+    private readonly IInverterRefreshService _inverterRefresh;
+    private readonly IOptionsMonitor<DeyeCloudOptions> _deyeOptions;
     private readonly ISocketController _socketController;
     private readonly IRuleRepository _ruleRepository;
-    private readonly InverterDataSnapshot _snapshot;
     private readonly DeviceStatusSnapshot _deviceStatusSnapshot;
     private readonly RuleEvaluator _ruleEvaluator;
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
@@ -23,10 +25,10 @@ public class PollingWorker : BackgroundService
     private readonly ILogger<PollingWorker> _logger;
 
     public PollingWorker(
-        IInverterDataSource dataSource,
+        IInverterRefreshService inverterRefresh,
+        IOptionsMonitor<DeyeCloudOptions> deyeOptions,
         ISocketController socketController,
         IRuleRepository ruleRepository,
-        InverterDataSnapshot snapshot,
         DeviceStatusSnapshot deviceStatusSnapshot,
         RuleEvaluator ruleEvaluator,
         IDbContextFactory<DeyeSolarDbContext> dbFactory,
@@ -34,10 +36,10 @@ public class PollingWorker : BackgroundService
         AppSettingsService settingsService,
         ILogger<PollingWorker> logger)
     {
-        _dataSource = dataSource;
+        _inverterRefresh = inverterRefresh;
+        _deyeOptions = deyeOptions;
         _socketController = socketController;
         _ruleRepository = ruleRepository;
-        _snapshot = snapshot;
         _deviceStatusSnapshot = deviceStatusSnapshot;
         _ruleEvaluator = ruleEvaluator;
         _dbFactory = dbFactory;
@@ -56,24 +58,37 @@ public class PollingWorker : BackgroundService
             {
                 await PollAndEvaluateAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "Polling cycle failed");
             }
 
             var interval = TimeSpan.FromSeconds(_pollingOptions.CurrentValue.IntervalSeconds);
-            await Task.Delay(interval, stoppingToken);
+            try
+            {
+                await Task.Delay(interval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
     private async Task PollAndEvaluateAsync(CancellationToken ct)
     {
-        var data = await _dataSource.ReadCurrentDataAsync(ct);
+        var identity = DeyeRefreshIdentity.Capture(_deyeOptions.CurrentValue);
+        var data = await _inverterRefresh.RefreshAsync(ct);
+        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
         _logger.LogInformation("Poll: SOC={Soc}%, Solar={Solar}W, BatteryPower={Battery}W, Load={Load}W",
             data.BatterySoc, data.SolarProduction, data.BatteryPower, data.LoadPower);
 
-        _snapshot.Update(data);
-        await SaveReadingAsync(data, ct);
+        await CleanupReadingsAsync(ct);
+        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
 
         var allRules = await _ruleRepository.GetAllAsync(ct);
         var now = DateTime.UtcNow;
@@ -97,12 +112,15 @@ public class PollingWorker : BackgroundService
         var evaluationContext = await BuildEvaluationContextAsync(now, ct);
 
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
         var actions = _ruleEvaluator.Evaluate(data, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
+        var recordedRules = new HashSet<int>();
 
         foreach (var action in actions)
         {
+            if (!identity.Matches(_deyeOptions.CurrentValue)) break;
             var rule = dueRules.First(r => r.Id == action.RuleId);
             try
             {
@@ -116,6 +134,7 @@ public class PollingWorker : BackgroundService
                 await _ruleRepository.UpdateAsync(rule, ct);
                 _deviceStatusSnapshot.SetDeviceState(action.EntityId, action.TurnOn);
                 successfulActions.Add(action.RuleId);
+                recordedRules.Add(action.RuleId);
 
                 _logger.LogInformation("Rule '{RuleName}' triggered: {Action} {EntityId}",
                     rule.Name, action.TurnOn ? "ON" : "OFF", action.EntityId);
@@ -125,6 +144,7 @@ public class PollingWorker : BackgroundService
                 rule.LastEvaluated = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
                 failedActions[action.RuleId] = $"{(action.TurnOn ? "ON" : "OFF")} failed: {ex.Message}";
+                recordedRules.Add(action.RuleId);
                 _logger.LogError(ex, "Failed to execute action for rule {RuleId}", action.RuleId);
             }
         }
@@ -132,14 +152,18 @@ public class PollingWorker : BackgroundService
         // Update LastEvaluated for rules that had no action (still evaluated, just no change)
         foreach (var rule in dueRules)
         {
+            if (!identity.Matches(_deyeOptions.CurrentValue)) break;
             if (!actions.Any(a => a.RuleId == rule.Id))
             {
                 rule.LastEvaluated = now;
                 await _ruleRepository.UpdateAsync(rule, ct);
+                recordedRules.Add(rule.Id);
             }
         }
 
-        await LogRuleRunsAsync(data, evaluationContext, dueRules, actions, successfulActions, failedActions, ct);
+        if (recordedRules.Count > 0)
+            await LogRuleRunsAsync(data, evaluationContext, dueRules.Where(rule => recordedRules.Contains(rule.Id)).ToList(),
+                actions, successfulActions, failedActions, ct);
     }
 
     private static bool IsDueForEvaluation(TriggerRule rule, DateTime now)
@@ -358,35 +382,23 @@ public class PollingWorker : BackgroundService
         return $"PV avg last {RuleEvaluator.SolarProductionAverageWindowMinutes}m={averageWatts.Value}W (need >= {rule.MinAverageSolarProductionWatts}W while SOC < {RuleEvaluator.SolarProductionBypassSocThreshold}%)";
     }
 
-    private async Task SaveReadingAsync(InverterData data, CancellationToken ct)
+    private async Task CleanupReadingsAsync(CancellationToken ct)
     {
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
-            db.Readings.Add(new Reading
-            {
-                Timestamp = DateTime.UtcNow,
-                BatterySoc = data.BatterySoc,
-                BatteryTemperature = data.BatteryTemperature,
-                BatteryVoltage = data.BatteryVoltage,
-                BatteryPower = data.BatteryPower,
-                BatteryCurrent = data.BatteryCurrent,
-                SolarProduction = data.SolarProduction,
-                GridConsumption = data.GridConsumption,
-                LoadPower = data.LoadPower,
-                DataSource = "DeyeCloud"
-            });
-            await db.SaveChangesAsync(ct);
-
-            // Cleanup readings older than 3 days
-            var cutoff = DateTime.UtcNow.AddDays(-3);
-            var oldReadings = db.Readings.Where(r => r.Timestamp < cutoff);
-            db.Readings.RemoveRange(oldReadings);
-            await db.SaveChangesAsync(ct);
+            await ExpiredReadings(db.Readings, DateTime.UtcNow).ExecuteDeleteAsync(ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Failed to save reading to database");
+            _logger.LogWarning(ex, "Failed to clean up expired readings");
         }
+    }
+
+    internal static IQueryable<Reading> ExpiredReadings(IQueryable<Reading> readings, DateTime now)
+    {
+        // Retain the full monthly chart window plus its leading integration sample.
+        var cutoff = now.AddDays(-HistoryRetentionDays);
+        return readings.Where(r => r.Timestamp < cutoff);
     }
 }

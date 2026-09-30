@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { CirclePower, RefreshCcw, Zap } from "lucide-react-native";
 import {
   AppButton,
@@ -12,43 +13,75 @@ import {
   StatusPill
 } from "../../core/components";
 import { Device } from "../../core/api/types";
-import { formatWatts } from "../../core/format";
+import { formatTime, formatWatts } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
+
+const autoRefreshIntervalMs = 15000;
 
 export function DevicesScreen() {
   const { api } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [busyDevice, setBusyDevice] = useState<string | null>(null);
+  const [busyDevice, setBusyDevice] = useState<{ id: string; isOn: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
+  const requestSeq = useRef(0);
 
-  const load = useCallback(async (refresh = false) => {
-    setError(null);
-    refresh ? setRefreshing(true) : setLoading(true);
+  const load = useCallback(async (mode: "initial" | "refresh" | "silent") => {
+    const requestId = ++requestSeq.current;
+    if (mode === "initial") {
+      setLoading(true);
+    } else if (mode === "refresh") {
+      setRefreshing(true);
+    }
+    if (mode !== "silent") {
+      setError(null);
+    }
 
     try {
-      setDevices(await api.getDevices(refresh));
+      const result = await api.getDevices(mode === "refresh");
+      if (requestId === requestSeq.current) {
+        setDevices(result.devices);
+        setLastUpdated(result.lastUpdated);
+        setError(null);
+      }
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to load devices.");
+      if (mode !== "silent" && requestId === requestSeq.current) {
+        setError(ex instanceof Error ? ex.message : "Unable to load devices.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [api]);
 
-  useEffect(() => {
-    void load(false);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load(hasLoadedRef.current ? "silent" : "initial");
+      hasLoadedRef.current = true;
+
+      const interval = setInterval(() => void load("silent"), autoRefreshIntervalMs);
+      return () => clearInterval(interval);
+    }, [load])
+  );
 
   async function setDeviceState(device: Device, isOn: boolean) {
-    setBusyDevice(device.id);
+    setBusyDevice({ id: device.id, isOn });
     setError(null);
     try {
-      await api.setDeviceState(device.id, isOn);
+      const result = await api.setDeviceState(device.id, isOn);
+      // Invalidate any device fetch that started before the toggle so its
+      // stale response cannot overwrite the post-toggle state.
+      requestSeq.current++;
       setDevices((current) =>
-        current.map((item) => (item.id === device.id ? { ...item, online: true, isOn } : item))
+        current.map((item) =>
+          item.id === device.id
+            ? result.device ?? { ...item, online: true, isOn: result.isOn }
+            : item
+        )
       );
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Unable to change socket state.");
@@ -65,12 +98,24 @@ export function DevicesScreen() {
     );
   }
 
+  const countLabel = `${devices.length} socket${devices.length === 1 ? "" : "s"}`;
+
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void load(true)}>
+    <Screen refreshing={refreshing} onRefresh={() => void load("refresh")}>
       <Header
         title="Devices"
-        subtitle={`${devices.length} socket${devices.length === 1 ? "" : "s"}`}
-        action={<AppButton label="Refresh" icon={RefreshCcw} onPress={() => void load(true)} variant="secondary" compact />}
+        subtitle={lastUpdated ? `${countLabel} | Updated ${formatTime(lastUpdated)}` : countLabel}
+        action={(
+          <AppButton
+            label="Refresh"
+            icon={RefreshCcw}
+            onPress={() => void load("refresh")}
+            loading={refreshing}
+            disabled={refreshing || loading}
+            variant="secondary"
+            compact
+          />
+        )}
       />
       <ErrorBanner message={error} />
 
@@ -80,14 +125,14 @@ export function DevicesScreen() {
             <DeviceCard
               key={device.id}
               device={device}
-              busy={busyDevice === device.id}
+              busyState={busyDevice?.id === device.id ? busyDevice.isOn : null}
               onTurnOn={() => void setDeviceState(device, true)}
               onTurnOff={() => void setDeviceState(device, false)}
             />
           ))}
         </View>
       ) : (
-        <EmptyState title="No devices found." detail="Configured socket providers returned no devices." />
+        <EmptyState title="No devices found." detail="Configure the Shelly socket backend in Settings." />
       )}
     </Screen>
   );
@@ -95,12 +140,12 @@ export function DevicesScreen() {
 
 function DeviceCard({
   device,
-  busy,
+  busyState,
   onTurnOn,
   onTurnOff
 }: {
   device: Device;
-  busy: boolean;
+  busyState: boolean | null;
   onTurnOn: () => void;
   onTurnOff: () => void;
 }) {
@@ -127,16 +172,16 @@ function DeviceCard({
           label="ON"
           icon={CirclePower}
           onPress={onTurnOn}
-          loading={busy && !device.isOn}
-          disabled={busy}
+          loading={busyState === true}
+          disabled={busyState !== null}
           compact
         />
         <AppButton
           label="OFF"
           icon={CirclePower}
           onPress={onTurnOff}
-          loading={busy && device.isOn}
-          disabled={busy}
+          loading={busyState === false}
+          disabled={busyState !== null}
           variant="danger"
           compact
         />

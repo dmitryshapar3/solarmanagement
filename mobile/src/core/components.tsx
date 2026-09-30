@@ -175,7 +175,8 @@ export function TextField({
   placeholder,
   secureTextEntry,
   keyboardType = "default",
-  multiline
+  multiline,
+  editable = true
 }: {
   label: string;
   value: string;
@@ -184,9 +185,10 @@ export function TextField({
   secureTextEntry?: boolean;
   keyboardType?: KeyboardTypeOptions;
   multiline?: boolean;
+  editable?: boolean;
 }) {
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, !editable && styles.fieldDisabled]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         value={value}
@@ -196,6 +198,7 @@ export function TextField({
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
         multiline={multiline}
+        editable={editable}
         autoCapitalize="none"
         style={[styles.input, multiline && styles.multilineInput]}
       />
@@ -442,6 +445,9 @@ const styles = StyleSheet.create({
   },
   field: {
     gap: spacing.xs
+  },
+  fieldDisabled: {
+    opacity: 0.5
   },
   fieldLabel: {
     color: colors.muted,

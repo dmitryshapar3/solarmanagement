@@ -110,6 +110,44 @@ namespace DeyeSolar.Web.Migrations
                     b.ToTable("AppSettings");
                 });
 
+            modelBuilder.Entity("DeyeSolar.Web.Data.ExportPriceRow", b =>
+                {
+                    b.Property<DateTime>("StartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("PricePlnPerMwh")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<DateTime>("RetrievedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("StartUtc");
+
+                    b.ToTable("ExportPrices");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.ExportReading", b =>
+                {
+                    b.Property<string>("DeviceSn")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("GridPowerWatts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PolledAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("DeviceSn", "ObservedAt");
+
+                    b.ToTable("ExportReadings");
+                });
+
             modelBuilder.Entity("DeyeSolar.Web.Data.Reading", b =>
                 {
                     b.Property<int>("Id")
@@ -143,6 +181,13 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<int>("LoadPower")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("SolarObservedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SolarDeviceSn")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<int>("SolarProduction")
                         .HasColumnType("int");
 
@@ -152,6 +197,8 @@ namespace DeyeSolar.Web.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Timestamp");
+
+                    b.HasIndex("SolarObservedAt");
 
                     b.ToTable("Readings");
                 });

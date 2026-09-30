@@ -1,0 +1,166 @@
+name: Solar tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    name: Mobile TypeScript, regression tests and iOS bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      CI: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Run mobile regression tests
+        run: npm test
+
+      - name: Bundle iOS assets and application code
+        run: npm run export:ios
+
+  test:
+    name: .NET 8 and SQL Server 2022
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: 'true'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET 8 SDK
+        id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+          dotnet-quality: ga
+
+      - name: Select the installed .NET 8 SDK
+        env:
+          TEST_DOTNET_SDK: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          if [ ! -f global.json ]; then
+            printf '{"sdk":{"version":"%s","rollForward":"latestPatch"}}\n' "$TEST_DOTNET_SDK" > global.json
+          fi
+          case "$(dotnet --version)" in
+            8.0.*) ;;
+            *) echo "The regression suite requires the .NET 8 SDK." >&2; exit 1 ;;
+          esac
+
+      - name: Prepare isolated SQL credentials
+        run: |
+          python3 - <<'PY'
+          import os
+          import secrets
+          password = "Ci!" + secrets.token_urlsafe(32) + "Aa1"
+          connection = "Server=127.0.0.1,1433;Database=master;User ID=sa;Password=" + password + ";Encrypt=True;TrustServerCertificate=True"
+          print("::add-mask::" + password)
+          print("::add-mask::" + connection)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write("MSSQL_SA_PASSWORD=" + password + "\n")
+              output.write("SOLAR_TEST_SQL_CONNECTION=" + connection + "\n")
+          PY
+
+      - name: Start SQL Server 2022 test service
+        run: |
+          docker run --detach --name solar-test-sql \
+            --publish 127.0.0.1:1433:1433 \
+            --env ACCEPT_EULA=Y --env MSSQL_PID=Developer \
+            --env MSSQL_MEMORY_LIMIT_MB=2048 --env MSSQL_SA_PASSWORD \
+            mcr.microsoft.com/mssql/server:2022-latest
+          for attempt in $(seq 1 30); do
+            if docker exec solar-test-sql bash -c 'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -l 2 -Q "SELECT 1" > /dev/null' 2>/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The isolated SQL Server did not become ready." >&2
+          exit 1
+
+      - name: Restore solution
+        run: dotnet restore DeyeSolar.sln
+
+      - name: Build and run every test project
+        run: dotnet test DeyeSolar.sln --configuration Release --no-restore --logger trx
+
+      - name: Verify test discovery and reject skipped tests
+        if: ${{ always() }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          expected = set()
+          for project in Path("tests").glob("**/*.csproj"):
+              root = ET.parse(project).getroot()
+              if any((node.text or "").strip().lower() == "true" for node in root.findall(".//{*}IsTestProject")):
+                  expected.add((project.stem + ".dll").lower())
+          reports = list(Path("tests").glob("**/TestResults/*.trx"))
+          if not expected or not reports:
+              raise SystemExit("Test discovery or TRX output is missing.")
+          seen = set()
+          total = 0
+          for report in reports:
+              root = ET.parse(report).getroot()
+              counters = root.find(".//{*}Counters")
+              if counters is None:
+                  raise SystemExit("A TRX report has no execution counters.")
+              count = int(counters.get("total", "0"))
+              if count == 0 or int(counters.get("executed", "0")) != count or int(counters.get("passed", "0")) != count:
+                  raise SystemExit("A test project failed, skipped tests, or executed no tests: " + report.name)
+              results = root.findall(".//{*}UnitTestResult")
+              if len(results) != count or any(result.get("outcome") != "Passed" for result in results):
+                  raise SystemExit("A TRX report contains an incomplete or non-passing result.")
+              for test in root.findall(".//{*}UnitTest"):
+                  seen.add(test.get("storage", "").replace("\\", "/").rsplit("/", 1)[-1].lower())
+              total += count
+          missing = expected - seen
+          if missing:
+              raise SystemExit("Test projects were not executed: " + ", ".join(sorted(missing)))
+          print(f"Verified {total} passing tests across {len(expected)} projects; no skips.")
+          PY
+
+      - name: Upload test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dotnet-test-results
+          path: tests/**/TestResults/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Stop the isolated SQL service
+        if: ${{ always() }}
+        run: docker rm --force solar-test-sql >/dev/null 2>&1 || true

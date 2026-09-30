@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeyeSolar.RuleEngine.Tests"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeyeSolar.Infrastructure.Tests", "tests\DeyeSolar.Infrastructure.Tests\DeyeSolar.Infrastructure.Tests.csproj", "{3FC981D1-39AB-4900-B393-A41CFB307A23}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeyeSolar.Web.Tests", "tests\DeyeSolar.Web.Tests\DeyeSolar.Web.Tests.csproj", "{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,6 +51,10 @@ Global
 		{3FC981D1-39AB-4900-B393-A41CFB307A23}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3FC981D1-39AB-4900-B393-A41CFB307A23}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3FC981D1-39AB-4900-B393-A41CFB307A23}.Release|Any CPU.Build.0 = Release|Any CPU
+		{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -60,5 +66,6 @@ Global
 		{0D7F2C56-24AF-46FE-85B2-46CAD56B1396} = {FAD0F089-F049-4C08-B9FD-DC11850EBDEB}
 		{60376F67-6966-4330-B8CD-40E1A6B20F70} = {5E9D5C91-496F-41C9-A4ED-F89BE0DBE11A}
 		{3FC981D1-39AB-4900-B393-A41CFB307A23} = {5E9D5C91-496F-41C9-A4ED-F89BE0DBE11A}
+		{66D24A41-94E0-4D6D-85FC-5BCB46EF8AF7} = {5E9D5C91-496F-41C9-A4ED-F89BE0DBE11A}
 	EndGlobalSection
 EndGlobal
