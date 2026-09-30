@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import {
   ActivityIndicator,
   KeyboardTypeOptions,
+  ReturnKeyTypeOptions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -37,6 +38,8 @@ export function Screen({
       {scroll ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          automaticallyAdjustKeyboardInsets
+          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           refreshControl={
             onRefresh
@@ -112,6 +115,9 @@ export function AppButton({
   const palette = buttonPalette[variant];
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -176,7 +182,9 @@ export function TextField({
   secureTextEntry,
   keyboardType = "default",
   multiline,
-  editable = true
+  editable = true,
+  returnKeyType,
+  onSubmitEditing
 }: {
   label: string;
   value: string;
@@ -186,6 +194,8 @@ export function TextField({
   keyboardType?: KeyboardTypeOptions;
   multiline?: boolean;
   editable?: boolean;
+  returnKeyType?: ReturnKeyTypeOptions;
+  onSubmitEditing?: () => void;
 }) {
   return (
     <View style={[styles.field, !editable && styles.fieldDisabled]}>
@@ -199,6 +209,8 @@ export function TextField({
         keyboardType={keyboardType}
         multiline={multiline}
         editable={editable}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
         autoCapitalize="none"
         style={[styles.input, multiline && styles.multilineInput]}
       />
@@ -252,6 +264,9 @@ export function SegmentedControl<T extends string>({
         return (
           <Pressable
             key={option.value}
+            accessibilityRole="button"
+            accessibilityLabel={option.label}
+            accessibilityState={{ selected }}
             onPress={() => onChange(option.value)}
             style={[styles.segment, selected && styles.segmentSelected]}
           >

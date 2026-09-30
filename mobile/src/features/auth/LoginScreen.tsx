@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { LogIn, Server } from "lucide-react-native";
 import { AppButton, Card, ErrorBanner, Screen, TextField } from "../../core/components";
 import { colors, spacing, typography } from "../../core/theme";
@@ -22,6 +22,7 @@ export function LoginScreen() {
 
   async function handleLogin() {
     if (submitting.current) return;
+    Keyboard.dismiss();
     submitting.current = true;
     setError(null);
     setLoading(true);
@@ -60,6 +61,8 @@ export function LoginScreen() {
           onChangeText={setPassword}
           secureTextEntry
           placeholder="Password"
+          returnKeyType="go"
+          onSubmitEditing={handleLogin}
         />
         <ErrorBanner message={error ?? authError} />
         <AppButton label="Sign in" icon={LogIn} onPress={handleLogin} loading={loading} />

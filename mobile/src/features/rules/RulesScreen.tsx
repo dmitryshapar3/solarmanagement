@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Edit3, Plus, RefreshCcw, Trash2 } from "lucide-react-native";
 import {
@@ -43,12 +44,9 @@ export function RulesScreen({ navigation }: Props) {
     }
   }, [api]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      void load(false);
-    });
-    return unsubscribe;
-  }, [load, navigation]);
+  useFocusEffect(useCallback(() => {
+    void load(false);
+  }, [load]));
 
   async function toggleRule(rule: Rule, enabled: boolean) {
     setError(null);

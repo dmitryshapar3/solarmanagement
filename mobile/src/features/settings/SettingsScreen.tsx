@@ -113,10 +113,24 @@ export function SettingsScreen() {
     }
   }
 
-  if (loading || !settings) {
+  if (loading) {
     return (
       <Screen scroll={false}>
         <LoadingState label="Loading settings..." />
+      </Screen>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <Screen>
+        <Header
+          title="Settings"
+          subtitle="Account and installation settings"
+          action={<AppButton label="Logout" icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
+        />
+        <ErrorBanner message={error ?? "Settings could not be loaded."} />
+        <AppButton label="Retry" icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
       </Screen>
     );
   }

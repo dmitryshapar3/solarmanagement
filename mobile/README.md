@@ -44,6 +44,19 @@ bash mobile/prepare-xcode.command
 
 The script installs locked JavaScript dependencies, runs the mobile checks, installs CocoaPods dependencies and opens `mobile/ios/DeyeSolar.xcworkspace`. It uses the checked-in native project when available. No Expo account or EAS cloud build is required. Expo remains an application dependency.
 
+For a simulator run, select an installed iPhone simulator as the run destination and keep `npm start` running in `mobile`, then press **Run**. Xcode 27 displays simulators in **Device Hub**. A simulator does not require an Apple Developer team. Keep Xcode's local code signing enabled: an unsigned simulator build can fail to access the Keychain used for sign-in.
+
+To build a standalone simulator app with its JavaScript bundled, run from `mobile/ios`:
+
+```bash
+xcodebuild -workspace DeyeSolar.xcworkspace -scheme DeyeSolar \
+  -configuration Release -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath build/DerivedData CODE_SIGN_IDENTITY=- build
+```
+
+Install `build/DerivedData/Build/Products/Release-iphonesimulator/DeyeSolar.app` in a booted simulator with `xcrun simctl install booted <app-path>`, then launch it with `xcrun simctl launch booted com.dshapar.solar`. This Release build does not need Metro. Use `ios/.xcode.env.local` for a machine-specific `NODE_BINARY` path when Node is not available to Xcode's shell; that file is ignored by Git.
+
 1. Select the **DeyeSolar** target, then **Signing & Capabilities**. Enable automatic signing and choose the Apple Developer team. The bundle identifier is `com.dshapar.solar`.
 2. For a Debug run, keep `npm start` running in a separate terminal in `mobile`, then run on an iPhone or simulator. A physical iPhone must be able to reach that development server. Check sign-in, foreground/background refresh, tab navigation, generation dates, signed/unknown revenue and logout. Device switching sends real commands to configured devices. Release archives bundle the app and do not require this development server.
 3. In App Store Connect, create the iOS app record with the same bundle identifier if it does not already exist.

@@ -51,6 +51,8 @@
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>RCTMetroPort</key>
     <string>$(RCT_METRO_PORT)</string>
+    <key>RCTNewArchEnabled</key>
+    <true/>
     <key>UIApplicationSceneManifest</key>
     <dict>
       <key>UIApplicationSupportsMultipleScenes</key>
