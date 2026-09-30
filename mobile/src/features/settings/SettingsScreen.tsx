@@ -34,7 +34,7 @@ const deviceTimeZone = (() => {
 })();
 
 export function SettingsScreen() {
-  const { api, apiBaseUrl, updateApiBaseUrl, logout } = useAuth();
+  const { api, apiBaseUrl, isDemo, updateApiBaseUrl, logout } = useAuth();
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [shellyIntervalText, setShellyIntervalText] = useState("");
@@ -127,7 +127,7 @@ export function SettingsScreen() {
         <Header
           title="Settings"
           subtitle="Account and installation settings"
-          action={<AppButton label="Logout" icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
+          action={<AppButton label={isDemo ? "Exit demo" : "Logout"} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
         />
         <ErrorBanner message={error ?? "Settings could not be loaded."} />
         <AppButton label="Retry" icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
@@ -232,18 +232,20 @@ export function SettingsScreen() {
       <Header
         title="Settings"
         subtitle={settings.display.timeZoneId}
-        action={<AppButton label="Logout" icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
+        action={<AppButton label={isDemo ? "Exit demo" : "Logout"} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
       />
       <ErrorBanner message={error} />
 
       <SectionTitle title="Mobile API" />
       <Card style={styles.form}>
-        <TextField label="Base URL" value={baseUrl} onChangeText={setBaseUrl} />
+        {isDemo ? <Text style={styles.activeInfo}>Exit demo to connect to a server. Other settings here affect only the sample installation.</Text> : null}
+        <TextField label="Base URL" value={baseUrl} onChangeText={setBaseUrl} editable={!isDemo} />
         <AppButton
           label="Save API URL"
           icon={Save}
           onPress={() => void runBusy("api-url", () => updateApiBaseUrl(baseUrl))}
           loading={busy === "api-url"}
+          disabled={isDemo}
         />
       </Card>
 

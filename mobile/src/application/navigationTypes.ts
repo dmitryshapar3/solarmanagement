@@ -15,4 +15,5 @@ export type MoreStackParamList = RulesStackParamList & {
   MoreHome: undefined;
   History: undefined;
   Settings: undefined;
+  Subscription: undefined;
 };

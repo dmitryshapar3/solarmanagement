@@ -6,6 +6,8 @@ import { Platform } from "react-native";
 import { ApiClient, normalizeBaseUrl } from "../core/api/ApiClient";
 import { DEFAULT_API_BASE_URL } from "../core/api/config";
 import { DeyeSolarApi } from "../core/api/DeyeSolarApi";
+import { DemoApiClient } from "../features/demo/DemoApiClient";
+import { DEMO_API_BASE_URL, DEMO_USERNAME } from "../features/demo/fixtures";
 import { SessionOperations, SessionStorage } from "./sessionStorage";
 
 type LoginInput = { baseUrl: string; username: string; password: string };
@@ -15,9 +17,11 @@ type AuthContextValue = {
   apiBaseUrl: string;
   username: string | null;
   isAuthenticated: boolean;
+  isDemo: boolean;
   isBootstrapping: boolean;
   authError: string | null;
   login: (input: LoginInput) => Promise<void>;
+  enterDemo: () => Promise<void>;
   logout: () => Promise<void>;
   updateApiBaseUrl: (baseUrl: string) => Promise<void>;
 };
@@ -30,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [demoApi, setDemoApi] = useState<DeyeSolarApi | null>(null);
+  const demoApiRef = useRef<DeyeSolarApi | null>(null);
+  const realSession = useRef<{ baseUrl: string; token: string } | null>(null);
   const unauthorized = useRef<() => void>(() => {});
   const mounted = useRef(true);
   const [operations] = useState(() => new SessionOperations());
@@ -46,17 +53,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     transport: expoFetch,
     onUnauthorized: () => unauthorized.current()
   }));
-  const api = useMemo(() => new DeyeSolarApi(client), [client]);
+  const realApi = useMemo(() => new DeyeSolarApi(client), [client]);
+
+  const discardDemo = useCallback(() => {
+    const previous = demoApiRef.current;
+    demoApiRef.current = null;
+    // Invalidate the old local client too, so retained screen callbacks cannot use it.
+    if (previous) void previous.logout().catch(() => {});
+  }, []);
 
   const beginSessionChange = useCallback(() => {
     const signal = operations.begin();
+    discardDemo();
+    setDemoApi(null);
+    realSession.current = null;
     client.setToken(null);
     setToken(null);
     setUsername(null);
     setIsBootstrapping(false);
     setAuthError(null);
     return signal;
-  }, [client, operations]);
+  }, [client, discardDemo, operations]);
 
   unauthorized.current = () => {
     if (!mounted.current) return;
@@ -79,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!current()) return;
         client.setBaseUrl(restored.baseUrl);
         client.setToken(restored.session?.token);
+        realSession.current = restored.session ? { baseUrl: restored.baseUrl, token: restored.session.token } : null;
         setApiBaseUrl(restored.baseUrl);
         setToken(restored.session?.token ?? null);
         setUsername(restored.session?.username ?? null);
@@ -92,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         if (current()) {
           client.setToken(null);
+          realSession.current = null;
           setToken(null);
           setUsername(null);
           setAuthError("Stored sign-in could not be loaded safely. Please sign in again.");
@@ -104,9 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted.current = false;
       operations.cancel();
+      discardDemo();
+      realSession.current = null;
       client.setToken(null);
     };
-  }, [client, operations, storage]);
+  }, [client, discardDemo, operations, storage]);
 
   const login = useCallback(async (input: LoginInput) => {
     const nextBaseUrl = normalizeBaseUrl(input.baseUrl);
@@ -124,11 +145,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await storage.changeBaseUrl(nextBaseUrl);
       ensureCurrent();
-      const session = await api.login(input.username.trim(), input.password, signal);
+      const session = await realApi.login(input.username.trim(), input.password, signal);
       ensureCurrent();
       await storage.save({ baseUrl: nextBaseUrl, token: session.token, username: session.username });
       ensureCurrent();
       client.setToken(session.token);
+      realSession.current = { baseUrl: nextBaseUrl, token: session.token };
       setToken(session.token);
       setUsername(session.username);
     } catch (error) {
@@ -137,11 +159,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     }
-  }, [api, beginSessionChange, client, operations, storage]);
+  }, [realApi, beginSessionChange, client, operations, storage]);
+
+  const enterDemo = useCallback(async () => {
+    const signal = beginSessionChange();
+    try {
+      // Clear any queued real-session writes before activating an in-memory demo.
+      await storage.clear();
+      if (!mounted.current || !operations.isCurrent(signal)) {
+        const error = new Error("Opening the demo was canceled.");
+        error.name = "AbortError";
+        throw error;
+      }
+      const nextDemoApi = new DeyeSolarApi(new DemoApiClient());
+      demoApiRef.current = nextDemoApi;
+      setDemoApi(nextDemoApi);
+    } catch (error) {
+      if (mounted.current && operations.isCurrent(signal)) {
+        setAuthError(error instanceof Error ? error.message : "Unable to open the demo.");
+      }
+      throw error;
+    }
+  }, [beginSessionChange, operations, storage]);
 
   const logout = useCallback(async () => {
     // Revocation uses a captured client so its eventual result cannot expire a later sign-in.
-    const revocation = token ? new ApiClient({ baseUrl: apiBaseUrl, token, transport: expoFetch })
+    const capturedSession = demoApiRef.current ? null : realSession.current;
+    const revocation = capturedSession ? new ApiClient({ ...capturedSession, transport: expoFetch })
       .request("/api/auth/logout", { method: "POST", timeoutMs: 5000 }).catch(() => {}) : Promise.resolve();
     const signal = beginSessionChange();
     try {
@@ -152,9 +196,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     await revocation;
-  }, [apiBaseUrl, beginSessionChange, operations, storage, token]);
+  }, [beginSessionChange, operations, storage]);
 
   const updateApiBaseUrl = useCallback(async (baseUrl: string) => {
+    if (demoApiRef.current) throw new Error("Exit demo before changing the server address.");
     const nextBaseUrl = normalizeBaseUrl(baseUrl);
     if (nextBaseUrl === apiBaseUrl) return;
     const signal = beginSessionChange();
@@ -171,8 +216,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [apiBaseUrl, beginSessionChange, client, operations, storage]);
 
   return <AuthContext.Provider value={{
-    api, apiBaseUrl, username, isAuthenticated: Boolean(token), isBootstrapping, authError,
-    login, logout, updateApiBaseUrl
+    api: demoApi ?? realApi,
+    apiBaseUrl: demoApi ? DEMO_API_BASE_URL : apiBaseUrl,
+    username: demoApi ? DEMO_USERNAME : username,
+    isAuthenticated: Boolean(token) || Boolean(demoApi), isDemo: Boolean(demoApi), isBootstrapping, authError,
+    login, enterDemo, logout, updateApiBaseUrl
   }}>{children}</AuthContext.Provider>;
 }
 

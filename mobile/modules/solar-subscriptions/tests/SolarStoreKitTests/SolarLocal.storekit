@@ -1,0 +1,131 @@
+{
+  "appPolicies": {
+    "eula": "",
+    "policies": [
+      {
+        "locale": "en_US",
+        "policyText": "",
+        "policyURL": ""
+      }
+    ]
+  },
+  "identifier": "SOLARTST",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_askToBuyEnabled": false,
+    "_billingGracePeriodEnabled": false,
+    "_billingIssuesEnabled": false,
+    "_disableDialogs": true,
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_renewalBillingIssuesEnabled": false,
+    "_storefront": "USA",
+    "_storeKitErrors": [
+      {
+        "enabled": false,
+        "name": "Load Products"
+      },
+      {
+        "enabled": false,
+        "name": "Purchase"
+      },
+      {
+        "enabled": false,
+        "name": "Verification"
+      },
+      {
+        "enabled": false,
+        "name": "App Store Sync"
+      },
+      {
+        "enabled": false,
+        "name": "Subscription Status"
+      },
+      {
+        "enabled": false,
+        "name": "App Transaction"
+      },
+      {
+        "enabled": false,
+        "name": "Manage Subscriptions Sheet"
+      },
+      {
+        "enabled": false,
+        "name": "Refund Request Sheet"
+      },
+      {
+        "enabled": false,
+        "name": "Offer Code Redeem Sheet"
+      }
+    ],
+    "_timeRate": 0
+  },
+  "subscriptionGroups": [
+    {
+      "id": "SOLAR001",
+      "localizations": [],
+      "name": "Solar Premium",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "SOLAR001",
+          "introductoryOffer": {
+            "displayPrice": "0",
+            "internalID": "TRIAL001",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P2W"
+          },
+          "localizations": [
+            {
+              "description": "Solar monitoring subscription for local tests only",
+              "displayName": "Solar Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.dshapar.solar.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Solar Monthly",
+          "subscriptionGroupID": "SOLAR001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "SOLAR002",
+          "introductoryOffer": {
+            "displayPrice": "0",
+            "internalID": "TRIAL002",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P2W"
+          },
+          "localizations": [
+            {
+              "description": "Solar monitoring subscription for local tests only",
+              "displayName": "Solar Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.dshapar.solar.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Solar Yearly",
+          "subscriptionGroupID": "SOLAR001",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

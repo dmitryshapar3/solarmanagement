@@ -63,7 +63,11 @@ Install `build/DerivedData/Build/Products/Release-iphonesimulator/DeyeSolar.app`
 4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
 5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
 
-Version `1.0.0` starts with build number `1`; increment the build number for each subsequent upload. Keep the native target and `app.json` values aligned. Do not commit signing credentials or local Xcode user data. When changing Expo native plugins, apply the configuration with `npx expo prebuild --platform ios --no-clean --no-install`, inspect the native diff, then run `pod install` again. Do not overwrite local signing changes without reviewing them.
+The current TestFlight pilot is `1.0.0 (2)`. Connected access requires server sign-in and is available without a purchase: `src/application/releaseConfig.ts` keeps subscription enforcement disabled. The existing free Open-Meteo backend configuration remains in use; no server redeployment is required for this pilot. The optional offline demo uses fictional, in-memory data and never controls real equipment.
+
+StoreKit code and App Store drafts are retained for a later paid release. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) before enabling billing in a subsequent build. App Store publication is deferred.
+
+Increment the build number for each subsequent upload. Keep the native target and `app.json` values aligned. Do not commit signing credentials or local Xcode user data. When changing Expo native plugins, apply the configuration with `npx expo prebuild --platform ios --no-clean --no-install`, inspect the native diff, then run `pod install` again. Do not overwrite local signing changes without reviewing them.
 
 Native compilation, signing and TestFlight upload must be completed on the Mac; a successful JavaScript export alone does not establish those results. See Apple's [upload guide](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/).
 

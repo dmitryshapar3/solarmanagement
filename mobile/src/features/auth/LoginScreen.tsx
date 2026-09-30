@@ -4,14 +4,15 @@ import { LogIn, Server } from "lucide-react-native";
 import { AppButton, Card, ErrorBanner, Screen, TextField } from "../../core/components";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
+import { openPublicLink, PUBLIC_PRIVACY_URL, PUBLIC_SUPPORT_URL } from "../../core/publicLinks";
 
 export function LoginScreen() {
-  const { apiBaseUrl, authError, login } = useAuth();
+  const { apiBaseUrl, authError, login, enterDemo } = useAuth();
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<"login" | "demo" | null>(null);
   const mounted = useRef(true);
   const submitting = useRef(false);
 
@@ -25,7 +26,7 @@ export function LoginScreen() {
     Keyboard.dismiss();
     submitting.current = true;
     setError(null);
-    setLoading(true);
+    setPending("login");
     try {
       await login({ baseUrl, username, password });
     } catch (ex) {
@@ -34,8 +35,35 @@ export function LoginScreen() {
       submitting.current = false;
       if (mounted.current) {
         setPassword("");
-        setLoading(false);
+        setPending(null);
       }
+    }
+  }
+
+  async function handleDemo() {
+    if (submitting.current) return;
+    Keyboard.dismiss();
+    submitting.current = true;
+    setError(null);
+    setPending("demo");
+    try {
+      await enterDemo();
+    } catch (ex) {
+      if (mounted.current) setError(ex instanceof Error ? ex.message : "Unable to open the demo.");
+    } finally {
+      submitting.current = false;
+      if (mounted.current) {
+        setPassword("");
+        setPending(null);
+      }
+    }
+  }
+
+  async function openLink(url: string) {
+    try {
+      await openPublicLink(url);
+    } catch (ex) {
+      if (mounted.current) setError(ex instanceof Error ? ex.message : "The link could not be opened.");
     }
   }
 
@@ -65,8 +93,14 @@ export function LoginScreen() {
           onSubmitEditing={handleLogin}
         />
         <ErrorBanner message={error ?? authError} />
-        <AppButton label="Sign in" icon={LogIn} onPress={handleLogin} loading={loading} />
+        <AppButton label="Sign in" icon={LogIn} onPress={handleLogin} loading={pending === "login"} disabled={Boolean(pending)} />
+        <AppButton label="Try demo" onPress={handleDemo} variant="secondary" loading={pending === "demo"} disabled={Boolean(pending)} />
+        <Text style={styles.warning}>Explore sample data. Demo changes stay in this session and never affect real devices.</Text>
       </Card>
+      <View style={styles.links}>
+        <AppButton label="Privacy policy" variant="ghost" compact onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
+        <AppButton label="Support" variant="ghost" compact onPress={() => void openLink(PUBLIC_SUPPORT_URL)} />
+      </View>
     </Screen>
   );
 }
@@ -98,6 +132,11 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: spacing.lg
+  },
+  links: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
   },
   warning: {
     color: colors.muted,
