@@ -45,7 +45,7 @@ bash mobile/prepare-xcode.command
 The script installs locked JavaScript dependencies, runs the mobile checks, installs CocoaPods dependencies and opens `mobile/ios/DeyeSolar.xcworkspace`. It uses the checked-in native project when available. No Expo account or EAS cloud build is required. Expo remains an application dependency.
 
 1. Select the **DeyeSolar** target, then **Signing & Capabilities**. Enable automatic signing and choose the Apple Developer team. The bundle identifier is `com.dshapar.solar`.
-2. Run on an iPhone or simulator first. Check sign-in, foreground/background refresh, tab navigation, generation dates, signed/unknown revenue and logout. Device switching sends real commands to configured devices.
+2. For a Debug run, keep `npm start` running in a separate terminal in `mobile`, then run on an iPhone or simulator. A physical iPhone must be able to reach that development server. Check sign-in, foreground/background refresh, tab navigation, generation dates, signed/unknown revenue and logout. Device switching sends real commands to configured devices. Release archives bundle the app and do not require this development server.
 3. In App Store Connect, create the iOS app record with the same bundle identifier if it does not already exist.
 4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
 5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
