@@ -52,9 +52,10 @@ public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> fac
         // Only measurements from the currently selected inverter belong to this comparison.
         // Legacy rows lack measured time/device provenance and must remain excluded.
         var rows = await EligibleReadings(db.Readings.AsNoTracking(), deviceSn, earliest, latest)
-            .Select(r => new { r.SolarObservedAt, r.SolarProduction }).ToListAsync(ct);
+            .Select(r => new { r.Id, r.SolarObservedAt, r.SolarProduction }).ToListAsync(ct);
+        // Repeated measurements use the latest persisted valid correction, matching history.
         var nearest = rows.OrderBy(r => Math.Abs((r.SolarObservedAt!.Value - timestamp.UtcDateTime).TotalSeconds))
-            .ThenBy(r => r.SolarObservedAt).FirstOrDefault();
+            .ThenBy(r => r.SolarObservedAt).ThenByDescending(r => r.Id).FirstOrDefault();
         if (deyeOptions.CurrentValue.DeviceSn != deviceSn) return null;
         return nearest == null ? null : new(new DateTimeOffset(DateTime.SpecifyKind(nearest.SolarObservedAt!.Value, DateTimeKind.Utc)),
             nearest.SolarProduction / 1000.0, SolarPowerBasis.PvDc);
