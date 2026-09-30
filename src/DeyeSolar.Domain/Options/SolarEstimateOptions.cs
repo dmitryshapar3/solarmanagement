@@ -44,6 +44,8 @@ public sealed class SolarEstimateOptions
     public string OperatingModeNote { get; set; } = "";
     public double InverterEfficiency { get; set; } = 0.97;
     public double? InverterAcLimitKw { get; set; }
+    // Server-only Open-Meteo customer key. Set SolarEstimate__ApiKey in deployment
+    // secrets; never expose it through settings DTOs, the mobile app or source control.
     public string? ApiKey { get; set; }
     public double TotalKwp => Roof1Kwp + Roof2Kwp;
 

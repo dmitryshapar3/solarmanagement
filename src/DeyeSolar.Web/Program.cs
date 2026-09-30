@@ -17,6 +17,9 @@ using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// Capture this deployment secret before the editable SQL settings provider is added.
+// It must only come from server configuration/environment, never AppSettings or a client DTO.
+var openMeteoApiKey = builder.Configuration["SolarEstimate:ApiKey"];
 
 // Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -61,6 +64,7 @@ builder.Services.Configure<ShellyOptions>(builder.Configuration.GetSection(Shell
 builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
 builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
 builder.Services.Configure<SolarEstimateOptions>(builder.Configuration.GetSection(SolarEstimateOptions.Section));
+builder.Services.PostConfigure<SolarEstimateOptions>(options => options.ApiKey = openMeteoApiKey);
 builder.Services.Configure<SolarSalesOptions>(builder.Configuration.GetSection(SolarSalesOptions.Section));
 
 // Infrastructure
@@ -78,12 +82,11 @@ builder.Services.AddHttpClient<ShellyCloudClient>();
 builder.Services.AddSingleton<ShellySocketInventoryService>();
 builder.Services.AddSingleton<ISocketController, BackendSocketController>();
 builder.Services.AddSingleton<ISocketInventoryService, BackendSocketInventoryService>();
-builder.Services.AddHttpClient<OpenMeteoCurrentSolarClient>().RemoveAllLoggers();
+builder.Services.AddOpenMeteoSolarClients();
 builder.Services.AddSingleton<ISolarRadiationSource>(sp => sp.GetRequiredService<OpenMeteoCurrentSolarClient>());
 builder.Services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<SolarEstimateService>();
-builder.Services.AddHttpClient<OpenMeteoSolarHistoryClient>().RemoveAllLoggers();
 builder.Services.AddSingleton<ISolarHistoryRadiationSource>(sp => sp.GetRequiredService<OpenMeteoSolarHistoryClient>());
 builder.Services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();
 builder.Services.AddSingleton<ISolarHistoryService, SolarHistoryService>();

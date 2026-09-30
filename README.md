@@ -50,10 +50,12 @@ The tracked configuration includes development database defaults and installatio
 | `Shelly` | Cloud server URI, authentication key and configured device ID |
 | `Polling` | Inverter polling interval |
 | `Display` | User-facing timezone |
-| `SolarEstimate` | Site coordinates, roof capacities/orientations, temperature/loss model and observation freshness limits |
+| `SolarEstimate` | Site coordinates, roof capacities/orientations, temperature/loss model, freshness limits and server-only Open-Meteo `ApiKey` |
 | `SolarSales` | Contract start date, contract timezone and treatment of negative prices |
 
-Environment variables use double underscores, for example `DeyeCloud__AppId` or `SolarEstimate__Roof1Kwp`. Matching values already stored in the SQL `AppSettings` table take precedence over application files and environment variables. The Settings page manages DeyeCloud, Shelly, polling and display settings; the solar estimate and sales options are configuration sections without dedicated edit forms.
+Environment variables use double underscores, for example `DeyeCloud__AppId` or `SolarEstimate__Roof1Kwp`. Matching values already stored in the SQL `AppSettings` table take precedence over application files and environment variables, except the Open-Meteo key: `SolarEstimate__ApiKey` is read only from server configuration before SQL settings are loaded. The Settings page manages DeyeCloud, Shelly, polling and display settings; the solar estimate and sales options are configuration sections without dedicated edit forms.
+
+Commercial app launch requires valid commercial Open-Meteo access. A missing weather API key retains the existing non-commercial evaluation service. See [Open-Meteo commercial API setup](docs/open-meteo-commercial.md) before deploying a paid product.
 
 The packaged solar-sales policy uses the Warsaw timezone and a specific contract start date. Adapt it to the applicable agreement before interpreting results. Possible-power estimates also depend on the configured roof geometry and weather model, and are not guaranteed production ranges.
 
@@ -90,5 +92,6 @@ Legacy Kubernetes manifests and deployment tooling are under `k8s`. Review the t
 ## More detail
 
 - [Solar generation model and history](docs/solar-expected-power.md)
+- [Open-Meteo commercial API setup](docs/open-meteo-commercial.md)
 - [Electricity export estimates, storage and upgrades](docs/solar-sales.md)
 - [Public backend pages and App Store release checks](docs/app-store-backend.md)
