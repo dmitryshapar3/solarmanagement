@@ -9,6 +9,7 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Api;
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -290,6 +291,7 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
                 builder.Services.AddScoped(_ => factory.CreateDbContext());
                 builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DeyeSolarDbContext>();
+                builder.Services.AddAccountIdentities(new AuthProviderOptions());
                 builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<MobileSessionStore>();
@@ -318,16 +320,19 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
                 builder.Services.AddSingleton<SolarEstimateService>();
                 app = builder.Build();
-                app.UseAuthentication(); app.UseAuthorization();
+                app.UseRouting(); app.UseRateLimiter(); app.UseAuthentication(); app.UseAuthorization();
                 app.MapMobileApi(); app.MapExportSalesApi();
                 app.MapPost("/test/cookie-login", async (MobileLoginRequest request, SignInManager<IdentityUser> signIn) =>
                     (await signIn.PasswordSignInAsync(request.Username, request.Password, false, false)).Succeeded
                         ? Results.NoContent() : Results.Unauthorized());
                 using (var scope = app.Services.CreateScope())
                 {
-                    var result = await scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>().CreateAsync(
-                        new IdentityUser { UserName = Username }, Password);
+                    var user = new IdentityUser { UserName = Username };
+                    var result = await scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>().CreateAsync(user, Password);
                     Assert.True(result.Succeeded, string.Join(",", result.Errors.Select(error => error.Code)));
+                    var db = scope.ServiceProvider.GetRequiredService<DeyeSolarDbContext>();
+                    db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = InstallationIds.Legacy });
+                    await db.SaveChangesAsync();
                 }
                 app.Services.GetRequiredService<InverterDataSnapshot>().Update(new() { Timestamp = Now.AddMinutes(-5), GridConsumption = -100 });
                 app.Services.GetRequiredService<DeviceStatusSnapshot>().Update([new("socket-neighbor", "Neighbor socket", null, true, false, 0)]);
@@ -356,7 +361,7 @@ public class MobileSolarApiTests
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
         public int Calls;
-        public DeyeSolarDbContext CreateDbContext() { Interlocked.Increment(ref Calls); return new(options); }
+        public DeyeSolarDbContext CreateDbContext() { Interlocked.Increment(ref Calls); return new(options, InstallationIds.Legacy); }
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

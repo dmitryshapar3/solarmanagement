@@ -28,6 +28,7 @@ import { GenerationPanel } from "../generation/GenerationScreen";
 import { SalesPanel } from "../sales/SalesScreen";
 import { useFocusedResource } from "../energy/useFocusedResource";
 import { ManualOverrideCommand } from "./ManualOverrideCommand";
+import { batteryFlow } from "./powerBalance";
 
 export function DashboardScreen() {
   const { api } = useAuth();
@@ -35,6 +36,7 @@ export function DashboardScreen() {
   const resource = useFocusedResource("dashboard", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
   const dashboard = resource.data;
+  const battery = batteryFlow(dashboard?.inverter?.batteryPower);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [commandBusy, setCommandBusy] = useState<"on" | "off" | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -100,10 +102,15 @@ export function DashboardScreen() {
             <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(dashboard.inverter.loadPower) : "—"}</Text>
             <Text style={styles.metaText}>{dashboard?.inverter ? "Consumption" : "Awaiting reading"}</Text>
           </View>
-          <View style={[styles.statusMetric, styles.statusSeparated]}>
+          <View style={styles.statusMetric}>
             <Text style={styles.metaText}>Grid</Text>
             <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
             <Text style={styles.metaText}>{dashboard?.inverter ? gridModeLabel(dashboard.inverter.gridConsumption) : "Awaiting reading"}</Text>
+          </View>
+          <View style={[styles.statusMetric, styles.statusSeparated]}>
+            <Text style={styles.metaText}>{battery.label}</Text>
+            <Text style={styles.statusValue}>{battery.watts === null ? "—" : formatWatts(battery.watts)}</Text>
+            <Text style={styles.metaText}>{battery.watts === null ? "Awaiting reading" : "Latest Deye reading"}</Text>
           </View>
         </View>
       </Card>
@@ -237,8 +244,8 @@ function pickDeviceId(devices: Device[], current: string | null): string | null 
 
 const styles = StyleSheet.create({
   statusCard: { gap: spacing.lg },
-  statusMetrics: { flexDirection: "row", gap: spacing.sm },
-  statusMetric: { flex: 1, gap: spacing.sm, minWidth: 0 },
+  statusMetrics: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  statusMetric: { flexBasis: "45%", flexGrow: 1, gap: spacing.sm, minWidth: 0 },
   statusSeparated: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border, paddingLeft: spacing.sm },
   statusValue: { color: colors.text, fontSize: 20, fontWeight: "800", fontVariant: ["tabular-nums"] },
   metaText: { color: colors.muted, fontSize: typography.caption },

@@ -338,7 +338,7 @@ public class InverterRefreshServiceTests
     { public DeyeSolarDbContext CreateDbContext() => throw new InvalidOperationException("Database must not be opened."); }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options);
+        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

@@ -12,7 +12,7 @@ namespace DeyeSolar.Web.Services;
 /// <summary>Fetch weather every ten minutes; evaluate the current minute and recent Deye measurement separately.</summary>
 public sealed class SolarEstimateService(ISolarRadiationSource source, ISolarEstimateStore store,
     IOptionsMonitor<SolarEstimateOptions> options, TimeProvider clock, ILogger<SolarEstimateService> logger,
-    IOptionsMonitor<DeyeCloudOptions> deyeOptions) : BackgroundService
+    IOptionsMonitor<DeyeCloudOptions> deyeOptions)
 {
     private SolarEstimateState _current = SolarEstimateState.Empty;
     private CachedSolarObservation? _cached;
@@ -23,20 +23,29 @@ public sealed class SolarEstimateService(ISolarRadiationSource source, ISolarEst
     public SolarEstimateState Current => Volatile.Read(ref _current);
     public event Action? OnUpdated;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    internal void Reset(string? reason = null)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        _cached = null;
+        _nextFetch = DateTimeOffset.MinValue;
+        _loaded = false;
+        _refreshFailed = false;
+        _error = null;
+        Publish(reason is null ? SolarEstimateState.Empty : SolarEstimateState.Empty with
         {
-            try { await UpdateAsync(stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex)
-            {
-                logger.LogWarning("Solar estimate cycle unavailable ({ErrorType})", ex.GetType().Name);
-                Publish(Current with { RefreshFailed = true, Error = "The estimate could not be refreshed.",
-                    Comparison = new(SolarComparisonStatus.InsufficientData, null, null, null, "A reliable comparison is unavailable.") });
-            }
-            try { await Task.Delay(TimeSpan.FromMinutes(1), clock, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            Error = reason,
+            Comparison = SolarEstimateState.Empty.Comparison with { Reason = reason }
+        });
+    }
+
+    internal async Task RunScheduledUpdateAsync(CancellationToken ct)
+    {
+        try { await UpdateAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            logger.LogWarning("Solar estimate cycle unavailable ({ErrorType})", exception.GetType().Name);
+            Publish(Current with { RefreshFailed = true, Error = "The estimate could not be refreshed.",
+                Comparison = new(SolarComparisonStatus.InsufficientData, null, null, null, "A reliable comparison is unavailable.") });
         }
     }
 

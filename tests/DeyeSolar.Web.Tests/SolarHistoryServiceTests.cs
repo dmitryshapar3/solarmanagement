@@ -11,6 +11,24 @@ public class SolarHistoryServiceTests
 {
     private static readonly DateTimeOffset Hour = new(2026, 9, 29, 10, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public async Task FreshUnconfiguredInstallationKeepsItsSelectedWindowWithGapsAndPerformsNoPrivateOrWeatherRead()
+    {
+        var fixture = new Fixture();
+        fixture.Config.CurrentValue.Roof1Kwp = fixture.Config.CurrentValue.Roof2Kwp = 0;
+        fixture.Config.CurrentValue.TimeZoneId = "UTC";
+        using var service = fixture.Service();
+        var selected = new DateOnly(2026, 9, 28);
+        var result = await service.ReadAsync(SolarHistoryPeriod.Today, default, selected);
+        Assert.Equal(selected, result.SelectedDate);
+        Assert.Equal(new DateOnly(2026, 9, 29), result.Today);
+        Assert.Equal(24, result.Points.Count);
+        Assert.All(result.Points, point => { Assert.Null(point.Possible); Assert.Null(point.ActualKw); });
+        Assert.Contains("Configure your solar installation", result.WeatherError);
+        Assert.Equal(0, fixture.Weather.Calls);
+        Assert.Equal(0, fixture.Store.Calls);
+    }
+
     [Theory]
     [InlineData("weather", "Weather history is unavailable. Try refreshing the chart later.")]
     [InlineData("actual", "Inverter history is unavailable. Try refreshing the chart later.")]

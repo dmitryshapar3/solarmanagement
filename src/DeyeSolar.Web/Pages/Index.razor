@@ -60,6 +60,11 @@
                         <strong>@Power(_data?.GridConsumption)<small>W</small></strong>
                         <span class="energy-status-direction @GridClass">@GridDirection</span>
                     </div>
+                    <div class="energy-status-metric" data-testid="battery-power">
+                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPower)</span>
+                        <strong>@Power(_data?.BatteryPower)<small>W</small></strong>
+                        <span class="energy-status-direction">@(_data is null ? "Awaiting reading" : "Reported Deye power")</span>
+                    </div>
                 </div>
                 @if (_data is null)
                 {

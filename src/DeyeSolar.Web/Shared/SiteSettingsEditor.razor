@@ -1,0 +1,114 @@
+@using DeyeSolar.Domain.Options
+@using DeyeSolar.Web.Services
+@using System.Globalization
+@inject SiteSettingsService SiteSettings
+@inject IIntegrationTestService IntegrationTests
+
+@if (!_loaded)
+{
+    <MudText>Loading installation settings…</MudText>
+}
+else
+{
+<MudPaper Class="pa-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-2">Solar installation and sales</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">Set the location and panel layout used for weather estimates. Power readings still come from the inverter.</MudText>
+    <MudText Typo="Typo.body2">Selected saved inverter: @(string.IsNullOrEmpty(_selectedDeviceSn) ? "None selected" : _selectedDeviceSn)</MudText>
+    <MudCheckBox T="bool" @bind-Value="_solar.DeyeSolarPowerIsPvDcConfirmed" Disabled="@(string.IsNullOrEmpty(_selectedDeviceSn))"
+        Label="I confirm that this inverter's solar power reading represents PV DC input." />
+    <MudText Typo="Typo.caption" Class="mb-3">Confirm only after checking the inverter's documentation or readings. Measured generation comparisons require this confirmation. Save/select another inverter in DeyeCloud settings and reload before confirming it.</MudText>
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudTextField @bind-Value="_solar.LocationLabel" Label="Location label" MaxLength="120" Immediate="true" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Latitude" Label="Latitude" Min="-90" Max="90" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Longitude" Label="Longitude" Min="-180" Max="180" />
+            <MudAutocomplete T="string" @bind-Value="_solar.TimeZoneId" Label="Solar time zone" SearchFunc="SearchTimezones" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle1" Class="mt-2">Panel group 1</MudText>
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Kwp" Label="Installed capacity · kWp" Min="0" Max="10000" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Tilt" Label="Tilt · degrees" Min="0" Max="90" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Azimuth" Label="Compass bearing · degrees" Min="0" Max="359.999" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle1" Class="mt-2">Panel group 2</MudText>
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Kwp" Label="Installed capacity · kWp" Min="0" Max="10000" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Tilt" Label="Tilt · degrees" Min="0" Max="90" />
+            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Azimuth" Label="Compass bearing · degrees" Min="0" Max="359.999" />
+            <MudText Typo="Typo.caption">Use zero capacity for an unused group. Total capacity must be greater than zero. Bearings: north 0°, east 90°, south 180°, west 270°.</MudText>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle1" Class="mt-2">Electricity sales</MudText>
+            <MudTextField @bind-Value="_contractStart" Label="Contract start date · YYYY-MM-DD" MaxLength="10" Immediate="true" />
+            <MudAutocomplete T="string" @bind-Value="_sales.TimeZoneId" Label="Settlement time zone" SearchFunc="SearchTimezones" />
+            <MudCheckBox T="bool" @bind-Value="_sales.PayNegativePrices" Label="Apply negative prices when the contract requires them" />
+            <MudText Typo="Typo.caption">Energy value and deposit credit are estimates. Final settlement uses the supplier's billing meter.</MudText>
+        </MudItem>
+    </MudGrid>
+    <MudStack Row="true" Spacing="2" Class="mt-3" Style="flex-wrap:wrap">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save installation</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="TestAsync" Disabled="_busy">Test weather connection</MudButton>
+    </MudStack>
+    <MudText Typo="Typo.caption" Class="mt-2">The weather test uses the entered coordinates without saving. Customer API keys remain on the server.</MudText>
+</MudPaper>
+}
+@if (_message is not null) { <MudAlert Severity="@(_success ? Severity.Success : Severity.Warning)" Class="mt-2">@_message</MudAlert> }
+
+@code {
+    private SolarEstimateOptions _solar = new();
+    private SolarSalesOptions _sales = new();
+    private string _contractStart = "";
+    private string _selectedDeviceSn = "";
+    private bool _loaded;
+    private bool _busy;
+    private bool _success;
+    private string? _message;
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await SiteSettings.LoadAsync();
+            var solar = settings.SolarEstimate;
+            _solar = new() { Latitude = solar.Latitude, Longitude = solar.Longitude, LocationLabel = solar.LocationLabel,
+                TimeZoneId = solar.TimeZoneId, Roof1Kwp = solar.Roof1Kwp, Roof2Kwp = solar.Roof2Kwp,
+                Roof1Tilt = solar.Roof1Tilt, Roof2Tilt = solar.Roof2Tilt, Roof1Azimuth = solar.Roof1Azimuth, Roof2Azimuth = solar.Roof2Azimuth,
+                DeyeSolarPowerIsPvDcConfirmed = solar.DeyeSolarPowerIsPvDcConfirmed };
+            _selectedDeviceSn = settings.SelectedDeviceSn;
+            _sales = new() { TimeZoneId = settings.SolarSales.TimeZoneId, PayNegativePrices = settings.SolarSales.PayNegativePrices };
+            _contractStart = settings.SolarSales.ContractStartDate;
+            _loaded = true;
+        }
+        catch (Exception) { _message = "Could not load installation settings. Please reload and try again."; }
+    }
+    private SiteSettingsDto Draft() => new(new(_solar.Latitude, _solar.Longitude, _solar.LocationLabel, _solar.TimeZoneId,
+        _solar.Roof1Kwp, _solar.Roof2Kwp, _solar.Roof1Tilt, _solar.Roof2Tilt, _solar.Roof1Azimuth, _solar.Roof2Azimuth,
+        _solar.DeyeSolarPowerIsPvDcConfirmed, _solar.DeyeSolarPowerIsPvDcConfirmed ? _selectedDeviceSn : ""),
+        new(_contractStart, _sales.TimeZoneId, _sales.PayNegativePrices));
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _message = null; _success = false;
+        var draft = Draft();
+        if (!SiteSettingsService.TryValidate(draft, out var error)) { _message = error; return; }
+        _busy = true;
+        try { await SiteSettings.SaveAsync(draft); _success = true; _message = "Installation settings saved."; }
+        catch (ArgumentException exception) { _message = exception.Message; }
+        catch (Exception) { _message = "Could not save installation settings. Please try again."; }
+        finally { _busy = false; }
+    }
+    private async Task TestAsync()
+    {
+        if (_busy) return;
+        _busy = true; _message = null; _success = false;
+        try
+        {
+            var result = await IntegrationTests.TestAsync("openmeteo", new(SolarEstimate: new(_solar.Latitude, _solar.Longitude)), CancellationToken.None);
+            _success = result.Success; _message = result.Message;
+        }
+        catch (Exception) { _message = "The weather connection could not be verified. Please try again."; }
+        finally { _busy = false; }
+    }
+    private static Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)
+        => Task.FromResult(TimeZoneInfo.GetSystemTimeZones().Select(zone => zone.Id)
+            .Where(id => string.IsNullOrEmpty(value) || id.Contains(value, StringComparison.OrdinalIgnoreCase)));
+}

@@ -140,14 +140,12 @@ public class DashboardTests
 
         Assert.Single(Regex.Matches(html, "data-testid=\"energy-status\""));
         AssertOrdered(html, "data-testid=\"energy-status\"", "data-testid=\"solar-generation\"", "data-testid=\"load-power\"",
-            "data-testid=\"grid-power\"", "data-testid=\"dashboard-charts\"", "data-testid=\"dashboard-generation\"", "data-testid=\"dashboard-sales\"");
+            "data-testid=\"grid-power\"", "data-testid=\"battery-power\"", "data-testid=\"dashboard-charts\"", "data-testid=\"dashboard-generation\"", "data-testid=\"dashboard-sales\"");
         Assert.DoesNotContain("data-testid=\"battery-soc\"", html);
         Assert.Matches("data-testid=\"load-power\"[^>]*>[\\s\\S]*?>900<small[^>]*>W", html);
         Assert.Matches("data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?>4[.]10<small[^>]*>kW", html);
         Assert.Matches("data-testid=\"grid-power\"[^>]*>[\\s\\S]*?>1,200<small[^>]*>W", html);
-        Assert.DoesNotContain("Battery power", html);
-        Assert.DoesNotContain("Charging", html);
-        Assert.DoesNotContain("Discharging", html);
+        Assert.Matches("data-testid=\"battery-power\"[^>]*>[\\s\\S]*?Battery charging[\\s\\S]*?>2,400<small[^>]*>W", html);
         Assert.Contains("Exporting", html);
         Assert.Contains("12:00:00", html);
         Assert.Contains("aria-label=\"Refresh inverter data\"", html);
@@ -187,10 +185,10 @@ public class DashboardTests
             fixture.Refresh.Complete(Reading(62, 1000, 750, 5200) with { Timestamp = Timestamp.AddMinutes(5) });
             await first;
             Assert.False(renderer.RefreshButton(root).Disabled);
-            Assert.DoesNotContain("Discharging", renderer.Text(root));
+            Assert.Contains("Battery discharging", renderer.Text(root));
             Assert.Contains("Importing", renderer.Text(root));
             Assert.Contains("5.20", renderer.Text(root));
-            Assert.DoesNotContain("1,000", renderer.Text(root));
+            Assert.Contains("1,000", renderer.Text(root));
             Assert.DoesNotContain("4.10", renderer.Text(root));
             Assert.Contains("12:05:00", renderer.Text(root));
             Assert.Same(fixture.Refresh.LastResult, fixture.Snapshot.Current);
@@ -391,7 +389,7 @@ public class DashboardTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options);
+        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

@@ -6,15 +6,15 @@
 }
 
 <h1>Privacy policy</h1>
-<p class="updated">Last updated: September 30, 2026</p>
+<p class="updated">Last updated: October 1, 2026</p>
 <p>This policy describes the DeyeSolar mobile app and the Solar Energy Management service at
     <a href="https://solar.dshapar.com">solar.dshapar.com</a>. Contact the service operator at
     <a href="mailto:@contactEmail">@contactEmail</a> with privacy questions.</p>
 
 <h2>Information used by the service</h2>
 <ul>
-    <li><strong>Account and sign-in information:</strong> usernames, account email addresses where configured,
-        password authentication records, and session tokens used to sign in.</li>
+    <li><strong>Account and sign-in information:</strong> usernames, verified email addresses and phone numbers, linked Google account identifiers,
+        password authentication records, verification challenges, and session tokens used to sign in.</li>
     <li><strong>Configuration you save:</strong> Deye and Shelly connection settings, including account email,
         credentials, API secrets, station and device identifiers, and polling preferences.</li>
     <li><strong>Installation information:</strong> inverter and battery readings, solar generation estimates and
@@ -29,11 +29,18 @@
 <p>The service uses this information to authenticate users, connect to configured energy and device
     services, display readings and estimates, control devices, and run automation rules. Saved connection
     credentials are held by the server so it can communicate with those services.</p>
-<p>The current service manages a shared installation. Authorized users on the same server access that
-    installation's data, rules, devices, and settings. Accounts do not provide separate installation storage.</p>
+<p>Each new account has its own installation storage, credentials, devices, settings and history.
+    Users with membership in the same installation can access that installation. Existing accounts retain
+    their access to the installation migrated from the previous shared service.</p>
 
 <h2>Connected services</h2>
 <ul>
+    <li><strong>Google:</strong> when you choose Google sign-in or linking, Google verifies your identity
+        and supplies its account identifier and verified email address. The service does not receive your Google password.</li>
+    <li><strong>Resend:</strong> when email verification is enabled, your email address and verification message
+        are sent to Resend for delivery.</li>
+    <li><strong>Twilio Verify:</strong> when phone verification is enabled, your phone number and verification
+        request are sent to Twilio to deliver and verify the SMS code.</li>
     <li><strong>Deye Cloud:</strong> the server uses configured Deye account and application credentials and
         station or device identifiers to request inverter and energy information.</li>
     <li><strong>Shelly Cloud:</strong> the server uses the configured authorization key and device identifiers
@@ -57,7 +64,8 @@
 <p>Account records, saved connection settings, automation rules, and export or settlement history do not
     have an automatic expiry configured. They remain on the server until changed or removed by the
     operator. Operational readings and rule execution records are subject to periodic server cleanup.</p>
-<p>Mobile sessions expire and can be revoked. Signing out clears the stored mobile session and attempts
+<p>Verification challenges expire after ten minutes; mobile Google tickets expire after two minutes.
+    Mobile sessions expire and can be revoked. Signing out clears the stored mobile session and attempts
     to revoke that session on the server. Signing out does not delete the server account, connection
     settings, or installation history.</p>
 

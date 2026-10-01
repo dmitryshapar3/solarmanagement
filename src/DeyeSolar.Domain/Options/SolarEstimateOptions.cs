@@ -57,7 +57,7 @@ public sealed class SolarEstimateOptions
             WindAtModuleFactor, CellTemperatureRiseAt1000, CellTemperatureUncertaintyC,
             ConfigurationUncertaintyFraction, SatelliteUncertaintyFraction, ModelUncertaintyFraction, NearZeroKw, InverterEfficiency];
         if (numbers.Any(x => !double.IsFinite(x)) || Latitude is < -90 or > 90 || Longitude is < -180 or > 180
-            || Roof1Kwp <= 0 || Roof2Kwp <= 0 || Roof1Tilt is < 0 or > 90 || Roof2Tilt is < 0 or > 90
+            || Roof1Kwp < 0 || Roof2Kwp < 0 || !double.IsFinite(TotalKwp) || TotalKwp <= 0 || Roof1Tilt is < 0 or > 90 || Roof2Tilt is < 0 or > 90
             || Roof1Azimuth is < 0 or >= 360 || Roof2Azimuth is < 0 or >= 360
             || TemperatureCoefficient is < -0.02 or > 0 || TemperatureCoefficientUncertainty is < 0 or > 0.01
             || MinimumDcLossFraction < 0 || MaximumDcLossFraction >= 1

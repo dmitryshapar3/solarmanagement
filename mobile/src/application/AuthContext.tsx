@@ -6,6 +6,7 @@ import { Platform } from "react-native";
 import { ApiClient, normalizeBaseUrl } from "../core/api/ApiClient";
 import { DEFAULT_API_BASE_URL } from "../core/api/config";
 import { DeyeSolarApi } from "../core/api/DeyeSolarApi";
+import type { AuthResponse } from "../core/api/types";
 import { DemoApiClient } from "../features/demo/DemoApiClient";
 import { DEMO_API_BASE_URL, DEMO_USERNAME } from "../features/demo/fixtures";
 import { SessionOperations, SessionStorage } from "./sessionStorage";
@@ -21,6 +22,7 @@ type AuthContextValue = {
   isBootstrapping: boolean;
   authError: string | null;
   login: (input: LoginInput) => Promise<void>;
+  finishSignIn: (baseUrl: string, request: (api: DeyeSolarApi, signal: AbortSignal) => Promise<AuthResponse>) => Promise<void>;
   enterDemo: () => Promise<void>;
   logout: () => Promise<void>;
   updateApiBaseUrl: (baseUrl: string) => Promise<void>;
@@ -129,9 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [client, discardDemo, operations, storage]);
 
-  const login = useCallback(async (input: LoginInput) => {
-    const nextBaseUrl = normalizeBaseUrl(input.baseUrl);
-    if (!input.username.trim() || !input.password) throw new Error("Enter your username and password.");
+  const finishSignIn = useCallback(async (baseUrl: string, request: (api: DeyeSolarApi, signal: AbortSignal) => Promise<AuthResponse>) => {
+    const nextBaseUrl = normalizeBaseUrl(baseUrl);
     const signal = beginSessionChange();
     client.setBaseUrl(nextBaseUrl);
     setApiBaseUrl(nextBaseUrl);
@@ -145,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await storage.changeBaseUrl(nextBaseUrl);
       ensureCurrent();
-      const session = await realApi.login(input.username.trim(), input.password, signal);
+      const session = await request(realApi, signal);
       ensureCurrent();
       await storage.save({ baseUrl: nextBaseUrl, token: session.token, username: session.username });
       ensureCurrent();
@@ -160,6 +161,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error;
     }
   }, [realApi, beginSessionChange, client, operations, storage]);
+
+  const login = useCallback(async (input: LoginInput) => {
+    if (!input.username.trim() || !input.password) throw new Error("Enter your username, email or phone and password.");
+    await finishSignIn(input.baseUrl, (api, signal) => api.login(input.username.trim(), input.password, signal));
+  }, [finishSignIn]);
 
   const enterDemo = useCallback(async () => {
     const signal = beginSessionChange();
@@ -220,7 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiBaseUrl: demoApi ? DEMO_API_BASE_URL : apiBaseUrl,
     username: demoApi ? DEMO_USERNAME : username,
     isAuthenticated: Boolean(token) || Boolean(demoApi), isDemo: Boolean(demoApi), isBootstrapping, authError,
-    login, enterDemo, logout, updateApiBaseUrl
+    login, finishSignIn, enterDemo, logout, updateApiBaseUrl
   }}>{children}</AuthContext.Provider>;
 }
 

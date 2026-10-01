@@ -6,8 +6,15 @@
         <div><dt>Solar generation</dt><dd data-testid="inverter-pv">@(Data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } && observed <= (Now ?? DateTimeOffset.UtcNow) ? Number(Data.SolarProduction / 1000d) : "—") kW</dd></div>
         <div><dt>Load</dt><dd>@Watts(Data?.LoadPower) W</dd></div>
         <div><dt>Grid</dt><dd>@Watts(Data?.GridConsumption) W</dd><span>@(Data is null ? "Awaiting reading" : Data.GridConsumption < 0 ? "Exporting" : Data.GridConsumption > 0 ? "Importing" : "Idle")</span></div>
-        <div><dt>@(Data is null ? "Battery power" : Data.BatteryPower < 0 ? "Battery charging" : Data.BatteryPower > 0 ? "Battery discharging" : "Battery idle")</dt><dd data-testid="inverter-battery-power">@Watts(Data?.BatteryPower) W</dd></div>
+        <div><dt>@PowerBalance.BatteryLabel(Data?.BatteryPower)</dt><dd data-testid="inverter-battery-power">@Watts(Data?.BatteryPower) W</dd></div>
     </dl>
+    <h2>Power balance</h2>
+    @{ var balance = Balance; }
+    <dl class="inverter-metrics">
+        <div><dt>Balance difference</dt><dd data-testid="inverter-balance">@SignedWatts(balance.Watts)</dd><span>@(balance.Watts is { } difference ? PowerBalance.Direction(difference) : balance.UnavailableReason)</span></div>
+    </dl>
+    <p>Solar + signed grid + signed battery − load. Grid import and battery discharge are positive; export and charging are negative.</p>
+    <p>This is an approximate balance of reported values. Measurements may be taken at different times, and an unavailable reading may appear as zero. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</p>
     <h2>Battery details</h2>
     <dl class="inverter-metrics">
         <div><dt>Battery SOC</dt><dd>@(Data?.BatterySoc.ToString(CultureInfo.InvariantCulture) ?? "—") %</dd></div>
@@ -30,9 +37,14 @@
     [Parameter] public InverterData? Data { get; set; }
     [Parameter] public string TimeZoneId { get; set; } = "Europe/Warsaw";
     [Parameter] public DateTimeOffset? Now { get; set; }
+    [Parameter] public int AlignmentToleranceSeconds { get; set; } = 120;
+    [Parameter] public int MaximumAgeMinutes { get; set; } = 10;
+    [Parameter] public string? ExpectedDeviceSn { get; set; }
+    private PowerBalanceReading Balance => PowerBalance.FromReading(Data, Now ?? DateTimeOffset.UtcNow, AlignmentToleranceSeconds, MaximumAgeMinutes, ExpectedDeviceSn);
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-GB");
     private static string Number(double value) => value.ToString("N2", English);
     private static string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
     private static string Watts(int? value) => value.HasValue ? Math.Abs((long)value.Value).ToString("N0", English) : "—";
+    private static string SignedWatts(double? value) => value.HasValue ? $"{(value > 0 ? "+" : "")}{value.Value.ToString("N0", English)} W" : "—";
     private string Time(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId)).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English);
 }

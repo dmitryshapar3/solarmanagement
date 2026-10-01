@@ -30,9 +30,9 @@ public static class MobileApiEndpointRouteBuilderExtensions
             var session = await auth.SignInAsync(request);
             return session == null
                 ? Results.Unauthorized()
-                : Results.Ok(new MobileAuthResponse(session.Token, session.ExpiresAt, session.UserName));
+                : Results.Ok(new MobileAuthResponse(session.Token, session.ExpiresAt, session.UserName, session.InstallationId));
         })
-        .AllowAnonymous();
+        .AllowAnonymous().RequireRateLimiting("identity-auth");
 
         var authorized = api.MapGroup("")
             .RequireAuthorization(ApiAuthorization.AuthenticatedUser);
@@ -56,12 +56,13 @@ public static class MobileApiEndpointRouteBuilderExtensions
             DeviceStatusSnapshot deviceSnapshot,
             IRuleRepository ruleRepository,
             AppSettingsService settings,
+            IServiceProvider services,
             CancellationToken ct) =>
         {
             try
             {
                 await refresh.RefreshAsync(ct);
-                return Results.Ok(await ReadDashboardAsync(inverterSnapshot, deviceSnapshot, ruleRepository, settings, ct));
+                return Results.Ok(await ReadDashboardAsync(inverterSnapshot, deviceSnapshot, ruleRepository, settings, services, ct));
             }
             catch (Exception) when (!ct.IsCancellationRequested)
             {
@@ -97,6 +98,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
             bool? refresh,
             ISocketInventoryService inventory,
             DeviceStatusSnapshot snapshot,
+            IServiceProvider services,
             CancellationToken ct) =>
         {
             var devices = refresh.GetValueOrDefault()
@@ -107,7 +109,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 snapshot.Update(devices);
 
             return Results.Ok(new DeviceListResponse(
-                devices.Select(d => d.ToDto()).ToList(),
+                await DescribeDevicesAsync(services, devices, ct),
                 snapshot.LastUpdated));
         });
 
@@ -261,11 +263,13 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 display.ToDto()));
         });
 
-        authorized.MapPut("/settings/deye", async (
+        authorized.MapPut("/settings/deye", async Task<IResult> (
             DeyeCloudSettingsDto request,
             AppSettingsService settings,
             DeyeCloudClient deyeClient) =>
         {
+            if (!ProviderEndpointPolicy.TryDeye(request.BaseUrl, out _))
+                return Results.BadRequest(new ApiError("Use the official EU or US DeyeCloud HTTPS API address."));
             await settings.SaveSectionAsync(DeyeCloudOptions.Section, request.ToOptions());
             deyeClient.InvalidateToken();
             return Results.NoContent();
@@ -302,6 +306,8 @@ public static class MobileApiEndpointRouteBuilderExtensions
             ShellySettingsDto request,
             AppSettingsService settings) =>
         {
+            if (!ProviderEndpointPolicy.TryShelly(request.ServerUri, out _))
+                return Results.BadRequest(new ApiError("Use the HTTPS server address provided by Shelly Cloud."));
             if (request.RequestIntervalMilliseconds is < 100 or > 60000)
                 return Results.BadRequest(new ApiError("Shelly request interval must be between 100 and 60000 milliseconds."));
 
@@ -357,7 +363,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
     private static async Task<MobileDashboardResponse> ReadDashboardAsync(
         InverterDataSnapshot inverterSnapshot, DeviceStatusSnapshot deviceSnapshot,
-        IRuleRepository ruleRepository, AppSettingsService settings, CancellationToken ct)
+        IRuleRepository ruleRepository, AppSettingsService settings, IServiceProvider services, CancellationToken ct)
     {
         var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
         var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
@@ -366,9 +372,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
         var manualDevices = ManualSocketDevices.Build(rules, shelly.DeviceId, deviceSnapshot.Current);
         return new(
             inverterSnapshot.Current?.ToDto(), deviceSnapshot.Current != null, deviceSnapshot.LastUpdated,
-            devices.Select(d => d.ToDto()).ToList(), manualDevices.Select(d => d.ToDto()).ToList(),
+            await DescribeDevicesAsync(services, devices, ct), await DescribeDevicesAsync(services, manualDevices, ct),
             rules.Select(r => r.ToSummaryDto()).ToList(), display.TimeZoneId);
     }
+
+    private static Task<IReadOnlyList<DeviceDto>> DescribeDevicesAsync(IServiceProvider services,
+        IReadOnlyList<DevicePowerInfo> devices, CancellationToken ct)
+        => services.GetService<DeviceNameService>() is { } names ? names.DescribeAsync(devices, ct)
+            : Task.FromResult<IReadOnlyList<DeviceDto>>(devices.Select(device => device.ToDto()).ToArray());
 
     private static IResult? TryBuildRule(
         TriggerRuleRequest request,

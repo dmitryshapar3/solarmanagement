@@ -7,20 +7,22 @@ public sealed record MobileSession(
     string Token,
     string UserId,
     string UserName,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string? SecurityStamp = null,
+    string? InstallationId = null);
 
 public class MobileSessionStore
 {
     private readonly ConcurrentDictionary<string, MobileSession> _sessions = new();
 
-    public MobileSession Create(string userId, string userName)
+    public MobileSession Create(string userId, string userName, string? securityStamp = null, string? installationId = null)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         var session = new MobileSession(
             token,
             userId,
             userName,
-            DateTimeOffset.UtcNow.AddDays(30));
+            DateTimeOffset.UtcNow.AddDays(30), securityStamp, installationId);
 
         _sessions[token] = session;
         return session;

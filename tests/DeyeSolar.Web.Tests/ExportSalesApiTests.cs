@@ -266,6 +266,7 @@ public class ExportSalesApiTests
             try
             {
                 await owner.Database.EnsureCreatedAsync();
+            await LegacyTestInstallation.EnsureAsync(owner);
                 await SeedAsync(owner, latestCurrentMinute);
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
                 {
@@ -280,6 +281,9 @@ public class ExportSalesApiTests
                 builder.Services.AddSingleton<MobileSessionStore>();
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
+                builder.Services.AddScoped(_ => factory.CreateDbContext());
+                builder.Services.AddIdentityCore<IdentityUser>().AddEntityFrameworkStores<DeyeSolarDbContext>();
+                builder.Services.AddScoped<InstallationMembershipService>();
                 var clock = new FixedClock();
                 builder.Services.AddSingleton<TimeProvider>(clock);
                 builder.Services.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptions<SolarSalesOptions>(new()));
@@ -422,7 +426,7 @@ public class ExportSalesApiTests
         public DeyeSolarDbContext CreateDbContext()
         {
             Interlocked.Increment(ref _contextsCreated);
-            return new(options);
+            return new(options, InstallationIds.Legacy);
         }
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
@@ -477,7 +481,8 @@ public class ExportSalesApiTests
             if (identity.Count != 1 || identity[0] != AuthorizedIdentity)
                 return Task.FromResult(AuthenticateResult.Fail("Unknown synthetic test identity."));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.NameIdentifier, "synthetic-reader"), new Claim(ClaimTypes.Name, "synthetic-reader")],
+                [new Claim(ClaimTypes.NameIdentifier, "synthetic-reader"), new Claim(ClaimTypes.Name, "synthetic-reader"),
+                    new Claim(InstallationIds.ClaimType, InstallationIds.Legacy)],
                 AuthenticationScheme));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, AuthenticationScheme)));
         }

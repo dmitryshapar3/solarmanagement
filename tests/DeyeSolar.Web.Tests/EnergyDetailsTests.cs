@@ -44,6 +44,24 @@ public class EnergyDetailsTests
         Assert.Matches("data-testid=\"inverter-pv\"[^>]*>— kW", html);
         Assert.Contains("Deye solar measurement", html);
         Assert.Contains("Unavailable", html);
+        Assert.Matches("data-testid=\"inverter-balance\"[^>]*>—", html);
+    }
+
+    [Theory]
+    [InlineData(-1800, "+200 W", "Reported supply exceeds consumption")]
+    [InlineData(-2200, "-200 W", "Reported consumption exceeds supply")]
+    [InlineData(-2000, "0 W", "Reported supply and consumption match")]
+    public async Task InverterBalanceDisplaysTheSignedDifferenceAndDoesNotPresentItAsMeasuredLoss(int batteryPower, string value, string direction)
+    {
+        var observed = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
+        var html = await RenderReadingsAsync(new() { SolarProduction = 4100, SolarObservedAt = observed,
+            GridConsumption = -1200, GridObservedAt = observed, SolarDeviceSn = "inverter-a", GridDeviceSn = "inverter-a",
+            BatteryPower = batteryPower, LoadPower = 900, Timestamp = observed.AddMinutes(1) }, observed.AddMinutes(2));
+        Assert.Matches($"data-testid=\"inverter-balance\"[^>]*>{System.Text.RegularExpressions.Regex.Escape(value)}", html);
+        Assert.Contains(direction, html);
+        Assert.Contains("Solar + signed grid + signed battery − load", html);
+        Assert.Contains("not a measurement of inverter losses", html);
+        Assert.Contains("Measurements may be taken at different times", html);
     }
 
     [Fact]

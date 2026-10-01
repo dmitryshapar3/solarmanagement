@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { RefreshCcw } from "lucide-react-native";
 import { useAuth } from "../../application/AuthContext";
@@ -6,12 +6,20 @@ import { AppButton, Card, EmptyState, ErrorBanner, Header, LoadingState, Progres
 import { batteryModeLabel, formatDateTime, formatPercent, formatSignedWatts, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useFocusedResource } from "../energy/useFocusedResource";
+import { balanceDirection, batteryFlow, formatBalanceWatts, hasSourceMetadata, reportedPowerBalance } from "./powerBalance";
 
 export function InverterDetailsScreen() {
   const { api } = useAuth();
   const resource = useFocusedResource("inverter-details", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
   const inverter = resource.data?.inverter;
+  const [, setClock] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const battery = batteryFlow(inverter?.batteryPower);
+  const balance = reportedPowerBalance(inverter);
   useEffect(() => { if (resource.data) setDisplayTimeZone(resource.data.timeZoneId); }, [resource.data]);
   return <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh(true)}>
     <Header title="Inverter details" subtitle="Solar generation, battery and energy flows" />
@@ -23,8 +31,10 @@ export function InverterDetailsScreen() {
         <Text style={styles.caption}>Latest reported solar power</Text>
         <Text style={styles.hero}>{formatWatts(inverter.solarProduction)}</Text>
         <Text style={styles.note}>Polled {formatDateTime(inverter.timestamp)}</Text>
+        {inverter.solarObservedAt ? <Text style={styles.note}>Solar measured {formatDateTime(inverter.solarObservedAt)}</Text> : null}
+        {inverter.gridObservedAt ? <Text style={styles.note}>Grid measured {formatDateTime(inverter.gridObservedAt)}</Text> : null}
         <Text style={styles.note}>Source: {inverter.dataSource || "Deye"}</Text>
-        <Text style={styles.note}>Polling time is shown. The inverter's measurement time and individual panel readings are not available here. A zero in these reported values may also mean that Deye did not provide that reading.</Text>
+        <Text style={styles.note}>Polling time may be later than the inverter measurement time. Individual panel readings are not available here. A zero in these reported values may also mean that Deye did not provide that reading.</Text>
       </Card>
       <SectionTitle title="Battery" />
       <Card style={styles.card}>
@@ -40,10 +50,17 @@ export function InverterDetailsScreen() {
       <Card style={styles.card}>
         <Metric label="Solar generation" value={formatWatts(inverter.solarProduction)} />
         <Metric label="Load" value={formatWatts(inverter.loadPower)} />
-        <Metric label={inverter.batteryPower < 0 ? "Battery charging" : inverter.batteryPower > 0 ? "Battery discharging" : "Battery idle"}
-          value={formatWatts(Math.abs(inverter.batteryPower))} />
+        <Metric label={battery.label} value={battery.watts === null ? "—" : formatWatts(battery.watts)} />
         <Metric label="Grid power" value={formatSignedWatts(inverter.gridConsumption)} detail={gridModeLabel(inverter.gridConsumption)} />
         <Text style={styles.note}>Negative grid power means export; positive means import. These are instantaneous power readings, not accumulated energy.</Text>
+      </Card>
+      <SectionTitle title="Power balance" />
+      <Card style={styles.card}>
+        <Metric label="Balance difference" value={formatBalanceWatts(balance.watts)}
+          detail={balance.watts === null ? balance.reason ?? "Unavailable" : balanceDirection(balance.watts)} />
+        <Text style={styles.note}>Solar + signed grid + signed battery − load. Grid import and battery discharge are positive; export and charging are negative.</Text>
+        {!hasSourceMetadata(inverter) ? <Text style={styles.note}>This server supplies polling time only; source measurement times cannot be checked.</Text> : null}
+        <Text style={styles.note}>This is an approximate balance of reported values. Measurements may be taken at different times, and an unavailable reading may appear as zero. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</Text>
       </Card>
     </>}
   </Screen>;

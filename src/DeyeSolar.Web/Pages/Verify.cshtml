@@ -1,0 +1,25 @@
+@page "/verify"
+@model DeyeSolar.Web.Pages.VerifyModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = "Sign in with a code"; }
+<link rel="stylesheet" href="/css/auth.css" asp-append-version="true" />
+<h1>Sign in with a verification code</h1>
+<p>Use an email address or phone number already verified for your account.</p>
+@if (Model.ErrorMessage is not null) { <p class="auth-error" role="alert">@Model.ErrorMessage</p> }
+@if (Model.Notice is not null) { <p role="status">@Model.Notice</p> }
+<form method="post" asp-page-handler="Start" class="auth-form">
+    <label for="channel">Verification method</label><select id="channel" asp-for="Channel">
+        @if (Model.Providers.EmailEnabled) { <option value="email">Email</option> }
+        @if (Model.Providers.PhoneEnabled) { <option value="phone">Phone (SMS)</option> }
+    </select>
+    <label for="destination">Email address or phone number with country code</label><input id="destination" asp-for="Destination" required maxlength="254" autocomplete="username" />
+    <button type="submit" disabled="@(!Model.Providers.EmailEnabled && !Model.Providers.PhoneEnabled)">Send verification code</button>
+</form>
+@if (!string.IsNullOrEmpty(Model.VerificationId))
+{
+    <form method="post" asp-page-handler="Complete" class="auth-form">
+        <input type="hidden" asp-for="VerificationId" /><label for="code">Verification code</label>
+        <input id="code" name="Code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /><button type="submit">Sign in</button>
+    </form>
+}
+<p><a href="/login">Use a password or Google</a> · <a href="/register">Create account</a></p>

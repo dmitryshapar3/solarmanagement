@@ -1,5 +1,5 @@
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
-import type { DeyeCloudSettings, DisplaySettings, PollingSettings, Rule, RuleRequest, ShellySettings } from "../../core/api/types";
+import type { DeyeCloudSettings, DisplaySettings, PollingSettings, Rule, RuleRequest, ShellySettings, SolarSiteSettings } from "../../core/api/types";
 import {
   createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, type DemoState
 } from "./fixtures";
@@ -61,6 +61,19 @@ export class DemoApiClient extends ApiClient {
       return demoSales(period, date, now, timeZone);
     }
     if (route === "GET /api/devices") return { devices: this.state.devices, lastUpdated: now.toISOString() };
+    const deviceNameRoute = /^\/api\/devices\/([^/]+)\/name$/.exec(path);
+    if (method === "PATCH" && deviceNameRoute) {
+      const id = decodeURIComponent(deviceNameRoute[1]!);
+      const device = this.state.devices.find(item => item.id === id);
+      if (!device) throw new ApiError(404, "Demo device not found.");
+      const { name } = objectBody(options.body);
+      if (name !== null && (typeof name !== "string" || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)))
+        throw new ApiError(400, "Enter a name up to 80 characters without control characters.");
+      device.cloudName ??= device.name;
+      device.localName = typeof name === "string" && name.trim() ? name.trim() : null;
+      device.name = device.localName ?? device.cloudName;
+      return device;
+    }
     if (route === "POST /api/devices/state") {
       const body = objectBody(options.body);
       const device = this.state.devices.find(item => item.id === body.entityId);
@@ -117,6 +130,31 @@ export class DemoApiClient extends ApiClient {
         (filter === "ON" || filter === "OFF" ? run.action === filter : filter === "CHANGES" ? run.action !== "NO_CHANGE" : true));
     }
     if (route === "GET /api/settings") return this.state.settings;
+    if (route === "GET /api/settings/site") return { ...this.state.site, selectedDeviceSn: this.state.settings.deyeCloud.deviceSn,
+      solarEstimate: { ...this.state.site.solarEstimate,
+        deyeSolarPowerIsPvDcConfirmed: this.state.site.solarEstimate.deyeSolarPowerIsPvDcConfirmed === true
+          && this.state.site.solarEstimate.deyeSolarPowerConfirmedDeviceSn === this.state.settings.deyeCloud.deviceSn } };
+    if (route === "PUT /api/settings/site") {
+      const body = objectBody(options.body);
+      const estimate = objectBody(body.solarEstimate);
+      const sales = objectBody(body.solarSales);
+      for (const key of ["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"])
+        if (typeof estimate[key] !== "number" || !Number.isFinite(estimate[key])) throw new ApiError(400, "Enter valid solar site numbers.");
+      if (typeof estimate.locationLabel !== "string" || typeof estimate.timeZoneId !== "string"
+        || typeof sales.contractStartDate !== "string" || typeof sales.timeZoneId !== "string" || typeof sales.payNegativePrices !== "boolean")
+        throw new ApiError(400, "Enter valid site and sales settings.");
+      if (estimate.deyeSolarPowerIsPvDcConfirmed === true && (!this.state.settings.deyeCloud.deviceSn
+        || estimate.deyeSolarPowerConfirmedDeviceSn !== this.state.settings.deyeCloud.deviceSn))
+        throw new ApiError(400, "Confirm the currently saved selected inverter's PV source.");
+      this.state.site = JSON.parse(JSON.stringify({ ...body, selectedDeviceSn: this.state.settings.deyeCloud.deviceSn,
+        solarEstimate: { ...estimate, deyeSolarPowerConfirmedDeviceSn: estimate.deyeSolarPowerIsPvDcConfirmed === true
+          ? this.state.settings.deyeCloud.deviceSn : "" } })) as SolarSiteSettings;
+      return;
+    }
+    if (method === "POST" && /^\/api\/settings\/test\/(deye|shelly|openmeteo|pse)$/.test(path)) return {
+      kind: path.split("/").at(-1), success: true, code: "ok", checkedAt: now.toISOString(),
+      message: "Demo connection check simulated. No external services contacted and no settings saved."
+    };
     if (route === "PUT /api/settings/deye") {
       const value = objectBody(options.body) as unknown as DeyeCloudSettings;
       requireStrings(value, ["baseUrl", "appId", "appSecret", "email", "password", "deviceSn"]);

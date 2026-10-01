@@ -1,6 +1,6 @@
 import type {
   Device, DeyeDevice, DeyeStation, ExportSaleBucket, ExportSalesPeriod, ExportSalesResult,
-  InverterData, Reading, Rule, RuleRunLog, Settings, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult
+  InverterData, Reading, Rule, RuleRunLog, Settings, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult, SolarSiteSettings
 } from "../../core/api/types";
 import { addDays, movePeriod, periodAnchor, zonedDate } from "../energy/chartPolicy";
 
@@ -11,6 +11,7 @@ export type DemoState = {
   devices: Device[];
   rules: Rule[];
   settings: Settings;
+  site: SolarSiteSettings;
   stations: DeyeStation[];
   inverters: DeyeDevice[];
   runs: RuleRunLog[];
@@ -44,6 +45,12 @@ export function createDemoState(now: Date): DemoState {
       deyeCloud: { baseUrl: "https://cloud.demo.invalid", appId: "demo", appSecret: "", email: "", password: "", stationId: 1, deviceSn: "DEMO-INVERTER-001" },
       shelly: { serverUri: "https://sockets.demo.invalid", authKey: "", deviceId: "demo-heater", requestIntervalMilliseconds: 1000 },
       polling: { intervalSeconds: 30 }, display: { timeZoneId: "Europe/Warsaw" }
+    },
+    site: {
+      selectedDeviceSn: "DEMO-INVERTER-001",
+      solarEstimate: { latitude: 50, longitude: 20, locationLabel: "Demo rooftop", timeZoneId: "Europe/Warsaw",
+        roof1Kwp: 3.5, roof2Kwp: 3, roof1Tilt: 25, roof2Tilt: 25, roof1Azimuth: 180, roof2Azimuth: 90, deyeSolarPowerIsPvDcConfirmed: true, deyeSolarPowerConfirmedDeviceSn: "DEMO-INVERTER-001" },
+      solarSales: { contractStartDate: "2026-01-01", timeZoneId: "Europe/Warsaw", payNegativePrices: false }
     },
     stations: [
       { id: 1, name: "Demo rooftop", address: "Fictional installation" },

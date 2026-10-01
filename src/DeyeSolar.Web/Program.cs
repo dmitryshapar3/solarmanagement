@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Net;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
@@ -12,11 +13,40 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using DeyeSolar.Web.Auth;
+using DeyeSolar.Web.Tenancy;
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+// Authentication provider secrets must never be sourced from user-editable SQL settings.
+var authProviders = AuthProviderOptions.Capture(builder.Configuration);
+var bootstrapAdminPassword = builder.Configuration["Auth:BootstrapAdminPassword"];
+var dataProtectionKeysPath = builder.Configuration["Auth:DataProtectionKeysPath"];
+var trustedProxyAddresses = builder.Configuration["Auth:TrustedProxyAddresses"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    if (!Path.IsPathFullyQualified(dataProtectionKeysPath))
+        throw new InvalidOperationException("Auth:DataProtectionKeysPath must be an absolute directory path.");
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
+if (!string.IsNullOrWhiteSpace(trustedProxyAddresses))
+{
+    var proxies = trustedProxyAddresses.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+        .Select(address => IPAddress.TryParse(address, out var parsed) ? parsed
+            : throw new InvalidOperationException("Auth:TrustedProxyAddresses must contain proxy IP addresses.")).ToArray();
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+        options.ForwardLimit = 1;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+        foreach (var proxy in proxies) options.KnownProxies.Add(proxy);
+    });
+}
 // Capture this deployment secret before the editable SQL settings provider is added.
 // It must only come from server configuration/environment, never AppSettings or a client DTO.
 var openMeteoApiKey = builder.Configuration["SolarEstimate:ApiKey"];
@@ -31,7 +61,6 @@ builder.Services.AddDbContextFactory<DeyeSolarDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDbContext<DeyeSolarDbContext>(options =>
     options.UseSqlServer(connectionString));
-builder.Services.AddSingleton<AppSettingsService>();
 
 // Identity
 builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
@@ -40,10 +69,13 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 8;
+    options.Password.RequiredLength = 12;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
 })
 .AddEntityFrameworkStores<DeyeSolarDbContext>()
 .AddDefaultTokenProviders();
+builder.Services.AddAccountIdentities(authProviders);
 
 builder.Services.AddAuthentication()
     .AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(
@@ -56,54 +88,15 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.LogoutPath = "/logout";
     options.ExpireTimeSpan = TimeSpan.FromDays(30);
     options.SlidingExpiration = true;
+    if (!builder.Environment.IsDevelopment()) options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 
-// Configuration
-builder.Services.Configure<DeyeCloudOptions>(builder.Configuration.GetSection(DeyeCloudOptions.Section));
-builder.Services.Configure<ShellyOptions>(builder.Configuration.GetSection(ShellyOptions.Section));
-builder.Services.Configure<PollingOptions>(builder.Configuration.GetSection(PollingOptions.Section));
-builder.Services.Configure<DisplayOptions>(builder.Configuration.GetSection(DisplayOptions.Section));
-builder.Services.Configure<SolarEstimateOptions>(builder.Configuration.GetSection(SolarEstimateOptions.Section));
-builder.Services.PostConfigure<SolarEstimateOptions>(options => options.ApiKey = openMeteoApiKey);
-builder.Services.Configure<SolarSalesOptions>(builder.Configuration.GetSection(SolarSalesOptions.Section));
-
-// Infrastructure
-builder.Services.AddHttpClient<DeyeCloudClient>();
-builder.Services.AddSingleton<IInverterDataSource>(sp => sp.GetRequiredService<DeyeCloudClient>());
-builder.Services.AddSingleton<IExportGridHistorySource>(sp => sp.GetRequiredService<DeyeCloudClient>());
-builder.Services.AddSingleton<ExportReadingStore>();
-builder.Services.AddSingleton<IExportReadingStore>(sp => sp.GetRequiredService<ExportReadingStore>());
-builder.Services.AddSingleton<IExportPriceStore, ExportPriceStore>();
-builder.Services.AddHttpClient<PseExportPriceClient>().RemoveAllLoggers()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddSingleton<IExportPriceSource>(sp => sp.GetRequiredService<PseExportPriceClient>());
-builder.Services.AddSingleton<IExportSalesService, ExportSalesService>();
-builder.Services.AddHttpClient<ShellyCloudClient>();
-builder.Services.AddSingleton<ShellySocketInventoryService>();
-builder.Services.AddSingleton<ISocketController, BackendSocketController>();
-builder.Services.AddSingleton<ISocketInventoryService, BackendSocketInventoryService>();
-builder.Services.AddOpenMeteoSolarClients();
-builder.Services.AddSingleton<ISolarRadiationSource>(sp => sp.GetRequiredService<OpenMeteoCurrentSolarClient>());
-builder.Services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
-builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<SolarEstimateService>();
-builder.Services.AddSingleton<ISolarHistoryRadiationSource>(sp => sp.GetRequiredService<OpenMeteoSolarHistoryClient>());
-builder.Services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();
-builder.Services.AddSingleton<ISolarHistoryService, SolarHistoryService>();
-
-// Snapshot & Rule engine
-builder.Services.AddSingleton<InverterDataSnapshot>();
-builder.Services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
-builder.Services.AddSingleton<DeviceStatusSnapshot>();
-builder.Services.AddSingleton<RuleEvaluator>();
-builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
+// Each validated installation owns credentials, snapshots, caches and background work.
+builder.Services.AddIntegrationManagement();
+builder.Services.AddTenantRequestServices(builder.Configuration, openMeteoApiKey);
 builder.Services.AddSingleton<MobileSessionStore>();
 builder.Services.AddScoped<MobileAuthService>();
 builder.Services.AddScoped<MobileSocketCommandService>();
-
-// Background worker
-builder.Services.AddHostedService<PollingWorker>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<SolarEstimateService>());
 
 // Blazor + MudBlazor
 builder.Services.AddRazorPages(options =>
@@ -119,12 +112,17 @@ var app = builder.Build();
 // Migrate database and seed
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>();
+    var dbFactory = new TenantDbContextFactory(scope.ServiceProvider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>(), InstallationIds.Legacy);
     await using var db = await dbFactory.CreateDbContextAsync();
     await db.Database.MigrateAsync();
+    if (!await db.Installations.AnyAsync(i => i.Id == InstallationIds.Legacy))
+    {
+        db.Installations.Add(new Installation { Id = InstallationIds.Legacy, Name = "Existing installation", CreatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+    }
 
     // Seed settings
-    var settingsService = scope.ServiceProvider.GetRequiredService<AppSettingsService>();
+    var settingsService = new AppSettingsService(dbFactory, builder.Configuration);
     await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
     await settingsService.SeedSectionAsync<ShellyOptions>(ShellyOptions.Section);
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
@@ -152,21 +150,17 @@ using (var scope = app.Services.CreateScope())
     // Seed admin user
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
     var adminUser = await userManager.FindByNameAsync("admin");
-    if (adminUser == null)
+    if (adminUser == null && !string.IsNullOrWhiteSpace(bootstrapAdminPassword))
     {
-        var password = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12))[..16];
         adminUser = new IdentityUser { UserName = "admin", Email = "admin@deye.local" };
-        var result = await userManager.CreateAsync(adminUser, password);
+        var result = await userManager.CreateAsync(adminUser, bootstrapAdminPassword);
         if (result.Succeeded)
         {
-            Console.WriteLine($"");
-            Console.WriteLine($"============================================");
-            Console.WriteLine($"  Admin user created");
-            Console.WriteLine($"  Username: admin");
-            Console.WriteLine($"  Password: {password}");
-            Console.WriteLine($"============================================");
-            Console.WriteLine($"");
+            db.InstallationMemberships.Add(new InstallationMembership { InstallationId = InstallationIds.Legacy, UserId = adminUser.Id, Role = "Owner" });
+            await db.SaveChangesAsync();
+            app.Logger.LogInformation("Bootstrap administrator created. Credentials are not logged.");
         }
+        else throw new InvalidOperationException("The bootstrap administrator could not be created. Check Auth:BootstrapAdminPassword requirements.");
     }
 }
 
@@ -176,11 +170,18 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
+if (!string.IsNullOrWhiteSpace(trustedProxyAddresses)) app.UseForwardedHeaders();
 app.UseRouting();
+app.UseRateLimiter();
+app.UseAccountIdentityOrigin();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<InstallationBindingMiddleware>();
 app.MapMobileApi();
+app.MapAccountIdentityApi();
+app.MapGoogleIdentity();
 app.MapExportSalesApi();
+app.MapIntegrationManagement();
 app.MapBlazorHub();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");

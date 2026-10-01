@@ -1,0 +1,41 @@
+@using DeyeSolar.Web.Data
+@using DeyeSolar.Web.Tenancy
+@inject AuthenticationStateProvider Authentication
+@inject InstallationMembershipService Memberships
+@inject CurrentInstallation Current
+@inject TenantRuntimeRegistry Runtimes
+
+@if (_ready)
+{
+    @ChildContent
+}
+else if (_error)
+{
+    <p role="alert">Your installation could not be opened. Please sign in again or contact support.</p>
+    <a href="/login">Sign in</a>
+}
+else
+{
+    <p role="status">Opening your installation…</p>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private bool _ready;
+    private bool _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var state = await Authentication.GetAuthenticationStateAsync();
+            if (state.User.Identity?.IsAuthenticated != true) { _ready = true; return; }
+            var membership = await Memberships.ResolveAsync(state.User);
+            if (membership is null) { _error = true; return; }
+            Current.BindOnce(membership.InstallationId);
+            await Runtimes.GetAsync(membership.InstallationId);
+            _ready = true;
+        }
+        catch { _error = true; }
+    }
+}
