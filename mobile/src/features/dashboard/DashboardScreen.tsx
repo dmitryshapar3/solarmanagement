@@ -113,7 +113,7 @@ export function DashboardScreen() {
         inverterError={resource.error}
         timeZoneId={dashboard?.timeZoneId}
         onRefreshInverter={() => resource.refresh(true)}
-        onDetails={() => navigation.navigate("SolarEstimateDetails")}
+        onDetails={(period, date) => navigation.navigate("SolarEstimateDetails", { period, date })}
       />
       <SalesPanel compact onDetails={(period, date) => navigation.navigate("SalesDetails", { period, date })} />
 

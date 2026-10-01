@@ -40,6 +40,8 @@ export function InverterDetailsScreen() {
       <Card style={styles.card}>
         <Metric label="Solar generation" value={formatWatts(inverter.solarProduction)} />
         <Metric label="Load" value={formatWatts(inverter.loadPower)} />
+        <Metric label={inverter.batteryPower < 0 ? "Battery charging" : inverter.batteryPower > 0 ? "Battery discharging" : "Battery idle"}
+          value={formatWatts(Math.abs(inverter.batteryPower))} />
         <Metric label="Grid power" value={formatSignedWatts(inverter.gridConsumption)} detail={gridModeLabel(inverter.gridConsumption)} />
         <Text style={styles.note}>Negative grid power means export; positive means import. These are instantaneous power readings, not accumulated energy.</Text>
       </Card>

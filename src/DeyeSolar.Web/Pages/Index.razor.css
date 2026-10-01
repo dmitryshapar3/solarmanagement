@@ -1,4 +1,6 @@
-.energy-status-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; }
+.energy-status-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; }
+.energy-status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.energy-status-actions a { text-decoration: none; }
 .energy-status-heading h2 { margin: 0 0 7px; font-size: 1.1rem; font-weight: 600; }
 .energy-status-source { color: #26c6ad; background: rgba(38, 198, 173, .1); border-radius: 20px; padding: 3px 8px; font-size: .7rem; }
 .energy-status-updated { margin-left: 10px; color: var(--mud-palette-text-secondary); font-size: .73rem; }
@@ -12,7 +14,7 @@
 .energy-status-label { color: var(--mud-palette-text-secondary); font-size: .78rem; }
 .energy-status-metric strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: clamp(1.5rem, 3vw, 2.15rem); font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
 .energy-status-metric small { color: var(--mud-palette-text-secondary); font-size: .8rem; font-weight: 400; }
-.energy-status-battery strong { color: #26c6ad; }
+.energy-status-primary strong { color: #26c6ad; }
 .energy-status-direction { color: var(--mud-palette-text-secondary); font-size: .75rem; }
 .energy-status-positive { color: #26c6ad; }
 .energy-status-active { color: #ffb74d; }

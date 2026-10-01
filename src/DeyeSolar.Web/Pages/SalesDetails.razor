@@ -1,11 +1,11 @@
-@page "/sales"
+@page "/sales-details"
 @inherits SalesQueryPageBase
 
-<PageTitle>Sales — DeyeSolar</PageTitle>
-
+<PageTitle>Sales details - DeyeSolar</PageTitle>
+<MudButton Href="@BackUrl" Variant="Variant.Outlined" Class="mb-4">Back</MudButton>
 @if (ValidSelection)
 {
-    <SalesStatistics InitialRequest="Request" />
+    <SalesStatistics Detailed="true" InitialRequest="Request" />
 }
 else
 {

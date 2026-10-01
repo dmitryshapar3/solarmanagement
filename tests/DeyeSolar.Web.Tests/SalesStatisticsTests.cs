@@ -114,7 +114,8 @@ public class SalesStatisticsTests
         var html = await RenderAsync(data, overview: true);
 
         Assert.Matches("<h2[^>]*id=\"sales-title\"[^>]*>Electricity sales</h2>", html);
-        Assert.Matches("<a[^>]*href=\"/sales\"[^>]*>View details</a>", html);
+        Assert.Contains("href=\"/sales-details?period=Day&date=2026-09-30&returnTo=%2Fsales\"", html);
+        Assert.Matches("<a[^>]*aria-label=\"Electricity sales details\"[^>]*>Details</a>", html);
         Assert.Contains("Exported today", html);
         Assert.Contains("Energy value", html);
         Assert.Equal(2, Regex.Matches(html, "data-testid=\"sales-(?:export|value|deposit)\"").Count);
@@ -145,6 +146,34 @@ public class SalesStatisticsTests
         Assert.Contains("Partial data · totals for available hours", html);
         Assert.DoesNotContain("Readings 1 of 2 h", html);
         Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
+    }
+
+    [Fact]
+    public async Task DetailedSalesLeadsWithTheChartAndReportsCompletedAndCurrentHoursSeparately()
+    {
+        var data = Result() with { CurrentHour = new(Start, Start.AddMinutes(15), .25m, .20m, null, null, 900) };
+        var html = await RenderAsync(data, detailed: true);
+        var plot = html.IndexOf("class=\"sales-plot\"", StringComparison.Ordinal);
+        var totals = html.IndexOf("class=\"sales-totals\"", StringComparison.Ordinal);
+        Assert.True(plot >= 0 && plot < totals);
+        Assert.Contains("aria-label=\"Sales period\"", html);
+        Assert.Contains("aria-label=\"Chart metric\"", html);
+        Assert.Contains("Data coverage", html);
+        Assert.Contains("Contract calculation", html);
+        Assert.Contains("Completed interval breakdown", html);
+        Assert.Contains("Provisional credited export", html);
+        Assert.Contains("Provisional value", html);
+        Assert.Matches("Provisional value[\\s\\S]*?<dd[^>]*>— PLN</dd>", html);
+        Assert.Matches("data-testid=\"sales-export\"[^>]*>5[.]00<small", html);
+        Assert.Matches("<td[^>]*>5[.]00</td>", html);
+        Assert.DoesNotContain("aria-label=\"Electricity sales details\"", html);
+    }
+
+    [Fact]
+    public async Task SalesDetailsLinkRetainsTheSelectedCustomWindow()
+    {
+        var html = await RenderAsync(Result(new(ExportSalesPeriod.Custom, Today, Today.AddDays(-2), Today)));
+        Assert.Contains("href=\"/sales-details?period=Custom&date=2026-09-30&from=2026-09-28&through=2026-09-30&returnTo=%2Fsales\"", html);
     }
 
     [Theory]
@@ -190,14 +219,14 @@ public class SalesStatisticsTests
             await renderer.ClickAsync(root, "Previous interval");
             history.FailNext = true;
             clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => renderer.Text(root).Contains("Automatic refresh failed", StringComparison.Ordinal));
-            Assert.Contains("Automatic refresh failed. Showing previous data; values may be out of date.", renderer.Text(root));
+            await renderer.WaitForAsync(() => renderer.Text(root).Contains("Refresh failed", StringComparison.Ordinal));
+            Assert.Contains("Refresh failed. Showing previous data; values may be out of date.", renderer.Text(root));
             Assert.Contains("6.00", renderer.Text(root));
             Assert.Contains(updatedAt.ToString("O"), renderer.Attributes(root, "datetime"));
             Assert.Contains(Start.AddHours(1).ToString("O"), renderer.Attributes(root, "datetime"));
             Assert.Equal(3, renderer.Attributes(root, "data-testid").Count(value => value == "sales-bar"));
             await renderer.ClickAsync(root, "Retry");
-            Assert.DoesNotContain("Automatic refresh failed", renderer.Text(root));
+            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
             Assert.Equal(3, history.Calls.Count);
         });
     }
@@ -227,7 +256,7 @@ public class SalesStatisticsTests
             Assert.Contains("Installation settings changed", renderer.Text(root));
             Assert.DoesNotContain("5.00", renderer.Text(root));
             Assert.DoesNotContain("sales-bar", renderer.Attributes(root, "data-testid"));
-            Assert.DoesNotContain("Automatic refresh failed", renderer.Text(root));
+            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
         });
     }
 
@@ -244,7 +273,7 @@ public class SalesStatisticsTests
             Assert.Contains("Sales could not be loaded", renderer.Text(root));
             clock.Advance(TimeSpan.FromMinutes(5));
             await renderer.WaitForAsync(() => history.Calls.Count == 2 && !renderer.Control(root, "Refresh sales").Disabled);
-            Assert.DoesNotContain("Sales could not be loaded", renderer.Text(root));
+            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
             Assert.Contains("5.00", renderer.Text(root));
             Assert.Equal(1, clock.ActiveTimers);
         });
@@ -806,7 +835,7 @@ public class SalesStatisticsTests
     }
 
     [Fact]
-    public async Task AFailedRefreshClearsOldTotalsAndRetryRecoversTheSameSelection()
+    public async Task AFailedRefreshPreservesLabeledOldTotalsAndRetryRecoversTheSameSelection()
     {
         var history = new SalesService();
         await using var services = Services(history);
@@ -816,12 +845,11 @@ public class SalesStatisticsTests
             var root = await renderer.MountAsync();
             history.FailNext = true;
             await renderer.ClickAsync(root, "Refresh sales");
-            Assert.Contains("Sales could not be loaded", renderer.Text(root));
+            Assert.Contains("Refresh failed. Showing previous data", renderer.Text(root));
             Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.DoesNotContain("5.00", renderer.Text(root));
-            Assert.Contains("—", renderer.Text(root));
+            Assert.Contains("5.00", renderer.Text(root));
             await renderer.ClickAsync(root, "Retry");
-            Assert.DoesNotContain("Sales could not be loaded", renderer.Text(root));
+            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
             Assert.Contains("5.00", renderer.Text(root));
             Assert.Equal(history.Calls[1].Request, history.Calls[2].Request);
         });
@@ -918,14 +946,14 @@ public class SalesStatisticsTests
         return services.BuildServiceProvider();
     }
 
-    private static async Task<string> RenderAsync(ExportSalesResult result, bool overview = false)
+    private static async Task<string> RenderAsync(ExportSalesResult result, bool overview = false, bool detailed = false)
     {
         var service = new SalesService();
         await using var services = Services(service);
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
         var html = await renderer.Dispatcher.InvokeAsync(async () =>
         {
-            var output = await renderer.RenderComponentAsync<SalesStatistics>(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = result, ["Overview"] = overview }));
+            var output = await renderer.RenderComponentAsync<SalesStatistics>(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = result, ["Overview"] = overview, ["Detailed"] = detailed }));
             return output.ToHtmlString();
         });
         Assert.Empty(service.Calls);

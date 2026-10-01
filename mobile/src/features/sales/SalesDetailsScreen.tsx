@@ -1,48 +1,28 @@
-import { useCallback, useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
-import { useAuth } from "../../application/AuthContext";
 import { RootStackParamList } from "../../application/navigationTypes";
-import { Card, ErrorBanner, Header, LoadingState, Screen, StatusPill } from "../../core/components";
-import { TileHeader } from "../../core/TileHeader";
+import { Card, Header, Screen, StatusPill } from "../../core/components";
+import { ExportSalesResult } from "../../core/api/types";
 import { colors, spacing, typography } from "../../core/theme";
-import { amount, dateCaption, momentCaption, zonedDate } from "../energy/chartPolicy";
-import { useFocusedResource } from "../energy/useFocusedResource";
+import { amount, dateCaption, momentCaption } from "../energy/chartPolicy";
+import { SalesPanel, SalesPeriod } from "./SalesScreen";
 
 export function SalesDetailsScreen() {
-  const { api } = useAuth();
   const route = useRoute<RouteProp<RootStackParamList, "SalesDetails">>();
-  const period = route.params?.period ?? "Day";
-  const date = useMemo(() => route.params?.date ?? zonedDate(new Date()), [route.params?.date]);
-  const resource = useFocusedResource(`sales-details:${period}:${date}`,
-    useCallback((signal: AbortSignal) => api.getSales(period, date, signal), [api, period, date]));
-  const data = resource.data;
-  const hasCompletedHours = (data?.expectedHours ?? 0) > 0;
-  const completedBuckets = data?.buckets.filter((bucket) => bucket.expectedHours > 0) ?? [];
-  const timeZone = data?.timeZoneId ?? "Europe/Warsaw";
+  return <Screen>
+    <Header title="Sales details" subtitle="Interactive export history, hourly settlement and data coverage" />
+    <SalesPanel initialPeriod={route.params?.period} initialDate={route.params?.date} showDetails={false} chartFirst
+      renderDetails={(data, period) => <SalesReportDetails data={data} period={period} />} />
+  </Screen>;
+}
 
-  return <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh()}>
-    <Header title="Sales details" subtitle="Export, hourly settlement and data coverage" />
-    <Card>
-      <TileHeader title={dateCaption(data?.request.date ?? date, period)} subtitle={`${period} report · ${timeZone}`}
-        accessibilityScope="Sales details" loading={resource.loading} onRefresh={() => void resource.refresh()} />
-      <StatusPill label="Deye estimate" tone="info" />
-      <ErrorBanner message={resource.error} />
-      {resource.loading && !data ? <LoadingState label="Loading sales details..." /> : null}
-      {data ? <>
-        <Metric label="Measured export" value={amount(hasCompletedHours ? data.exportKwh : null, "kWh")} />
-        <Metric label="Export credited after hourly netting" value={amount(hasCompletedHours ? data.creditedExportKwh : null, "kWh")} />
-        <Metric label="Energy value" value={amount(hasCompletedHours ? data.energyValuePln : null, "PLN")} />
-        <Metric label="Estimated deposit credit" value={amount(hasCompletedHours ? data.estimatedDepositPln : null, "PLN")} />
-        <Text style={styles.note}>Totals cover completed hours only. Missing readings or prices remain unavailable; they are not counted as zero.</Text>
-        {!hasCompletedHours ? <Text style={styles.note}>There are no completed contract hours in this reporting window.</Text> : null}
-        {data.updatedAt ? <Text style={styles.note}>Updated {momentCaption(data.updatedAt, timeZone)} · refreshes every 5 minutes</Text> : null}
-      </> : null}
-    </Card>
-
-    {data ? <>
+function SalesReportDetails({ data, period }: { data: ExportSalesResult; period: SalesPeriod }) {
+  const completedBuckets = data.buckets.filter((bucket) => bucket.expectedHours > 0);
+  const timeZone = data.timeZoneId;
+  return <>
       <Card>
         <Text style={styles.title}>Completed-hour coverage</Text>
+        <Metric label="Export credited after hourly netting" value={amount(data.expectedHours > 0 ? data.creditedExportKwh : null, "kWh")} />
         <Metric label="Expected elapsed contract hours" value={String(data.expectedHours)} />
         <Metric label="Hours with Deye readings" value={`${data.observedHours} of ${data.expectedHours}`} />
         <Metric label="Hours with an energy valuation" value={`${data.valuedHours} of ${data.observedHours} observed`} />
@@ -76,17 +56,27 @@ export function SalesDetailsScreen() {
 
       <Text style={styles.title}>Completed intervals</Text>
       <Text style={styles.note}>{period === "Day" ? "Hourly" : period === "Month" ? "Daily" : "Monthly"} breakdown. Values below exclude the current hour.</Text>
-      {!completedBuckets.length ? <Text style={styles.note}>No completed intervals are available for this period.</Text> : completedBuckets.map((bucket) => <Card key={bucket.start}>
-        <Text style={styles.interval}>{momentCaption(bucket.start, timeZone)} – {momentCaption(bucket.end, timeZone)}</Text>
-        <Metric label="Export" value={amount(bucket.exportKwh, "kWh")} />
-        <Metric label="Credited export" value={amount(bucket.creditedExportKwh, "kWh")} />
-        <Metric label="Energy value" value={amount(bucket.energyValuePln, "PLN")} />
-        <Metric label="Estimated deposit credit" value={amount(bucket.estimatedDepositPln, "PLN")} />
-        <Text style={styles.note}>{bucket.observedHours} of {bucket.expectedHours} completed hours observed · {bucket.valuedHours} valued.</Text>
-        {bucket.observedHours < bucket.expectedHours || bucket.valuedHours < bucket.observedHours ? <Text style={styles.warning}>Partial interval · missing hours are not zero.</Text> : null}
-      </Card>)}
-    </> : null}
-  </Screen>;
+      {!completedBuckets.length ? <Text style={styles.note}>No completed intervals are available for this period.</Text> : <Card>
+        <Text style={styles.note}>Swipe horizontally for credited export, deposit and coverage. A dash means unavailable; measured zero remains 0.00.</Text>
+        <ScrollView horizontal nestedScrollEnabled>
+          <View>
+            <View style={styles.tableRow}>{["Interval starting", "Export kWh", "Credited kWh", "Value PLN", "Deposit PLN", "Observed hours", "Valued hours"].map((label, index) => <Text key={label} style={[styles.cell, styles.tableHeader, index === 0 && styles.timeCell]}>{label}</Text>)}</View>
+            {completedBuckets.map((bucket) => <View key={bucket.start} style={styles.tableRow}>
+              <Text style={[styles.cell, styles.timeCell]}>{momentCaption(bucket.start, timeZone)}</Text>
+              <Text selectable style={styles.cell}>{amount(bucket.exportKwh, "", 2).trim()}</Text>
+              <Text selectable style={styles.cell}>{amount(bucket.creditedExportKwh, "", 2).trim()}</Text>
+              <Text selectable style={styles.cell}>{amount(bucket.energyValuePln, "", 2).trim()}</Text>
+              <Text selectable style={styles.cell}>{amount(bucket.estimatedDepositPln, "", 2).trim()}</Text>
+              <Text style={styles.cell}>{bucket.observedHours} / {bucket.expectedHours}</Text>
+              <Text style={styles.cell}>{bucket.valuedHours} / {bucket.observedHours}</Text>
+            </View>)}
+          </View>
+        </ScrollView>
+        <Text style={styles.note}>Observed hours are compared with expected completed contract hours. Valued hours are compared with observed hours. Missing hours are not zero; partial coverage applies wherever either count is incomplete.</Text>
+        <Text style={styles.note}>Times include the UTC offset. For Month each row groups a day; for Year each row groups a month. Values exclude the current hour, which is shown separately above.</Text>
+      </Card>}
+
+  </>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -95,7 +85,9 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: typography.section, fontWeight: "700" },
-  interval: { color: colors.text, fontSize: typography.body, fontWeight: "600" },
+  tableRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  cell: { width: 112, color: colors.text, paddingVertical: spacing.sm, paddingHorizontal: spacing.sm, fontSize: 12, fontVariant: ["tabular-nums"] },
+  timeCell: { width: 190 }, tableHeader: { color: colors.muted, fontWeight: "700" },
   metric: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   label: { color: colors.muted, fontSize: typography.caption, lineHeight: 18, flexShrink: 1 },
   value: { color: colors.text, fontSize: 18, fontWeight: "700", fontVariant: ["tabular-nums"] },

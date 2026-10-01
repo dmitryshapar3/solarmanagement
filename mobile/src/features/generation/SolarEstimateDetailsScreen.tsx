@@ -1,19 +1,22 @@
 import { useCallback, useRef } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
+import { RouteProp, useRoute } from "@react-navigation/native";
 import { useAuth } from "../../application/AuthContext";
+import { RootStackParamList } from "../../application/navigationTypes";
 import { Card, ErrorBanner, Header, LoadingState, Screen, StatusPill } from "../../core/components";
 import { SolarPowerBasis } from "../../core/api/types";
 import { TileHeader } from "../../core/TileHeader";
 import { energyStyles as styles } from "../energy/EnergyControls";
 import { amount, momentCaption } from "../energy/chartPolicy";
 import { useFocusedResource } from "../energy/useFocusedResource";
-import { CurrentSolarSnapshot } from "./GenerationScreen";
+import { CurrentSolarSnapshot, GenerationHistoryPanel } from "./GenerationScreen";
 
 const powerBasis: Record<SolarPowerBasis, string> = { 0: "PV DC generation", 1: "Inverter AC power", 2: "Grid export" };
 const comparisonStatus = ["Comparison unavailable", "Within estimate range", "Below estimate range", "Above estimate range"];
 
 export function SolarEstimateDetailsScreen() {
   const { api, isDemo } = useAuth();
+  const route = useRoute<RouteProp<RootStackParamList, "SolarEstimateDetails">>();
   const refreshPending = useRef(false);
   const estimate = useFocusedResource("solar-estimate-details", useCallback((signal: AbortSignal) => api.getSolarEstimate(signal), [api]));
   const inverter = useFocusedResource("solar-estimate-dashboard", useCallback((signal: AbortSignal, force: boolean) =>
@@ -32,7 +35,9 @@ export function SolarEstimateDetailsScreen() {
     finally { refreshPending.current = false; }
   }
   return <Screen refreshing={loading} onRefresh={() => void refresh()}>
-    <Header title="Solar estimate details" subtitle="Latest Deye power, weather calculation and a separate time-aligned comparison" />
+    <Header title="Solar estimate details" subtitle="Hourly actual and possible power, weather calculation and measurement comparison" />
+    <GenerationHistoryPanel initialPeriod={route.params?.period} initialDate={route.params?.date} detailed
+      onRefreshSnapshot={refresh} snapshotLoading={loading} />
     <CurrentSolarSnapshot state={state} liveInverter={inverter.data?.inverter} timeZoneId={timeZone}
       error={estimate.error ?? inverter.error} loading={loading} onRefresh={() => void refresh()} />
     <Text style={styles.muted}>Deye measurement time is not available in the latest reading; its polling time is shown. The hourly chart and the comparison below use separate historical measurements.</Text>

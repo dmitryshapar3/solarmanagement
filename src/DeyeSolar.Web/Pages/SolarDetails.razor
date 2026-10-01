@@ -1,0 +1,12 @@
+@page "/solar-details"
+
+<PageTitle>Solar estimate details - DeyeSolar</PageTitle>
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4" Style="flex-wrap: wrap">
+    <MudText Typo="Typo.h4">Solar estimate details</MudText>
+    <MudButton Href="@EnergyDetailsNavigation.ReturnPath(ReturnTo)" Variant="Variant.Outlined">Back</MudButton>
+</MudStack>
+<SolarEstimateCard Detailed="true" ReturnTo="@EnergyDetailsNavigation.ReturnPath(ReturnTo)" />
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
+}

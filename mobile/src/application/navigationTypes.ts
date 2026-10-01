@@ -22,6 +22,6 @@ export type MoreStackParamList = RulesStackParamList & {
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<RootTabsParamList> | undefined;
   InverterDetails: undefined;
-  SolarEstimateDetails: undefined;
+  SolarEstimateDetails: { period?: "Today" | "Week" | "Month"; date?: string } | undefined;
   SalesDetails: { period?: "Day" | "Month" | "Year"; date?: string } | undefined;
 };

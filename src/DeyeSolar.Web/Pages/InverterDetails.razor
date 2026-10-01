@@ -1,0 +1,60 @@
+@page "/inverter-details"
+@using DeyeSolar.Web.Services
+@inject InverterDataSnapshot Snapshot
+@inject IInverterRefreshService InverterRefresh
+@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@implements IDisposable
+
+<PageTitle>Inverter details - DeyeSolar</PageTitle>
+<MudPaper Class="pa-4" Elevation="2">
+    <div class="inverter-details-heading">
+        <h1>Inverter details</h1>
+        <div class="inverter-details-actions">
+            <a href="@EnergyDetailsNavigation.ReturnPath(ReturnTo)">Back</a>
+            <button type="button" @onclick="RefreshAsync" disabled="@_refreshing" aria-label="Refresh inverter details">@(_refreshing ? "Refreshing…" : "Refresh")</button>
+        </div>
+    </div>
+    @if (_error is not null) { <p class="inverter-details-error" role="alert">@_error</p> }
+    <InverterReadings Data="_reading" TimeZoneId="@_timeZone" />
+</MudPaper>
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
+    private InverterData? _reading;
+    private string _timeZone = "Europe/Warsaw";
+    private bool _refreshing;
+    private bool _disposed;
+    private string? _error;
+    private readonly CancellationTokenSource _lifetime = new();
+    protected override async Task OnInitializedAsync()
+    {
+        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        if (_disposed) return;
+        _timeZone = display.TimeZoneId;
+        _reading = Snapshot.Current;
+        Snapshot.OnDataUpdated += Updated;
+    }
+    private void Updated()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() => { if (!_disposed) { _reading = Snapshot.Current; StateHasChanged(); } });
+    }
+    private async Task RefreshAsync()
+    {
+        if (_disposed || _refreshing) return;
+        _refreshing = true;
+        _error = null;
+        try { await InverterRefresh.RefreshAsync(_lifetime.Token); if (!_disposed) _reading = Snapshot.Current; }
+        catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _error = "Could not refresh Deye readings. Showing the last available reading; please try again."; }
+        finally { if (!_disposed) _refreshing = false; }
+    }
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Snapshot.OnDataUpdated -= Updated;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

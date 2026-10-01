@@ -1,4 +1,13 @@
 .solar-history { min-width: 0; }
+.history-embedded-paper { background: transparent; }
+.history-table-container { overflow: auto; max-height: 420px; margin-top: 20px; border: 1px solid var(--mud-palette-divider); border-radius: 8px; }
+.history-data-table { width: 100%; border-collapse: collapse; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.history-data-table caption { text-align: left; font-weight: 600; padding: 12px; }
+.history-data-table th, .history-data-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--mud-palette-divider); white-space: nowrap; }
+.history-data-table thead { position: sticky; top: 0; background: var(--mud-palette-surface); }
+.history-data-table tbody th { font-weight: 400; }
+.history-table-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0; color: var(--mud-palette-text-secondary); font-size: .76rem; }
+.history-table-pager button { border: 1px solid var(--mud-palette-divider); border-radius: 7px; padding: 6px 10px; background: transparent; color: var(--mud-palette-text-primary); font: inherit; cursor: pointer; }
 .history-heading, .history-controls, .history-legend, .history-inspector, .history-inspector-time { display: flex; align-items: center; gap: 16px; }
 .history-heading { justify-content: space-between; flex-wrap: wrap; }
 .history-heading h2 { font-size: 1.2rem; font-weight: 600; margin: 0 0 4px; }

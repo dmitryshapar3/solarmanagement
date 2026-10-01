@@ -6,13 +6,19 @@
 @inject InverterDataSnapshot InverterSnapshot
 @inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
 @inject IOptionsMonitor<DeyeCloudOptions> DeyeOptions
+@inject IInverterRefreshService InverterRefresh
+@inject TimeProvider Clock
 @implements IAsyncDisposable
 
+@if (Detailed)
+{
+    <div class="solar-detail-chart"><SolarHistoryChart @ref="_history" Data="HistoryData" ShowTable="true" /></div>
+}
 <MudPaper Class="pa-4" Elevation="2">
     <section class="solar-card" aria-labelledby="solar-card-title">
         <div class="solar-heading">
             <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Small" />
-            <h2 id="solar-card-title">Solar power now</h2>
+            <h2 id="solar-card-title">@(Overview ? "Possible generation" : "Latest solar snapshot")</h2>
             <details class="solar-info @(HasWarning ? "solar-info-warning" : "")">
                 <summary aria-label="Data sources and timestamps" title="Data sources and timestamps">
                     <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
@@ -41,7 +47,28 @@
                 </div>
             </details>
         </div>
+        <div class="solar-actions">
+            <button type="button" @onclick="RefreshSourcesAsync" disabled="@(_refreshing || Refreshing)" aria-label="Refresh possible generation">@(_refreshing || Refreshing ? "Refreshing…" : "Refresh")</button>
+            @if (!Detailed)
+            {
+                <a href="@DetailsUrl" aria-label="Possible generation details">Details</a>
+            }
+        </div>
+        @if (_refreshError is not null) { <p class="solar-notice" role="alert">@_refreshError</p> }
         <div class="solar-readings">
+            <div class="solar-reading solar-reading-actual">
+                <span class="solar-label" id="solar-actual-label">Latest Deye generation</span>
+                <output class="solar-value" aria-labelledby="solar-actual-label" data-testid="solar-actual">
+                    @if (HasUsableActual && CurrentActual is { } actual)
+                    {
+                        @Number(actual.SolarProduction / 1000d)<span class="solar-unit">kW</span>
+                    }
+                    else
+                    {
+                        <span class="solar-unavailable" aria-label="The Deye reading is unavailable">—</span>
+                    }
+                </output>
+            </div>
             <div class="solar-reading solar-reading-possible">
                 <span class="solar-label" id="solar-possible-label">Possible</span>
                 <output class="solar-value" aria-labelledby="solar-possible-label" data-testid="solar-possible">
@@ -55,20 +82,64 @@
                     }
                 </output>
             </div>
-            <div class="solar-reading solar-reading-actual">
-                <span class="solar-label" id="solar-actual-label">Actual</span>
-                <output class="solar-value" aria-labelledby="solar-actual-label" data-testid="solar-actual">
-                    @if (HasUsableActual && CurrentActual is { } actual)
-                    {
-                        @Number(actual.SolarProduction / 1000d)<span class="solar-unit">kW</span>
-                    }
-                    else
-                    {
-                        <span class="solar-unavailable" aria-label="The Deye reading is unavailable">—</span>
-                    }
-                </output>
-            </div>
         </div>
+        <p class="solar-timestamps">@ActualInfo</p>
+        <p class="solar-timestamps">@EstimateInfo</p>
+        @if (EstimateNotice is { } notice) { <p class="solar-notice" role="status">@notice</p> }
+        @if (Overview)
+        {
+            <p class="solar-timestamps">The chart shows hourly average power. The latest Deye reading is separate; missing hours remain gaps.</p>
+            <SolarHistoryChart @ref="_history" Data="HistoryData" Overview="true" Embedded="true" />
+        }
+        @if (Detailed)
+        {
+            <section class="solar-detail-section" aria-labelledby="solar-calculation-title">
+                <h2 id="solar-calculation-title">Weather calculation</h2>
+                @if (Estimate is { } detailedEstimate)
+                {
+                    <dl class="solar-metadata">
+                        <div><dt>Central estimate</dt><dd>@Number(detailedEstimate.CentralKw) kW</dd></div>
+                        <div><dt>Calculated range</dt><dd>@Number(detailedEstimate.LowerKw) – @Number(detailedEstimate.UpperKw) kW</dd></div>
+                        <div><dt>Power basis</dt><dd>@BasisLabel(detailedEstimate.Basis)</dd></div>
+                        <div><dt>Installed solar capacity</dt><dd>@Number(detailedEstimate.TotalKwp) kWp</dd></div>
+                        <div><dt>Estimate time</dt><dd><time datetime="@detailedEstimate.Timestamp.ToString("O")">@FormatTime(detailedEstimate.Timestamp)</time></dd></div>
+                        <div><dt>Calculated at</dt><dd><time datetime="@detailedEstimate.CalculatedAt.ToString("O")">@FormatTime(detailedEstimate.CalculatedAt)</time></dd></div>
+                        <div><dt>@(IsWeatherModel ? "Model radiation time" : "Radiation observation")</dt><dd>@FormatTime(detailedEstimate.Observation.Timestamp)</dd></div>
+                        <div><dt>@(IsWeatherModel ? "Model weather time" : "Weather observation")</dt><dd>@(detailedEstimate.Observation.WeatherTimestamp is { } weatherAt ? FormatTime(weatherAt) : "Unavailable")</dd></div>
+                        <div><dt>Weather retrieved</dt><dd>@(detailedEstimate.Observation.RetrievedAt is { } retrievedAt ? FormatTime(retrievedAt) : "Unavailable")</dd></div>
+                    </dl>
+                    @if (detailedEstimate.WeatherMissing) { <p class="solar-notice">Some weather inputs are missing; the calculated uncertainty range includes weather assumptions.</p> }
+                    <p class="solar-timestamps">The range is an engineering estimate, not a statistical confidence interval. Refresh reloads the latest server results; timestamps identify the weather data used.</p>
+                }
+                else { <p class="solar-timestamps">No weather estimate is available.</p> }
+            </section>
+            <section class="solar-detail-section" aria-labelledby="solar-comparison-title">
+                <h2 id="solar-comparison-title">Time-aligned comparison</h2>
+                <p class="solar-timestamps">@ComparisonLabel</p>
+                @if (CurrentState.Comparison.Actual is { } historical)
+                {
+                    <dl class="solar-metadata">
+                        <div><dt>Historical Deye power</dt><dd>@Number(historical.PowerKw) kW</dd></div>
+                        <div><dt>Deye measurement time</dt><dd><time datetime="@historical.Timestamp.ToString("O")">@FormatTime(historical.Timestamp)</time></dd></div>
+                        <div><dt>Deye power basis</dt><dd>@BasisLabel(historical.Basis)</dd></div>
+                        @if (ComparisonEstimate is { } comparisonEstimate)
+                        {
+                            <div><dt>Estimate for comparison</dt><dd>@Number(comparisonEstimate.CentralKw) kW</dd></div>
+                            <div><dt>Comparison range</dt><dd>@Number(comparisonEstimate.LowerKw) – @Number(comparisonEstimate.UpperKw) kW</dd></div>
+                            <div><dt>Comparison estimate time</dt><dd><time datetime="@comparisonEstimate.Timestamp.ToString("O")">@FormatTime(comparisonEstimate.Timestamp)</time></dd></div>
+                        }
+                        @if (HasVerifiedComparison)
+                        {
+                            <div><dt>Deye minus estimate</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationKw) kW</dd></div>
+                            <div><dt>Deviation</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationPercent) %</dd></div>
+                        }
+                    </dl>
+                }
+                @if (!HasVerifiedComparison) { <p class="solar-notice">@(CurrentState.Comparison.Reason ?? "A verified comparison is not available.")</p> }
+                <p class="solar-timestamps">This historical reading can differ from the latest Deye snapshot. The server checks age, measurement type and timestamp alignment. A percentage may be unavailable at night or at very low power.</p>
+            </section>
+            <div class="solar-attribution"><a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener noreferrer">Open-Meteo weather</a> · <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></div>
+        }
     </section>
 </MudPaper>
 
@@ -77,6 +148,16 @@
     [Parameter] public InverterData? Actual { get; set; }
     [Parameter] public SolarEstimateOptions? Options { get; set; }
     [Parameter] public DateTimeOffset? Now { get; set; }
+    [Parameter] public SolarHistoryResult? HistoryData { get; set; }
+    [Parameter] public bool Overview { get; set; }
+    [Parameter] public bool Detailed { get; set; }
+    [Parameter] public bool Refreshing { get; set; }
+    [Parameter] public EventCallback OnRefreshInverter { get; set; }
+    [Parameter] public string ReturnTo { get; set; } = "/generation";
+    private SolarHistoryChart? _history;
+    private bool _refreshing;
+    private string? _refreshError;
+    private string DetailsUrl => "/solar-details?returnTo=" + Uri.EscapeDataString(EnergyDetailsNavigation.ReturnPath(ReturnTo));
 
     private static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("en-GB");
     private readonly CancellationTokenSource _stop = new();
@@ -89,6 +170,11 @@
     private SolarEstimateOptions CurrentOptions => Options ?? EstimateOptions.CurrentValue;
     private DateTimeOffset ClockNow => Now ?? _clock;
     private SolarPowerEstimate? Estimate => CurrentState.Estimate;
+    private SolarPowerEstimate? ComparisonEstimate => CurrentState.ComparisonEstimate ?? (Estimate?.Observation.Kind == SolarRadiationKind.Satellite ? Estimate : null);
+    private bool HasVerifiedComparison => DeyePvDcConfirmed && !CurrentState.RefreshFailed && CurrentState.Error is null
+        && CurrentState.Comparison.Status != SolarComparisonStatus.InsufficientData && ComparisonEstimate is not null;
+    private string ComparisonLabel => !HasVerifiedComparison ? "Comparison unavailable" : CurrentState.Comparison.Status switch
+        { SolarComparisonStatus.WithinRange => "Within estimate range", SolarComparisonStatus.BelowEstimate => "Below estimate range", _ => "Above estimate range" };
     private bool DeyePvDcConfirmed => CurrentOptions.DeyeSolarPowerIsPvDcConfirmed
         && !string.IsNullOrWhiteSpace(CurrentOptions.DeyeConfirmedDeviceSn)
         && CurrentOptions.DeyeConfirmedDeviceSn == DeyeOptions.CurrentValue.DeviceSn;
@@ -124,12 +210,29 @@
 
     protected override void OnInitialized()
     {
+        _clock = Clock.GetUtcNow();
         EstimateService.OnUpdated += OnUpdated;
         InverterSnapshot.OnDataUpdated += OnUpdated;
         _clockTask = UpdateClockAsync();
     }
 
     private void OnUpdated() => _ = RefreshAsync();
+
+    private async Task RefreshSourcesAsync()
+    {
+        if (_disposed || _refreshing || Refreshing) return;
+        _refreshing = true;
+        _refreshError = null;
+        try
+        {
+            var inverter = OnRefreshInverter.HasDelegate ? OnRefreshInverter.InvokeAsync() : InverterRefresh.RefreshAsync(_stop.Token);
+            await Task.WhenAll(inverter, _history?.RefreshDataAsync() ?? Task.CompletedTask);
+            await RefreshAsync();
+        }
+        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _refreshError = "Could not refresh Deye readings. Showing the last available results; please try again."; }
+        finally { if (!_disposed) _refreshing = false; }
+    }
 
     private async Task RefreshAsync()
     {
@@ -139,7 +242,7 @@
             await InvokeAsync(() =>
             {
                 if (_disposed) return;
-                _clock = DateTimeOffset.UtcNow;
+                _clock = Clock.GetUtcNow();
                 StateHasChanged();
             });
         }
@@ -157,7 +260,9 @@
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
     }
 
-    private static string Number(double value) => value.ToString("F1", DisplayCulture);
+    private static string Number(double value) => value.ToString("F2", DisplayCulture);
+    private static string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
+    private static string BasisLabel(SolarPowerBasis basis) => basis switch { SolarPowerBasis.PvDc => "PV DC generation", SolarPowerBasis.Ac => "Inverter AC power", _ => "Grid export" };
     private string FormatTime(DateTimeOffset timestamp) => TimeZoneInfo.ConvertTime(timestamp,
         TimeZoneInfo.FindSystemTimeZoneById(CurrentOptions.TimeZoneId)).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", DisplayCulture);
 
