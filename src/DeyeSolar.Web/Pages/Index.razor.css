@@ -1,4 +1,6 @@
-.energy-status-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; }
+.energy-status-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; }
+.energy-status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.energy-status-actions a { text-decoration: none; }
 .energy-status-heading h2 { margin: 0 0 7px; font-size: 1.1rem; font-weight: 600; }
 .energy-status-source { color: #26c6ad; background: rgba(38, 198, 173, .1); border-radius: 20px; padding: 3px 8px; font-size: .7rem; }
 .energy-status-updated { margin-left: 10px; color: var(--mud-palette-text-secondary); font-size: .73rem; }
@@ -6,13 +8,13 @@
 .energy-status-refresh:hover { background: rgba(66, 165, 245, .1); }
 .energy-status-refresh:focus-visible { outline: 2px solid var(--mud-palette-primary); outline-offset: 3px; }
 .energy-status-refresh:disabled { cursor: default; opacity: .5; }
-.energy-status-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 22px 22px; gap: 24px; }
+.energy-status-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0 22px 22px; gap: 24px; }
 .energy-status-metric { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .energy-status-metric + .energy-status-metric { border-left: 1px solid var(--mud-palette-divider); padding-left: 24px; }
 .energy-status-label { color: var(--mud-palette-text-secondary); font-size: .78rem; }
 .energy-status-metric strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: clamp(1.5rem, 3vw, 2.15rem); font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
 .energy-status-metric small { color: var(--mud-palette-text-secondary); font-size: .8rem; font-weight: 400; }
-.energy-status-battery strong { color: #26c6ad; }
+.energy-status-primary strong { color: #26c6ad; }
 .energy-status-direction { color: var(--mud-palette-text-secondary); font-size: .75rem; }
 .energy-status-positive { color: #26c6ad; }
 .energy-status-active { color: #ffb74d; }
@@ -43,8 +45,9 @@
 @media (max-width: 600px) {
     .energy-status-heading { padding: 16px; gap: 10px; }
     .energy-status-updated { display: block; margin: 7px 0 0; }
-    .energy-status-metrics { padding: 0 16px 18px; gap: 12px; }
+    .energy-status-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px 18px; gap: 18px 12px; }
     .energy-status-metric + .energy-status-metric { padding-left: 12px; }
+    .energy-status-metric:nth-child(odd) { border-left: 0; padding-left: 0; }
     .energy-status-metric strong { font-size: 1.45rem; gap: 4px; }
     .energy-status-metric small { font-size: .68rem; }
     .energy-status-label, .energy-status-direction { font-size: .7rem; }

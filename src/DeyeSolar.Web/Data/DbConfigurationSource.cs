@@ -31,7 +31,7 @@ public class DbConfigurationProvider : ConfigurationProvider
             var optionsBuilder = new DbContextOptionsBuilder<DeyeSolarDbContext>();
             optionsBuilder.UseSqlServer(_connectionString);
 
-            using var db = new DeyeSolarDbContext(optionsBuilder.Options);
+            using var db = new DeyeSolarDbContext(optionsBuilder.Options, InstallationIds.Legacy);
             if (!db.Database.CanConnect())
                 return;
 

@@ -1,0 +1,5 @@
+.auth-form { display: grid; gap: .65rem; max-width: 30rem; margin: 1.4rem 0; }
+.auth-form input, .auth-form select, .auth-form button, .auth-action { padding: .8rem; border-radius: .45rem; border: 1px solid #46534b; font: inherit; background: #19221c; color: #eef5ee; }
+.auth-form button, .auth-action { background: #17683f; color: white; cursor: pointer; text-decoration: none; }
+.auth-form button:disabled { opacity: .45; cursor: default; }
+.auth-error { padding: .8rem; border: 1px solid #b24c42; border-radius: .45rem; background: #3c211e; }

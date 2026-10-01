@@ -52,6 +52,12 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("IntervalSeconds")
                         .HasColumnType("int");
 
@@ -79,6 +85,8 @@ namespace DeyeSolar.Web.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("InstallationId");
+
                     b.ToTable("TriggerRules");
                 });
 
@@ -89,6 +97,12 @@ namespace DeyeSolar.Web.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Key")
                         .IsRequired()
@@ -104,7 +118,7 @@ namespace DeyeSolar.Web.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Section", "Key")
+                    b.HasIndex("InstallationId", "Section", "Key")
                         .IsUnique();
 
                     b.ToTable("AppSettings");
@@ -129,6 +143,11 @@ namespace DeyeSolar.Web.Migrations
 
             modelBuilder.Entity("DeyeSolar.Web.Data.ExportReading", b =>
                 {
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("DeviceSn")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
@@ -143,9 +162,52 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<DateTime>("PolledAt")
                         .HasColumnType("datetime2");
 
-                    b.HasKey("DeviceSn", "ObservedAt");
+                    b.HasKey("InstallationId", "DeviceSn", "ObservedAt");
 
                     b.ToTable("ExportReadings");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.Installation", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Installations");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.InstallationMembership", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("InstallationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("UserId", "InstallationId");
+
+                    b.HasIndex("InstallationId");
+
+                    b.ToTable("InstallationMemberships");
                 });
 
             modelBuilder.Entity("DeyeSolar.Web.Data.Reading", b =>
@@ -178,15 +240,21 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<int>("GridConsumption")
                         .HasColumnType("int");
 
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("LoadPower")
                         .HasColumnType("int");
-
-                    b.Property<DateTime?>("SolarObservedAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<string>("SolarDeviceSn")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("SolarObservedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("SolarProduction")
                         .HasColumnType("int");
@@ -196,9 +264,9 @@ namespace DeyeSolar.Web.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Timestamp");
+                    b.HasIndex("InstallationId", "SolarObservedAt");
 
-                    b.HasIndex("SolarObservedAt");
+                    b.HasIndex("InstallationId", "Timestamp");
 
                     b.ToTable("Readings");
                 });
@@ -226,6 +294,12 @@ namespace DeyeSolar.Web.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -242,7 +316,7 @@ namespace DeyeSolar.Web.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Timestamp");
+                    b.HasIndex("InstallationId", "Timestamp");
 
                     b.ToTable("RuleRunLogs");
                 });
@@ -336,7 +410,7 @@ namespace DeyeSolar.Web.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
@@ -354,12 +428,18 @@ namespace DeyeSolar.Web.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
-                        .HasDatabaseName("EmailIndex");
+                        .IsUnique()
+                        .HasDatabaseName("EmailIndex")
+                        .HasFilter("[NormalizedEmail] IS NOT NULL");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasFilter("[PhoneNumber] IS NOT NULL AND [PhoneNumber] <> ''");
 
                     b.ToTable("AspNetUsers", (string)null);
                 });
@@ -443,6 +523,70 @@ namespace DeyeSolar.Web.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("DeyeSolar.Domain.Models.TriggerRule", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.AppSetting", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.ExportReading", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.InstallationMembership", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", "Installation")
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Installation");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.Reading", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.RuleRunLog", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

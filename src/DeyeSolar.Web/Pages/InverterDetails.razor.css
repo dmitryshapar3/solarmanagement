@@ -1,0 +1,7 @@
+.inverter-details-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.inverter-details-heading h1 { margin: 0; font-size: 1.7rem; }
+.inverter-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.inverter-details-actions a, .inverter-details-actions button { border: 1px solid var(--mud-palette-divider); border-radius: 8px; color: var(--mud-palette-text-primary); padding: 6px 10px; background: transparent; text-decoration: none; font: inherit; font-size: .8rem; cursor: pointer; }
+.inverter-details-actions button:disabled { opacity: .5; cursor: default; }
+.inverter-details-actions a:focus-visible, .inverter-details-actions button:focus-visible { outline: 2px solid var(--mud-palette-primary); outline-offset: 3px; }
+.inverter-details-error { color: var(--mud-palette-warning); font-size: .8rem; }

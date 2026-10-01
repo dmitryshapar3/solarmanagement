@@ -4,6 +4,11 @@ export type AuthResponse = {
   username: string;
 };
 
+export type AuthOptions = { registrationEnabled: boolean; emailEnabled: boolean; phoneEnabled: boolean; googleEnabled: boolean };
+export type VerificationChannel = "email" | "phone";
+export type VerificationPurpose = "register" | "login" | "link";
+export type VerificationResponse = { verificationId: string; expiresAt: string; retryAfterSeconds: number };
+
 export type SessionResponse = {
   authenticated: boolean;
   username: string | null;
@@ -20,6 +25,10 @@ export type InverterData = {
   loadPower: number;
   timestamp: string;
   dataSource: string;
+  solarObservedAt?: string | null;
+  gridObservedAt?: string | null;
+  solarDeviceSn?: string | null;
+  gridDeviceSn?: string | null;
 };
 
 export type Device = {
@@ -29,6 +38,33 @@ export type Device = {
   online: boolean;
   isOn: boolean;
   currentPowerW: number | null;
+  cloudName?: string;
+  localName?: string | null;
+};
+
+export type IntegrationKind = "deye" | "shelly" | "openmeteo" | "pse";
+export type IntegrationTestRequest = {
+  deyeCloud?: DeyeCloudSettings;
+  shelly?: ShellySettings;
+  solarEstimate?: { latitude: number; longitude: number };
+};
+export type IntegrationTestResult = {
+  kind: IntegrationKind;
+  success: boolean;
+  code: "ok" | "configuration" | "authentication" | "unavailable" | "timeout" | "busy";
+  message: string;
+  checkedAt: string;
+};
+
+export type SolarSiteSettings = {
+  selectedDeviceSn?: string;
+  solarEstimate: {
+    latitude: number; longitude: number; locationLabel: string; timeZoneId: string;
+    roof1Kwp: number; roof2Kwp: number; roof1Tilt: number; roof2Tilt: number;
+    roof1Azimuth: number; roof2Azimuth: number;
+    deyeSolarPowerIsPvDcConfirmed?: boolean; deyeSolarPowerConfirmedDeviceSn?: string;
+  };
+  solarSales: { contractStartDate: string; timeZoneId: string; payNegativePrices: boolean };
 };
 
 export type DeviceList = {

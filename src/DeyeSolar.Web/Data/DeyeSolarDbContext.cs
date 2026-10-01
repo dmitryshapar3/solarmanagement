@@ -8,6 +8,16 @@ namespace DeyeSolar.Web.Data;
 public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
 {
     public DeyeSolarDbContext(DbContextOptions<DeyeSolarDbContext> options) : base(options) { }
+    public DeyeSolarDbContext(DbContextOptions<DeyeSolarDbContext> options, string installationId) : base(options)
+    {
+        if (string.IsNullOrWhiteSpace(installationId) || installationId.Length > 64)
+            throw new ArgumentException("A valid installation is required.", nameof(installationId));
+        InstallationId = installationId;
+    }
+
+    public string? InstallationId { get; }
+    public DbSet<Installation> Installations => Set<Installation>();
+    public DbSet<InstallationMembership> InstallationMemberships => Set<InstallationMembership>();
 
     public DbSet<Reading> Readings => Set<Reading>();
     public DbSet<ExportReading> ExportReadings => Set<ExportReading>();
@@ -19,17 +29,45 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<Installation>(e =>
+        {
+            e.HasKey(i => i.Id);
+            e.Property(i => i.Id).HasMaxLength(64);
+            e.Property(i => i.Name).HasMaxLength(128);
+        });
+        modelBuilder.Entity<InstallationMembership>(e =>
+        {
+            e.HasKey(m => new { m.UserId, m.InstallationId });
+            e.Property(m => m.InstallationId).HasMaxLength(64);
+            e.Property(m => m.Role).HasMaxLength(32);
+            e.HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(m => m.Installation).WithMany().HasForeignKey(m => m.InstallationId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<IdentityUser>().HasIndex(u => u.PhoneNumber).IsUnique()
+            .HasFilter("[PhoneNumber] IS NOT NULL AND [PhoneNumber] <> ''");
+        modelBuilder.Entity<IdentityUser>().HasIndex(u => u.NormalizedEmail).IsUnique()
+            .HasFilter("[NormalizedEmail] IS NOT NULL");
+        ConfigureInstallation<Reading>(modelBuilder);
+        ConfigureInstallation<ExportReading>(modelBuilder);
+        ConfigureInstallation<TriggerRule>(modelBuilder);
+        ConfigureInstallation<AppSetting>(modelBuilder);
+        ConfigureInstallation<RuleRunLog>(modelBuilder);
+        modelBuilder.Entity<Reading>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
+        modelBuilder.Entity<ExportReading>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
+        modelBuilder.Entity<TriggerRule>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
+        modelBuilder.Entity<AppSetting>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
+        modelBuilder.Entity<RuleRunLog>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
         modelBuilder.Entity<Reading>(e =>
         {
             e.HasKey(r => r.Id);
-            e.HasIndex(r => r.Timestamp);
-            e.HasIndex(r => r.SolarObservedAt);
+            e.HasIndex(r => new { r.InstallationId, r.Timestamp });
+            e.HasIndex(r => new { r.InstallationId, r.SolarObservedAt });
             e.Property(r => r.SolarDeviceSn).HasMaxLength(128);
         });
 
         modelBuilder.Entity<ExportReading>(e =>
         {
-            e.HasKey(r => new { r.DeviceSn, r.ObservedAt });
+            e.HasKey(r => new { r.InstallationId, r.DeviceSn, r.ObservedAt });
             e.Property(r => r.DeviceSn).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
         });
 
@@ -42,13 +80,13 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         modelBuilder.Entity<AppSetting>(e =>
         {
             e.HasKey(s => s.Id);
-            e.HasIndex(s => new { s.Section, s.Key }).IsUnique();
+            e.HasIndex(s => new { s.InstallationId, s.Section, s.Key }).IsUnique();
         });
 
         modelBuilder.Entity<RuleRunLog>(e =>
         {
             e.HasKey(r => r.Id);
-            e.HasIndex(r => r.Timestamp);
+            e.HasIndex(r => new { r.InstallationId, r.Timestamp });
             e.Property(r => r.ConditionKey).HasMaxLength(160);
         });
 
@@ -64,10 +102,44 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         });
 
     }
+
+    private static void ConfigureInstallation<TEntity>(ModelBuilder modelBuilder) where TEntity : class, IInstallationOwned
+    {
+        modelBuilder.Entity<TEntity>().Property(e => e.InstallationId).HasMaxLength(64).IsConcurrencyToken();
+        modelBuilder.Entity<TEntity>().HasOne<Installation>().WithMany().HasForeignKey(e => e.InstallationId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        EnforceInstallationWrites();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        EnforceInstallationWrites();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void EnforceInstallationWrites()
+    {
+        foreach (var entry in ChangeTracker.Entries<IInstallationOwned>()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+        {
+            if (InstallationId is null) throw new InvalidOperationException("Private writes require an installation.");
+            if (entry.State == EntityState.Added && string.IsNullOrEmpty(entry.Entity.InstallationId))
+                entry.Entity.InstallationId = InstallationId;
+            if (entry.Entity.InstallationId != InstallationId
+                || entry.State != EntityState.Added && entry.Property(nameof(IInstallationOwned.InstallationId)).OriginalValue as string != InstallationId)
+                throw new InvalidOperationException("A private row cannot be accessed across installations.");
+        }
+    }
 }
 
-public class ExportReading
+public class ExportReading : IInstallationOwned
 {
+    public string InstallationId { get; set; } = string.Empty;
     public string DeviceSn { get; set; } = string.Empty;
     public DateTime ObservedAt { get; set; }
     public int GridPowerWatts { get; set; }
@@ -75,8 +147,9 @@ public class ExportReading
     public DateTime PolledAt { get; set; }
 }
 
-public class Reading
+public class Reading : IInstallationOwned
 {
+    public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public DateTime Timestamp { get; set; }
     public int BatterySoc { get; set; }
@@ -92,8 +165,9 @@ public class Reading
     public string DataSource { get; set; } = string.Empty;
 }
 
-public class RuleRunLog
+public class RuleRunLog : IInstallationOwned
 {
+    public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public DateTime Timestamp { get; set; }
     public string RuleName { get; set; } = string.Empty;
@@ -105,8 +179,9 @@ public class RuleRunLog
     public int BatteryPower { get; set; }
 }
 
-public class AppSetting
+public class AppSetting : IInstallationOwned
 {
+    public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public string Section { get; set; } = string.Empty;
     public string Key { get; set; } = string.Empty;

@@ -1,0 +1,9 @@
+.inverter-readings h2 { margin: 24px 0 16px; font-size: 1.1rem; }
+.inverter-readings h2:first-child { margin-top: 0; }
+.inverter-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 0; }
+.inverter-metrics div { min-width: 0; }
+.inverter-metrics dt { margin-bottom: 6px; color: var(--mud-palette-text-secondary); font-size: .8rem; }
+.inverter-metrics dd { margin: 0; font-size: 1.15rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.inverter-metrics span, .inverter-readings p { font-size: .78rem; color: var(--mud-palette-text-secondary); line-height: 1.6; }
+.inverter-readings p { margin: 18px 0 0; }
+@media (max-width: 600px) { .inverter-metrics { grid-template-columns: minmax(0, 1fr); } }

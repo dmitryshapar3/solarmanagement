@@ -10,7 +10,7 @@ The dashboard separates measured energy data, modeled solar generation and estim
 - Shelly device discovery, manual switching and rules with battery, solar-production, schedule, cooldown and evaluation-interval settings.
 - Historical readings and generation charts, with weather-based possible-power ranges from Open-Meteo.
 - Electricity export estimates with retained observations and quarter-hour prices, coverage indicators and separate provisional current-hour progress.
-- ASP.NET Core Identity login, database-backed application settings and an authenticated API for the mobile client.
+- Verified email/phone registration, Google sign-in, linked identities, isolated installations and an authenticated API for the mobile client.
 
 ## Project layout
 
@@ -37,7 +37,7 @@ dotnet restore DeyeSolar.sln
 dotnet run --project src/DeyeSolar.Web --no-launch-profile --urls http://localhost:5000
 ```
 
-Open `http://localhost:5000`. On a fresh database, startup creates the `admin` account and prints its generated password to the backend console. Configure DeyeCloud and Shelly access through the Settings page after signing in. The initial automation rule is disabled until a device and the intended conditions are configured.
+Open `http://localhost:5000`. For an optional bootstrap administrator on a fresh database, set `Auth__BootstrapAdminPassword` to a password of at least 12 characters. Credentials are never printed; existing users remain unchanged. Verified public registration is enabled when a delivery provider or Google is configured. Configure DeyeCloud and Shelly access through the Settings page after signing in. The initial automation rule is disabled until a device and the intended conditions are configured.
 
 The tracked configuration includes development database defaults and installation-specific solar-model defaults. Replace the database connection and review the solar configuration for your installation before use. Keep credentials in deployment environment variables or database settings rather than committing them to source control.
 
@@ -45,15 +45,18 @@ The tracked configuration includes development database defaults and installatio
 
 | Section | Main settings |
 | --- | --- |
+| `Auth` | Public HTTPS origin, registration switch, Google OAuth, Resend email, Twilio Verify SMS and optional bootstrap password |
 | `ConnectionStrings` | `DefaultConnection` for SQL Server |
 | `DeyeCloud` | Regional API URL, application ID/secret, account email/password, station ID and inverter serial number |
 | `Shelly` | Cloud server URI, authentication key and configured device ID |
 | `Polling` | Inverter polling interval |
 | `Display` | User-facing timezone |
-| `SolarEstimate` | Site coordinates, roof capacities/orientations, temperature/loss model and observation freshness limits |
+| `SolarEstimate` | Site coordinates, roof capacities/orientations, temperature/loss model, freshness limits and server-only Open-Meteo `ApiKey` |
 | `SolarSales` | Contract start date, contract timezone and treatment of negative prices |
 
-Environment variables use double underscores, for example `DeyeCloud__AppId` or `SolarEstimate__Roof1Kwp`. Matching values already stored in the SQL `AppSettings` table take precedence over application files and environment variables. The Settings page manages DeyeCloud, Shelly, polling and display settings; the solar estimate and sales options are configuration sections without dedicated edit forms.
+Environment variables use double underscores, for example `DeyeCloud__AppId` or `SolarEstimate__Roof1Kwp`. Matching values already stored in the SQL `AppSettings` table take precedence over application files and environment variables, except the Open-Meteo key: `SolarEstimate__ApiKey` is read only from server configuration before SQL settings are loaded. Settings manages DeyeCloud, Shelly, polling, display, solar-site and sales-contract settings, with draft integration tests. Deployment defaults apply only to the migrated legacy installation; new accounts start with their own empty setup. Authentication provider secrets are captured from server configuration before editable SQL settings are loaded.
+
+Commercial app launch requires valid commercial Open-Meteo access. A missing weather API key retains the existing non-commercial evaluation service. See [Open-Meteo commercial API setup](docs/open-meteo-commercial.md) before deploying a paid product.
 
 The packaged solar-sales policy uses the Warsaw timezone and a specific contract start date. Adapt it to the applicable agreement before interpreting results. Possible-power estimates also depend on the configured roof geometry and weather model, and are not guaranteed production ranges.
 
@@ -89,5 +92,8 @@ Legacy Kubernetes manifests and deployment tooling are under `k8s`. Review the t
 
 ## More detail
 
+- [Accounts, delivery providers and deployment](docs/accounts-deployment.md)
 - [Solar generation model and history](docs/solar-expected-power.md)
+- [Open-Meteo commercial API setup](docs/open-meteo-commercial.md)
 - [Electricity export estimates, storage and upgrades](docs/solar-sales.md)
+- [Public backend pages and App Store release checks](docs/app-store-backend.md)

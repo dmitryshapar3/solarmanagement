@@ -69,8 +69,7 @@ public sealed class OpenMeteoSolarClient(HttpClient httpClient) : ISolarRadiatio
         parameters["temporal_resolution"] = "native";
         parameters["tilt"] = Number(tilt);
         parameters["azimuth"] = Number(SolarPowerCalculator.ToOpenMeteoAzimuth(compassAzimuth));
-        var host = HasKey(options) ? "customer-satellite-api.open-meteo.com" : "satellite-api.open-meteo.com";
-        using var document = await GetJsonAsync(BuildUri(host, "archive", parameters), ct);
+        using var document = await GetJsonAsync(OpenMeteoRequestUris.Satellite(options, parameters), ct);
         var root = document.RootElement;
         RequireUnits(root, GtiVariable, "W/m²");
         var time = RequireArray(root, "time");
@@ -102,8 +101,7 @@ public sealed class OpenMeteoSolarClient(HttpClient httpClient) : ISolarRadiatio
             var parameters = CommonParameters(options);
             parameters["hourly"] = "temperature_2m,wind_speed_10m";
             parameters["wind_speed_unit"] = "ms";
-            var host = HasKey(options) ? "customer-api.open-meteo.com" : "api.open-meteo.com";
-            using var document = await GetJsonAsync(BuildUri(host, "forecast", parameters), ct);
+            using var document = await GetJsonAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
             var root = document.RootElement;
             RequireUnits(root, "temperature_2m", "°C");
             RequireUnits(root, "wind_speed_10m", "m/s");
@@ -157,8 +155,10 @@ public sealed class OpenMeteoSolarClient(HttpClient httpClient) : ISolarRadiatio
                 retryAfter = response.Headers.RetryAfter?.Delta
                     ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException("Open-Meteo request canceled.", ct);
                 // Includes HttpClient.Timeout and this request's twelve-second deadline.
             }
             catch (HttpRequestException)
@@ -199,15 +199,10 @@ public sealed class OpenMeteoSolarClient(HttpClient httpClient) : ISolarRadiatio
             ["latitude"] = Number(options.Latitude), ["longitude"] = Number(options.Longitude),
             ["timeformat"] = "unixtime", ["timezone"] = "UTC", ["past_days"] = "1", ["forecast_days"] = "1"
         };
-        if (HasKey(options)) parameters["apikey"] = options.ApiKey!;
         return parameters;
     }
 
-    private static bool HasKey(SolarEstimateOptions options) => !string.IsNullOrWhiteSpace(options.ApiKey);
     private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
-    private static Uri BuildUri(string host, string endpoint, Dictionary<string, string> parameters) =>
-        new($"https://{host}/v1/{endpoint}?" + string.Join("&", parameters.Select(pair =>
-            Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value))));
 
     private static void RequireUnits(JsonElement root, string variable, string expected)
     {

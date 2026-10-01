@@ -80,12 +80,7 @@ public sealed class OpenMeteoCurrentSolarClient(HttpClient httpClient) : ISolarR
             ["wind_speed_unit"] = "ms", ["timeformat"] = "unixtime", ["timezone"] = "UTC",
             ["past_minutely_15"] = "5", ["forecast_minutely_15"] = "5"
         };
-        var hasKey = !string.IsNullOrWhiteSpace(options.ApiKey);
-        if (hasKey) parameters["apikey"] = options.ApiKey!;
-        var host = hasKey ? "customer-api.open-meteo.com" : "api.open-meteo.com";
-        var uri = new Uri($"https://{host}/v1/forecast?" + string.Join("&", parameters.Select(pair =>
-            Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value))));
-        using var document = await _transport.GetJsonAsync(uri, ct);
+        using var document = await _transport.GetJsonAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
         var root = document.RootElement;
         if (!HasUnit(root, "time", "unixtime") || !HasUnit(root, GtiVariable, "W/m²"))
             throw new InvalidDataException("Open-Meteo model returned missing or unexpected radiation units.");

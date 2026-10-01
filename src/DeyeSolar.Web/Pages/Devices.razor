@@ -1,126 +1,127 @@
 @page "/devices"
+@using DeyeSolar.Web.Api
+@using DeyeSolar.Web.Services
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
-@using DeyeSolar.Web.Shared
+@inject DeviceNameService DeviceNames
+@inject MobileSocketCommandService SocketCommands
 @implements IDisposable
 
 <PageTitle>Devices - DeyeSolar</PageTitle>
-
-<MudText Typo="Typo.h5" Class="mb-4">Smart Sockets</MudText>
-
-<MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RefreshDevices"
-           Disabled="_loadingDevices" StartIcon="@Icons.Material.Filled.Refresh" Class="mb-3">
-    @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-    Refresh Devices
-</MudButton>
-
-@if (DeviceSnapshot.LastUpdated.HasValue)
+<MudText Typo="Typo.h5" Class="mb-2">Smart sockets</MudText>
+<MudText Typo="Typo.body2" Class="mb-3">Devices are discovered from your Shelly Cloud account. Display names are saved in DeyeSolar; resetting a name restores the cloud name.</MudText>
+<MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RefreshDevices" Disabled="@(_loading || _busyId is not null)" StartIcon="@Icons.Material.Filled.Refresh" Class="mb-3">@(_loading ? "Refreshing…" : "Refresh devices")</MudButton>
+@if (DeviceSnapshot.LastUpdated is { } updated)
 {
-    <MudText Typo="Typo.caption" Class="mb-2">
-        Last update: @TimeHelper.ToUserTime(DeviceSnapshot.LastUpdated.Value.UtcDateTime, _tz).ToString("HH:mm:ss")
-    </MudText>
+    <MudText Typo="Typo.caption" Class="mb-3">Last update: @TimeHelper.ToUserTime(updated.UtcDateTime, _tz).ToString("HH:mm:ss")</MudText>
 }
-
-<MudPaper Class="pa-4" Elevation="2">
-    @if (_devices == null)
-    {
-        <MudAlert Severity="Severity.Info">Waiting for first device poll...</MudAlert>
-    }
-    else if (_devices.Count == 0)
-    {
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">No devices found. Configure the socket backend in Settings.</MudText>
-    }
-    else
-    {
-        <MudSimpleTable Dense="true" Hover="true">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>Online</th>
-                    <th>State</th>
-                    <th>Current Power</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var dev in _devices)
-                {
-                    <tr>
-                        <td>@dev.Name</td>
-                        <td>@(dev.Category ?? "-")</td>
-                        <td>
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@(dev.Online ? Color.Success : Color.Default)">
-                                @(dev.Online ? "Yes" : "No")
-                            </MudChip>
-                        </td>
-                        <td>
-                            @if (!dev.Online)
-                            {
-                                <MudText Typo="Typo.body2">-</MudText>
-                            }
-                            else
-                            {
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(dev.IsOn ? Color.Success : Color.Default)">
-                                    @(dev.IsOn ? "ON" : "OFF")
-                                </MudChip>
-                            }
-                        </td>
-                        <td>@(dev.CurrentPowerW.HasValue ? $"{dev.CurrentPowerW.Value} W" : "-")</td>
-                    </tr>
-                }
-            </tbody>
-        </MudSimpleTable>
-    }
-</MudPaper>
-
-@if (!string.IsNullOrWhiteSpace(_errorMessage))
+@if (_error is not null) { <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert> }
+@if (_message is not null) { <MudAlert Severity="Severity.Success" Class="mb-3">@_message</MudAlert> }
+@if (_devices is null) { <MudAlert Severity="Severity.Info">Refresh devices to load the current cloud inventory.</MudAlert> }
+else if (_devices.Count == 0) { <MudAlert Severity="Severity.Info">No smart sockets found. Configure Shelly Cloud in Settings, then refresh devices.</MudAlert> }
+else
 {
-    <MudAlert Severity="Severity.Error" Class="mt-3">@_errorMessage</MudAlert>
+    <MudGrid>
+    @foreach (var device in _devices)
+    {
+        <MudItem xs="12" md="6" @key="device.Id">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6">@device.Name</MudText>
+                <MudText Typo="Typo.caption">@device.Category · ID: @device.Id</MudText>
+                <MudStack Row="true" Spacing="1" Class="mt-2 mb-2">
+                    <MudChip T="string" Size="Size.Small" Color="@(device.Online ? Color.Success : Color.Default)">@(device.Online ? "Online" : "Offline")</MudChip>
+                    <MudChip T="string" Size="Size.Small">@(device.Online ? device.IsOn ? "ON" : "OFF" : "State unavailable")</MudChip>
+                    <MudChip T="string" Size="Size.Small">@(device.CurrentPowerW.HasValue ? $"{device.CurrentPowerW} W" : "Power unavailable")</MudChip>
+                </MudStack>
+                <MudTextField T="string" @bind-Value="_names[device.Id]" Label="Display name in DeyeSolar" MaxLength="80" Immediate="true" Disabled="@(_busyId is not null)" />
+                <MudText Typo="Typo.caption">Cloud name: @device.CloudName</MudText>
+                <MudStack Row="true" Spacing="1" Class="mt-2" Style="flex-wrap:wrap">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => Rename(device, false))" Disabled="@(_busyId is not null)">Save name</MudButton>
+                    <MudButton Variant="Variant.Text" OnClick="@(() => Rename(device, true))" Disabled="@(_busyId is not null || device.LocalName is null)">Reset name</MudButton>
+                </MudStack>
+                <MudDivider Class="my-3" />
+                <MudText Typo="Typo.caption" Class="mb-2">Manual switching operates the socket. Automation rules may change it again.</MudText>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="@(() => Switch(device, true))" Disabled="@(_busyId is not null || !device.Online)">Switch ON</MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => Switch(device, false))" Disabled="@(_busyId is not null || !device.Online)">Switch OFF</MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    }
+    </MudGrid>
 }
 
 @code {
-    private IReadOnlyList<DevicePowerInfo>? _devices;
+    private IReadOnlyList<DeviceDto>? _devices;
+    private readonly Dictionary<string, string> _names = new();
     private string? _tz;
-    private bool _loadingDevices;
-    private string? _errorMessage;
+    private bool _loading;
+    private string? _busyId;
+    private string? _error;
+    private string? _message;
+    private bool _disposed;
+    private readonly CancellationTokenSource _stop = new();
 
     protected override async Task OnInitializedAsync()
     {
-        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        _tz = display.TimeZoneId;
-        _devices = DeviceSnapshot.Current;
-        DeviceSnapshot.OnDataUpdated += OnDeviceSnapshotUpdated;
+        _tz = (await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display")).TimeZoneId;
+        if (_disposed) return;
+        DeviceSnapshot.OnDataUpdated += Updated;
+        await LoadDescriptionsAsync();
     }
-
+    private async Task LoadDescriptionsAsync()
+    {
+        if (_disposed || DeviceSnapshot.Current is not { } current) return;
+        var described = await DeviceNames.DescribeAsync(current, _stop.Token);
+        if (_disposed) return;
+        _devices = described;
+        foreach (var device in described) _names.TryAdd(device.Id, device.Name);
+    }
     private async Task RefreshDevices()
     {
-        _loadingDevices = true;
-        _errorMessage = null;
-
+        if (_disposed || _loading || _busyId is not null) return;
+        _loading = true; _error = null; _message = null;
+        try { DeviceSnapshot.Update(await SocketInventoryService.RefreshDevicesAsync(_stop.Token)); await LoadDescriptionsAsync(); }
+        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _error = "Could not refresh devices. Check the saved Shelly Cloud configuration or try again."; }
+        finally { if (!_disposed) _loading = false; }
+    }
+    private async Task Rename(DeviceDto device, bool reset)
+    {
+        if (_disposed || _busyId is not null) return;
+        _busyId = device.Id; _error = null; _message = null;
         try
         {
-            var devices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
-            DeviceSnapshot.Update(devices);
-            _devices = devices;
+            if (!DeviceNameService.TryName(reset ? null : _names[device.Id], out var name)) { _error = "Use a name of up to 80 characters without control characters."; return; }
+            var updated = await DeviceNames.RenameAsync(device.Id, name, _stop.Token);
+            if (_disposed) return;
+            if (updated is null) { _error = "This device is no longer in the current inventory. Refresh devices."; return; }
+            _names[device.Id] = updated.Name;
+            await LoadDescriptionsAsync();
+            _message = reset ? "Cloud name restored." : "Display name saved in DeyeSolar.";
         }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _loadingDevices = false;
-        }
+        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _error = "Could not save this display name. Please try again."; }
+        finally { if (!_disposed) _busyId = null; }
     }
-
-    private async void OnDeviceSnapshotUpdated()
+    private async Task Switch(DeviceDto device, bool isOn)
     {
-        _devices = DeviceSnapshot.Current;
-        await InvokeAsync(StateHasChanged);
+        if (_disposed || _busyId is not null || !device.Online) return;
+        _busyId = device.Id; _error = null; _message = null;
+        try { await SocketCommands.SetStateAsync(device.Id, isOn, _stop.Token); await LoadDescriptionsAsync(); if (!_disposed) _message = isOn ? "Socket switched on." : "Socket switched off."; }
+        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _error = "Could not switch this socket. Refresh devices and try again."; }
+        finally { if (!_disposed) _busyId = null; }
     }
-
-    public void Dispose() => DeviceSnapshot.OnDataUpdated -= OnDeviceSnapshotUpdated;
+    private void Updated() => _ = RefreshDescriptionsAsync();
+    private async Task RefreshDescriptionsAsync()
+    {
+        if (_disposed) return;
+        try { await InvokeAsync(async () => { await LoadDescriptionsAsync(); if (!_disposed) StateHasChanged(); }); }
+        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (_disposed) { }
+        catch (Exception) { if (!_disposed) await InvokeAsync(() => { _error = "Could not load display names. Please refresh devices."; StateHasChanged(); }); }
+    }
+    public void Dispose() { if (_disposed) return; _disposed = true; DeviceSnapshot.OnDataUpdated -= Updated; _stop.Cancel(); _stop.Dispose(); }
 }

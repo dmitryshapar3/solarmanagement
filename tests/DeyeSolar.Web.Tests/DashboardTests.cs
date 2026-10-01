@@ -30,6 +30,7 @@ public class DashboardTests
     private static InverterData Reading(int soc = 87, int battery = -2400, int grid = -1200, int solar = 4100) => new()
     {
         BatterySoc = soc, BatteryPower = battery, GridConsumption = grid, SolarProduction = solar, Timestamp = Timestamp,
+        SolarObservedAt = Timestamp.AddMinutes(-1), SolarDeviceSn = "test-device",
         BatteryVoltage = 51.5, BatteryCurrent = 4.2, BatteryTemperature = 24, LoadPower = 900
     };
 
@@ -44,15 +45,16 @@ public class DashboardTests
         services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
         services.AddSingleton<SolarEstimateService>();
         services.AddSingleton<ISolarHistoryService, HistoryService>();
+        services.AddSingleton<IInverterRefreshService>(new RefreshService(new InverterDataSnapshot()));
         await using var provider = services.BuildServiceProvider();
         var html = await RenderAsync<DeyeSolar.Web.Pages.Generation>(provider);
 
         Assert.Contains("Solar generation", html);
-        Assert.Contains("Solar power now", html);
+        Assert.Contains("Latest solar snapshot", html);
         Assert.Single(Regex.Matches(html, "data-testid=\"solar-possible\""));
         Assert.Single(Regex.Matches(html, "data-testid=\"solar-actual\""));
         Assert.Contains("Possible", html);
-        Assert.Contains("Actual", html);
+        Assert.Contains("Latest Deye generation", html);
         Assert.Contains("aria-label=\"Chart period\"", html);
         Assert.Contains("aria-label=\"Day navigation\"", html);
         Assert.Contains("aria-label=\"Previous day\"", html);
@@ -110,13 +112,13 @@ public class DashboardTests
     [SqlServerFact]
     public async Task SolarGenerationDoesNotUseBatteryChargingOrDischargingPower()
     {
-        foreach (var (solar, battery, expected) in new[] { (4100, -2742, "4,100"), (4100, 2742, "4,100"), (0, 2742, "0") })
+        foreach (var (solar, battery, expected) in new[] { (4100, -2742, "4.10"), (4100, 2742, "4.10"), (0, 2742, "0.00") })
         {
             await using var fixture = await Fixture.CreateAsync(Reading() with { SolarProduction = solar, BatteryPower = battery });
             var html = await RenderAsync<DashboardHost>(fixture.Services);
 
-            var metric = Regex.Match(html, "class=\"energy-status-metric\"[^>]*>[\\s\\S]*?</div>").Value;
-            Assert.Matches($">{expected}<small[^>]*>W", metric);
+            var metric = Regex.Match(html, "data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?</div>").Value;
+            Assert.Matches($">{Regex.Escape(expected)}<small[^>]*>kW", metric);
             Assert.Contains("Solar generation", metric);
             Assert.DoesNotContain("2,742", metric);
             Assert.DoesNotContain("Charging", metric);
@@ -137,19 +139,19 @@ public class DashboardTests
         });
 
         Assert.Single(Regex.Matches(html, "data-testid=\"energy-status\""));
-        AssertOrdered(html, "data-testid=\"energy-status\"", "data-testid=\"battery-soc\"", "data-testid=\"solar-generation\"",
-            "data-testid=\"grid-power\"", "data-testid=\"dashboard-charts\"", "data-testid=\"dashboard-generation\"", "data-testid=\"dashboard-sales\"");
-        Assert.Matches("data-testid=\"battery-soc\"[^>]*>[\\s\\S]*?>87<small[^>]*>%", html);
-        Assert.Matches("data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?>4,100<small[^>]*>W", html);
+        AssertOrdered(html, "data-testid=\"energy-status\"", "data-testid=\"solar-generation\"", "data-testid=\"load-power\"",
+            "data-testid=\"grid-power\"", "data-testid=\"battery-power\"", "data-testid=\"dashboard-charts\"", "data-testid=\"dashboard-generation\"", "data-testid=\"dashboard-sales\"");
+        Assert.DoesNotContain("data-testid=\"battery-soc\"", html);
+        Assert.Matches("data-testid=\"load-power\"[^>]*>[\\s\\S]*?>900<small[^>]*>W", html);
+        Assert.Matches("data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?>4[.]10<small[^>]*>kW", html);
         Assert.Matches("data-testid=\"grid-power\"[^>]*>[\\s\\S]*?>1,200<small[^>]*>W", html);
-        Assert.DoesNotContain("Battery power", html);
-        Assert.DoesNotContain("Charging", html);
-        Assert.DoesNotContain("Discharging", html);
+        Assert.Matches("data-testid=\"battery-power\"[^>]*>[\\s\\S]*?Battery charging[\\s\\S]*?>2,400<small[^>]*>W", html);
         Assert.Contains("Exporting", html);
         Assert.Contains("12:00:00", html);
         Assert.Contains("aria-label=\"Refresh inverter data\"", html);
-        Assert.Contains("href=\"/generation\"", html);
-        Assert.Contains("href=\"/sales\"", html);
+        Assert.Contains("href=\"/solar-details?returnTo=%2F\"", html);
+        Assert.Contains("href=\"/sales-details?period=Day&date=2026-09-30&returnTo=%2F\"", html);
+        Assert.Contains("href=\"/inverter-details?returnTo=%2F\"", html);
         AssertOrdered(html, "data-testid=\"dashboard-sales\"", "sales-paper", "id=\"sales-title\"");
         Assert.Contains("Quick Actions", html);
         Assert.Contains("Socket ON", html);
@@ -177,17 +179,17 @@ public class DashboardTests
             var first = renderer.DispatchAsync(button.EventId);
             Assert.True(renderer.RefreshButton(root).Disabled);
             Assert.Contains("Refreshing…", renderer.Text(root));
-            Assert.Contains("4,100", renderer.Text(root));
+            Assert.Contains("4.10", renderer.Text(root));
             await renderer.DispatchAsync(button.EventId);
             Assert.Equal(1, fixture.Refresh.Calls);
             fixture.Refresh.Complete(Reading(62, 1000, 750, 5200) with { Timestamp = Timestamp.AddMinutes(5) });
             await first;
             Assert.False(renderer.RefreshButton(root).Disabled);
-            Assert.DoesNotContain("Discharging", renderer.Text(root));
+            Assert.Contains("Battery discharging", renderer.Text(root));
             Assert.Contains("Importing", renderer.Text(root));
-            Assert.Contains("5,200", renderer.Text(root));
-            Assert.DoesNotContain("1,000", renderer.Text(root));
-            Assert.DoesNotContain("4,100", renderer.Text(root));
+            Assert.Contains("5.20", renderer.Text(root));
+            Assert.Contains("1,000", renderer.Text(root));
+            Assert.DoesNotContain("4.10", renderer.Text(root));
             Assert.Contains("12:05:00", renderer.Text(root));
             Assert.Same(fixture.Refresh.LastResult, fixture.Snapshot.Current);
         });
@@ -207,12 +209,12 @@ public class DashboardTests
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.Same(original, fixture.Snapshot.Current);
             Assert.Contains("Could not refresh Deye readings. Showing the last successful reading", renderer.Text(root));
-            Assert.Contains("4,100", renderer.Text(root));
+            Assert.Contains("4.10", renderer.Text(root));
             Assert.False(renderer.RefreshButton(root).Disabled);
             fixture.Refresh.Next = Reading(0, 0, 0, 0) with { Timestamp = Timestamp.AddMinutes(5) };
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.DoesNotContain("Could not refresh", renderer.Text(root));
-            Assert.DoesNotContain("4,100", renderer.Text(root));
+            Assert.DoesNotContain("4.10", renderer.Text(root));
             Assert.DoesNotContain("Awaiting reading", renderer.Text(root));
             Assert.Contains("Idle", renderer.Text(root));
             Assert.Equal(2, fixture.Refresh.Calls);
@@ -241,7 +243,7 @@ public class DashboardTests
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.DoesNotContain("Waiting for the first Deye reading", renderer.Text(root));
             Assert.Contains("Solar generation", renderer.Text(root));
-            Assert.Contains("4,100", renderer.Text(root));
+            Assert.Contains("4.10", renderer.Text(root));
             Assert.Contains("Quick Actions", renderer.Text(root));
         });
         await fixture.AssertNoMutationsAsync();
@@ -282,8 +284,12 @@ public class DashboardTests
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.Contains("Could not refresh Deye readings", renderer.Text(root));
             fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
-            await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.Text(root).Contains("3,300", StringComparison.Ordinal));
-            Assert.DoesNotContain("2,000", renderer.Text(root));
+            await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.TextByTestId(root, "solar-generation").Contains("3.30", StringComparison.Ordinal));
+            var solar = renderer.TextByTestId(root, "solar-generation");
+            Assert.Contains("3.30", solar);
+            Assert.DoesNotContain("4.10", solar);
+            Assert.DoesNotContain("2,000", solar);
+            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
             Assert.Contains("Importing", renderer.Text(root));
             Assert.DoesNotContain("Could not refresh Deye readings", renderer.Text(root));
             Assert.Equal(1, fixture.Refresh.Calls);
@@ -304,9 +310,11 @@ public class DashboardTests
             fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
             fixture.Rules.Release();
             var root = await mounting;
-            Assert.Contains("3,300", renderer.Text(root));
-            Assert.DoesNotContain("2,000", renderer.Text(root));
-            Assert.DoesNotContain("4,100", renderer.Text(root));
+            var solar = renderer.TextByTestId(root, "solar-generation");
+            Assert.Contains("3.30", solar);
+            Assert.DoesNotContain("2,000", solar);
+            Assert.DoesNotContain("4.10", solar);
+            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
             Assert.Equal(0, fixture.Refresh.Calls);
         });
         await fixture.AssertNoMutationsAsync();
@@ -359,6 +367,11 @@ public class DashboardTests
             services.AddSingleton<AppSettingsService>();
             services.AddSingleton<ISolarHistoryService, HistoryService>();
             services.AddSingleton<IExportSalesService, SalesService>();
+            services.Configure<DeyeCloudOptions>(options => options.DeviceSn = "test-device");
+            services.AddOptions<SolarEstimateOptions>();
+            services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
+            services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
+            services.AddSingleton<SolarEstimateService>();
             return new(factory, snapshot, refresh, rules, sockets, services.BuildServiceProvider());
         }
         public async Task AssertNoMutationsAsync()
@@ -382,7 +395,7 @@ public class DashboardTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options);
+        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }
@@ -541,14 +554,32 @@ public class DashboardTests
         public string Text(int componentId)
         {
             var frames = GetCurrentRenderTreeFrames(componentId);
-            return WebUtility.HtmlDecode(string.Join(" ", frames.Array.Take(frames.Count).Select(frame => frame.FrameType switch
+            return Text(frames.Array.Take(frames.Count));
+        }
+        public string TextByTestId(int componentId, string testId) => Assert.Single(ElementsByTestId(componentId, testId));
+        private IEnumerable<string> ElementsByTestId(int componentId, string testId)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var frame = frames.Array[i];
+                if (frame.FrameType == RenderTreeFrameType.Component)
+                    foreach (var text in ElementsByTestId(frame.ComponentId, testId)) yield return text;
+                if (frame.FrameType != RenderTreeFrameType.Element) continue;
+                var subtree = frames.Array.Skip(i + 1).Take(frame.ElementSubtreeLength - 1);
+                if (subtree.TakeWhile(child => child.FrameType == RenderTreeFrameType.Attribute)
+                    .Any(child => child.AttributeName == "data-testid" && child.AttributeValue?.ToString() == testId))
+                    yield return Text(subtree);
+            }
+        }
+        private string Text(IEnumerable<RenderTreeFrame> frames)
+            => WebUtility.HtmlDecode(string.Join(" ", frames.Select(frame => frame.FrameType switch
             {
                 RenderTreeFrameType.Text => frame.TextContent,
                 RenderTreeFrameType.Markup => frame.MarkupContent,
                 RenderTreeFrameType.Component => Text(frame.ComponentId),
                 _ => ""
             })));
-        }
     }
 
     private sealed class NullJsRuntime : IJSRuntime

@@ -79,7 +79,7 @@ public class PollingWorker : BackgroundService
         }
     }
 
-    private async Task PollAndEvaluateAsync(CancellationToken ct)
+    internal async Task PollAndEvaluateAsync(CancellationToken ct)
     {
         var identity = DeyeRefreshIdentity.Capture(_deyeOptions.CurrentValue);
         var data = await _inverterRefresh.RefreshAsync(ct);

@@ -13,6 +13,13 @@ public class DeviceStatusSnapshot
 
     public event Action? OnDataUpdated;
 
+    public void Clear()
+    {
+        _current = null;
+        _lastUpdated = null;
+        OnDataUpdated?.Invoke();
+    }
+
     public void Update(IReadOnlyList<DevicePowerInfo> devices)
     {
         _current = devices;

@@ -10,12 +10,12 @@
         <div class="sales-heading">
             <div>
                 @if (Overview) { <h2 id="sales-title">Electricity sales</h2> }
-                else { <h1 id="sales-title">Electricity sales</h1> }
+                else { <h1 id="sales-title">@(Detailed ? "Sales details" : "Electricity sales")</h1> }
                 <span class="sales-source" title="Deye readings estimated under the contract terms. The supplier settles using the OSD billing meter.">Deye estimate</span>
             </div>
             <div class="sales-heading-actions">
-                @if (Overview) { <a href="/sales" class="sales-details-link">View details</a> }
-                <button class="sales-refresh" type="button" @onclick="LoadAsync" disabled="@_loading" aria-label="Refresh sales" title="Refresh">↻</button>
+                <button class="sales-refresh" type="button" @onclick="RefreshAsync" disabled="@_loading" aria-label="Refresh sales" title="Refresh">Refresh</button>
+                @if (!Detailed) { <a href="@DetailsUrl" class="sales-details-link" aria-label="Electricity sales details">Details</a> }
             </div>
         </div>
         @if (!Overview)
@@ -67,6 +67,8 @@
             <span data-testid="sales-period" aria-live="polite">@PeriodCaption(Result?.Request ?? _selection)</span>
             <span>@TimeZoneId</span>
         </div>
+        @if (!Detailed)
+        {
         <div class="sales-totals">
             <div class="sales-total">
                 <span class="sales-total-label">@(Overview ? OverviewExportLabel : "Exported to grid")</span>
@@ -84,6 +86,7 @@
                 </div>
             }
         </div>
+        }
         @if (_loading)
         {
             <p class="sales-status" role="status">@(Result is null ? "Loading…" : "Refreshing…")</p>
@@ -91,7 +94,7 @@
         @if (_error is not null)
         {
             <p class="sales-message" role="alert">@_error</p>
-            <button class="sales-retry" type="button" @onclick="LoadAsync">Retry</button>
+            <button class="sales-retry" type="button" @onclick="RefreshAsync">Retry</button>
         }
         @if (Result is { } result)
         {
@@ -205,6 +208,26 @@
                     }
                 </div>
             }
+            @if (Detailed)
+            {
+        <div class="sales-totals">
+            <div class="sales-total">
+                <span class="sales-total-label">@(Overview ? OverviewExportLabel : "Exported to grid")</span>
+                <strong data-testid="sales-export">@Number(HasElapsedHours ? Result?.ExportKwh : null)<small>kWh</small></strong>
+            </div>
+            <div class="sales-total">
+                <span class="sales-total-label">Energy value</span>
+                <strong data-testid="sales-value">@Number(HasElapsedHours ? Result?.EnergyValuePln : null)<small>PLN</small></strong>
+            </div>
+            @if (!Overview)
+            {
+                <div class="sales-total">
+                    <span class="sales-total-label" title="Estimated monthly deposit credit with the 1.23 multiplier. This is not a payout or the current balance.">Estimated deposit <span aria-hidden="true">ⓘ</span></span>
+                    <strong data-testid="sales-deposit">@Number(HasElapsedHours ? Result?.EstimatedDepositPln : null)<small>PLN</small></strong>
+                </div>
+            }
+        </div>
+            }
             @if (!Overview)
             {
                 <details class="sales-about">
@@ -214,6 +237,55 @@
                     <p>Energy readings come from Deye. Final supplier settlement uses the OSD billing meter. Missing readings or prices are not treated as zero. Settlement time zone: @result.TimeZoneId.</p>
                 </details>
             }
+            @if (Detailed)
+            {
+                <section class="sales-detail-section" aria-labelledby="sales-coverage-title">
+                    <h2 id="sales-coverage-title">Data coverage</h2>
+                    <dl class="sales-metadata">
+                        <div><dt>Expected completed hours</dt><dd>@result.ExpectedHours</dd></div>
+                        <div><dt>Hours with Deye readings</dt><dd>@result.ObservedHours</dd></div>
+                        <div><dt>Hours with calculated energy value</dt><dd>@result.ValuedHours</dd></div>
+                        <div><dt>Credited export after hourly netting</dt><dd>@Number(HasElapsedHours ? result.CreditedExportKwh : null) kWh</dd></div>
+                        <div><dt>Period starts</dt><dd><time datetime="@result.Start.ToString("O")">@Local(result.Start).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
+                        <div><dt>Period ends · exclusive</dt><dd><time datetime="@result.End.ToString("O")">@Local(result.End).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
+                        <div><dt>Settlement time zone</dt><dd>@result.TimeZoneId</dd></div>
+                        <div><dt>Last updated</dt><dd>@(result.UpdatedAt is { } updated ? Local(updated).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : "Unavailable")</dd></div>
+                    </dl>
+                    <p>Totals cover the available completed hours. Missing readings or prices remain unavailable.</p>
+                </section>
+                @if (result.CurrentHour is { } current)
+                {
+                    <section class="sales-detail-section" aria-labelledby="sales-current-details-title">
+                        <h2 id="sales-current-details-title">Current hour · in progress</h2>
+                        <dl class="sales-metadata">
+                            <div><dt>Measured through</dt><dd>@(current.ObservedThrough is { } through ? Local(through).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : "Awaiting readings")</dd></div>
+                            <div><dt>Observed duration</dt><dd>@((current.ObservedSeconds / 60d).ToString("N1", English)) min</dd></div>
+                            <div><dt>Provisional export</dt><dd>@Number(current.ExportKwh) kWh</dd></div>
+                            <div><dt>Provisional credited export</dt><dd>@Number(current.CreditedExportKwh) kWh</dd></div>
+                            <div><dt>Provisional value</dt><dd>@Number(current.EnergyValuePln) PLN</dd></div>
+                            <div><dt>Provisional deposit credit</dt><dd>@Number(current.EstimatedDepositPln) PLN</dd></div>
+                        </dl>
+                        <p>Measured intervals only; no projection to the end of the hour. This amount is separate from completed-hour totals.</p>
+                    </section>
+                }
+                <section class="sales-detail-section" aria-labelledby="sales-contract-title">
+                    <h2 id="sales-contract-title">Contract calculation</h2>
+                    <p>TAURON contract from @result.ContractStartDate.ToString("d MMMM yyyy", English). Energy value uses RCE prices for credited export after hourly netting. Estimated deposit credit includes the 1.23 multiplier.</p>
+                    <p>The estimate is not a bank payout or deposit balance. Final settlement uses the OSD billing meter.</p>
+                </section>
+                <div class="sales-table-container" tabindex="0" aria-label="Completed sales interval data table">
+                    <table class="sales-data-table">
+                        <caption>Completed interval breakdown · @result.TimeZoneId</caption>
+                        <thead><tr><th scope="col">Interval</th><th scope="col">Export · kWh</th><th scope="col">Credited · kWh</th><th scope="col">Value · PLN</th><th scope="col">Deposit · PLN</th><th scope="col">Observed / expected h</th><th scope="col">Valued h</th></tr></thead>
+                        <tbody>
+                            @foreach (var bucket in result.Buckets)
+                            {
+                                <tr><th scope="row">@BucketTime(bucket)</th><td>@Number(bucket.ExpectedHours > 0 ? bucket.ExportKwh : null)</td><td>@Number(bucket.ExpectedHours > 0 ? bucket.CreditedExportKwh : null)</td><td>@Number(bucket.ExpectedHours > 0 ? bucket.EnergyValuePln : null)</td><td>@Number(bucket.ExpectedHours > 0 ? bucket.EstimatedDepositPln : null)</td><td>@bucket.ObservedHours / @bucket.ExpectedHours</td><td>@bucket.ValuedHours</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         }
     </MudPaper>
 </section>
@@ -221,6 +293,11 @@
 @code {
     [Parameter] public ExportSalesResult? Data { get; set; }
     [Parameter] public bool Overview { get; set; }
+    [Parameter] public bool Detailed { get; set; }
+    [Parameter] public string ReturnTo { get; set; } = "/sales";
+    [Parameter] public ExportSalesRequest? InitialRequest { get; set; }
+    private ExportSalesRequest? _appliedInitialRequest;
+    private string DetailsUrl => EnergyDetailsNavigation.SalesUrl("/sales-details", Result?.Request ?? _selection, ReturnTo);
     private ExportSalesResult? _data;
     private ExportSalesResult? Result => Data ?? _data;
     private ExportSalesRequest _selection = new(ExportSalesPeriod.Day, default);
@@ -297,6 +374,15 @@
             _selection = data.Request;
             _from = data.Request.From ?? data.Request.Date;
             _through = data.Request.Through ?? data.Request.Date;
+            SetCustomInputs();
+        }
+        else if (InitialRequest is { } initial && initial != _appliedInitialRequest)
+        {
+            _appliedInitialRequest = initial;
+            _selection = initial;
+            _from = initial.From ?? initial.Date;
+            _through = initial.Through ?? initial.Date;
+            _followToday = initial.Period == ExportSalesPeriod.Day && initial.Date == Today;
             SetCustomInputs();
         }
     }
@@ -456,7 +542,7 @@
         catch (Exception)
         {
             if (!_disposed && version == _version) _error = preserveData && _data is not null
-                ? "Automatic refresh failed. Showing previous data; values may be out of date. Please retry."
+                ? "Refresh failed. Showing previous data; values may be out of date. Please retry."
                 : "Sales could not be loaded. Please try again.";
         }
         finally

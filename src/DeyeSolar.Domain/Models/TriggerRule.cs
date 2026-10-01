@@ -1,7 +1,8 @@
 namespace DeyeSolar.Domain.Models;
 
-public class TriggerRule
+public class TriggerRule : IInstallationOwned
 {
+    public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string EntityId { get; set; } = string.Empty;

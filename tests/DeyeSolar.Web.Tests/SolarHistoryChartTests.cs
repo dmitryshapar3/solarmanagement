@@ -131,12 +131,12 @@ public class SolarHistoryChartTests
             var root = await renderer.MountAsync(overview: true);
             clock.Now = clock.Now.AddMinutes(2);
             await renderer.ClickAsync(root, "Previous hour");
-            Assert.Contains("29 Sept 2026 · hourly average power", renderer.Text(root));
+            Assert.Matches("29 Sep(?:t)? 2026 · hourly average power", renderer.Text(root));
             Assert.DoesNotContain("Today · hourly average power", renderer.Text(root));
 
             await renderer.ClickAsync(root, "Refresh chart");
             Assert.Contains("Today · hourly average power", renderer.Text(root));
-            Assert.DoesNotContain("29 Sept 2026 · hourly average power", renderer.Text(root));
+            Assert.DoesNotMatch("29 Sep(?:t)? 2026 · hourly average power", renderer.Text(root));
         });
     }
 
@@ -382,7 +382,7 @@ public class SolarHistoryChartTests
         Assert.Contains("aria-label=\"Next hour\"", html);
         Assert.Contains("aria-live=\"polite\"", html);
         Assert.Contains("Hourly average power · kW", html);
-        Assert.Contains("29 Sept · 09:00–10:00 (UTC+02:00)", html);
+        Assert.Matches("29 Sep(?:t)?" + Regex.Escape(" · 09:00–10:00 (UTC+02:00)"), html);
         Assert.Contains("possible 1.0–2.0 kW, actual 0.8 kW", html);
         Assert.Contains("possible 3.2–5.6 kW, actual 3.7 kW", html);
         Assert.Contains("role=\"img\"", html);

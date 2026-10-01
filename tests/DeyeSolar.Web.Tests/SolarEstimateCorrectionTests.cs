@@ -145,6 +145,7 @@ public class SolarEstimateCorrectionTests
         try
         {
             await owner.Database.EnsureCreatedAsync();
+            await LegacyTestInstallation.EnsureAsync(owner);
             await scenario(factory);
         }
         finally
@@ -166,7 +167,7 @@ public class SolarEstimateCorrectionTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options);
+        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
