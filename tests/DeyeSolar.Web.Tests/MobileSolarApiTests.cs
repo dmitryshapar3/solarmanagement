@@ -64,7 +64,7 @@ public class MobileSolarApiTests
         var revoked = host.Sessions.Create("revoked-fixture-user", "revoked-fixture");
         host.Sessions.Revoke(revoked.Token);
         var state = await host.ReadStateAsync();
-        var calls = host.Factory.Calls;
+        var commands = host.Factory.DataCommands.Commands;
 
         foreach (var token in new string?[] { null, "forged-mobile-token", expired.Token, revoked.Token })
             foreach (var route in ProtectedRoutes)
@@ -73,7 +73,7 @@ public class MobileSolarApiTests
                 Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             }
 
-        Assert.Equal(calls, host.Factory.Calls);
+        Assert.Equal(commands, host.Factory.DataCommands.Commands);
         Assert.Equal(0, host.Source.Calls);
         Assert.Equal(0, host.HistoryWeather.Calls);
         Assert.Equal(0, host.Sales.Calls);
@@ -141,7 +141,7 @@ public class MobileSolarApiTests
         await using var host = await ApiHost.StartAsync();
         var token = (await host.LoginAsync()).Token;
         var before = await host.ReadStateAsync();
-        var calls = host.Factory.Calls;
+        var commands = host.Factory.DataCommands.Commands;
         foreach (var query in new[] { "", "period=0", "period=3", "period=today", "period=Today,Week",
                      "period=Today&period=Week", "period=Today&date=", "period=Today&date=2026-9-30",
                      "period=Today&date=2026-09-31", "period=Today&date=2026-09-30&date=2026-09-29",
@@ -150,7 +150,7 @@ public class MobileSolarApiTests
             using var response = await host.SendAsync("/api/solar/history?" + query, token);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
-        Assert.Equal(calls, host.Factory.Calls);
+        Assert.Equal(commands, host.Factory.DataCommands.Commands);
         Assert.Equal(0, host.HistoryWeather.Calls);
         Assert.Equal(0, host.Source.Calls);
         Assert.Equal(before, await host.ReadStateAsync());
@@ -360,8 +360,9 @@ public class MobileSolarApiTests
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public int Calls;
-        public DeyeSolarDbContext CreateDbContext() { Interlocked.Increment(ref Calls); return new(options, InstallationIds.Legacy); }
+        public SolarDataCommandCounter DataCommands { get; } = new();
+        public DeyeSolarDbContext CreateDbContext() => new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options)
+            .AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

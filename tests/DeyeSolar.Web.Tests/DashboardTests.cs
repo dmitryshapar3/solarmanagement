@@ -284,8 +284,12 @@ public class DashboardTests
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.Contains("Could not refresh Deye readings", renderer.Text(root));
             fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
-            await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.Text(root).Contains("3.30", StringComparison.Ordinal));
-            Assert.DoesNotContain("2,000", renderer.Text(root));
+            await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.TextByTestId(root, "solar-generation").Contains("3.30", StringComparison.Ordinal));
+            var solar = renderer.TextByTestId(root, "solar-generation");
+            Assert.Contains("3.30", solar);
+            Assert.DoesNotContain("4.10", solar);
+            Assert.DoesNotContain("2,000", solar);
+            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
             Assert.Contains("Importing", renderer.Text(root));
             Assert.DoesNotContain("Could not refresh Deye readings", renderer.Text(root));
             Assert.Equal(1, fixture.Refresh.Calls);
@@ -306,9 +310,11 @@ public class DashboardTests
             fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
             fixture.Rules.Release();
             var root = await mounting;
-            Assert.Contains("3.30", renderer.Text(root));
-            Assert.DoesNotContain("2,000", renderer.Text(root));
-            Assert.DoesNotContain("4.10", renderer.Text(root));
+            var solar = renderer.TextByTestId(root, "solar-generation");
+            Assert.Contains("3.30", solar);
+            Assert.DoesNotContain("2,000", solar);
+            Assert.DoesNotContain("4.10", solar);
+            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
             Assert.Equal(0, fixture.Refresh.Calls);
         });
         await fixture.AssertNoMutationsAsync();
@@ -548,14 +554,32 @@ public class DashboardTests
         public string Text(int componentId)
         {
             var frames = GetCurrentRenderTreeFrames(componentId);
-            return WebUtility.HtmlDecode(string.Join(" ", frames.Array.Take(frames.Count).Select(frame => frame.FrameType switch
+            return Text(frames.Array.Take(frames.Count));
+        }
+        public string TextByTestId(int componentId, string testId) => Assert.Single(ElementsByTestId(componentId, testId));
+        private IEnumerable<string> ElementsByTestId(int componentId, string testId)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var frame = frames.Array[i];
+                if (frame.FrameType == RenderTreeFrameType.Component)
+                    foreach (var text in ElementsByTestId(frame.ComponentId, testId)) yield return text;
+                if (frame.FrameType != RenderTreeFrameType.Element) continue;
+                var subtree = frames.Array.Skip(i + 1).Take(frame.ElementSubtreeLength - 1);
+                if (subtree.TakeWhile(child => child.FrameType == RenderTreeFrameType.Attribute)
+                    .Any(child => child.AttributeName == "data-testid" && child.AttributeValue?.ToString() == testId))
+                    yield return Text(subtree);
+            }
+        }
+        private string Text(IEnumerable<RenderTreeFrame> frames)
+            => WebUtility.HtmlDecode(string.Join(" ", frames.Select(frame => frame.FrameType switch
             {
                 RenderTreeFrameType.Text => frame.TextContent,
                 RenderTreeFrameType.Markup => frame.MarkupContent,
                 RenderTreeFrameType.Component => Text(frame.ComponentId),
                 _ => ""
             })));
-        }
     }
 
     private sealed class NullJsRuntime : IJSRuntime

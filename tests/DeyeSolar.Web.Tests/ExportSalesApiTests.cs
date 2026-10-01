@@ -209,10 +209,10 @@ public class ExportSalesApiTests
 
         foreach (var identity in new string?[] { null, "forged-synthetic-reader" })
         {
-            var contextsBefore = host.Factory.ContextsCreated;
+            var commandsBefore = host.Factory.DataCommands.Commands;
             using var response = await host.GetAsync("period=Day&date=2026-09-28&deviceSn=neighbor", identity);
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-            Assert.Equal(contextsBefore, host.Factory.ContextsCreated);
+            Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
             Assert.DoesNotContain("exportKwh", await response.Content.ReadAsStringAsync());
             await host.AssertStateUnchangedAsync(before);
         }
@@ -234,10 +234,10 @@ public class ExportSalesApiTests
         ];
         foreach (var query in invalidQueries)
         {
-            var contextsBefore = host.Factory.ContextsCreated;
+            var commandsBefore = host.Factory.DataCommands.Commands;
             using var response = await host.GetAsync(query, AuthorizedIdentity);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Equal(contextsBefore, host.Factory.ContextsCreated);
+            Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
             Assert.DoesNotContain("exportKwh", await response.Content.ReadAsStringAsync());
             await host.AssertStateUnchangedAsync(before);
         }
@@ -421,12 +421,10 @@ public class ExportSalesApiTests
 
     private sealed class CountingFactory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        private int _contextsCreated;
-        public int ContextsCreated => Volatile.Read(ref _contextsCreated);
+        public SolarDataCommandCounter DataCommands { get; } = new();
         public DeyeSolarDbContext CreateDbContext()
         {
-            Interlocked.Increment(ref _contextsCreated);
-            return new(options, InstallationIds.Legacy);
+            return new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options).AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
         }
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
