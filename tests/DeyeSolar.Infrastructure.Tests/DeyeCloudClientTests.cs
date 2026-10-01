@@ -182,6 +182,25 @@ public class DeyeCloudClientTests
     }
 
     [Theory]
+    [InlineData(-2742)]
+    [InlineData(2742)]
+    public async Task ReadCurrentDataAsync_KeepsSolarGenerationDistinctFromBatteryChargingAndDischarging(int batteryWatts)
+    {
+        var payload = LatestPayload("1700000000", "4100", "W").Replace(
+            "\"dataList\": [", $$"""
+            "dataList": [
+              { "key": "BatteryPower", "value": {{batteryWatts}}, "unit": "W" },
+            """);
+
+        var result = await ReadLatestAsync(payload);
+
+        Assert.Equal(4100, result.SolarProduction);
+        Assert.Equal(batteryWatts, result.BatteryPower);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000), result.SolarObservedAt);
+        Assert.Equal("test-device", result.SolarDeviceSn);
+    }
+
+    [Theory]
     [InlineData("null")]
     [InlineData("\"invalid\"")]
     [InlineData("0")]
