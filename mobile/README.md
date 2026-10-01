@@ -12,7 +12,7 @@ npm start
 
 The default server is `https://solar.dshapar.com`. Sign in with the existing Solar account. A custom server URL can be entered on the login screen.
 
-The Home screen combines battery SOC, battery power and grid power with a forced refresh button. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
+The Home screen combines battery SOC, solar generation and grid power with a forced refresh button. Both the live generation metric and the generation chart use PV production, independently of battery charging or discharging power. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
 
 Focused screens refresh every five minutes while the app is in the foreground. Missing values are not displayed as zero. Financial values come from the server; the app does not recalculate settlement prices or revenue.
 

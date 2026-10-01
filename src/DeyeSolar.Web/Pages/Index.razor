@@ -41,10 +41,9 @@
                             </div>
                         }
                     </div>
-                    <div class="energy-status-metric" data-testid="battery-power">
-                        <span class="energy-status-label">Battery power</span>
-                        <strong>@Power(_data?.BatteryPower)<small>W</small></strong>
-                        <span class="energy-status-direction @BatteryClass">@BatteryDirection</span>
+                    <div class="energy-status-metric" data-testid="solar-generation">
+                        <span class="energy-status-label">Solar generation</span>
+                        <strong>@Power(_data?.SolarProduction)<small>W</small></strong>
                     </div>
                     <div class="energy-status-metric" data-testid="grid-power">
                         <span class="energy-status-label">Grid</span>
@@ -177,9 +176,7 @@
     private string? _refreshError;
     private readonly CancellationTokenSource _lifetime = new();
     private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.InvariantCulture) : "—";
-    private string BatteryDirection => _data is null ? "Awaiting reading" : _data.BatteryPower < 0 ? "Charging" : _data.BatteryPower > 0 ? "Discharging" : "Idle";
     private string GridDirection => _data is null ? "Awaiting reading" : _data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle";
-    private string BatteryClass => _data?.BatteryPower < 0 ? "energy-status-positive" : _data?.BatteryPower > 0 ? "energy-status-active" : "";
     private string GridClass => _data?.GridConsumption < 0 ? "energy-status-positive" : _data?.GridConsumption > 0 ? "energy-status-active" : "";
     private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
 

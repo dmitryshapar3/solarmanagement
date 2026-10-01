@@ -89,18 +89,6 @@ export function formatTime(value?: string | null): string {
   });
 }
 
-export function batteryModeLabel(power: number): string {
-  if (power < 0) {
-    return "Charging";
-  }
-
-  if (power > 0) {
-    return "Discharging";
-  }
-
-  return "Idle";
-}
-
 export function gridModeLabel(power: number): string {
   if (power < 0) {
     return "Exporting";

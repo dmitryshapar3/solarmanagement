@@ -19,7 +19,7 @@ import {
   StatusPill
 } from "../../core/components";
 import { Device, Rule } from "../../core/api/types";
-import { batteryModeLabel, formatDateTime, formatPercent, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
+import { formatDateTime, formatPercent, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 
@@ -96,9 +96,8 @@ export function DashboardScreen() {
             {dashboard?.inverter ? <ProgressBar value={dashboard.inverter.batterySoc} color={socColor(dashboard.inverter.batterySoc)} /> : null}
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
-            <Text style={styles.metaText}>Battery power</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(Math.abs(dashboard.inverter.batteryPower)) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter ? batteryModeLabel(dashboard.inverter.batteryPower) : "Awaiting reading"}</Text>
+            <Text style={styles.metaText}>Solar generation</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(dashboard.inverter.solarProduction) : "—"}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>Grid</Text>
