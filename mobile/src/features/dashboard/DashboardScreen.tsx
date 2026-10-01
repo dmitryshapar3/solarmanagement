@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { NavigationProp, useFocusEffect, useNavigation } from "@react-navigation/native";
+import { CompositeNavigationProp, NavigationProp, useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   CirclePower,
-  PlugZap,
-  RefreshCcw
+  PlugZap
 } from "lucide-react-native";
 import {
   AppButton,
@@ -13,17 +12,18 @@ import {
   ErrorBanner,
   Header,
   LoadingState,
-  ProgressBar,
   Screen,
   SectionTitle,
   StatusPill
 } from "../../core/components";
 import { Device, Rule } from "../../core/api/types";
-import { batteryModeLabel, formatDateTime, formatPercent, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
+import { formatDateTime, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 
-import { RootTabsParamList } from "../../application/navigationTypes";
+import { RootStackParamList, RootTabsParamList } from "../../application/navigationTypes";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { TileHeader } from "../../core/TileHeader";
 import { GenerationPanel } from "../generation/GenerationScreen";
 import { SalesPanel } from "../sales/SalesScreen";
 import { useFocusedResource } from "../energy/useFocusedResource";
@@ -31,7 +31,7 @@ import { ManualOverrideCommand } from "./ManualOverrideCommand";
 
 export function DashboardScreen() {
   const { api } = useAuth();
-  const navigation = useNavigation<NavigationProp<RootTabsParamList>>();
+  const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
   const resource = useFocusedResource("dashboard", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
   const dashboard = resource.data;
@@ -82,23 +82,23 @@ export function DashboardScreen() {
       <Header title="Dashboard" subtitle="Your energy at a glance" />
       <ErrorBanner message={commandError ?? resource.error} />
       <Card style={styles.statusCard}>
-        <View style={styles.statusHeading}>
-          <View style={styles.statusTitleCopy}>
-            <Text style={styles.statusTitle}>Energy status</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter ? `DeyeCloud · last poll ${formatTime(dashboard.inverter.timestamp)}` : "Waiting for the first Deye reading"}</Text>
-          </View>
-          <AppButton label="Refresh" icon={RefreshCcw} onPress={() => void resource.refresh(true)} loading={resource.loading} variant="secondary" compact />
-        </View>
+        <TileHeader
+          title="Current generation"
+          subtitle={dashboard?.inverter ? `Latest reported Deye power · polled ${formatTime(dashboard.inverter.timestamp)}` : "Waiting for the first Deye reading"}
+          loading={resource.loading}
+          onRefresh={() => void resource.refresh(true)}
+          onDetails={() => navigation.navigate("InverterDetails")}
+        />
         <View style={styles.statusMetrics}>
           <View style={styles.statusMetric}>
-            <Text style={styles.metaText}>Battery SOC</Text>
-            <Text style={[styles.statusValue, { color: colors.primary }]}>{formatPercent(dashboard?.inverter?.batterySoc)}</Text>
-            {dashboard?.inverter ? <ProgressBar value={dashboard.inverter.batterySoc} color={socColor(dashboard.inverter.batterySoc)} /> : null}
+            <Text style={styles.metaText}>Solar power</Text>
+            <Text style={[styles.statusValue, { color: colors.primary }]}>{formatWatts(dashboard?.inverter?.solarProduction)}</Text>
+            <Text style={styles.metaText}>Latest Deye reading</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
-            <Text style={styles.metaText}>Battery power</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(Math.abs(dashboard.inverter.batteryPower)) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter ? batteryModeLabel(dashboard.inverter.batteryPower) : "Awaiting reading"}</Text>
+            <Text style={styles.metaText}>Load</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(dashboard.inverter.loadPower) : "—"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter ? "Consumption" : "Awaiting reading"}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>Grid</Text>
@@ -107,8 +107,15 @@ export function DashboardScreen() {
           </View>
         </View>
       </Card>
-      <GenerationPanel compact onDetails={() => navigation.navigate("Generation")} />
-      <SalesPanel compact onDetails={() => navigation.navigate("Sales")} />
+      <GenerationPanel compact
+        liveInverter={dashboard?.inverter}
+        inverterLoading={resource.loading}
+        inverterError={resource.error}
+        timeZoneId={dashboard?.timeZoneId}
+        onRefreshInverter={() => resource.refresh(true)}
+        onDetails={() => navigation.navigate("SolarEstimateDetails")}
+      />
+      <SalesPanel compact onDetails={(period, date) => navigation.navigate("SalesDetails", { period, date })} />
 
       <SectionTitle title="Manual Override" />
       <Card style={styles.quickActions}>
@@ -228,23 +235,8 @@ function pickDeviceId(devices: Device[], current: string | null): string | null 
   );
 }
 
-function socColor(soc: number): string {
-  if (soc >= 80) {
-    return colors.primary;
-  }
-
-  if (soc >= 40) {
-    return colors.amber;
-  }
-
-  return colors.red;
-}
-
 const styles = StyleSheet.create({
   statusCard: { gap: spacing.lg },
-  statusHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
-  statusTitleCopy: { flex: 1, gap: 4 },
-  statusTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
   statusMetrics: { flexDirection: "row", gap: spacing.sm },
   statusMetric: { flex: 1, gap: spacing.sm, minWidth: 0 },
   statusSeparated: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border, paddingLeft: spacing.sm },

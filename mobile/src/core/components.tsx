@@ -102,7 +102,8 @@ export function AppButton({
   variant = "primary",
   disabled,
   loading,
-  compact
+  compact,
+  accessibilityLabel
 }: {
   label: string;
   onPress: () => void;
@@ -111,12 +112,13 @@ export function AppButton({
   disabled?: boolean;
   loading?: boolean;
   compact?: boolean;
+  accessibilityLabel?: string;
 }) {
   const palette = buttonPalette[variant];
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       onPress={onPress}
       disabled={disabled || loading}
@@ -427,7 +429,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   buttonCompact: {
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: spacing.md
   },
   buttonPressed: {

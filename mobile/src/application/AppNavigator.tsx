@@ -7,12 +7,15 @@ import { Banknote, CreditCard, History, LayoutDashboard, MoreHorizontal, PlugZap
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "./AuthContext";
 import { appStoreSubscriptionsEnabled } from "./releaseConfig";
-import { MoreStackParamList, RootTabsParamList } from "./navigationTypes";
+import { MoreStackParamList, RootStackParamList, RootTabsParamList } from "./navigationTypes";
 import { AppButton, Card, ErrorBanner, Header, Screen } from "../core/components";
 import { openPublicLink, PUBLIC_PRIVACY_URL, PUBLIC_SUPPORT_URL, PUBLIC_TERMS_URL } from "../core/publicLinks";
 import { colors } from "../core/theme";
 import { LoginScreen } from "../features/auth/LoginScreen";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
+import { InverterDetailsScreen } from "../features/dashboard/InverterDetailsScreen";
+import { SolarEstimateDetailsScreen } from "../features/generation/SolarEstimateDetailsScreen";
+import { SalesDetailsScreen } from "../features/sales/SalesDetailsScreen";
 import { DevicesScreen } from "../features/devices/DevicesScreen";
 import { HistoryScreen } from "../features/history/HistoryScreen";
 import { RuleEditorScreen } from "../features/rules/RuleEditorScreen";
@@ -24,6 +27,7 @@ import { SubscriptionProvider } from "../features/subscription/SubscriptionConte
 import { SubscriptionGate, SubscriptionScreen } from "../features/subscription/SubscriptionScreen";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
+const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<RootTabsParamList>();
 const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 
@@ -78,9 +82,26 @@ export function AppNavigator() {
 }
 
 function SolarNavigator() {
+  return <NavigationContainer theme={navigationTheme}>
+    <RootStack.Navigator screenOptions={{
+      headerStyle: { backgroundColor: colors.background },
+      headerTintColor: colors.text,
+      headerShadowVisible: false,
+      contentStyle: { backgroundColor: colors.background },
+      headerBackButtonDisplayMode: "minimal",
+      title: ""
+    }}>
+      <RootStack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+      <RootStack.Screen name="InverterDetails" component={InverterDetailsScreen} />
+      <RootStack.Screen name="SolarEstimateDetails" component={SolarEstimateDetailsScreen} />
+      <RootStack.Screen name="SalesDetails" component={SalesDetailsScreen} />
+    </RootStack.Navigator>
+  </NavigationContainer>;
+}
+
+function MainTabs() {
   const insets = useSafeAreaInsets();
   return (
-    <NavigationContainer theme={navigationTheme}>
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
@@ -127,7 +148,6 @@ function SolarNavigator() {
           }}
         />
       </Tab.Navigator>
-    </NavigationContainer>
   );
 }
 
