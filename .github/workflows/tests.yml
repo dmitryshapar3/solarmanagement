@@ -27,10 +27,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Initialize and install the fixed StoreKit runtime
-        run: |
-          xcrun simctl list runtimes
-          xcodebuild -downloadPlatform iOS -buildVersion "$SOLAR_STOREKIT_RUNTIME_VERSION"
+      - name: Initialize the installed fixed StoreKit runtime
+        run: xcrun simctl list runtimes
 
       - name: Install Xcode project generator
         run: gem install xcodeproj --no-document
