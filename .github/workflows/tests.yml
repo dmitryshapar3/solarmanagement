@@ -41,6 +41,9 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      - name: Initialize CoreSimulator and list available runtimes
+        run: xcrun simctl list runtimes --json
+
       - name: Install the fixed StoreKit simulator runtime
         run: xcodebuild -downloadPlatform iOS -buildVersion 26.6 -architectureVariant arm64
 
