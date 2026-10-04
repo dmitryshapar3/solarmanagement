@@ -25,6 +25,9 @@ public class RuleEvaluator
                 continue;
             }
 
+            if (current.BatterySocValid == false)
+                continue;
+
             if (rule.CurrentState)
             {
                 if (ShouldTurnOff(current, rule))

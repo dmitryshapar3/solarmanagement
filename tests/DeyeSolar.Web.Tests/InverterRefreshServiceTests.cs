@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -6,6 +7,7 @@ using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
+using DeyeSolar.Web.Integrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -23,10 +25,10 @@ public class InverterRefreshServiceTests
     public async Task MissingDeviceAndPreCanceledCallsHaveNoExternalEffects()
     {
         var source = new Source(_ => throw new InvalidOperationException("Source must not run."));
-        var options = new Monitor<DeyeCloudOptions>(new());
+        var options = new Monitor<InverterConnectionOptions>(new());
         await using var service = Create(source, new RejectingFactory(), new(), options);
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RefreshAsync(default));
-        options.CurrentValue.DeviceSn = "selected";
+        options.CurrentValue.DeviceKey = "selected";
         using var cancel = new CancellationTokenSource();
         cancel.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RefreshAsync(cancel.Token));
@@ -58,12 +60,12 @@ public class InverterRefreshServiceTests
         var old = Data(-100);
         var snapshot = new InverterDataSnapshot();
         snapshot.Update(old);
-        var options = new Monitor<DeyeCloudOptions>(new() { DeviceSn = "selected", Email = "original@example.invalid" });
+        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
         await using var service = Create(source, new RejectingFactory(), snapshot, options);
         var read = service.RefreshAsync(default);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         if (changeConfiguration)
-            options.Change(new() { DeviceSn = "selected", Email = "replacement@example.invalid" });
+            options.Change(new() { DeviceKey = "selected", ConnectionIdentity = "replacement-account" });
         response.SetResult(Data(-200, changeConfiguration ? "selected" : "neighbor"));
         if (changeConfiguration) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
         else await Assert.ThrowsAsync<InvalidOperationException>(() => read);
@@ -225,11 +227,11 @@ public class InverterRefreshServiceTests
             seed.Readings.Add(new() { Timestamp = DateTime.UtcNow.AddDays(-32), GridConsumption = 9876 });
             await seed.SaveChangesAsync();
         }
-        var options = new Monitor<DeyeCloudOptions>(new() { DeviceSn = "selected" });
+        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
         var source = new Source(_ => Task.FromResult(Data(-2000)));
         await using var refresh = Create(source, database.Factory, new(), options);
         await refresh.RefreshAsync(default);
-        var socket = new Socket();
+        var socket = new Socket(database.Factory);
         using var worker = Worker(database.Factory, refresh, options, new RuleRepository(database.Factory), socket);
         await RunOneCycleAsync(worker);
 
@@ -251,6 +253,55 @@ public class InverterRefreshServiceTests
     }
 
     [SqlServerFact]
+    public async Task RegisteredOldSourceCannotTriggerPrimaryRulesAfterAnotherInstanceBecomesPrimary()
+    {
+        await using var database = await Database.CreateAsync();
+        var instanceA = Guid.NewGuid(); var instanceB = Guid.NewGuid();
+        var deviceA = Guid.NewGuid(); var deviceB = Guid.NewGuid();
+        await using (var seed = database.Factory.CreateDbContext())
+        {
+            foreach (var (instance, device, primary) in new[] { (instanceA, deviceA, true), (instanceB, deviceB, false) })
+            {
+                seed.IntegrationInstances.Add(new() { Id = instance, ProviderId = "fixture.registered", Name = "Registered inverter",
+                    PackageVersion = "1.0", PackageDigest = "fixture-package", DescriptorDigest = "fixture-ui", ConfigurationVersion = 1,
+                    State = "enabled", CreatedAt = Now, UpdatedAt = Now });
+                seed.IntegrationConfigurations.Add(new() { InstanceId = instance, Revision = 1, ValuesJson = "{}", CreatedAt = Now });
+                seed.IntegrationDeviceBindings.Add(new() { Id = device, InstanceId = instance, Kind = "inverter", Name = "Inverter",
+                    RemoteId = device.ToString("D"), IsDefault = primary, Enabled = true });
+            }
+            seed.TriggerRules.AddRange(new() { Name = "Primary rule", EntityId = "primary-socket", SocTurnOnThreshold = 50 },
+                new() { Name = "Disabled neighbour", EntityId = "neighbour-socket", Enabled = false });
+            await seed.SaveChangesAsync();
+        }
+        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = deviceA.ToString("D"),
+            ConnectionIdentity = instanceA.ToString("D"), Revision = 1, Generation = 1 });
+        var observation = Data(-2000, deviceA.ToString("D")) with { InverterId = deviceA, ConfigurationRevision = 1, RuntimeGeneration = 1 };
+        var source = new RegisteredSource(database.Factory, observation);
+        await using var refresh = Create(source, database.Factory, new(), options);
+        var rules = new AsyncChangingRules(new RuleRepository(database.Factory), async () =>
+        {
+            await using var db = database.Factory.CreateDbContext();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await db.IntegrationDeviceBindings.Where(binding => binding.IsDefault).ExecuteUpdateAsync(update => update.SetProperty(binding => binding.IsDefault, false));
+            await db.IntegrationDeviceBindings.Where(binding => binding.Id == deviceB).ExecuteUpdateAsync(update => update.SetProperty(binding => binding.IsDefault, true));
+            await transaction.CommitAsync();
+            options.Change(new() { DeviceKey = deviceB.ToString("D"), ConnectionIdentity = instanceB.ToString("D"), Revision = 1, Generation = 1 });
+        });
+        var socket = new Socket();
+        using var worker = new PollingWorker(refresh, options, socket, rules, new RuleEvaluator(), database.Factory,
+            new Monitor<PollingOptions>(new()), new AppSettingsService(database.Factory, new ConfigurationBuilder().Build()),
+            NullLogger<PollingWorker>.Instance, source, database.Store);
+        await RunOneCycleAsync(worker);
+        Assert.True(await source.IsCurrentAsync(observation, default)); // The old registered account remains valid for explicit source rules.
+        Assert.Empty(socket.TurnedOn);
+        await using var check = database.Factory.CreateDbContext();
+        Assert.All(await check.TriggerRules.ToListAsync(), rule => { Assert.False(rule.CurrentState); Assert.Null(rule.LastEvaluated); });
+        Assert.Empty(await check.RuleRunLogs.ToListAsync());
+        Assert.Equal(deviceA, (await check.Readings.SingleAsync()).InverterId);
+        Assert.Equal(deviceB, (await check.IntegrationDeviceBindings.SingleAsync(binding => binding.IsDefault)).Id);
+    }
+
+    [SqlServerFact]
     public async Task AccountChangeWhileLoadingRulesPreventsStaleRuleActionsAndBookkeeping()
     {
         await using var database = await Database.CreateAsync();
@@ -259,11 +310,11 @@ public class InverterRefreshServiceTests
             seed.TriggerRules.Add(new() { Name = "eligible", EntityId = "socket-selected", SocTurnOnThreshold = 50 });
             await seed.SaveChangesAsync();
         }
-        var options = new Monitor<DeyeCloudOptions>(new() { DeviceSn = "selected", Email = "original@example.invalid" });
+        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
         var source = new Source(_ => Task.FromResult(Data(-2000)));
         await using var refresh = Create(source, database.Factory, new(), options);
         var rules = new ChangingRules(new RuleRepository(database.Factory), () => options.Change(
-            new() { DeviceSn = "selected", Email = "replacement@example.invalid" }));
+            new() { DeviceKey = "selected", ConnectionIdentity = "replacement-account" }));
         var socket = new Socket();
         using var worker = Worker(database.Factory, refresh, options, rules, socket);
         await RunOneCycleAsync(worker);
@@ -277,17 +328,28 @@ public class InverterRefreshServiceTests
     }
 
     private static PollingWorker Worker(Factory factory, IInverterRefreshService refresh,
-        Monitor<DeyeCloudOptions> options, IRuleRepository rules, ISocketController socket) => new(
-            refresh, options, socket, rules, new DeviceStatusSnapshot(), new RuleEvaluator(), factory,
+        Monitor<InverterConnectionOptions> options, IRuleRepository rules, ISocketController socket) => new(
+            refresh, options, socket, rules, new RuleEvaluator(), factory,
             new Monitor<PollingOptions>(new()), new AppSettingsService(factory, new ConfigurationBuilder().Build()),
             NullLogger<PollingWorker>.Instance);
     private static Task RunOneCycleAsync(PollingWorker worker) => (Task)typeof(PollingWorker)
         .GetMethod("PollAndEvaluateAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .Invoke(worker, [CancellationToken.None])!;
-    private sealed class Socket : ISocketController
+    private sealed class Socket(Factory? factory = null) : ISocketController
     {
         public List<string> TurnedOn { get; } = [];
-        public Task TurnOnAsync(string entityId, CancellationToken ct) { TurnedOn.Add(entityId); return Task.CompletedTask; }
+        public async Task TurnOnAsync(string entityId, CancellationToken ct)
+        {
+            TurnedOn.Add(entityId);
+            if (factory is null) return;
+            await using var db = factory.CreateDbContext();
+            foreach (var rule in await db.TriggerRules.Where(rule => rule.EntityId == entityId).ToListAsync(ct))
+            {
+                if (!rule.CurrentState) rule.CurrentStateChangedAt = DateTime.UtcNow;
+                rule.CurrentState = true;
+            }
+            await db.SaveChangesAsync(ct);
+        }
         public Task TurnOffAsync(string entityId, CancellationToken ct) => throw new InvalidOperationException("Unexpected OFF action.");
         public Task<bool> GetStateAsync(string entityId, CancellationToken ct) => Task.FromResult(false);
     }
@@ -298,6 +360,7 @@ public class InverterRefreshServiceTests
         public Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct) => inner.GetByIdAsync(id, ct);
         public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) => inner.CreateAsync(rule, ct);
         public Task UpdateAsync(TriggerRule rule, CancellationToken ct) => inner.UpdateAsync(rule, ct);
+        public Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct) => inner.RecordEvaluationAsync(ruleId, when, ct);
         public Task DeleteAsync(int id, CancellationToken ct) => inner.DeleteAsync(id, ct);
     }
 
@@ -307,15 +370,36 @@ public class InverterRefreshServiceTests
         SolarProduction = 3100, SolarObservedAt = Now.AddMinutes(-1), SolarDeviceSn = device, BatterySoc = 90
     };
     private static TaskCompletionSource<T> Gate<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private static InverterRefreshService Create(Source source, IDbContextFactory<DeyeSolarDbContext> factory,
-        InverterDataSnapshot snapshot, Monitor<DeyeCloudOptions>? options = null) => new(source,
-            new(factory, new Clock()), snapshot, options ?? new(new() { DeviceSn = "selected" }),
+    private static InverterRefreshService Create(IInverterDataSource source, IDbContextFactory<DeyeSolarDbContext> factory,
+        InverterDataSnapshot snapshot, Monitor<InverterConnectionOptions>? options = null) => new(source,
+            new(factory, new Clock()), snapshot, options ?? new(new() { DeviceKey = "selected" }),
             new Lifetime(), NullLogger<InverterRefreshService>.Instance);
     private sealed class Source(Func<CancellationToken, Task<InverterData>> read) : IInverterDataSource
     {
         private int _calls;
         public int Calls => _calls;
         public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) { Interlocked.Increment(ref _calls); return read(ct); }
+    }
+    private sealed class RegisteredSource(Factory factory, InverterData observation) : IInverterDataSource, IRegisteredInverterDataSource
+    {
+        public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => Task.FromResult(observation);
+        public Task<InverterData> ReadDeviceAsync(InverterId id, CancellationToken ct) => throw new InvalidOperationException("Only the captured primary is requested by this fixture.");
+        public async Task<bool> IsCurrentAsync(InverterData data, CancellationToken ct)
+        {
+            await using var db = factory.CreateDbContext();
+            return await (from binding in db.IntegrationDeviceBindings join instance in db.IntegrationInstances on binding.InstanceId equals instance.Id
+                where binding.Id == data.InverterId && binding.Enabled && instance.State == "enabled"
+                    && instance.Revision == data.ConfigurationRevision && instance.Generation == data.RuntimeGeneration select binding.Id).AnyAsync(ct);
+        }
+    }
+    private sealed class AsyncChangingRules(IRuleRepository inner, Func<Task> change) : IRuleRepository
+    {
+        public async Task<List<TriggerRule>> GetAllAsync(CancellationToken ct) { var rules = await inner.GetAllAsync(ct); await change(); return rules; }
+        public Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct) => inner.GetByIdAsync(id, ct);
+        public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) => inner.CreateAsync(rule, ct);
+        public Task UpdateAsync(TriggerRule rule, CancellationToken ct) => inner.UpdateAsync(rule, ct);
+        public Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct) => inner.RecordEvaluationAsync(ruleId, when, ct);
+        public Task DeleteAsync(int id, CancellationToken ct) => inner.DeleteAsync(id, ct);
     }
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
     private sealed class Lifetime : IHostApplicationLifetime

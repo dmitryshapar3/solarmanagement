@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -7,7 +9,6 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Data;
@@ -46,6 +47,21 @@ public class MobileSolarApiTests
         Assert.Equal(0.5m, (await response.Content.ReadFromJsonAsync<ExportSalesResult>())!.EnergyValuePln);
         Assert.Equal(1, host.Sales.Calls);
         Assert.Equal(0, host.Source.Calls);
+        Assert.Equal(before, await host.ReadStateAsync());
+    }
+
+    [SqlServerFact]
+    public async Task LegacySocketMutationRequiresAnUpdatedClientWithoutHardwareOrPersistenceEffects()
+    {
+        await using var host = await ApiHost.StartAsync();
+        var session = await host.LoginAsync();
+        var before = await host.ReadStateAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/devices/state")
+        { Content = JsonContent.Create(new { entityId = "socket-neighbor", turnOn = true }) };
+        request.Headers.Authorization = new("Bearer", session.Token);
+        using var response = await host.Client.SendAsync(request);
+        Assert.Equal((HttpStatusCode)426, response.StatusCode);
+        Assert.Equal(0, host.Socket.Calls);
         Assert.Equal(before, await host.ReadStateAsync());
     }
 
@@ -297,7 +313,7 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<MobileSessionStore>();
                 builder.Services.AddScoped<MobileAuthService>();
                 builder.Services.AddSingleton<TimeProvider>(new Clock());
-                builder.Services.AddSingleton<IOptionsMonitor<DeyeCloudOptions>>(new Monitor<DeyeCloudOptions>(new() { DeviceSn = "selected" }));
+                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
                 builder.Services.AddSingleton<IOptionsMonitor<SolarEstimateOptions>>(new Monitor<SolarEstimateOptions>(new()
                 { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "selected" }));
                 var source = new Telemetry(); var weather = new HistoryWeather(); var sales = new Sales(); var socket = new Socket();
@@ -310,8 +326,6 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<DeviceStatusSnapshot>();
                 builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
                 builder.Services.AddSingleton<AppSettingsService>();
-                builder.Services.AddScoped<MobileSocketCommandService>();
-                builder.Services.AddHttpClient<DeyeCloudClient>();
                 builder.Services.AddSingleton<ExportReadingStore>();
                 builder.Services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
                 builder.Services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();

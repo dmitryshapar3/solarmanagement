@@ -1,0 +1,20 @@
+services:
+  deye-solar:
+    environment:
+      - Auth__DataProtectionKeysPath=/data/keys
+      - Integrations__KeyRingPath=/data/keys/integrations
+    volumes:
+      - integration-packages:/data/integration-packages
+      - integration-keys:/data/keys
+      - type: bind
+        source: ${SOLAR_INTEGRATION_DEPLOYMENT_DIRECTORY:?Set the signed deployment bundle directory}/integration-bundle
+        target: /app/integration-bundle
+        read_only: true
+      - type: bind
+        source: ${SOLAR_INTEGRATION_DEPLOYMENT_DIRECTORY:?Set the signed deployment bundle directory}/integration-bootstrap.json
+        target: /app/integration-bootstrap.json
+        read_only: true
+
+volumes:
+  integration-packages:
+  integration-keys:

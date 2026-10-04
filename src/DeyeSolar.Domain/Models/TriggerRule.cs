@@ -6,6 +6,7 @@ public class TriggerRule : IInstallationOwned
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string EntityId { get; set; } = string.Empty;
+    public Guid? SourceInverterId { get; set; }
     public bool Enabled { get; set; } = true;
 
     // Turn ON when battery SOC is at or above this percentage

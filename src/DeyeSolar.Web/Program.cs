@@ -1,10 +1,10 @@
+using DeyeSolar.Web.Integrations;
+using SolarManagement.Integrations.Runtime;
 using System.Security.Cryptography;
 using System.Net;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.DeyeCloud;
-using DeyeSolar.Infrastructure.Shelly;
 using DeyeSolar.Infrastructure.Solar;
 using DeyeSolar.Infrastructure.Settlement;
 using DeyeSolar.RuleEngine;
@@ -22,6 +22,12 @@ using DeyeSolar.Web.Tenancy;
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("integration-bootstrap.json", optional: true, reloadOnChange: false);
+builder.Configuration.AddEnvironmentVariables();
+// Publisher and network trust is operator configuration, captured before editable SQL settings.
+var integrationRuntimeConfiguration = new ConfigurationBuilder().AddInMemoryCollection(builder.Configuration.AsEnumerable()
+    .Where(value => value.Key.StartsWith("IntegrationRuntime:", StringComparison.OrdinalIgnoreCase)
+        || value.Key.StartsWith("Integrations:", StringComparison.OrdinalIgnoreCase))).Build();
 // Authentication provider secrets must never be sourced from user-editable SQL settings.
 var authProviders = AuthProviderOptions.Capture(builder.Configuration);
 var bootstrapAdminPassword = builder.Configuration["Auth:BootstrapAdminPassword"];
@@ -92,11 +98,18 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 // Each validated installation owns credentials, snapshots, caches and background work.
+builder.Services.Configure<IntegrationRuntimeOptions>(integrationRuntimeConfiguration.GetSection(IntegrationRuntimeOptions.Section));
+builder.Services.PostConfigure<IntegrationRuntimeOptions>(options =>
+{
+    if (!Path.IsPathFullyQualified(options.PackageDirectory))
+        options.PackageDirectory = Path.Combine(builder.Environment.ContentRootPath, options.PackageDirectory);
+});
+builder.Services.AddIntegrationRuntime();
+builder.Services.AddDynamicIntegrations(integrationRuntimeConfiguration, builder.Environment.ContentRootPath);
 builder.Services.AddIntegrationManagement();
 builder.Services.AddTenantRequestServices(builder.Configuration, openMeteoApiKey);
 builder.Services.AddSingleton<MobileSessionStore>();
 builder.Services.AddScoped<MobileAuthService>();
-builder.Services.AddScoped<MobileSocketCommandService>();
 
 // Blazor + MudBlazor
 builder.Services.AddRazorPages(options =>
@@ -123,8 +136,10 @@ using (var scope = app.Services.CreateScope())
 
     // Seed settings
     var settingsService = new AppSettingsService(dbFactory, builder.Configuration);
-    await settingsService.SeedSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-    await settingsService.SeedSectionAsync<ShellyOptions>(ShellyOptions.Section);
+    await scope.ServiceProvider.GetRequiredService<IntegrationPackageBootstrap>().EnsureInstalledAsync(CancellationToken.None);
+    var integrationMigration = scope.ServiceProvider.GetRequiredService<LegacyIntegrationBootstrap>();
+    if (!await integrationMigration.RunAsync(dbFactory, builder.Configuration, CancellationToken.None))
+        app.Logger.LogWarning("Legacy connections await trusted provider packages. Existing credentials have been preserved for import.");
     await settingsService.SeedSectionAsync<PollingOptions>(PollingOptions.Section);
     await settingsService.SeedSectionAsync<DisplayOptions>(DisplayOptions.Section);
 
@@ -178,6 +193,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<InstallationBindingMiddleware>();
 app.MapMobileApi();
+app.MapDynamicIntegrations();
 app.MapAccountIdentityApi();
 app.MapGoogleIdentity();
 app.MapExportSalesApi();

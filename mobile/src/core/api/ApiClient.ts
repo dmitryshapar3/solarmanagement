@@ -37,6 +37,7 @@ export class ApiClient {
   private token?: string | null;
   private revision = 0;
   private readonly requests = new Set<AbortController>();
+  private readonly sessionObservers = new Set<() => void>();
   private readonly onUnauthorized?: () => void;
   private readonly transport: ApiTransport;
 
@@ -59,15 +60,26 @@ export class ApiClient {
     this.revision++;
     this.token = token;
     for (const request of this.requests) request.abort();
+    for (const observer of this.sessionObservers) {
+      try { observer(); }
+      catch { /* A view observer cannot interrupt a session reset. */ }
+    }
   }
+
+  onSessionChange(observer: () => void): () => void {
+    this.sessionObservers.add(observer);
+    return () => { this.sessionObservers.delete(observer); };
+  }
+
+  get sessionEpoch(): number { return this.revision; }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
       throw new Error("API requests must use a relative server path.");
     }
     const timeoutMs = options.timeoutMs ?? 15000;
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) {
-      throw new Error("The request timeout must be between 1 and 60000 milliseconds.");
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 330000) {
+      throw new Error("The request timeout must be between 1 and 330000 milliseconds.");
     }
     const revision = this.revision;
     const token = this.token;

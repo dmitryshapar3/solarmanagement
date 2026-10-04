@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeyeSolar.Infrastructure\DeyeSolar.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\integrations\SolarManagement.Providers.DeyeCloud\SolarManagement.Providers.DeyeCloud.csproj" />
+    <ProjectReference Include="..\..\integrations\SolarManagement.Providers.ShellyCloud\SolarManagement.Providers.ShellyCloud.csproj" />
   </ItemGroup>
 
   <ItemGroup>

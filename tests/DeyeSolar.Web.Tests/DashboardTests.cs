@@ -1,3 +1,6 @@
+using SolarManagement.Inverters.Contracts;
+using SolarManagement.SmartSockets.Contracts;
+using Watts = SolarManagement.Inverters.Contracts.Watts;
 using System.Net;
 using System.Text.RegularExpressions;
 using DeyeSolar.Domain.Interfaces;
@@ -40,7 +43,7 @@ public class DashboardTests
         var services = ComponentServices();
         services.AddSingleton<InverterDataSnapshot>();
         services.AddOptions<SolarEstimateOptions>();
-        services.Configure<DeyeCloudOptions>(options => options.DeviceSn = "test-device");
+        services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
         services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
         services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
         services.AddSingleton<SolarEstimateService>();
@@ -54,7 +57,7 @@ public class DashboardTests
         Assert.Single(Regex.Matches(html, "data-testid=\"solar-possible\""));
         Assert.Single(Regex.Matches(html, "data-testid=\"solar-actual\""));
         Assert.Contains("Possible", html);
-        Assert.Contains("Latest Deye generation", html);
+        Assert.Contains("Latest inverter generation", html);
         Assert.Contains("aria-label=\"Chart period\"", html);
         Assert.Contains("aria-label=\"Day navigation\"", html);
         Assert.Contains("aria-label=\"Previous day\"", html);
@@ -126,6 +129,47 @@ public class DashboardTests
             await fixture.AssertNoMutationsAsync();
         }
     }
+
+    [SqlServerFact]
+    public async Task DashboardDistinguishesUnavailableGridAndSolarFromGoodZeroAndLegacyZeroWithoutMutations()
+    {
+        foreach (var quality in new[] { MeasurementQuality.Missing, MeasurementQuality.Invalid, MeasurementQuality.Stale, MeasurementQuality.Good })
+        {
+            var zero = Reading(grid: 0, solar: 0) with { Telemetry = ZeroFlows(quality) };
+            await using var fixture = await Fixture.CreateAsync(zero);
+            var html = await RenderAsync<DashboardHost>(fixture.Services);
+            var grid = Regex.Match(html, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
+            var solar = Regex.Match(html, "data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?</div>").Value;
+            if (quality == MeasurementQuality.Good)
+            {
+                Assert.Contains("Idle", grid);
+                Assert.Matches(">0<small[^>]*>W", grid);
+                Assert.Matches(">0[.]00<small[^>]*>kW", solar);
+            }
+            else
+            {
+                Assert.DoesNotContain("Idle", grid);
+                Assert.DoesNotContain("energy-status-positive", grid);
+                Assert.DoesNotContain("energy-status-active", grid);
+                Assert.Matches(">—<small[^>]*>W", grid);
+                Assert.Matches(">—<small[^>]*>kW", solar);
+                Assert.Contains("Grid measurement unavailable", grid);
+            }
+            await fixture.AssertNoMutationsAsync();
+        }
+        await using var legacy = await Fixture.CreateAsync(Reading(grid: 0, solar: 0));
+        var historical = await RenderAsync<DashboardHost>(legacy.Services);
+        var legacyGrid = Regex.Match(historical, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
+        Assert.Contains("Idle", legacyGrid);
+        Assert.Matches(">0<small[^>]*>W", legacyGrid);
+        await legacy.AssertNoMutationsAsync();
+    }
+
+    private static IInverterTelemetry ZeroFlows(MeasurementQuality quality) => new InverterTelemetry(new(Guid.NewGuid()), Timestamp,
+        new(new Percent(87), Timestamp, MeasurementQuality.Good), new(new Watts(-2400), Timestamp, MeasurementQuality.Good),
+        new(new Celsius(24), Timestamp, MeasurementQuality.Good), new(new Volts(51.5), Timestamp, MeasurementQuality.Good),
+        new(new Amperes(4.2), Timestamp, MeasurementQuality.Good), new(new Watts(0), Timestamp, quality), new(new Watts(0), Timestamp, quality),
+        new(new Watts(900), Timestamp, MeasurementQuality.Good), SolarManagement.Inverters.Contracts.SolarPowerBasis.PvDc);
 
     [SqlServerFact]
     public async Task UnifiedStatusPrecedesTheTwoChartsAndPreservesQuickActionsAndRules()
@@ -208,7 +252,7 @@ public class DashboardTests
             var root = await renderer.MountAsync();
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
             Assert.Same(original, fixture.Snapshot.Current);
-            Assert.Contains("Could not refresh Deye readings. Showing the last successful reading", renderer.Text(root));
+            Assert.Contains("Could not refresh inverter readings. Showing the last successful reading", renderer.Text(root));
             Assert.Contains("4.10", renderer.Text(root));
             Assert.False(renderer.RefreshButton(root).Disabled);
             fixture.Refresh.Next = Reading(0, 0, 0, 0) with { Timestamp = Timestamp.AddMinutes(5) };
@@ -232,16 +276,16 @@ public class DashboardTests
         await renderer.Dispatcher.InvokeAsync(async () =>
         {
             var root = await renderer.MountAsync();
-            Assert.Contains("Waiting for the first Deye reading", renderer.Text(root));
+            Assert.Contains("Waiting for the first inverter reading", renderer.Text(root));
             Assert.Contains("dashboard-generation", renderer.Attributes(root, "data-testid"));
             Assert.Contains("dashboard-sales", renderer.Attributes(root, "data-testid"));
             Assert.Contains("—", renderer.Text(root));
             Assert.DoesNotContain("Idle", renderer.Text(root));
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.Contains("Could not fetch Deye readings. Please try again.", renderer.Text(root));
+            Assert.Contains("Could not fetch inverter readings. Please try again.", renderer.Text(root));
             fixture.Refresh.Next = Reading();
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.DoesNotContain("Waiting for the first Deye reading", renderer.Text(root));
+            Assert.DoesNotContain("Waiting for the first inverter reading", renderer.Text(root));
             Assert.Contains("Solar generation", renderer.Text(root));
             Assert.Contains("4.10", renderer.Text(root));
             Assert.Contains("Quick Actions", renderer.Text(root));
@@ -282,7 +326,7 @@ public class DashboardTests
             var root = await renderer.MountAsync();
             fixture.Refresh.FailNext = true;
             await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.Contains("Could not refresh Deye readings", renderer.Text(root));
+            Assert.Contains("Could not refresh inverter readings", renderer.Text(root));
             fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
             await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.TextByTestId(root, "solar-generation").Contains("3.30", StringComparison.Ordinal));
             var solar = renderer.TextByTestId(root, "solar-generation");
@@ -291,7 +335,7 @@ public class DashboardTests
             Assert.DoesNotContain("2,000", solar);
             Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
             Assert.Contains("Importing", renderer.Text(root));
-            Assert.DoesNotContain("Could not refresh Deye readings", renderer.Text(root));
+            Assert.DoesNotContain("Could not refresh inverter readings", renderer.Text(root));
             Assert.Equal(1, fixture.Refresh.Calls);
         });
         await fixture.AssertNoMutationsAsync();
@@ -362,12 +406,15 @@ public class DashboardTests
             services.AddSingleton<IInverterRefreshService>(refresh);
             services.AddSingleton<IRuleRepository>(rules);
             services.AddSingleton<ISocketController>(sockets);
+            services.AddSingleton<ISocketInventoryService>(sockets);
+            services.AddSingleton<ISmartSocketCatalog>(sockets);
+            services.AddSingleton<ISocketCommandTracker>(sockets);
             services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
             services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
             services.AddSingleton<AppSettingsService>();
             services.AddSingleton<ISolarHistoryService, HistoryService>();
             services.AddSingleton<IExportSalesService, SalesService>();
-            services.Configure<DeyeCloudOptions>(options => options.DeviceSn = "test-device");
+            services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
             services.AddOptions<SolarEstimateOptions>();
             services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
             services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
@@ -413,7 +460,7 @@ public class DashboardTests
         {
             Calls++;
             LastToken = ct;
-            if (FailNext) { FailNext = false; throw new InvalidOperationException("Synthetic Deye failure."); }
+            if (FailNext) { FailNext = false; throw new InvalidOperationException("Synthetic inverter failure."); }
             if (Hold)
             {
                 _pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -450,15 +497,23 @@ public class DashboardTests
         public Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct) => Task.FromResult<TriggerRule?>(null);
         public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.FromResult(rule); }
         public Task UpdateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
+        public Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
         public Task DeleteAsync(int id, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
     }
 
-    private sealed class SocketController : ISocketController
+    private sealed class SocketController : ISocketController, ISocketInventoryService, ISmartSocketCatalog, ISocketCommandTracker
     {
         public int Mutations { get; private set; }
         public Task TurnOnAsync(string id, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
         public Task TurnOffAsync(string id, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
         public Task<bool> GetStateAsync(string id, CancellationToken ct) => Task.FromResult(false);
+        public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<DevicePowerInfo>>([]);
+        public Task<IReadOnlyList<DevicePowerInfo>> RefreshDevicesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<DevicePowerInfo>>([]);
+        public Task<SocketInventorySnapshot> ReadInventoryAsync(bool forceRefresh, CancellationToken ct) => Task.FromResult(new SocketInventorySnapshot([], [], Timestamp));
+        public Task<ISmartSocket> GetAsync(SocketId id, CancellationToken ct) => throw new InvalidOperationException("Dashboard rendering must not obtain a command handle.");
+        public Task<SocketCommandResult> ReadResultAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct) => throw new InvalidOperationException("Dashboard rendering must not reconcile commands.");
+        public Task<IReadOnlyList<SocketCommandReceipt>> ListUnresolvedAsync(SocketId deviceId, CancellationToken ct) => Task.FromResult<IReadOnlyList<SocketCommandReceipt>>([]);
+        public Task<SocketCommandReceipt> ReleaseAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct) => throw new InvalidOperationException("Dashboard rendering must not release commands.");
     }
 
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Timestamp; }

@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -126,7 +127,7 @@ public class ExportSalesServiceTests
     {
         var fixture = new Fixture();
         fixture.Clock.Now = Start.AddHours(3).AddMinutes(20);
-        if (missingDevice) fixture.Devices.CurrentValue.DeviceSn = "";
+        if (missingDevice) fixture.Devices.CurrentValue.DeviceKey = "";
         else fixture.Readings.FailReadOnCall = 1;
 
         var result = await fixture.Service.ReadAsync(Day, default);
@@ -135,8 +136,8 @@ public class ExportSalesServiceTests
         Assert.Null(result.ExportKwh);
         Assert.Null(result.EnergyValuePln);
         Assert.True(result.IsPartial);
-        Assert.Equal(missingDevice ? "Select a Deye inverter in Settings."
-            : "Deye history is unavailable. Refresh the page to try again.", result.DataError);
+        Assert.Equal(missingDevice ? "Select an inverter in Settings."
+            : "Inverter history is unavailable. Refresh the page to try again.", result.DataError);
         Assert.Empty(fixture.History.Calls);
         Assert.Empty(fixture.Prices.Calls);
         Assert.Empty(fixture.PriceStore.Saves);
@@ -172,7 +173,7 @@ public class ExportSalesServiceTests
         Assert.Equal((1, 0, 0), (failed.ExpectedHours, failed.ObservedHours, failed.ValuedHours));
         Assert.Null(failed.ExportKwh);
         Assert.Null(failed.EnergyValuePln);
-        Assert.Equal("Some Deye history is unavailable. Totals include only complete hours with data.", failed.DataError);
+        Assert.Equal("Some Inverter history is unavailable. Totals include only complete hours with data.", failed.DataError);
         Assert.Empty(fixture.Readings.Rows);
         Assert.Empty(fixture.Readings.Writes);
         Assert.Empty(fixture.Prices.Calls);
@@ -362,7 +363,7 @@ public class ExportSalesServiceTests
         {
             switch (change)
             {
-                case "device": fixture.Devices.CurrentValue.DeviceSn = "replacement"; break;
+                case "device": fixture.Devices.CurrentValue.DeviceKey = "replacement"; break;
                 case "contract": fixture.Options.CurrentValue.ContractStartDate = new DateOnly(2026, 9, 29); break;
                 case "timezone": fixture.Options.CurrentValue.TimeZoneId = "UTC"; break;
                 default: fixture.Options.CurrentValue.PayNegativePrices = true; break;
@@ -388,7 +389,7 @@ public class ExportSalesServiceTests
         fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
         fixture.Prices.Read = (_, _, _) =>
         {
-            fixture.Devices.CurrentValue.DeviceSn = "replacement";
+            fixture.Devices.CurrentValue.DeviceKey = "replacement";
             return Task.FromResult<IReadOnlyList<ExportPriceInterval>>(PriceHour(Start, 500m));
         };
 
@@ -609,7 +610,7 @@ public class ExportSalesServiceTests
     {
         var fixture = new Fixture();
         fixture.Clock.Now = Start.AddMinutes(20);
-        if (failure == "device") fixture.Devices.CurrentValue.DeviceSn = "";
+        if (failure == "device") fixture.Devices.CurrentValue.DeviceKey = "";
         if (failure == "storage") fixture.Readings.FailReadOnCall = 1;
         if (failure == "history") fixture.History.Fail = true;
         if (failure == "gap") fixture.Readings.Rows["selected"] = [new(Start, -1000), new(Start.AddMinutes(15), -1000)];
@@ -705,7 +706,7 @@ public class ExportSalesServiceTests
         cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
         Assert.Single(fixture.Readings.Reads);
-        fixture.Devices.CurrentValue.DeviceSn = "replacement";
+        fixture.Devices.CurrentValue.DeviceKey = "replacement";
         var samples = Enumerable.Range(0, 4).Select(index => new ExportGridSample(Start.AddMinutes(index * 5), -1000)).ToArray();
         release.SetResult(samples);
 
@@ -732,7 +733,7 @@ public class ExportSalesServiceTests
     {
         public Clock Clock { get; } = new();
         public Monitor<SolarSalesOptions> Options { get; } = new(new());
-        public Monitor<DeyeCloudOptions> Devices { get; } = new(new() { DeviceSn = "selected" });
+        public Monitor<InverterConnectionOptions> Devices { get; } = new(new() { DeviceKey = "selected" });
         public ReadingStore Readings { get; } = new();
         public HistorySource History { get; } = new();
         public PriceStore PriceStore { get; } = new();

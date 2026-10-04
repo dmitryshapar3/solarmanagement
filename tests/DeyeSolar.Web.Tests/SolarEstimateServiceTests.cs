@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -32,11 +34,11 @@ public class SolarEstimateServiceTests
             return Task.FromResult(Result ?? new(now.AddMinutes(-20), 800, 400, 20, 2, now.AddMinutes(-20), 0.1));
         }
     }
-    private sealed class DeyeMonitor : IOptionsMonitor<DeyeCloudOptions>
+    private sealed class DeyeMonitor : IOptionsMonitor<InverterConnectionOptions>
     {
-        public DeyeCloudOptions CurrentValue { get; } = new() { DeviceSn = "test-device" };
-        public DeyeCloudOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<DeyeCloudOptions, string?> listener) => null;
+        public InverterConnectionOptions CurrentValue { get; } = new() { DeviceKey = "test-device" };
+        public InverterConnectionOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<InverterConnectionOptions, string?> listener) => null;
     }
     private sealed class Store : ISolarEstimateStore
     {
@@ -170,7 +172,7 @@ public class SolarEstimateServiceTests
     public async Task ChangedDeviceRequiresItsOwnDcConfirmation()
     {
         var clock = new Clock(); var monitor = new Monitor(); var device = new DeyeMonitor(); var source = new Source(); var store = new Store();
-        device.CurrentValue.DeviceSn = "other-device";
+        device.CurrentValue.DeviceKey = "other-device";
         var service = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, device);
         await service.UpdateAsync(default);
         var estimate = service.Current.Estimate!;

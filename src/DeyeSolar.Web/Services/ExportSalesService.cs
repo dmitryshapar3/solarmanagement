@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -8,7 +9,7 @@ namespace DeyeSolar.Web.Services;
 
 public sealed class ExportSalesService(IExportReadingStore readings, IExportGridHistorySource history,
     IExportPriceStore priceStore, IExportPriceSource prices, IOptionsMonitor<SolarSalesOptions> options,
-    IOptionsMonitor<DeyeCloudOptions> devices, TimeProvider clock, ILogger<ExportSalesService> logger) : IExportSalesService
+    IOptionsMonitor<InverterConnectionOptions> devices, TimeProvider clock, ILogger<ExportSalesService> logger) : IExportSalesService
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<(string Device, DateTimeOffset Start), DateTimeOffset> _historyAttempts = new();
@@ -19,7 +20,9 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
         var now = clock.GetUtcNow();
         var config = options.CurrentValue;
         var snapshot = (config.ContractStartDate, config.TimeZoneId, config.PayNegativePrices);
-        var device = devices.CurrentValue.DeviceSn;
+        if (history is IInverterSelectionRefresher selection) await selection.RefreshSelectionAsync(ct);
+        var sourceIdentity = InverterRefreshIdentity.Capture(devices.CurrentValue);
+        var device = devices.CurrentValue.DeviceKey;
         var range = ExportSalesRange.Create(request, config, now);
         var utc = now.UtcDateTime;
         var currentStart = new DateTimeOffset(utc.Year, utc.Month, utc.Day, utc.Hour, 0, 0, TimeSpan.Zero);
@@ -49,10 +52,10 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
                 total.ExpectedHours, total.ObservedHours, total.ValuedHours, dataError, priceError,
                 current ?? Current([], []), now);
         }
-        bool Changed() => device != devices.CurrentValue.DeviceSn || snapshot !=
+        bool Changed() => !sourceIdentity.Matches(devices.CurrentValue) || snapshot !=
             (options.CurrentValue.ContractStartDate, options.CurrentValue.TimeZoneId, options.CurrentValue.PayNegativePrices);
         if (range.DataEnd <= range.DataStart && !includesCurrent) return Result([]);
-        if (string.IsNullOrWhiteSpace(device)) return Result([], "Select a Deye inverter in Settings.");
+        if (string.IsNullOrWhiteSpace(device)) return Result([], "Select an inverter in Settings.");
         var from = range.DataStart.AddMinutes(-10);
         var through = includesCurrent ? now : range.DataEnd.AddMinutes(10) < now ? range.DataEnd.AddMinutes(10) : now;
         // SQL uses an exclusive end; admit an observation exactly at the captured time, never a future one.
@@ -67,7 +70,7 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning("Sales readings unavailable ({ErrorType})", ex.GetType().Name);
-                return Result([], "Deye history is unavailable. Refresh the page to try again.");
+                return Result([], "Inverter history is unavailable. Refresh the page to try again.");
             }
             var missing = Calculate(range.DataStart, range.DataEnd, samples, [], config.PayNegativePrices)
                 .Where(hour => !hour.ExportKwh.HasValue).Select(hour => hour.Start).ToList();
@@ -112,9 +115,9 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    logger.LogWarning("Deye sales backfill unavailable ({ErrorType})", ex.GetType().Name);
+                    logger.LogWarning("Inverter sales backfill unavailable ({ErrorType})", ex.GetType().Name);
                     _historyAttempts[key] = now.AddMinutes(2);
-                    dataError = "Some Deye history is unavailable. Totals include only complete hours with data.";
+                    dataError = "Some Inverter history is unavailable. Totals include only complete hours with data.";
                 }
             }
             if (imported)

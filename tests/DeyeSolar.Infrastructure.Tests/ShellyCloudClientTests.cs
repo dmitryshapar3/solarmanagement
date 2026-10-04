@@ -114,6 +114,48 @@ public class ShellyCloudClientTests
         Assert.Equal(11, device.CurrentPowerW);
     }
 
+    [Fact]
+    public async Task NormalizedInventoryKeepsChannelsIndependentAndDoesNotInventMissingState()
+    {
+        var client = CreateClient(new QueueHttpMessageHandler(_ => Task.FromResult(JsonResponse("""
+            {"isok":true,"data":{"devices_status":{
+              "shared":{"online":true,"switch:0":{"output":true,"apower":42},"switch:1":{"output":false,"apower":0}},
+              "unknown":{"code":"SPSW","switch:0":{}}
+            }}}
+            """))));
+        var devices = await client.GetNormalizedInventoryAsync(default);
+        Assert.Equal(3, devices.Count);
+        var first = Assert.Single(devices.Where(device => device.RemoteId == "shared" && device.Channel == "0"));
+        var second = Assert.Single(devices.Where(device => device.RemoteId == "shared" && device.Channel == "1"));
+        Assert.True(first.IsOn);
+        Assert.False(second.IsOn);
+        Assert.Equal(42, first.CurrentPowerWatts);
+        Assert.Equal(0, second.CurrentPowerWatts);
+        var unknown = Assert.Single(devices.Where(device => device.RemoteId == "unknown"));
+        Assert.Null(unknown.IsOn);
+        Assert.Null(unknown.Online);
+        Assert.Null(unknown.CurrentPowerWatts);
+    }
+
+    [Fact]
+    public async Task ChannelCommandTargetsOnlyRequestedRelayAndRejectsInvalidChannelBeforeHttp()
+    {
+        string? captured = null;
+        var calls = 0;
+        var client = CreateClient(new QueueHttpMessageHandler(async request =>
+        {
+            calls++;
+            captured = await request.Content!.ReadAsStringAsync();
+            return JsonResponse("{}");
+        }));
+        await client.SetChannelStateAsync("shared", 1, true, default);
+        using var body = JsonDocument.Parse(captured!);
+        Assert.Equal("shared", body.RootElement.GetProperty("id").GetString());
+        Assert.Equal(1, body.RootElement.GetProperty("channel").GetInt32());
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.SetChannelStateAsync("neighbor", 64, true, default));
+        Assert.Equal(1, calls);
+    }
+
     private static ShellyCloudClient CreateClient(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);

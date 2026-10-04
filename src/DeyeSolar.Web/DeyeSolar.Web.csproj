@@ -10,6 +10,7 @@
     <ProjectReference Include="..\DeyeSolar.Domain\DeyeSolar.Domain.csproj" />
     <ProjectReference Include="..\DeyeSolar.Infrastructure\DeyeSolar.Infrastructure.csproj" />
     <ProjectReference Include="..\DeyeSolar.RuleEngine\DeyeSolar.RuleEngine.csproj" />
+    <ProjectReference Include="..\SolarManagement.Integrations.Runtime\SolarManagement.Integrations.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

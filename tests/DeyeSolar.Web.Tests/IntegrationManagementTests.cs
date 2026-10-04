@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -29,34 +30,15 @@ namespace DeyeSolar.Web.Tests;
 
 public class IntegrationManagementTests
 {
-    private static readonly DeyeCloudSettingsDto Deye = new("https://eu1-developer.deyecloud.com/v1.0", "fixture-app", "private-app-secret", "fictional@example.invalid", "private-password", 0, "");
-    private static readonly ShellySettingsDto Shelly = new("https://shelly-1-eu.shelly.cloud", "private-cloud-key", "", 1100);
-
     [Theory]
-    [InlineData("https://evil.example/v1.0")]
-    [InlineData("http://eu1-developer.deyecloud.com/v1.0")]
-    [InlineData("https://eu1-developer.deyecloud.com.evil.example/v1.0")]
-    [InlineData("https://eu1-developer.deyecloud.com:444/v1.0")]
-    [InlineData("https://user@eu1-developer.deyecloud.com/v1.0")]
-    [InlineData("https://eu1-developer.deyecloud.com/v1.0?token=fixture")]
-    public async Task UntrustedDeyeAddressIsRejectedBeforeSendingCredentials(string url)
+    [InlineData("deye")]
+    [InlineData("shelly")]
+    public async Task LegacyDeviceProbeRoutesCannotInvokeAProviderOrLoadCredentials(string provider)
     {
         var fixture = Probe();
-        var result = await fixture.Service.TestAsync("deye", new(Deye with { BaseUrl = url }), CancellationToken.None);
+        var result = await fixture.Service.TestAsync(provider, new(), CancellationToken.None);
         Assert.False(result.Success); Assert.Equal("configuration", result.Code);
-        Assert.Equal(0, fixture.Transport.Calls); Assert.Equal(0, fixture.Storage.Calls);
-    }
-
-    [Theory]
-    [InlineData("http://shelly-1-eu.shelly.cloud")]
-    [InlineData("https://shelly.cloud.evil.example")]
-    [InlineData("https://127.0.0.1")]
-    [InlineData("https://shelly-1-eu.shelly.cloud/other")]
-    public async Task UntrustedShellyAddressDoesNotReceiveAKey(string url)
-    {
-        var fixture = Probe();
-        var result = await fixture.Service.TestAsync("shelly", new(Shelly: Shelly with { ServerUri = url }), CancellationToken.None);
-        Assert.Equal("configuration", result.Code); Assert.Equal(0, fixture.Transport.Calls);
+        Assert.Equal(0, fixture.Transport.Calls);
     }
 
     [Theory]
@@ -90,31 +72,15 @@ public class IntegrationManagementTests
     public void NormalPublicProviderAddressesAreAllowed(string ip) => Assert.True(ProviderEndpointPolicy.IsPublicAddress(IPAddress.Parse(ip)));
 
     [Fact]
-    public async Task DeyeDraftOnlyAuthenticatesAndReadsStationsWithoutSavingOrReturningSecrets()
-    {
-        var fixture = Probe((request, call) => Json(request, call == 1 ? "{\"success\":true,\"accessToken\":\"private-token\"}" : "{\"success\":true,\"stationList\":[]}"));
-        var result = await fixture.Service.TestAsync("deye", new(Deye), CancellationToken.None);
-        Assert.True(result.Success); Assert.Equal(2, fixture.Transport.Calls); Assert.Equal(0, fixture.Storage.Calls);
-        Assert.Equal(["/v1.0/account/token", "/v1.0/station/listWithDevice"], fixture.Transport.Paths);
-        Assert.DoesNotContain(Deye.Password, fixture.Transport.Bodies[0]);
-        Assert.DoesNotContain("private", JsonSerializer.Serialize(result));
-    }
-
-    [Fact]
-    public async Task ShellyProbeReadsInventoryAndNeverUsesSwitchOrSettingsMutationEndpoints()
-    {
-        var fixture = Probe((request, _) => Json(request, "{\"isok\":true,\"data\":{\"devices_status\":{}}}"));
-        var result = await fixture.Service.TestAsync("shelly", new(Shelly: Shelly), CancellationToken.None);
-        Assert.True(result.Success); Assert.Equal(["/device/all_status"], fixture.Transport.Paths);
-        Assert.Equal(0, fixture.Storage.Calls); Assert.DoesNotContain(Shelly.AuthKey, JsonSerializer.Serialize(result));
-    }
-
-    [Fact]
     public async Task FailedProviderBodyAndRedirectNeverAppearInResultsOrCauseASecondRequest()
     {
-        var fixture = Probe((request, _) => new(HttpStatusCode.Redirect) { RequestMessage = request,
-            Content = new StringContent("private-password private-cloud-key"), Headers = { Location = new("https://evil.example") } });
-        var result = await fixture.Service.TestAsync("shelly", new(Shelly: Shelly), CancellationToken.None);
+        var fixture = Probe((request, _) => new(HttpStatusCode.Redirect)
+        {
+            RequestMessage = request,
+            Content = new StringContent("private-password private-cloud-key"),
+            Headers = { Location = new("https://evil.example") }
+        });
+        var result = await fixture.Service.TestAsync("openmeteo", new(), CancellationToken.None);
         Assert.False(result.Success); Assert.Equal("unavailable", result.Code); Assert.Equal(1, fixture.Transport.Calls);
         Assert.DoesNotContain("private", JsonSerializer.Serialize(result));
     }
@@ -127,7 +93,7 @@ public class IntegrationManagementTests
         Assert.True(result.Success);
         Assert.Equal("customer-api.open-meteo.com", fixture.Transport.Uris.Single().Host);
         Assert.Contains("latitude=12.5", fixture.Transport.Uris.Single().Query);
-        Assert.DoesNotContain("private", JsonSerializer.Serialize(result)); Assert.Equal(0, fixture.Storage.Calls);
+        Assert.DoesNotContain("private", JsonSerializer.Serialize(result));
     }
 
     [Fact]
@@ -166,17 +132,6 @@ public class IntegrationManagementTests
     }
 
     [Fact]
-    public async Task SocketCommandsRequireCurrentOnlineInventoryMembershipBeforeAnyHardwareCall()
-    {
-        var sockets = new Sockets(); var devices = Devices();
-        var commands = new MobileSocketCommandService(sockets, new Rules(), devices);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => commands.SetStateAsync("neighbour-device", true, CancellationToken.None));
-        devices.Update([devices.Current!.Single() with { Online = false }]);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => commands.SetStateAsync("abcdef", true, CancellationToken.None));
-        Assert.Equal(0, sockets.Calls);
-    }
-
-    [Fact]
     public void SiteConfigurationAllowsOneUnusedPanelGroupAndRejectsInvalidCoordinatesOrNoCapacity()
     {
         var site = Site();
@@ -204,17 +159,22 @@ public class IntegrationManagementTests
             await db.SaveChangesAsync();
         }
         var settings = new AppSettingsService(factory, new ConfigurationBuilder().Build());
-        var service = new SiteSettingsService(settings);
-        var wrong = Site() with { SelectedDeviceSn = "forged-inverter", SolarEstimate = Site().SolarEstimate with
-            { DeyeSolarPowerIsPvDcConfirmed = true, DeyeSolarPowerConfirmedDeviceSn = "forged-inverter" } };
+        var selected = new InverterConnectionOptions { DeviceKey = Guid.NewGuid().ToString("D") };
+        var service = new SiteSettingsService(settings, new Monitor<InverterConnectionOptions>(selected), new NoInverterSource());
+        var wrong = Site() with
+        {
+            SelectedDeviceSn = "forged-inverter",
+            SolarEstimate = Site().SolarEstimate with
+            { DeyeSolarPowerIsPvDcConfirmed = true, DeyeSolarPowerConfirmedDeviceSn = "forged-inverter" }
+        };
         await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(wrong));
-        var matching = wrong with { SolarEstimate = wrong.SolarEstimate with { DeyeSolarPowerConfirmedDeviceSn = "saved-inverter" } };
+        var matching = wrong with { SolarEstimate = wrong.SolarEstimate with { DeyeSolarPowerConfirmedDeviceSn = selected.DeviceKey } };
         await service.SaveAsync(matching);
         var loaded = await service.LoadAsync();
-        Assert.Equal("saved-inverter", loaded.SelectedDeviceSn); Assert.True(loaded.SolarEstimate.DeyeSolarPowerIsPvDcConfirmed);
-        Assert.Equal("saved-inverter", loaded.SolarEstimate.DeyeSolarPowerConfirmedDeviceSn);
+        Assert.Equal(selected.DeviceKey, loaded.SelectedDeviceSn); Assert.True(loaded.SolarEstimate.DeyeSolarPowerIsPvDcConfirmed);
+        Assert.Equal(selected.DeviceKey, loaded.SolarEstimate.DeyeSolarPowerConfirmedDeviceSn);
         Assert.DoesNotContain("server-only-secret", JsonSerializer.Serialize(loaded));
-        await settings.SaveSectionAsync("DeyeCloud", new { DeviceSn = "replacement-inverter" });
+        selected.DeviceKey = Guid.NewGuid().ToString("D");
         var changed = await service.LoadAsync(); Assert.False(changed.SolarEstimate.DeyeSolarPowerIsPvDcConfirmed);
         Assert.Equal("", changed.SolarEstimate.DeyeSolarPowerConfirmedDeviceSn);
         await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(matching));
@@ -235,7 +195,8 @@ public class IntegrationManagementTests
         builder.Services.AddAuthorization(); builder.Services.AddAntiforgery();
         var tests = new CountingTests(); builder.Services.AddSingleton<IIntegrationTestService>(tests);
         builder.Services.AddSingleton(new DeviceNameService(new Labels(), Devices()));
-        builder.Services.AddSingleton(new SiteSettingsService(new(new NeverFactory(), new ConfigurationBuilder().Build())));
+        builder.Services.AddSingleton(new SiteSettingsService(new(new NeverFactory(), new ConfigurationBuilder().Build()),
+            new Monitor<InverterConnectionOptions>(new()), new NoInverterSource()));
         await using var app = builder.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapIntegrationManagement();
         app.MapGet("/_fixture/csrf", (HttpContext context, IAntiforgery antiforgery) =>
             Results.Ok(new { requestToken = antiforgery.GetAndStoreTokens(context).RequestToken }))
@@ -263,10 +224,10 @@ public class IntegrationManagementTests
     private static SiteSettingsDto Site() => new(new(0, 0, "Fictional site", "UTC", 5, 0, 20, 0, 180, 0), new("2026-10-01", "UTC", false));
     private static DeviceStatusSnapshot Devices() { var value = new DeviceStatusSnapshot(); value.Update([new("abcdef", "Cloud socket", "Socket", true, false, 0)]); return value; }
     private static HttpResponseMessage Json(HttpRequestMessage request, string json) => new(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(json) };
-    private static (IntegrationTestService Service, Transport Transport, NeverFactory Storage) Probe(Func<HttpRequestMessage, int, HttpResponseMessage>? response = null, string? key = null)
+    private static (IntegrationTestService Service, Transport Transport) Probe(Func<HttpRequestMessage, int, HttpResponseMessage>? response = null, string? key = null)
     {
-        var storage = new NeverFactory(); var transport = new Transport(response ?? ((request, _) => Json(request, "{}")));
-        return (new(new(storage, new ConfigurationBuilder().Build()), new Clients(transport), new Monitor<SolarEstimateOptions>(new() { ApiKey = key }), TimeProvider.System, new()), transport, storage);
+        var transport = new Transport(response ?? ((request, _) => Json(request, "{}")));
+        return (new(new Clients(transport), new Monitor<SolarEstimateOptions>(new() { ApiKey = key }), TimeProvider.System, new()), transport);
     }
     private sealed class NeverFactory : IDbContextFactory<DeyeSolarDbContext> { public int Calls; public DeyeSolarDbContext CreateDbContext() { Calls++; throw new InvalidOperationException("Draft probes must not access storage."); } }
     private sealed class SiteFactory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
@@ -278,20 +239,15 @@ public class IntegrationManagementTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) { Calls++; Uris.Add(request.RequestUri!); Paths.Add(request.RequestUri!.AbsolutePath); Bodies.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct)); return response(request, Calls); }
     }
     private sealed class Monitor<T>(T value) : IOptionsMonitor<T> { public T CurrentValue => value; public T Get(string? name) => value; public IDisposable? OnChange(Action<T, string?> listener) => null; }
+    private sealed class NoInverterSource : IInverterDataSource
+    {
+        public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => throw new InvalidOperationException("No inverter reads are allowed in site settings tests.");
+    }
     private sealed class Labels : IDeviceLabelStore
     {
         public int Saves; private Dictionary<string, string> _labels = [];
         public Task<Dictionary<string, string>> LoadAsync(CancellationToken ct) => Task.FromResult(new Dictionary<string, string>(_labels));
         public Task SaveAsync(Dictionary<string, string> labels, CancellationToken ct) { Saves++; _labels = new(labels); return Task.CompletedTask; }
-    }
-    private sealed class Sockets : ISocketController { public int Calls; public Task TurnOnAsync(string id, CancellationToken ct) { Calls++; return Task.CompletedTask; } public Task TurnOffAsync(string id, CancellationToken ct) { Calls++; return Task.CompletedTask; } public Task<bool> GetStateAsync(string id, CancellationToken ct) => Task.FromResult(false); }
-    private sealed class Rules : IRuleRepository
-    {
-        public Task<List<TriggerRule>> GetAllAsync(CancellationToken ct) => Task.FromResult(new List<TriggerRule>());
-        public Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct) => Task.FromResult<TriggerRule?>(null);
-        public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) => Task.FromResult(rule);
-        public Task UpdateAsync(TriggerRule rule, CancellationToken ct) => Task.CompletedTask;
-        public Task DeleteAsync(int id, CancellationToken ct) => Task.CompletedTask;
     }
     private sealed class CountingTests : IIntegrationTestService { public int Calls; public Task<IntegrationTestResult> TestAsync(string kind, IntegrationTestRequest request, CancellationToken ct) { Calls++; return Task.FromResult(new IntegrationTestResult(kind, true, "ok", "Fictional provider verified.", DateTimeOffset.UtcNow)); } }
     private sealed class FixtureAuth(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)

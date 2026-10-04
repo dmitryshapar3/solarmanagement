@@ -15,6 +15,15 @@ export type SessionResponse = {
 };
 
 export type InverterData = {
+  inverterId?: string | null;
+  batterySocValid?: boolean | null;
+  batteryPowerValid?: boolean | null;
+  batteryTemperatureValid?: boolean | null;
+  batteryVoltageValid?: boolean | null;
+  batteryCurrentValid?: boolean | null;
+  loadPowerValid?: boolean | null;
+  gridPowerValid?: boolean | null;
+  solarPowerValid?: boolean | null;
   batterySoc: number;
   batteryTemperature: number;
   batteryVoltage: number;
@@ -76,6 +85,7 @@ export type Rule = {
   id: number;
   name: string;
   entityId: string;
+  sourceInverterId?: string | null;
   enabled: boolean;
   socTurnOnThreshold: number;
   useSeparateSocTurnOffThreshold: boolean;

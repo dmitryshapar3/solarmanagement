@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using System.Text.Json;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -175,10 +177,10 @@ public class SolarEstimateCorrectionTests
         }
     }
 
-    private sealed class Monitor(string device) : IOptionsMonitor<DeyeCloudOptions>
+    private sealed class Monitor(string device) : IOptionsMonitor<InverterConnectionOptions>
     {
-        public DeyeCloudOptions CurrentValue { get; } = new() { DeviceSn = device };
-        public DeyeCloudOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<DeyeCloudOptions, string?> listener) => null;
+        public InverterConnectionOptions CurrentValue { get; } = new() { DeviceKey = device };
+        public InverterConnectionOptions Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<InverterConnectionOptions, string?> listener) => null;
     }
 }

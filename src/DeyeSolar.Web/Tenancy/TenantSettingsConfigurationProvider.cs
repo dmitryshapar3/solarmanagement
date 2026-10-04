@@ -1,4 +1,5 @@
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Integrations;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Tenancy;
@@ -17,8 +18,17 @@ internal sealed class TenantSettingsConfigurationProvider(TenantDbContextFactory
     {
         var next = new Dictionary<string, string?>(defaults, StringComparer.OrdinalIgnoreCase);
         using var db = factory.CreateDbContext();
-        foreach (var setting in db.AppSettings.AsNoTracking().ToList())
+        var settings = db.AppSettings.AsNoTracking().ToList();
+        foreach (var setting in settings)
             if (TenantRuntimeOptions.KnownSetting(setting.Section, setting.Key)) next[$"{setting.Section}:{setting.Key}"] = setting.Value;
+        if (settings.Any(setting => setting.Section == LegacyIntegrationBootstrap.MarkerSection
+            && setting.Key == LegacyIntegrationBootstrap.MarkerKey && setting.Value == "1"))
+        {
+            // A completed cutover cannot reactivate deployment fallback credentials on reload.
+            next["DeyeCloud:AppSecret"] = "";
+            next["DeyeCloud:Password"] = "";
+            next["Shelly:AuthKey"] = "";
+        }
         Data = next;
     }
 }

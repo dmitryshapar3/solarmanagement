@@ -20,7 +20,9 @@ public static class PowerBalance
     public static PowerBalanceReading FromReading(InverterData? reading, DateTimeOffset now,
         int alignmentToleranceSeconds = 120, int maximumAgeMinutes = 10, string? expectedDeviceSn = null)
     {
-        if (reading is null || Calculate(reading.SolarProduction, reading.GridConsumption, reading.BatteryPower, reading.LoadPower) is not { } watts)
+        if (reading is null || reading.BatteryPowerValid == false || reading.LoadPowerValid == false
+            || reading.GridPowerValid == false || reading.SolarPowerValid == false
+            || Calculate(reading.SolarProduction, reading.GridConsumption, reading.BatteryPower, reading.LoadPower) is not { } watts)
             return new(null, "Required power readings are unavailable.");
         if (reading.SolarObservedAt is not { } solarAt || reading.GridObservedAt is not { } gridAt
             || string.IsNullOrWhiteSpace(reading.SolarDeviceSn) || reading.SolarDeviceSn != reading.GridDeviceSn

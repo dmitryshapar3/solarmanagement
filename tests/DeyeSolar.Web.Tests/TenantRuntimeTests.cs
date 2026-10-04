@@ -3,8 +3,11 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.DeyeCloud;
-using DeyeSolar.Infrastructure.Shelly;
+using DeyeSolar.Web.Integrations;
+using SolarManagement.Integrations.Contracts;
+using SolarManagement.Inverters.Contracts;
+using Microsoft.AspNetCore.DataProtection;
+using System.Text.Json;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
@@ -70,13 +73,20 @@ public class TenantRuntimeTests
     public async Task RealRuntimeProvidersHaveSeparateCredentialsTokensSnapshotsCachesStoresAndRuleServices()
     {
         using var builder = Builder();
-        await using var first = Runtime(builder, "first", new() { ["DeyeCloud:DeviceSn"] = "inverter-a", ["DeyeCloud:AppSecret"] = "test-a" });
-        await using var second = Runtime(builder, "second", new() { ["DeyeCloud:DeviceSn"] = "inverter-b", ["DeyeCloud:AppSecret"] = "test-b" });
-        Assert.Equal("inverter-a", first.Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
-        Assert.Equal("inverter-b", second.Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
-        Assert.Same(first.Resolve<DeyeCloudClient>(), first.Resolve<DeyeCloudClient>());
-        Assert.NotSame(first.Resolve<DeyeCloudClient>(), second.Resolve<DeyeCloudClient>());
-        Assert.NotSame(first.Resolve<ShellyCloudClient>(), second.Resolve<ShellyCloudClient>());
+        await using var first = Runtime(builder, "first");
+        await using var second = Runtime(builder, "second");
+        var firstRegistry = (FixtureIntegrationRegistry)first.Resolve<IIntegrationRegistry>();
+        var secondRegistry = (FixtureIntegrationRegistry)second.Resolve<IIntegrationRegistry>();
+        firstRegistry.PrimaryId = Guid.NewGuid();
+        secondRegistry.PrimaryId = Guid.NewGuid();
+        await first.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
+        await second.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
+        Assert.Equal(firstRegistry.PrimaryId.ToString(), first.Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
+        Assert.Equal(secondRegistry.PrimaryId.ToString(), second.Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
+        Assert.Same(first.Resolve<IInverterDataSource>(), first.Resolve<IInverterDataSource>());
+        Assert.NotSame(first.Resolve<IInverterDataSource>(), second.Resolve<IInverterDataSource>());
+        Assert.NotSame(first.Resolve<ISocketController>(), second.Resolve<ISocketController>());
+        Assert.NotSame(first.Resolve<IIntegrationRegistry>(), second.Resolve<IIntegrationRegistry>());
         Assert.NotSame(first.Resolve<RuleEvaluator>(), second.Resolve<RuleEvaluator>());
         Assert.NotSame(first.Resolve<SolarEstimateService>(), second.Resolve<SolarEstimateService>());
         Assert.Null(second.Resolve<SolarEstimateService>().Current.Estimate);
@@ -93,23 +103,26 @@ public class TenantRuntimeTests
         using var secondContext = second.Resolve<IDbContextFactory<DeyeSolarDbContext>>().CreateDbContext();
         Assert.Equal("first", firstContext.InstallationId);
         Assert.Equal("second", secondContext.InstallationId);
-        await second.RunDueWorkAsync(CancellationToken.None); // Unconfigured installations must perform no network/database work.
+        secondRegistry.PrimaryId = null;
+        await second.RunDueWorkAsync(CancellationToken.None); // An empty registry must never request provider transport.
     }
 
     [Fact]
     public async Task ConfigurationReloadClearsOnlyTheChangedInstallationsOldDeviceSnapshots()
     {
         using var builder = Builder();
-        var config = Configuration(new() { ["DeyeCloud:DeviceSn"] = "old-device" });
-        await using var first = builder.BuildRuntime(new(DatabaseOptions, "first"), config);
+        var config = Configuration();
+        var registry = new FixtureIntegrationRegistry { PrimaryId = Guid.NewGuid() };
+        await using var first = builder.BuildRuntime(new(DatabaseOptions, "first"), config, services => services.AddSingleton<IIntegrationRegistry>(registry));
         await using var second = Runtime(builder, "second");
         first.Resolve<InverterDataSnapshot>().Update(new() { SolarProduction = 1234 });
         second.Resolve<InverterDataSnapshot>().Update(new() { SolarProduction = 5678 });
-        config["DeyeCloud:DeviceSn"] = "new-device";
-        config.Reload();
+        registry.PrimaryId = Guid.NewGuid();
+        first.Resolve<IntegrationChangeNotifier>().Publish("first", registry.InstanceId);
+        await first.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
         Assert.Null(first.Resolve<InverterDataSnapshot>().Current);
         Assert.Equal(5678, second.Resolve<InverterDataSnapshot>().Current!.SolarProduction);
-        Assert.Equal("new-device", first.Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
+        Assert.Equal(registry.PrimaryId.ToString(), first.Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
     }
 
     [Fact]
@@ -151,7 +164,7 @@ public class TenantRuntimeTests
         await runtime.DisposeAsync();
         Assert.Null(inverter.Current);
         Assert.Null(devices.Current);
-        Assert.Throws<ObjectDisposedException>(() => runtime.Resolve<DeyeCloudClient>());
+        Assert.Throws<ObjectDisposedException>(() => runtime.Resolve<IInverterDataSource>());
     }
 
     [Fact]
@@ -172,14 +185,17 @@ public class TenantRuntimeTests
     public async Task DisposingAHostRequestScopeCannotDisposeTheInstallationsRefreshHistoryOrOptions()
     {
         using var builder = Builder();
-        var configuration = Configuration(new() { ["DeyeCloud:DeviceSn"] = "old-device" });
+        var configuration = Configuration();
+        var integrationRegistry = new FixtureIntegrationRegistry { PrimaryId = Guid.NewGuid() };
         var inverterSource = new UnavailableInverterSource();
         var weather = new EmptyHistoryWeather();
         await using var runtime = builder.BuildRuntime(new(DatabaseOptions, "first"), configuration, services =>
         {
             services.AddSingleton<IInverterDataSource>(inverterSource);
+            services.AddSingleton<IIntegrationRegistry>(integrationRegistry);
             services.AddSingleton<ISolarHistoryRadiationSource>(weather);
         });
+        await runtime.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
         await using var registry = new TenantRuntimeRegistry((_, _) => Task.FromResult(runtime),
             _ => Task.FromResult<IReadOnlyList<string>>(["first"]), CancellationToken.None);
         var collection = new ServiceCollection();
@@ -193,22 +209,23 @@ public class TenantRuntimeTests
         using (var request = host.CreateScope())
         {
             request.ServiceProvider.GetRequiredService<CurrentInstallation>().BindOnce("first");
-            Assert.Equal("old-device", request.ServiceProvider.GetRequiredService<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
+            Assert.Equal(integrationRegistry.PrimaryId.ToString(), request.ServiceProvider.GetRequiredService<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
             _ = request.ServiceProvider.GetRequiredService<IInverterRefreshService>();
             var history = await request.ServiceProvider.GetRequiredService<ISolarHistoryService>().ReadAsync(SolarHistoryPeriod.Today, default);
             Assert.All(history.Points, point => Assert.Null(point.Possible));
             _ = request.ServiceProvider.GetRequiredService<SolarEstimateService>();
         }
         var optionsChanged = false;
-        using var subscription = runtime.Resolve<IOptionsMonitor<DeyeCloudOptions>>().OnChange((_, _) => optionsChanged = true);
-        configuration["DeyeCloud:DeviceSn"] = "new-device";
+        using var subscription = runtime.Resolve<IOptionsMonitor<InverterConnectionOptions>>().OnChange((_, _) => optionsChanged = true);
+        integrationRegistry.PrimaryId = Guid.NewGuid();
+        await runtime.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
         configuration["SolarEstimate:Roof1Kwp"] = "5";
         configuration.Reload();
         using (var request = host.CreateScope())
         {
             request.ServiceProvider.GetRequiredService<CurrentInstallation>().BindOnce("first");
             Assert.True(optionsChanged);
-            Assert.Equal("new-device", request.ServiceProvider.GetRequiredService<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
+            Assert.Equal(integrationRegistry.PrimaryId.ToString(), request.ServiceProvider.GetRequiredService<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
             var history = await request.ServiceProvider.GetRequiredService<ISolarHistoryService>().ReadAsync(SolarHistoryPeriod.Today, default);
             Assert.NotEmpty(history.Points);
             Assert.Equal(1, weather.Calls); // Exercises the still-live history semaphore without HTTP/database calls.
@@ -218,24 +235,8 @@ public class TenantRuntimeTests
         }
     }
 
-    [Theory]
-    [InlineData("deye", "http://eu1-developer.deyecloud.com/v1.0/account/token?appId=test", false)]
-    [InlineData("deye", "https://foreign.example/v1.0/account/token?appId=test", false)]
-    [InlineData("deye", "https://eu1-developer.deyecloud.com/other", false)]
-    [InlineData("deye", "https://eu1-developer.deyecloud.com/v1.0/account/token?appId=test", true)]
-    [InlineData("shelly", "https://foreign.example/device/all_status?auth_key=test", false)]
-    [InlineData("shelly", "http://shelly-1-eu.shelly.cloud/device/all_status?auth_key=test", false)]
-    [InlineData("shelly", "https://shelly-1-eu.shelly.cloud/device/all_status?auth_key=test", true)]
-    public async Task ActualCloudRequestsRequireOfficialHttpsOriginsBeforeAnyTransport(string provider, string url, bool allowed)
-    {
-        var transport = new CountingTransport();
-        using var client = new HttpClient(new TenantProviderEndpointGuard(provider) { InnerHandler = transport });
-        if (allowed) Assert.Equal(HttpStatusCode.OK, (await client.GetAsync(url)).StatusCode);
-        else await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync(url));
-        Assert.Equal(allowed ? 1 : 0, transport.Calls);
-    }
-
-    private static TenantRuntimeFactory Builder() => new(DatabaseOptions, new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, new Clock(), new Lifetime());
+    private static TenantRuntimeFactory Builder() => new(DatabaseOptions, new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, new Clock(), new Lifetime(),
+        new TenantTestExecutor(), new(new EphemeralDataProtectionProvider()), new(NullLogger<IntegrationChangeNotifier>.Instance));
     private static IConfigurationRoot Configuration(Dictionary<string, string?>? changes = null)
     {
         var values = TenantRuntimeOptions.Defaults(Now);
@@ -243,7 +244,7 @@ public class TenantRuntimeTests
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
     private static TenantRuntime Runtime(TenantRuntimeFactory builder, string id, Dictionary<string, string?>? changes = null)
-        => builder.BuildRuntime(new(DatabaseOptions, id), Configuration(changes));
+        => builder.BuildRuntime(new(DatabaseOptions, id), Configuration(changes), services => services.AddSingleton<IIntegrationRegistry>(new FixtureIntegrationRegistry()));
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
     private sealed class Lifetime : IHostApplicationLifetime
     {
@@ -251,12 +252,6 @@ public class TenantRuntimeTests
         public CancellationToken ApplicationStopping => CancellationToken.None;
         public CancellationToken ApplicationStopped => CancellationToken.None;
         public void StopApplication() { }
-    }
-    private sealed class CountingTransport : HttpMessageHandler
-    {
-        public int Calls { get; private set; }
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-        { Calls++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }
     }
     private sealed class WaitingTransport : HttpMessageHandler
     {
@@ -276,4 +271,23 @@ public class TenantRuntimeTests
         public Task<IReadOnlyList<SolarWeatherSample>> ReadAsync(SolarEstimateOptions options, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
         { Calls++; return Task.FromResult<IReadOnlyList<SolarWeatherSample>>([]); }
     }
+    private sealed class FixtureIntegrationRegistry : IIntegrationRegistry
+    {
+        public Guid InstanceId { get; } = Guid.NewGuid();
+        public Guid? PrimaryId { get; set; }
+        public Task<IReadOnlyList<IntegrationDeviceBindingEntity>> ListBindingsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationDeviceBindingEntity>>([]);
+        public Task<IntegrationDeviceBindingEntity?> FindBindingAsync(Guid id, CancellationToken ct) => Task.FromResult<IntegrationDeviceBindingEntity?>(null);
+        public Task<IntegrationDeviceBindingEntity?> GetPrimaryInverterAsync(CancellationToken ct) => Task.FromResult(PrimaryId is { } id
+            ? new IntegrationDeviceBindingEntity { Id = id, InstanceId = InstanceId, Kind = "inverter", Enabled = true } : null);
+        public Task<IntegrationRegistrySnapshot?> GetSnapshotAsync(Guid id, CancellationToken ct) => Task.FromResult<IntegrationRegistrySnapshot?>(
+            new(new(InstanceId, "fixture", "Fixture inverter", "enabled", 1, 1, "1.0.0", "fixture-digest", "fixture-ui"), IntegrationJson.Element(new { }), "fixture-account"));
+        public Task<IntegrationSession> GetRuntimeSessionAsync(Guid id, CancellationToken ct) => throw new InvalidOperationException("The isolated container fixture has no configured integration.");
+    }
+}
+
+internal sealed class TenantTestExecutor : IIntegrationRuntimeExecutor
+{
+    public Task<JsonElement> InvokeAsync(IntegrationSession session, string method, JsonElement parameters, CancellationToken ct)
+        => throw new InvalidOperationException("This fixture does not allow external provider operations.");
+    public Task StopAsync(Guid instanceId, CancellationToken ct) => Task.CompletedTask;
 }

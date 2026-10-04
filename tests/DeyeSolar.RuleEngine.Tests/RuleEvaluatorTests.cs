@@ -47,6 +47,25 @@ public class RuleEvaluatorTests
         Assert.True(actions[0].TurnOn);
     }
 
+    [Theory]
+    [InlineData(false, 100)]
+    [InlineData(true, 0)]
+    public void MissingBatterySocCannotTurnEitherStateIntoAnAuthoritativeDecision(bool currentState, int defaultValue)
+    {
+        var rule = MakeRule(currentState);
+        rule.UseSolarProductionThreshold = true;
+        rule.MinAverageSolarProductionWatts = 3000;
+        var timestamp = _now.AddMinutes(-20).UtcDateTime;
+        rule.CurrentStateChangedAt = timestamp;
+        var data = MakeData(defaultValue) with { BatterySocValid = false };
+        var actions = _evaluator.Evaluate(data, [rule], _now, context: new(9000));
+        Assert.Empty(actions);
+        Assert.Equal(currentState, rule.CurrentState);
+        Assert.Equal(timestamp, rule.CurrentStateChangedAt);
+        Assert.Null(rule.LastEvaluated);
+        Assert.Single(_evaluator.Evaluate(data with { BatterySocValid = true }, [rule], _now, context: new(9000)));
+    }
+
     [Fact]
     public void NoTurnOn_WhenSocBelowThreshold()
     {

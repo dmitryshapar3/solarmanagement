@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Infrastructure.DeyeCloud;
@@ -37,7 +38,16 @@ public sealed record InverterDataDto(
     DateTimeOffset? SolarObservedAt = null,
     DateTimeOffset? GridObservedAt = null,
     string? SolarDeviceSn = null,
-    string? GridDeviceSn = null);
+    string? GridDeviceSn = null,
+    Guid? InverterId = null,
+    bool? BatterySocValid = null,
+    bool? BatteryPowerValid = null,
+    bool? BatteryTemperatureValid = null,
+    bool? BatteryVoltageValid = null,
+    bool? BatteryCurrentValid = null,
+    bool? LoadPowerValid = null,
+    bool? GridPowerValid = null,
+    bool? SolarPowerValid = null);
 
 public sealed record DeviceDto(
     string Id,
@@ -69,7 +79,8 @@ public sealed record RuleSummaryDto(
     int CooldownMinutes,
     int IntervalSeconds,
     string? ActiveFrom,
-    string? ActiveTo);
+    string? ActiveTo,
+    Guid? SourceInverterId = null);
 
 public sealed record TriggerRuleDto(
     int Id,
@@ -87,7 +98,8 @@ public sealed record TriggerRuleDto(
     string? ActiveTo,
     bool CurrentState,
     DateTime? CurrentStateChangedAt,
-    DateTime? LastEvaluated);
+    DateTime? LastEvaluated,
+    Guid? SourceInverterId = null);
 
 public sealed record TriggerRuleRequest(
     string Name,
@@ -101,7 +113,18 @@ public sealed record TriggerRuleRequest(
     int CooldownMinutes,
     int IntervalSeconds,
     string? ActiveFrom,
-    string? ActiveTo);
+    string? ActiveTo)
+{
+    private Guid? _sourceInverterId;
+    public Guid? SourceInverterId
+    {
+        get => _sourceInverterId;
+        init { _sourceInverterId = value; SourceInverterSpecified = true; }
+    }
+    // An older client omits this property; explicit null selects the current primary inverter.
+    [JsonIgnore]
+    public bool SourceInverterSpecified { get; private set; }
+}
 
 public sealed record RuleEnabledRequest(bool Enabled);
 
@@ -179,11 +202,13 @@ public static class MobileApiMappings
             data.GridConsumption,
             data.LoadPower,
             data.Timestamp,
-            "DeyeCloud",
+            "Integration",
             data.SolarObservedAt,
             data.GridObservedAt,
             data.SolarDeviceSn,
-            data.GridDeviceSn);
+            data.GridDeviceSn, data.InverterId, data.BatterySocValid, data.BatteryPowerValid,
+            data.BatteryTemperatureValid, data.BatteryVoltageValid, data.BatteryCurrentValid, data.LoadPowerValid,
+            data.GridPowerValid, data.SolarPowerValid);
 
     public static DeviceDto ToDto(this DevicePowerInfo device)
         => new(
@@ -211,7 +236,8 @@ public static class MobileApiMappings
             rule.CooldownMinutes,
             rule.IntervalSeconds,
             FormatTime(rule.ActiveFrom),
-            FormatTime(rule.ActiveTo));
+            FormatTime(rule.ActiveTo),
+            rule.SourceInverterId);
 
     public static TriggerRuleDto ToDto(this TriggerRule rule)
         => new(
@@ -230,7 +256,8 @@ public static class MobileApiMappings
             FormatTime(rule.ActiveTo),
             rule.CurrentState,
             rule.CurrentStateChangedAt,
-            rule.LastEvaluated);
+            rule.LastEvaluated,
+            rule.SourceInverterId);
 
     public static ReadingDto ToDto(this Reading reading)
         => new(
@@ -316,6 +343,7 @@ public static class MobileApiMappings
         rule.Name = request.Name.Trim();
         rule.EntityId = request.EntityId.Trim();
         rule.Enabled = request.Enabled;
+        if (request.SourceInverterSpecified) rule.SourceInverterId = request.SourceInverterId;
         rule.SocTurnOnThreshold = request.SocTurnOnThreshold;
         rule.UseSeparateSocTurnOffThreshold = request.UseSeparateSocTurnOffThreshold;
         rule.SocTurnOffThreshold = request.SocTurnOffThreshold;

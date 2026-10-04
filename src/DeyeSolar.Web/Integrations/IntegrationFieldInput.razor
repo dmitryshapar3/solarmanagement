@@ -1,0 +1,47 @@
+@using SolarManagement.Integrations.Contracts
+
+@if (IntegrationUiConditions.IsSecret(Field))
+{
+    <MudText Typo="Typo.subtitle2" Class="mt-3">@Field.Label @(SecretPresent ? "(saved or authorized)" : "(not set)")</MudText>
+    <MudSelect T="string" Label="Credential action" Value="@SecretAction" ValueChanged="SecretActionChanged" Disabled="Busy">
+        <MudSelectItem T="string" Value="@("keep")">Keep saved credential</MudSelectItem>
+        <MudSelectItem T="string" Value="@("replace")">Enter a new credential</MudSelectItem>
+        <MudSelectItem T="string" Value="@("clear")">Clear credential</MudSelectItem>
+    </MudSelect>
+    @if (SecretAction == "replace")
+    {
+        <MudTextField T="string" Label="@Field.Label" Value="@SecretValue" ValueChanged="SecretValueChanged" Immediate="true" InputType="InputType.Password" Disabled="Busy" />
+    }
+}
+else if (Field.Kind == "boolean")
+{
+    <MudSelect T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" Disabled="Busy">
+        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">No value</MudSelectItem> }
+        <MudSelectItem T="string" Value="@("true")">True</MudSelectItem>
+        <MudSelectItem T="string" Value="@("false")">False</MudSelectItem>
+    </MudSelect>
+}
+else if (Field.Kind == "select")
+{
+    <MudSelect T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" Disabled="Busy">
+        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">No selection</MudSelectItem> }
+        @foreach (var option in Field.Options ?? []) { <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem> }
+    </MudSelect>
+}
+else
+{
+    <MudTextField T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Immediate="true" Required="@Field.Required" Disabled="Busy"
+        InputType="@(Field.Kind is "number" or "integer" ? InputType.Number : InputType.Text)" />
+}
+
+@code {
+    [Parameter, EditorRequired] public IntegrationFieldDescriptor Field { get; set; } = null!;
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string SecretAction { get; set; } = "keep";
+    [Parameter] public EventCallback<string> SecretActionChanged { get; set; }
+    [Parameter] public string SecretValue { get; set; } = "";
+    [Parameter] public EventCallback<string> SecretValueChanged { get; set; }
+    [Parameter] public bool SecretPresent { get; set; }
+    [Parameter] public bool Busy { get; set; }
+}

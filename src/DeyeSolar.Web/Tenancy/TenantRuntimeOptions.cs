@@ -66,14 +66,6 @@ public static class TenantRuntimeOptions
         && pair.Type.GetProperties().Any(property => property.CanWrite && property.Name == key))
         && !(section == SolarEstimateOptions.Section && key == nameof(SolarEstimateOptions.ApiKey));
 
-    public static bool HasDeyeConfiguration(DeyeCloudOptions options) =>
-        !string.IsNullOrWhiteSpace(options.AppId) && !string.IsNullOrWhiteSpace(options.AppSecret)
-        && !string.IsNullOrWhiteSpace(options.Email) && !string.IsNullOrWhiteSpace(options.Password)
-        && !string.IsNullOrWhiteSpace(options.DeviceSn) && Services.ProviderEndpointPolicy.TryDeye(options.BaseUrl, out _);
-
-    public static bool HasShellyConfiguration(ShellyOptions options) => !string.IsNullOrWhiteSpace(options.AuthKey)
-        && Services.ProviderEndpointPolicy.TryShelly(options.ServerUri, out _);
-
     public static bool HasSolarConfiguration(SolarEstimateOptions options)
     {
         if (options.Roof1Kwp + options.Roof2Kwp <= 0) return false;

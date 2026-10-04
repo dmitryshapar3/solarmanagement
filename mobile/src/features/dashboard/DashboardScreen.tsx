@@ -17,6 +17,7 @@ import {
   StatusPill
 } from "../../core/components";
 import { Device, Rule } from "../../core/api/types";
+import { commandUnresolved, socketCommandMessage } from "../../core/api/SocketCommandCoordinator";
 import { formatDateTime, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
@@ -31,16 +32,26 @@ import { ManualOverrideCommand } from "./ManualOverrideCommand";
 import { batteryFlow } from "./powerBalance";
 
 export function DashboardScreen() {
-  const { api } = useAuth();
+  const { api, isDemo } = useAuth();
   const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
   const resource = useFocusedResource("dashboard", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
   const dashboard = resource.data;
-  const battery = batteryFlow(dashboard?.inverter?.batteryPower);
+  const battery = batteryFlow(dashboard?.inverter?.batteryPower, dashboard?.inverter?.batteryPowerValid);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [commandBusy, setCommandBusy] = useState<"on" | "off" | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const command = useRef(new ManualOverrideCommand()).current;
+  const [, setCommandRevision] = useState(0);
+  useEffect(() => api.socketCommands.subscribe(() => setCommandRevision(value => value + 1)), [api]);
+  const manualDeviceIds = dashboard?.manualDevices.map(device => device.id).join("|") ?? "";
+  useFocusEffect(useCallback(() => {
+    let canceled = false;
+    if (!isDemo && manualDeviceIds) void Promise.allSettled(manualDeviceIds.split("|").map(id => api.socketCommands.recover(id))).then(results => {
+      if (!canceled && results.some(result => result.status === "rejected")) setCommandError("Some command results could not be loaded. Commands require a successful recovery check.");
+    });
+    return () => { canceled = true; };
+  }, [api, isDemo, manualDeviceIds]));
 
   useEffect(() => {
     if (!dashboard) return;
@@ -61,19 +72,37 @@ export function DashboardScreen() {
 
   async function setSocketState(isOn: boolean) {
     if (!selectedDeviceId) return;
-    await command.run(isOn ? "on" : "off", () => api.setDeviceState(selectedDeviceId, isOn), {
+    const deviceId = selectedDeviceId;
+    let acknowledged = false;
+    await command.run(isOn ? "on" : "off", async () => {
+      if (isDemo) { await api.setDeviceState(deviceId, isOn); acknowledged = true; }
+      else acknowledged = (await api.socketCommands.send(deviceId, isOn)).status === "acknowledged";
+    }, {
       busyChanged: (value) => {
         setCommandBusy(value);
         if (value !== null) setCommandError(null);
       },
       completed: async () => {
-        // A pre-toggle read must not overwrite the state acknowledged by the command.
-        resource.invalidate();
-        await resource.refresh();
+        if (acknowledged) { resource.invalidate(); await resource.refresh(true); }
       },
       failed: (error) => setCommandError(error instanceof Error ? error.message : "Unable to change socket state.")
     });
   }
+
+  async function checkSocketCommand(release = false) {
+    if (!selectedDeviceId) return;
+    const deviceId = selectedDeviceId;
+    let acknowledged = false;
+    await command.run(api.socketCommands.get(deviceId)?.isOn ? "on" : "off", async () => {
+      acknowledged = (await api.socketCommands.check(deviceId, release)).status === "acknowledged";
+    }, {
+      busyChanged: value => { setCommandBusy(value); if (value !== null) setCommandError(null); },
+      completed: async () => { if (acknowledged) { resource.invalidate(); await resource.refresh(true); } },
+      failed: error => setCommandError(error instanceof Error ? error.message : "Unable to check the command result.")
+    });
+  }
+  const selectedCommand = selectedDeviceId ? api.socketCommands.get(selectedDeviceId) : null;
+  const socketBusy = selectedDeviceId ? api.socketCommands.isRunning(selectedDeviceId) : false;
 
   if (resource.loading && !dashboard) {
     return <Screen scroll={false}><LoadingState label="Loading dashboard..." /></Screen>;
@@ -86,7 +115,7 @@ export function DashboardScreen() {
       <Card style={styles.statusCard}>
         <TileHeader
           title="Current generation"
-          subtitle={dashboard?.inverter ? `Latest reported Deye power · polled ${formatTime(dashboard.inverter.timestamp)}` : "Waiting for the first Deye reading"}
+          subtitle={dashboard?.inverter ? `Latest reported inverter power · polled ${formatTime(dashboard.inverter.timestamp)}` : "Waiting for the first inverter reading"}
           loading={resource.loading}
           onRefresh={() => void resource.refresh(true)}
           onDetails={() => navigation.navigate("InverterDetails")}
@@ -94,23 +123,23 @@ export function DashboardScreen() {
         <View style={styles.statusMetrics}>
           <View style={styles.statusMetric}>
             <Text style={styles.metaText}>Solar power</Text>
-            <Text style={[styles.statusValue, { color: colors.primary }]}>{formatWatts(dashboard?.inverter?.solarProduction)}</Text>
-            <Text style={styles.metaText}>Latest Deye reading</Text>
+            <Text style={[styles.statusValue, { color: colors.primary }]}>{dashboard?.inverter?.solarPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.solarProduction)}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter?.solarPowerValid === false ? "Awaiting reading" : "Latest inverter reading"}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>Load</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(dashboard.inverter.loadPower) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter ? "Consumption" : "Awaiting reading"}</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter?.loadPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.loadPower)}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.loadPowerValid !== false ? "Consumption" : "Awaiting reading"}</Text>
           </View>
           <View style={styles.statusMetric}>
             <Text style={styles.metaText}>Grid</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter ? gridModeLabel(dashboard.inverter.gridConsumption) : "Awaiting reading"}</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? gridModeLabel(dashboard.inverter.gridConsumption) : "Awaiting reading"}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>{battery.label}</Text>
             <Text style={styles.statusValue}>{battery.watts === null ? "—" : formatWatts(battery.watts)}</Text>
-            <Text style={styles.metaText}>{battery.watts === null ? "Awaiting reading" : "Latest Deye reading"}</Text>
+            <Text style={styles.metaText}>{battery.watts === null ? "Awaiting reading" : "Latest inverter reading"}</Text>
           </View>
         </View>
       </Card>
@@ -144,20 +173,27 @@ export function DashboardScreen() {
                 icon={CirclePower}
                 onPress={() => void setSocketState(true)}
                 loading={commandBusy === "on"}
-                disabled={!selectedDevice || commandBusy !== null}
+                disabled={!selectedDevice || commandBusy !== null || socketBusy || commandUnresolved(selectedCommand)}
               />
               <AppButton
                 label="Socket OFF"
                 icon={CirclePower}
                 onPress={() => void setSocketState(false)}
                 loading={commandBusy === "off"}
-                disabled={!selectedDevice || commandBusy !== null}
+                disabled={!selectedDevice || commandBusy !== null || socketBusy || commandUnresolved(selectedCommand)}
                 variant="danger"
               />
             </View>
+            {selectedCommand ? <Text style={styles.metaText}>{socketCommandMessage(selectedCommand)}</Text> : null}
+            {commandUnresolved(selectedCommand) ? <AppButton label="Check command result" variant="secondary"
+              onPress={() => void checkSocketCommand()} disabled={commandBusy !== null || socketBusy} /> : null}
+            {selectedCommand?.status === "uncertain" ? <>
+              <Text style={styles.metaText}>The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.</Text>
+              <AppButton label="Allow another command" variant="secondary" onPress={() => void checkSocketCommand(true)} disabled={commandBusy !== null || socketBusy} />
+            </> : null}
           </>
         ) : (
-          <EmptyState title="No sockets configured." detail="Configure the Shelly socket backend in Settings or add a rule with a target device." />
+          <EmptyState title="No sockets configured." detail="Add and enable a socket integration in Settings." />
         )}
       </Card>
 

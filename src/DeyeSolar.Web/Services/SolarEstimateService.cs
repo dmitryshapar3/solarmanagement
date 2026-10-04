@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,7 +13,7 @@ namespace DeyeSolar.Web.Services;
 /// <summary>Fetch weather every ten minutes; evaluate the current minute and recent Deye measurement separately.</summary>
 public sealed class SolarEstimateService(ISolarRadiationSource source, ISolarEstimateStore store,
     IOptionsMonitor<SolarEstimateOptions> options, TimeProvider clock, ILogger<SolarEstimateService> logger,
-    IOptionsMonitor<DeyeCloudOptions> deyeOptions)
+    IOptionsMonitor<InverterConnectionOptions> inverterOptions)
 {
     private SolarEstimateState _current = SolarEstimateState.Empty;
     private CachedSolarObservation? _cached;
@@ -140,8 +141,8 @@ public sealed class SolarEstimateService(ISolarRadiationSource source, ISolarEst
             ? new SolarComparison(SolarComparisonStatus.InsufficientData, actual, null, null,
                 "No recent Deye reading has weather data for its measurement time.")
             : SolarPowerCalculator.Compare(comparisonEstimate ?? estimate, actual, config, now, _refreshFailed);
-        if (!config.DeyeSolarPowerIsPvDcConfirmed || string.IsNullOrWhiteSpace(config.DeyeConfirmedDeviceSn)
-            || config.DeyeConfirmedDeviceSn != deyeOptions.CurrentValue.DeviceSn)
+        if (!config.SolarPowerIsPvDcConfirmed || string.IsNullOrWhiteSpace(config.ConfirmedInverterKey)
+            || config.ConfirmedInverterKey != inverterOptions.CurrentValue.DeviceKey)
             comparison = new(SolarComparisonStatus.InsufficientData, actual, null, null,
                 "Confirm that Deye TotalSolarPower is the total PV DC power of this installation.");
         Publish(new(estimate, comparison, _refreshFailed, _cached.RetrievedAt, _error) { ComparisonEstimate = comparisonEstimate });

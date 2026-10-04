@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
     private readonly IInverterDataSource _source;
     private readonly ExportReadingStore _readings;
     private readonly InverterDataSnapshot _snapshot;
-    private readonly IOptionsMonitor<DeyeCloudOptions> _options;
+    private readonly IOptionsMonitor<InverterConnectionOptions> _options;
     private readonly ILogger<InverterRefreshService> _logger;
     private readonly CancellationTokenSource _stop;
     private readonly IDisposable? _settingsSubscription;
@@ -30,7 +31,7 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
     private Task? _disposeTask;
 
     public InverterRefreshService(IInverterDataSource source, ExportReadingStore readings,
-        InverterDataSnapshot snapshot, IOptionsMonitor<DeyeCloudOptions> options,
+        InverterDataSnapshot snapshot, IOptionsMonitor<InverterConnectionOptions> options,
         IHostApplicationLifetime lifetime, ILogger<InverterRefreshService> logger)
     {
         _source = source;
@@ -45,9 +46,11 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
     public async Task<InverterData> RefreshAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var identity = DeyeRefreshIdentity.Capture(_options.CurrentValue);
-        if (string.IsNullOrWhiteSpace(identity.DeviceSn))
-            throw new InvalidOperationException("Select a Deye inverter in Settings.");
+        if (_source is IInverterSelectionRefresher selection)
+            await selection.RefreshSelectionAsync(ct).ConfigureAwait(false);
+        var identity = InverterRefreshIdentity.Capture(_options.CurrentValue);
+        if (string.IsNullOrWhiteSpace(identity.DeviceKey))
+            throw new InvalidOperationException("Select an inverter in Settings.");
         Operation operation;
         Operation? replaced = null;
         var start = false;
@@ -59,7 +62,7 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
                 || _current.Cancellation.IsCancellationRequested || _current.Identity != identity)
             {
                 replaced = _current;
-                operation = new(identity, _stop.Token);
+                operation = new(identity, _stop.Token, _snapshot.Epoch);
                 _current = operation;
                 _operations.Add(operation);
                 operation.Work = RunAsync(operation);
@@ -96,15 +99,20 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
             var data = await PollingRetryPolicy.ExecuteAsync(
                 token => _source.ReadCurrentDataAsync(token), operation.Cancellation.Token,
                 (exception, attempt, delay) => _logger.LogWarning(
-                    "Deye refresh attempt {Attempt}/{MaxAttempts} failed ({ErrorType}); retrying in {RetryDelay}",
+                    "Inverter refresh attempt {Attempt}/{MaxAttempts} failed ({ErrorType}); retrying in {RetryDelay}",
                     attempt, PollingRetryPolicy.DefaultMaxAttempts, exception.GetType().Name, delay)).ConfigureAwait(false);
             EnsureCurrent(operation);
-            if (data.GridDeviceSn is { } gridDevice && gridDevice != operation.Identity.DeviceSn
-                || data.SolarDeviceSn is { } solarDevice && solarDevice != operation.Identity.DeviceSn)
-                throw new InvalidOperationException("Deye returned observations for a different inverter.");
+            if (data.GridDeviceSn is { } gridDevice && gridDevice != operation.Identity.DeviceKey
+                || data.SolarDeviceSn is { } solarDevice && solarDevice != operation.Identity.DeviceKey)
+                throw new InvalidOperationException("Provider returned observations for a different inverter.");
             await _readings.SavePollingAsync(data, operation.Cancellation.Token).ConfigureAwait(false);
             EnsureCurrent(operation);
-            try { _snapshot.Update(data); }
+            try
+            {
+                if (!_snapshot.TryUpdate(data, operation.SnapshotEpoch))
+                    throw new OperationCanceledException("The inverter snapshot was invalidated.");
+            }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 // Persistence and the snapshot have already succeeded; notification failure is not a failed read.
@@ -135,13 +143,13 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
     {
         operation.Cancellation.Token.ThrowIfCancellationRequested();
         if (!operation.Identity.Matches(_options.CurrentValue))
-            throw new InvalidOperationException("Deye settings changed during refresh. Try again.");
+            throw new InvalidOperationException("Inverter settings changed during refresh. Try again.");
     }
 
     private void CancelChangedConfiguration()
     {
         Operation? changed;
-        var identity = DeyeRefreshIdentity.Capture(_options.CurrentValue);
+        var identity = InverterRefreshIdentity.Capture(_options.CurrentValue);
         lock (_sync) changed = _current is { } current && current.Identity != identity ? current : null;
         Cancel(changed);
     }
@@ -181,9 +189,10 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
 
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-    private sealed class Operation(DeyeRefreshIdentity identity, CancellationToken stoppingToken)
+    private sealed class Operation(InverterRefreshIdentity identity, CancellationToken stoppingToken, long snapshotEpoch)
     {
-        public DeyeRefreshIdentity Identity { get; } = identity;
+        public long SnapshotEpoch { get; } = snapshotEpoch;
+        public InverterRefreshIdentity Identity { get; } = identity;
         public CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         public TaskCompletionSource<bool> Start { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<InverterData> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -192,9 +201,9 @@ public sealed class InverterRefreshService : IInverterRefreshService, IDisposabl
     }
 }
 
-internal sealed record DeyeRefreshIdentity(string DeviceSn, string ConfigurationHash)
+internal sealed record InverterRefreshIdentity(string DeviceKey, string ConfigurationHash)
 {
-    public static DeyeRefreshIdentity Capture(DeyeCloudOptions options) => new(options.DeviceSn,
+    public static InverterRefreshIdentity Capture(InverterConnectionOptions options) => new(options.DeviceKey,
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(options)))));
-    public bool Matches(DeyeCloudOptions options) => this == Capture(options);
+    public bool Matches(InverterConnectionOptions options) => this == Capture(options);
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { CirclePower, RefreshCcw, Zap } from "lucide-react-native";
@@ -14,6 +14,7 @@ import {
   TextField
 } from "../../core/components";
 import { Device } from "../../core/api/types";
+import { commandUnresolved, socketCommandMessage, type SocketCommandState } from "../../core/api/SocketCommandCoordinator";
 import { formatTime, formatWatts } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
@@ -21,7 +22,7 @@ import { useAuth } from "../../application/AuthContext";
 const autoRefreshIntervalMs = 15000;
 
 export function DevicesScreen() {
-  const { api } = useAuth();
+  const { api, isDemo } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,8 +31,12 @@ export function DevicesScreen() {
   const [error, setError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
   const requestSeq = useRef(0);
+  const viewGeneration = useRef(0);
+  const active = useRef(false);
+  const [, setCommandRevision] = useState(0);
+  useEffect(() => api.socketCommands.subscribe(() => setCommandRevision(value => value + 1)), [api]);
 
-  const load = useCallback(async (mode: "initial" | "refresh" | "silent") => {
+  const load = useCallback(async (mode: "initial" | "refresh" | "silent", recoverCommands = false) => {
     const requestId = ++requestSeq.current;
     if (mode === "initial") {
       setLoading(true);
@@ -49,46 +54,63 @@ export function DevicesScreen() {
         setLastUpdated(result.lastUpdated);
         setError(null);
       }
+      if (requestId === requestSeq.current && !isDemo && (recoverCommands || mode === "refresh")) {
+        const receipts = await Promise.allSettled(result.devices.map(device => api.socketCommands.recover(device.id)));
+        if (requestId === requestSeq.current && receipts.some(receipt => receipt.status === "rejected")) {
+          setError("Some command results could not be loaded. Sending a command requires a successful recovery check.");
+        }
+      }
     } catch (ex) {
       if (mode !== "silent" && requestId === requestSeq.current) {
         setError(ex instanceof Error ? ex.message : "Unable to load devices.");
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestSeq.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [api]);
+  }, [api, isDemo]);
 
   useFocusEffect(
     useCallback(() => {
-      void load(hasLoadedRef.current ? "silent" : "initial");
+      active.current = true;
+      ++viewGeneration.current;
+      setBusyDevice(null);
+      void load(hasLoadedRef.current ? "silent" : "initial", true);
       hasLoadedRef.current = true;
 
       const interval = setInterval(() => void load("silent"), autoRefreshIntervalMs);
-      return () => clearInterval(interval);
+      return () => { clearInterval(interval); active.current = false; ++viewGeneration.current; ++requestSeq.current; };
     }, [load])
   );
 
   async function setDeviceState(device: Device, isOn: boolean) {
+    if (api.socketCommands.isRunning(device.id)) return;
+    const generation = viewGeneration.current;
+    const current = () => active.current && generation === viewGeneration.current;
     setBusyDevice({ id: device.id, isOn });
     setError(null);
     try {
-      const result = await api.setDeviceState(device.id, isOn);
-      // Invalidate any device fetch that started before the toggle so its
-      // stale response cannot overwrite the post-toggle state.
-      requestSeq.current++;
-      setDevices((current) =>
-        current.map((item) =>
-          item.id === device.id
-            ? result.device ?? { ...item, online: true, isOn: result.isOn }
-            : item
-        )
-      );
+      let acknowledged: boolean;
+      if (isDemo) { await api.setDeviceState(device.id, isOn); acknowledged = true; }
+      else acknowledged = (await api.socketCommands.send(device.id, isOn)).status === "acknowledged";
+      if (current() && acknowledged) { requestSeq.current++; await load("refresh"); }
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to change socket state.");
+      if (current()) setError(ex instanceof Error ? ex.message : "Unable to change socket state.");
     } finally {
-      setBusyDevice(null);
+      if (current()) setBusyDevice(null);
     }
+  }
+
+  async function checkDeviceCommand(device: Device, release = false) {
+    if (api.socketCommands.isRunning(device.id)) return;
+    const generation = viewGeneration.current;
+    const current = () => active.current && generation === viewGeneration.current;
+    setBusyDevice({ id: device.id, isOn: api.socketCommands.get(device.id)?.isOn ?? false });
+    setError(null);
+    try {
+      const receipt = await api.socketCommands.check(device.id, release);
+      if (current() && receipt.status === "acknowledged") { requestSeq.current++; await load("refresh"); }
+    } catch (ex) { if (current()) setError(ex instanceof Error ? ex.message : "Unable to check the command result."); }
+    finally { if (current()) setBusyDevice(null); }
   }
 
   async function renameDevice(device: Device, name: string | null) {
@@ -139,6 +161,10 @@ export function DevicesScreen() {
               key={device.id}
               device={device}
               busyState={busyDevice?.id === device.id ? busyDevice.isOn : null}
+              command={api.socketCommands.get(device.id)}
+              commandRunning={api.socketCommands.isRunning(device.id)}
+              onCheckCommand={() => void checkDeviceCommand(device)}
+              onReleaseCommand={() => void checkDeviceCommand(device, true)}
               onTurnOn={() => void setDeviceState(device, true)}
               onTurnOff={() => void setDeviceState(device, false)}
               onRename={name => renameDevice(device, name)}
@@ -146,7 +172,7 @@ export function DevicesScreen() {
           ))}
         </View>
       ) : (
-        <EmptyState title="No devices found." detail="Configure the Shelly socket backend in Settings." />
+        <EmptyState title="No devices found." detail="Add and enable a socket integration in Settings." />
       )}
     </Screen>
   );
@@ -157,13 +183,21 @@ function DeviceCard({
   busyState,
   onTurnOn,
   onTurnOff,
-  onRename
+  onRename,
+  command,
+  commandRunning,
+  onCheckCommand,
+  onReleaseCommand
 }: {
   device: Device;
   busyState: boolean | null;
   onTurnOn: () => void;
   onTurnOff: () => void;
   onRename: (name: string | null) => Promise<void>;
+  command: SocketCommandState | null;
+  commandRunning: boolean;
+  onCheckCommand: () => void;
+  onReleaseCommand: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
@@ -194,10 +228,10 @@ function DeviceCard({
 
       {editing ? <View style={styles.nameForm}>
         <TextField label="Name in Solar" value={name} onChangeText={value => setName(value.slice(0, 80))} editable={!saving} />
-        <Text style={styles.category}>Shelly name: {device.cloudName ?? device.name}. This changes the display name in Solar; device IDs and rules stay connected.</Text>
+        <Text style={styles.category}>Provider name: {device.cloudName ?? device.name}. This changes the display name in Solar; device IDs and rules stay connected.</Text>
         <View style={styles.actions}>
           <AppButton label="Save name" compact onPress={() => void saveName(name.trim() || null)} loading={saving} disabled={saving} />
-          <AppButton label="Use Shelly name" compact variant="secondary" onPress={() => void saveName(null)} disabled={saving} />
+          <AppButton label="Use provider name" compact variant="secondary" onPress={() => void saveName(null)} disabled={saving} />
           <AppButton label="Cancel" compact variant="ghost" onPress={() => setEditing(false)} disabled={saving} />
         </View>
       </View> : <AppButton label="Edit name" compact variant="ghost"
@@ -214,7 +248,7 @@ function DeviceCard({
           icon={CirclePower}
           onPress={onTurnOn}
           loading={busyState === true}
-          disabled={busyState !== null}
+          disabled={busyState !== null || commandRunning || commandUnresolved(command)}
           compact
         />
         <AppButton
@@ -222,11 +256,18 @@ function DeviceCard({
           icon={CirclePower}
           onPress={onTurnOff}
           loading={busyState === false}
-          disabled={busyState !== null}
+          disabled={busyState !== null || commandRunning || commandUnresolved(command)}
           variant="danger"
           compact
         />
       </View>
+      {command ? <Text style={styles.category}>{socketCommandMessage(command)}</Text> : null}
+      {commandUnresolved(command) ? <AppButton label="Check command result" variant="secondary" onPress={onCheckCommand}
+        disabled={commandRunning || busyState !== null} /> : null}
+      {command?.status === "uncertain" ? <>
+        <Text style={styles.category}>The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.</Text>
+        <AppButton label="Allow another command" variant="secondary" onPress={onReleaseCommand} disabled={commandRunning || busyState !== null} />
+      </> : null}
     </Card>
   );
 }

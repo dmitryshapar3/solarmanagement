@@ -16,7 +16,7 @@ else
     <MudText Typo="Typo.body2">Selected saved inverter: @(string.IsNullOrEmpty(_selectedDeviceSn) ? "None selected" : _selectedDeviceSn)</MudText>
     <MudCheckBox T="bool" @bind-Value="_solar.DeyeSolarPowerIsPvDcConfirmed" Disabled="@(string.IsNullOrEmpty(_selectedDeviceSn))"
         Label="I confirm that this inverter's solar power reading represents PV DC input." />
-    <MudText Typo="Typo.caption" Class="mb-3">Confirm only after checking the inverter's documentation or readings. Measured generation comparisons require this confirmation. Save/select another inverter in DeyeCloud settings and reload before confirming it.</MudText>
+    <MudText Typo="Typo.caption" Class="mb-3">Confirm only after checking the inverter's documentation or readings. Measured generation comparisons require this confirmation. Save and select the primary inverter in Device integrations, then reload before confirming its PV readings.</MudText>
     <MudGrid>
         <MudItem xs="12" md="6">
             <MudTextField @bind-Value="_solar.LocationLabel" Label="Location label" MaxLength="120" Immediate="true" />

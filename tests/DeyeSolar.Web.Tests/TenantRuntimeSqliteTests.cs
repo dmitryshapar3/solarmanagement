@@ -9,6 +9,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using DeyeSolar.Web.Integrations;
+using Microsoft.AspNetCore.DataProtection;
+using SolarManagement.Inverters.Contracts;
+using SolarManagement.Integrations.Contracts;
 
 namespace DeyeSolar.Web.Tests;
 
@@ -31,7 +35,9 @@ public class TenantRuntimeSqliteTests
         }
         var deployment = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["DeyeCloud:AppSecret"] = "legacy-test-only", ["SolarEstimate:LocationLabel"] = "Legacy site" }).Build();
-        using var factory = new TenantRuntimeFactory(options, deployment, NullLoggerFactory.Instance, new Clock(), new Lifetime(), "legacy-key");
+        var secrets = new IntegrationSecretStore(new EphemeralDataProtectionProvider());
+        using var factory = new TenantRuntimeFactory(options, deployment, NullLoggerFactory.Instance, new Clock(), new Lifetime(),
+            new TenantTestExecutor(), secrets, new(NullLogger<IntegrationChangeNotifier>.Instance), "legacy-key");
         await using var first = await factory.CreateAsync("first");
         await using var second = await factory.CreateAsync("second");
         var firstSettings = first.Resolve<AppSettingsService>();
@@ -40,9 +46,27 @@ public class TenantRuntimeSqliteTests
         Assert.Equal(0, (await secondSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).TotalKwp);
         Assert.Equal("", (await secondSettings.LoadSectionAsync<DeyeCloudOptions>("DeyeCloud")).AppSecret);
 
-        await firstSettings.SaveSectionAsync("DeyeCloud", new DeyeCloudOptions { AppSecret = "first-test-only", DeviceSn = "first-device" });
-        Assert.Equal("first-device", first.Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
-        Assert.Equal("", second.Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue.DeviceSn);
+        var instanceId = Guid.NewGuid();
+        var deviceId = Guid.NewGuid();
+        await using (var integrationDb = new DeyeSolarDbContext(options, "first"))
+        {
+            integrationDb.IntegrationInstances.Add(new() { Id = instanceId, ProviderId = "fixture.provider", Name = "First inverter",
+                PackageVersion = "1.0.0", PackageDigest = "fixture-digest", DescriptorDigest = "fixture-ui", ConfigurationVersion = 1,
+                State = "enabled", CreatedAt = Now, UpdatedAt = Now });
+            integrationDb.IntegrationConfigurations.Add(new() { InstanceId = instanceId, Revision = 1, ValuesJson = "{}",
+                SecretsCiphertext = secrets.Encrypt("first", instanceId, 1, new Dictionary<string, string> { ["apiKey"] = "first-test-only" }), CreatedAt = Now });
+            integrationDb.IntegrationDeviceBindings.Add(new() { Id = deviceId, InstanceId = instanceId, Kind = "inverter", RemoteId = "opaque-first",
+                Name = "First inverter", Enabled = true, IsDefault = true });
+            await integrationDb.SaveChangesAsync();
+        }
+        await first.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
+        await second.Resolve<InverterSelectionMonitor>().RefreshAsync(default);
+        Assert.Equal(deviceId.ToString("D"), first.Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
+        Assert.Equal("", second.Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey);
+        var session = await first.Resolve<IIntegrationRegistry>().GetRuntimeSessionAsync(instanceId, default);
+        Assert.Equal("first-test-only", session.Configuration.Secrets["apiKey"]);
+        Assert.Null(await second.Resolve<IIntegrationRegistry>().GetSnapshotAsync(instanceId, default));
+        await Assert.ThrowsAsync<IntegrationRequestException>(() => second.Resolve<IIntegrationRegistry>().GetRuntimeSessionAsync(instanceId, default));
         await firstSettings.SaveSectionAsync("SolarEstimate", new SolarSiteSettings(51.25, 19.5, "First site", "UTC", 5, 0, 25, 0, 180, 0));
         await firstSettings.SaveSectionAsync("SolarSales", new SalesSiteSettings("2025-01-02", "UTC", false));
         Assert.Equal(5, (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).TotalKwp);

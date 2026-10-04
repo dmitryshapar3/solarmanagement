@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SolarManagement.Inverters.Contracts\SolarManagement.Inverters.Contracts.csproj" />
+    <ProjectReference Include="..\SolarManagement.SmartSockets.Contracts\SolarManagement.SmartSockets.Contracts.csproj" />
+  </ItemGroup>
 </Project>

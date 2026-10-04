@@ -3,8 +3,11 @@
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
 @inject DeviceStatusSnapshot DeviceSnapshot
+@inject SolarManagement.Inverters.Contracts.IInverterCatalog InverterCatalog
+@inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@implements IDisposable
 
 <PageTitle>@(_isNew ? "New Rule" : "Edit Rule") - DeyeSolar</PageTitle>
 
@@ -47,6 +50,28 @@
                 A device must be selected before the rule can be enabled.
             </MudAlert>
         }
+
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Source Inverter</MudText>
+        <MudSelect T="Guid?" @bind-Value="_rule.SourceInverterId" Label="Battery and PV source" Variant="Variant.Outlined"
+                   Disabled="_loadingInverters || _saving">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Installation default inverter</MudSelectItem>
+            @foreach (var inverter in _inverters)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)inverter.Id.Value)" Disabled="@(!inverter.Capabilities.HasBattery)">
+                    @inverter.Name @(!inverter.Capabilities.HasBattery ? "- battery data unavailable" : "")
+                </MudSelectItem>
+            }
+            @if (_rule.SourceInverterId is { } source && !_inverters.Any(inverter => inverter.Id.Value == source))
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)source)" Disabled="true">@source - unavailable source</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" OnClick="LoadInverters" Disabled="_loadingInverters || _saving" Class="mt-2">Reload inverter sources</MudButton>
+        @if (_inverterError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_inverterError</MudAlert>
+        }
+        <MudText Typo="Typo.caption">Battery and PV conditions use this source. The installation default follows its selected inverter.</MudText>
 
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Condition</MudText>
         <MudNumericField T="int" Value="_rule.SocTurnOnThreshold" ValueChanged="OnSocTurnOnChanged"
@@ -104,7 +129,7 @@
         }
 
         <MudStack Row="true" Class="mt-4" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_saving || _loadingInverters">Save</MudButton>
             <MudButton Variant="Variant.Outlined" Href="/rules">Cancel</MudButton>
         </MudStack>
     </MudForm>
@@ -132,6 +157,12 @@
     private bool _loadingDevices;
     private string? _loadError;
     private string? _validationError;
+    private IReadOnlyList<SolarManagement.Inverters.Contracts.InverterDescriptor> _inverters = [];
+    private bool _loadingInverters;
+    private string? _inverterError;
+    private bool _saving;
+    private bool _disposed;
+    private readonly CancellationTokenSource _lifetime = new();
 
     private bool IsSocTurnOnInvalid => _rule.SocTurnOnThreshold is < 0 or > 100;
     private bool IsSocTurnOffInvalid =>
@@ -169,6 +200,24 @@
         }
 
         await LoadDevices(forceRefresh: false);
+        await LoadInverters();
+    }
+
+    private async Task LoadInverters()
+    {
+        if (_disposed || _loadingInverters) return;
+        var token = _lifetime.Token;
+        _loadingInverters = true;
+        try
+        {
+            var inverters = await InverterCatalog.ListRegisteredAsync(token);
+            if (_disposed) return;
+            _inverters = inverters;
+            _inverterError = null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception) { if (!_disposed) _inverterError = "Inverter sources are unavailable. Reload them before enabling this rule."; }
+        finally { if (!_disposed) _loadingInverters = false; }
     }
 
     private async Task LoadDevices()
@@ -229,39 +278,55 @@
 
     private async Task Save()
     {
-        _validationError = null;
-
-        if (string.IsNullOrEmpty(_rule.EntityId))
-            _rule.Enabled = false;
-
-        if (!_rule.UseSeparateSocTurnOffThreshold)
-            _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
-
-        if (_rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts <= 0)
-            _rule.MinAverageSolarProductionWatts = 3000;
-
-        if (_form != null)
+        if (_disposed || _saving) return;
+        _saving = true;
+        try
         {
-            await _form.Validate();
-            if (!_form.IsValid) return;
+            _validationError = null;
+
+            if (string.IsNullOrEmpty(_rule.EntityId))
+                _rule.Enabled = false;
+
+            if (!_rule.UseSeparateSocTurnOffThreshold)
+                _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
+
+            if (_rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts <= 0)
+                _rule.MinAverageSolarProductionWatts = 3000;
+
+            if (_form != null)
+            {
+                await _form.Validate();
+                if (!_form.IsValid) return;
+            }
+
+            if (!ValidateRule())
+                return;
+
+            _rule.ActiveFrom = _activeFrom.HasValue ? TimeOnly.FromTimeSpan(_activeFrom.Value) : null;
+            _rule.ActiveTo = _activeTo.HasValue ? TimeOnly.FromTimeSpan(_activeTo.Value) : null;
+
+            if (_isNew)
+                await RuleRepo.CreateAsync(_rule, CancellationToken.None);
+            else
+                await RuleRepo.UpdateAsync(_rule, CancellationToken.None);
+
+            Nav.NavigateTo("/rules");
         }
-
-        if (!ValidateRule())
-            return;
-
-        _rule.ActiveFrom = _activeFrom.HasValue ? TimeOnly.FromTimeSpan(_activeFrom.Value) : null;
-        _rule.ActiveTo = _activeTo.HasValue ? TimeOnly.FromTimeSpan(_activeTo.Value) : null;
-
-        if (_isNew)
-            await RuleRepo.CreateAsync(_rule, CancellationToken.None);
-        else
-            await RuleRepo.UpdateAsync(_rule, CancellationToken.None);
-
-        Nav.NavigateTo("/rules");
+        catch (Exception) { if (!_disposed) _validationError = "The rule could not be saved. Check its device and source, then try again."; }
+        finally { if (!_disposed) _saving = false; }
     }
 
     private bool ValidateRule()
     {
+        if (_rule.Enabled)
+        {
+            var source = _rule.SourceInverterId ?? (Guid.TryParse(InverterOptions.CurrentValue.DeviceKey, out var id) ? id : (Guid?)null);
+            if (_inverterError is not null || source is null || !_inverters.Any(inverter => inverter.Id.Value == source && inverter.Capabilities.HasBattery))
+            {
+                _validationError = "Select an available inverter with battery data before enabling this rule.";
+                return false;
+            }
+        }
         if (IsSocTurnOnInvalid)
         {
             _validationError = "SOC turn ON must be between 0 and 100%.";
@@ -299,5 +364,13 @@
         }
 
         return true;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
     }
 }

@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -40,7 +42,7 @@ public class SolarHistoryServiceTests
         if (scenario == "weather") fixture.Weather.Fail = true;
         if (scenario == "actual") fixture.Store.Fail = true;
         if (scenario == "unconfirmed") fixture.Config.CurrentValue.DeyeSolarPowerIsPvDcConfirmed = false;
-        if (scenario == "changed") fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceSn = "replacement" };
+        if (scenario == "changed") fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceKey = "replacement" };
         using var service = fixture.Service();
 
         var result = await service.ReadAsync(SolarHistoryPeriod.Today, default);
@@ -435,7 +437,7 @@ public class SolarHistoryServiceTests
     public async Task ConfigurationChangePreservesSelectedDateMetadataWhileDiscardingPoints()
     {
         var fixture = new Fixture();
-        fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceSn = "replacement" };
+        fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceKey = "replacement" };
         using var service = fixture.Service();
         var result = await service.ReadAsync(SolarHistoryPeriod.Today, default, new DateOnly(2026, 9, 28));
         Assert.Empty(result.Points);
@@ -524,7 +526,7 @@ public class SolarHistoryServiceTests
     public async Task DeviceChangeDuringReadDiscardsThePreviousDeviceResult()
     {
         var fixture = new Fixture();
-        fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceSn = "replacement" };
+        fixture.Store.OnRead = () => fixture.Deye.CurrentValue = new() { DeviceKey = "replacement" };
         using var service = fixture.Service();
         var result = await service.ReadAsync(SolarHistoryPeriod.Today, default);
         Assert.Empty(result.Points);
@@ -582,7 +584,7 @@ public class SolarHistoryServiceTests
         public Monitor<SolarEstimateOptions> Config { get; } = new(new() { DeyeSolarPowerIsPvDcConfirmed = true,
             DeyeConfirmedDeviceSn = "selected", TemperatureCoefficient = 0, TemperatureCoefficientUncertainty = 0,
             MinimumDcLossFraction = 0, DcLossFraction = 0, MaximumDcLossFraction = 0 });
-        public Monitor<DeyeCloudOptions> Deye { get; } = new(new() { DeviceSn = "selected" });
+        public Monitor<InverterConnectionOptions> Deye { get; } = new(new() { DeviceKey = "selected" });
         public SolarHistoryService Service() => new(Weather, Store, Config, Deye, Clock, NullLogger<SolarHistoryService>.Instance);
     }
     private sealed class Clock : TimeProvider { public DateTimeOffset Now = Hour.AddMinutes(30); public override DateTimeOffset GetUtcNow() => Now; }

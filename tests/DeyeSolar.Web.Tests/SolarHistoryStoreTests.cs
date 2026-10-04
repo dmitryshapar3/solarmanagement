@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -122,7 +124,7 @@ public class SolarHistoryStoreTests
             }
             var before = await ReadStateAsync(factory);
             var historyStore = new SolarHistoryStore(factory);
-            var deye = new Monitor<DeyeCloudOptions>(new() { DeviceSn = "selected" });
+            var deye = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
             var config = new Monitor<SolarEstimateOptions>(new()
                 { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "selected" });
             using var history = new SolarHistoryService(new EmptyWeather(), historyStore, config, deye, clock,

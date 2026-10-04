@@ -2,7 +2,6 @@ using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using Microsoft.EntityFrameworkCore;
@@ -101,32 +100,20 @@ public static class MobileApiEndpointRouteBuilderExtensions
             IServiceProvider services,
             CancellationToken ct) =>
         {
+            var epoch = snapshot.Epoch;
             var devices = refresh.GetValueOrDefault()
                 ? await inventory.RefreshDevicesAsync(ct)
                 : snapshot.Current ?? await inventory.GetCachedDevicesAsync(ct);
 
             if (refresh.GetValueOrDefault() || snapshot.Current == null)
-                snapshot.Update(devices);
+                if (!snapshot.TryUpdate(devices, epoch)) return Results.Conflict(new ApiError("Device integrations changed. Refresh devices again."));
 
             return Results.Ok(new DeviceListResponse(
                 await DescribeDevicesAsync(services, devices, ct),
                 snapshot.LastUpdated));
         });
 
-        authorized.MapPost("/devices/state", async Task<IResult> (
-            SocketStateRequest request,
-            MobileSocketCommandService socketCommands,
-            CancellationToken ct) =>
-        {
-            try
-            {
-                return Results.Ok(await socketCommands.SetStateAsync(request.EntityId, request.IsOn, ct));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(new ApiError(ex.Message));
-            }
-        });
+        authorized.MapPost("/devices/state", () => Results.Json(new ApiError("Update the app to send commands with a persistent request identity."), statusCode: 426));
 
         authorized.MapGet("/rules", async (IRuleRepository rules, CancellationToken ct) =>
             Results.Ok((await rules.GetAllAsync(ct)).Select(r => r.ToDto()).ToList()));
@@ -151,8 +138,12 @@ public static class MobileApiEndpointRouteBuilderExtensions
             if (result != null)
                 return result;
 
-            var created = await rules.CreateAsync(rule!, ct);
-            return Results.Created($"/api/rules/{created.Id}", created.ToDto());
+            try
+            {
+                var created = await rules.CreateAsync(rule!, ct);
+                return Results.Created($"/api/rules/{created.Id}", created.ToDto());
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         });
 
         authorized.MapPut("/rules/{id:int}", async Task<IResult> (
@@ -169,8 +160,12 @@ public static class MobileApiEndpointRouteBuilderExtensions
             if (result != null)
                 return result;
 
-            await rules.UpdateAsync(updated!, ct);
-            return Results.Ok(updated!.ToDto());
+            try
+            {
+                await rules.UpdateAsync(updated!, ct);
+                return Results.Ok(updated!.ToDto());
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         });
 
         authorized.MapPatch("/rules/{id:int}/enabled", async Task<IResult> (
@@ -184,8 +179,12 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 return Results.NotFound(new ApiError("Rule not found."));
 
             rule.Enabled = request.Enabled && !string.IsNullOrWhiteSpace(rule.EntityId);
-            await rules.UpdateAsync(rule, ct);
-            return Results.Ok(rule.ToDto());
+            try
+            {
+                await rules.UpdateAsync(rule, ct);
+                return Results.Ok(rule.ToDto());
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         });
 
         authorized.MapDelete("/rules/{id:int}", async Task<IResult> (
@@ -257,64 +256,17 @@ public static class MobileApiEndpointRouteBuilderExtensions
             var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
 
             return Results.Ok(new MobileSettingsDto(
-                deye.ToDto(),
-                shelly.ToDto(),
+                new DeyeCloudSettingsDto(deye.BaseUrl, deye.AppId, "", deye.Email, "", deye.StationId, deye.DeviceSn),
+                new ShellySettingsDto(shelly.ServerUri, "", shelly.DeviceId, shelly.RequestIntervalMilliseconds),
                 polling.ToDto(),
                 display.ToDto()));
         });
 
-        authorized.MapPut("/settings/deye", async Task<IResult> (
-            DeyeCloudSettingsDto request,
-            AppSettingsService settings,
-            DeyeCloudClient deyeClient) =>
-        {
-            if (!ProviderEndpointPolicy.TryDeye(request.BaseUrl, out _))
-                return Results.BadRequest(new ApiError("Use the official EU or US DeyeCloud HTTPS API address."));
-            await settings.SaveSectionAsync(DeyeCloudOptions.Section, request.ToOptions());
-            deyeClient.InvalidateToken();
-            return Results.NoContent();
-        });
-
-        authorized.MapGet("/settings/deye/stations", async (
-            DeyeCloudClient deyeClient,
-            CancellationToken ct) =>
-            Results.Ok((await deyeClient.GetStationsWithDevicesAsync(ct)).Select(s => s.ToDto()).ToList()));
-
-        authorized.MapGet("/settings/deye/stations/{stationId:long}/devices", async (
-            long stationId,
-            DeyeCloudClient deyeClient,
-            CancellationToken ct) =>
-            Results.Ok((await deyeClient.GetDevicesForStationAsync(stationId, ct)).Select(d => d.ToDto()).ToList()));
-
-        authorized.MapPost("/settings/deye/selected-device", async Task<IResult> (
-            DeyeDeviceSelectionRequest request,
-            AppSettingsService settings,
-            DeyeCloudClient deyeClient) =>
-        {
-            if (request.StationId <= 0 || string.IsNullOrWhiteSpace(request.SerialNumber))
-                return Results.BadRequest(new ApiError("StationId and SerialNumber are required."));
-
-            var deye = await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-            deye.StationId = request.StationId;
-            deye.DeviceSn = request.SerialNumber.Trim();
-            await settings.SaveSectionAsync(DeyeCloudOptions.Section, deye);
-            deyeClient.InvalidateToken();
-            return Results.Ok(deye.ToDto());
-        });
-
-        authorized.MapPut("/settings/shelly", async Task<IResult> (
-            ShellySettingsDto request,
-            AppSettingsService settings) =>
-        {
-            if (!ProviderEndpointPolicy.TryShelly(request.ServerUri, out _))
-                return Results.BadRequest(new ApiError("Use the HTTPS server address provided by Shelly Cloud."));
-            if (request.RequestIntervalMilliseconds is < 100 or > 60000)
-                return Results.BadRequest(new ApiError("Shelly request interval must be between 100 and 60000 milliseconds."));
-
-            await settings.SaveSectionAsync(ShellyOptions.Section, request.ToOptions());
-            return Results.NoContent();
-        });
-
+        foreach (var path in new[] { "/settings/deye", "/settings/shelly" })
+            authorized.MapPut(path, () => Results.Json(new ApiError("Update the app and configure this connection in Integrations."), statusCode: 426));
+        authorized.MapGet("/settings/deye/stations", () => Results.Json(new ApiError("Update the app to use integration discovery."), statusCode: 426));
+        authorized.MapGet("/settings/deye/stations/{stationId:long}/devices", () => Results.Json(new ApiError("Update the app to use integration discovery."), statusCode: 426));
+        authorized.MapPost("/settings/deye/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
         authorized.MapPut("/settings/polling", async Task<IResult> (
             PollingSettingsDto request,
             AppSettingsService settings) =>
@@ -341,24 +293,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
             return Results.NoContent();
         });
 
-        authorized.MapPost("/settings/socket/selected-device", async Task<IResult> (
-            SocketDeviceSelectionRequest request,
-            AppSettingsService settings) =>
-        {
-            if (string.IsNullOrWhiteSpace(request.EntityId))
-                return Results.BadRequest(new ApiError("EntityId is required."));
-
-            var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
-
-            shelly.DeviceId = SocketEntityIds.RawIdOrSelf(request.EntityId.Trim());
-            await settings.SaveSectionAsync(ShellyOptions.Section, shelly);
-
-            return Results.Ok(new MobileSettingsDto(
-                (await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section)).ToDto(),
-                shelly.ToDto(),
-                (await settings.LoadSectionAsync<PollingOptions>(PollingOptions.Section)).ToDto(),
-                (await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section)).ToDto()));
-        });
+        authorized.MapPost("/settings/socket/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
     }
 
     private static async Task<MobileDashboardResponse> ReadDashboardAsync(
@@ -366,10 +301,9 @@ public static class MobileApiEndpointRouteBuilderExtensions
         IRuleRepository ruleRepository, AppSettingsService settings, IServiceProvider services, CancellationToken ct)
     {
         var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
-        var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
         var rules = await ruleRepository.GetAllAsync(ct);
         var devices = deviceSnapshot.Current ?? Array.Empty<DevicePowerInfo>();
-        var manualDevices = ManualSocketDevices.Build(rules, shelly.DeviceId, deviceSnapshot.Current);
+        var manualDevices = ManualSocketDevices.Build(rules, null, deviceSnapshot.Current);
         return new(
             inverterSnapshot.Current?.ToDto(), deviceSnapshot.Current != null, deviceSnapshot.LastUpdated,
             await DescribeDevicesAsync(services, devices, ct), await DescribeDevicesAsync(services, manualDevices, ct),

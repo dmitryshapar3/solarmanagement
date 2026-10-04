@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" /><PackageReference Include="xunit" Version="2.5.3" /><PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/SolarManagement.Integrations.Runtime/SolarManagement.Integrations.Runtime.csproj" /><ProjectReference Include="../../integrations/SolarManagement.Integrations.WorkerSdk/SolarManagement.Integrations.WorkerSdk.csproj" /><ProjectReference Include="../SolarManagement.IntegrationTestWorker/SolarManagement.IntegrationTestWorker.csproj" ReferenceOutputAssembly="false" /><ProjectReference Include="../../tools/SolarManagement.IntegrationPackager/SolarManagement.IntegrationPackager.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+  <ItemGroup><None Include="../shared/integration-ui-conditions.json" Link="shared/integration-ui-conditions.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <Target Name="CopyIntegrationTestWorker" AfterTargets="Build">
+    <ItemGroup><WorkerPayload Include="../SolarManagement.IntegrationTestWorker/bin/$(Configuration)/net8.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(WorkerPayload)" DestinationFiles="@(WorkerPayload->'$(OutDir)worker/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <ItemGroup><PackagerPayload Include="../../tools/SolarManagement.IntegrationPackager/bin/$(Configuration)/net8.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(PackagerPayload)" DestinationFiles="@(PackagerPayload->'$(OutDir)packager/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

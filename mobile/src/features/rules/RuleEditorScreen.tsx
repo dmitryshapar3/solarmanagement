@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Save } from "lucide-react-native";
@@ -16,6 +16,7 @@ import {
   TextField
 } from "../../core/components";
 import { Device, Rule, RuleRequest } from "../../core/api/types";
+import type { IntegrationDeviceBinding } from "../../core/api/IntegrationApi";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 import { RulesStackParamList } from "../../application/navigationTypes";
@@ -25,6 +26,7 @@ type Props = NativeStackScreenProps<RulesStackParamList, "RuleEditor">;
 const defaultRule: RuleRequest = {
   name: "",
   entityId: "",
+  sourceInverterId: null,
   enabled: false,
   socTurnOnThreshold: 80,
   useSeparateSocTurnOffThreshold: false,
@@ -38,15 +40,36 @@ const defaultRule: RuleRequest = {
 };
 
 export function RuleEditorScreen({ route, navigation }: Props) {
-  const { api } = useAuth();
+  const { api, isDemo } = useAuth();
   const ruleId = route.params?.id;
   const [rule, setRule] = useState<RuleRequest>(defaultRule);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [inverters, setInverters] = useState<IntegrationDeviceBinding[]>([]);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [loadingSources, setLoadingSources] = useState(false);
   const [loading, setLoading] = useState(Boolean(ruleId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingPending = useRef(false);
 
-  const load = useCallback(async () => {
+  const loadSources = useCallback(async (signal?: AbortSignal) => {
+    if (isDemo) return;
+    setLoadingSources(true);
+    try {
+      const instances = await api.integrations.getInstances(signal);
+      const bindings = await Promise.all(instances.filter(instance => instance.status === "enabled")
+        .map(instance => api.integrations.getDevices(instance.id, signal)));
+      if (signal?.aborted) return;
+      setInverters(bindings.flat().filter(binding => binding.kind === "inverter"));
+      setSourceError(null);
+    } catch (ex) {
+      if (!signal?.aborted) setSourceError(ex instanceof Error ? ex.message : "Unable to load inverter sources.");
+    } finally {
+      if (!signal?.aborted) setLoadingSources(false);
+    }
+  }, [api, isDemo]);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
@@ -54,19 +77,23 @@ export function RuleEditorScreen({ route, navigation }: Props) {
         api.getDevices(false),
         ruleId ? api.getRule(ruleId) : Promise.resolve(null)
       ]);
+      if (signal?.aborted) return;
       setDevices(deviceList.devices);
       if (loadedRule) {
         setRule(toRequest(loadedRule));
       }
+      await loadSources(signal);
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to load rule.");
+      if (!signal?.aborted) setError(ex instanceof Error ? ex.message : "Unable to load rule.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }, [api, ruleId]);
+  }, [api, loadSources, ruleId]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   function setField<K extends keyof RuleRequest>(key: K, value: RuleRequest[K]) {
@@ -79,14 +106,22 @@ export function RuleEditorScreen({ route, navigation }: Props) {
   }
 
   const unknownSelection = Boolean(rule.entityId) && !devices.some((device) => device.id === rule.entityId);
+  const unknownSource = Boolean(rule.sourceInverterId) && !inverters.some(inverter => inverter.id === rule.sourceInverterId);
 
   async function save() {
+    if (savingPending.current) return;
     const message = validate(rule);
     if (message) {
       setError(message);
       return;
     }
+    if (!isDemo && rule.enabled && (sourceError || unknownSource || !rule.sourceInverterId && !inverters.some(inverter => inverter.isDefault))) {
+      setError(sourceError ? "Inverter sources are unavailable. Reload sources before enabling this rule."
+        : "Select an available source inverter, or select an installation default inverter in Integrations.");
+      return;
+    }
 
+    savingPending.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -100,6 +135,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Unable to save rule.");
     } finally {
+      savingPending.current = false;
       setSaving(false);
     }
   }
@@ -163,6 +199,20 @@ export function RuleEditorScreen({ route, navigation }: Props) {
       ) : (
         <EmptyState title="No devices loaded." />
       )}
+
+      <SectionTitle title="Source inverter" />
+      <Card style={styles.form}>
+        <ErrorBanner message={sourceError} />
+        <AppButton label={isDemo ? "Demo inverter" : "Installation default inverter"} variant={!rule.sourceInverterId ? "primary" : "secondary"}
+          disabled={saving} onPress={() => setField("sourceInverterId", null)} />
+        {unknownSource ? <Text style={styles.deviceCategory}>{rule.sourceInverterId}: selected source is unavailable. Its reference is preserved.</Text> : null}
+        {inverters.map(inverter => <AppButton key={inverter.id} label={inverter.name}
+          variant={rule.sourceInverterId === inverter.id ? "primary" : "secondary"} disabled={saving}
+          onPress={() => setField("sourceInverterId", inverter.id)} />)}
+        {!isDemo ? <AppButton label="Reload inverter sources" variant="secondary" disabled={saving}
+          onPress={() => void loadSources()} loading={loadingSources} /> : null}
+        <Text style={styles.deviceCategory}>Battery and PV conditions use the selected source. Leaving the installation default selected follows its current inverter.</Text>
+      </Card>
 
       <SectionTitle title="Turn Conditions" />
       <Card style={styles.form}>
@@ -257,6 +307,7 @@ function toRequest(rule: Rule): RuleRequest {
   return {
     name: rule.name,
     entityId: rule.entityId,
+    sourceInverterId: rule.sourceInverterId ?? null,
     enabled: rule.enabled,
     socTurnOnThreshold: rule.socTurnOnThreshold,
     useSeparateSocTurnOffThreshold: rule.useSeparateSocTurnOffThreshold,

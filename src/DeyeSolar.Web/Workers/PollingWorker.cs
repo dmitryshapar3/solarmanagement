@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -14,38 +15,39 @@ public class PollingWorker : BackgroundService
 {
     private const int HistoryRetentionDays = 31;
     private readonly IInverterRefreshService _inverterRefresh;
-    private readonly IOptionsMonitor<DeyeCloudOptions> _deyeOptions;
+    private readonly IOptionsMonitor<InverterConnectionOptions> _inverterOptions;
     private readonly ISocketController _socketController;
     private readonly IRuleRepository _ruleRepository;
-    private readonly DeviceStatusSnapshot _deviceStatusSnapshot;
     private readonly RuleEvaluator _ruleEvaluator;
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
     private readonly IOptionsMonitor<PollingOptions> _pollingOptions;
     private readonly AppSettingsService _settingsService;
     private readonly ILogger<PollingWorker> _logger;
+    private readonly IInverterDataSource? _sources;
+    private readonly ExportReadingStore? _readings;
 
     public PollingWorker(
         IInverterRefreshService inverterRefresh,
-        IOptionsMonitor<DeyeCloudOptions> deyeOptions,
+        IOptionsMonitor<InverterConnectionOptions> inverterOptions,
         ISocketController socketController,
         IRuleRepository ruleRepository,
-        DeviceStatusSnapshot deviceStatusSnapshot,
         RuleEvaluator ruleEvaluator,
         IDbContextFactory<DeyeSolarDbContext> dbFactory,
         IOptionsMonitor<PollingOptions> pollingOptions,
         AppSettingsService settingsService,
-        ILogger<PollingWorker> logger)
+        ILogger<PollingWorker> logger, IInverterDataSource? sources = null, ExportReadingStore? readings = null)
     {
         _inverterRefresh = inverterRefresh;
-        _deyeOptions = deyeOptions;
+        _inverterOptions = inverterOptions;
         _socketController = socketController;
         _ruleRepository = ruleRepository;
-        _deviceStatusSnapshot = deviceStatusSnapshot;
         _ruleEvaluator = ruleEvaluator;
         _dbFactory = dbFactory;
         _pollingOptions = pollingOptions;
         _settingsService = settingsService;
         _logger = logger;
+        _sources = sources;
+        _readings = readings;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -81,38 +83,46 @@ public class PollingWorker : BackgroundService
 
     internal async Task PollAndEvaluateAsync(CancellationToken ct)
     {
-        var identity = DeyeRefreshIdentity.Capture(_deyeOptions.CurrentValue);
-        var data = await _inverterRefresh.RefreshAsync(ct);
-        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
-        _logger.LogInformation("Poll: SOC={Soc}%, Solar={Solar}W, BatteryPower={Battery}W, Load={Load}W",
-            data.BatterySoc, data.SolarProduction, data.BatteryPower, data.LoadPower);
-
         await CleanupReadingsAsync(ct);
-        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
-
-        var allRules = await _ruleRepository.GetAllAsync(ct);
         var now = DateTime.UtcNow;
-
-        // Filter to rules that are due for evaluation based on their interval
-        var dueRules = allRules.Where(r => r.Enabled && IsDueForEvaluation(r, now)).ToList();
-
-        if (dueRules.Count == 0)
+        InverterData? primary = null;
+        try { primary = await _inverterRefresh.RefreshAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { _logger.LogWarning("Primary inverter is unavailable ({ErrorType})", ex.GetType().Name); }
+        var primaryIdentity = InverterRefreshIdentity.Capture(_inverterOptions.CurrentValue);
+        var allRules = await _ruleRepository.GetAllAsync(ct);
+        var due = allRules.Where(r => r.Enabled && IsDueForEvaluation(r, now) && !string.IsNullOrEmpty(r.EntityId)).ToList();
+        foreach (var group in due.GroupBy(r => r.SourceInverterId))
         {
-            _logger.LogDebug("No rules due for evaluation");
-            return;
+            try
+            {
+                var data = primary;
+                if (group.Key is { } sourceId && data?.InverterId != sourceId)
+                {
+                    if (_sources is not IRegisteredInverterDataSource sources || _readings is null) continue;
+                    data = await sources.ReadDeviceAsync(new(sourceId), ct);
+                    await _readings.SavePollingAsync(data, ct);
+                }
+                if (data is null) continue;
+                var identity = primaryIdentity;
+                Task<bool> IsCurrent() => group.Key is null && !identity.Matches(_inverterOptions.CurrentValue)
+                    ? Task.FromResult(false) : _sources is IRegisteredInverterDataSource registered
+                        ? registered.IsCurrentAsync(data, ct) : Task.FromResult(identity.Matches(_inverterOptions.CurrentValue));
+                await EvaluateSourceAsync(data, group.ToList(), now, IsCurrent, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { _logger.LogWarning("Inverter rule evaluation is unavailable ({ErrorType})", ex.GetType().Name); }
         }
-
-        // Skip rules without a device assigned
-        dueRules = dueRules.Where(r => !string.IsNullOrEmpty(r.EntityId)).ToList();
-        if (dueRules.Count == 0)
-            return;
-
+    }
+    private async Task EvaluateSourceAsync(InverterData data, List<TriggerRule> dueRules, DateTime now,
+        Func<Task<bool>> isCurrent, CancellationToken ct)
+    {
+        if (!await isCurrent()) return;
         _logger.LogInformation("Evaluating {Count} rule(s)", dueRules.Count);
-
-        var evaluationContext = await BuildEvaluationContextAsync(now, ct);
+        var evaluationContext = await BuildEvaluationContextAsync(now, data.InverterId?.ToString("D") ?? _inverterOptions.CurrentValue.DeviceKey, ct);
 
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        if (!identity.Matches(_deyeOptions.CurrentValue)) return;
+        if (!await isCurrent()) return;
         var actions = _ruleEvaluator.Evaluate(data, dueRules, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
@@ -120,7 +130,7 @@ public class PollingWorker : BackgroundService
 
         foreach (var action in actions)
         {
-            if (!identity.Matches(_deyeOptions.CurrentValue)) break;
+            if (!await isCurrent()) break;
             var rule = dueRules.First(r => r.Id == action.RuleId);
             try
             {
@@ -131,8 +141,7 @@ public class PollingWorker : BackgroundService
 
                 rule.CurrentState = action.TurnOn;
                 rule.LastEvaluated = now;
-                await _ruleRepository.UpdateAsync(rule, ct);
-                _deviceStatusSnapshot.SetDeviceState(action.EntityId, action.TurnOn);
+                await _ruleRepository.RecordEvaluationAsync(rule.Id, now, ct);
                 successfulActions.Add(action.RuleId);
                 recordedRules.Add(action.RuleId);
 
@@ -142,7 +151,7 @@ public class PollingWorker : BackgroundService
             catch (Exception ex)
             {
                 rule.LastEvaluated = now;
-                await _ruleRepository.UpdateAsync(rule, ct);
+                await _ruleRepository.RecordEvaluationAsync(rule.Id, now, ct);
                 failedActions[action.RuleId] = $"{(action.TurnOn ? "ON" : "OFF")} failed: {ex.Message}";
                 recordedRules.Add(action.RuleId);
                 _logger.LogError(ex, "Failed to execute action for rule {RuleId}", action.RuleId);
@@ -152,11 +161,11 @@ public class PollingWorker : BackgroundService
         // Update LastEvaluated for rules that had no action (still evaluated, just no change)
         foreach (var rule in dueRules)
         {
-            if (!identity.Matches(_deyeOptions.CurrentValue)) break;
-            if (!actions.Any(a => a.RuleId == rule.Id))
+            if (!await isCurrent()) break;
+            if (data.BatterySocValid != false && !actions.Any(a => a.RuleId == rule.Id))
             {
                 rule.LastEvaluated = now;
-                await _ruleRepository.UpdateAsync(rule, ct);
+                await _ruleRepository.RecordEvaluationAsync(rule.Id, now, ct);
                 recordedRules.Add(rule.Id);
             }
         }
@@ -206,7 +215,7 @@ public class PollingWorker : BackgroundService
                         if (!string.IsNullOrEmpty(solarReason))
                             reason += $"; {solarReason}";
                     }
-                    else if (data.BatterySoc <= turnOffThreshold)
+                    else if (data.BatterySocValid != false && data.BatterySoc <= turnOffThreshold)
                     {
                         conditionKey = "action:off:soc-threshold";
                         reason = $"SOC={data.BatterySoc}% <= turn-off threshold {turnOffThreshold}%";
@@ -334,13 +343,14 @@ public class PollingWorker : BackgroundService
         return true;
     }
 
-    private async Task<RuleEvaluationContext> BuildEvaluationContextAsync(DateTime now, CancellationToken ct)
+    private async Task<RuleEvaluationContext> BuildEvaluationContextAsync(DateTime now, string deviceKey, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var cutoff = now.AddMinutes(-RuleEvaluator.SolarProductionAverageWindowMinutes);
 
         var averageSolar = await db.Readings
-            .Where(r => r.Timestamp >= cutoff &&
+            .Where(r => r.Timestamp >= cutoff && r.SolarObservedAt >= cutoff && r.BatterySocValid != false
+                && r.SolarDeviceSn == deviceKey &&
                 r.BatterySoc < RuleEvaluator.SolarProductionBypassSocThreshold)
             .AverageAsync(r => (double?)r.SolarProduction, ct);
 

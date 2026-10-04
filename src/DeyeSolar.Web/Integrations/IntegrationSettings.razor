@@ -1,0 +1,417 @@
+@using System.Globalization
+@using System.Security.Claims
+@using System.Text.Json
+@using SolarManagement.Integrations.Contracts
+@inject IIntegrationProviderCatalog Catalog
+@inject IntegrationSetupService Setup
+@inject AuthenticationStateProvider Authentication
+@inject IntegrationChangeNotifier Changes
+@inject DeyeSolar.Web.Data.CurrentInstallation Installation
+@implements IDisposable
+
+<MudPaper Class="pa-4 mb-4">
+    <MudText Typo="Typo.h6">Device integrations</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">Connect an account, verify access, save its settings and choose devices. Connection checks never switch a device.</MudText>
+    <MudButton Variant="Variant.Outlined" OnClick="RefreshCatalog" Disabled="_busy">Refresh providers</MudButton>
+    @if (!string.IsNullOrWhiteSpace(_notice)) { <MudAlert Severity="Severity.Info" Class="mt-2">@_notice</MudAlert> }
+    @if (!string.IsNullOrWhiteSpace(_error)) { <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert> }
+    <MudGrid Class="mt-2">
+        <MudItem xs="12" md="5">
+            <MudSelect T="string" Label="Provider" @bind-Value="_newProvider" Disabled="_busy">
+                @foreach (var provider in _providers)
+                {
+                    <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField T="string" Label="Integration name" @bind-Value="_newName" Immediate="true" Disabled="_busy" />
+            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newProvider))">Add integration</MudButton>
+            <MudStack Class="mt-4" Spacing="2">
+                @foreach (var instance in _instances)
+                {
+                    <MudButton Variant="@(instance.Id == _selected ? Variant.Filled : Variant.Outlined)" OnClick="@(() => Select(instance.Id))" Disabled="_busy">@instance.Name · @instance.Status</MudButton>
+                    @if (instance.Status == "enabled")
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="@(() => DisableInstance(instance))" Disabled="_busy">Disable @instance.Name</MudButton>
+                    }
+                }
+            </MudStack>
+            @if (_providers.Count == 0 && !_catalogUnavailable) { <MudText Class="mt-3">No provider packages are installed. Ask the platform operator to install a supported provider.</MudText> }
+        </MudItem>
+        <MudItem xs="12" md="7">
+            @if (Current is { } form)
+            {
+                <MudText Typo="Typo.h6">@form.Configuration.Instance.Name</MudText>
+                <MudSelect T="string" Label="Installed provider version" Value="@form.TargetPackageVersion"
+                    ValueChanged="@((string version) => form.TargetPackageVersion = version)" Disabled="_busy">
+                    @foreach (var version in form.Versions)
+                    {
+                        <MudSelectItem T="string" Value="@version.PackageVersion" Disabled="@(!Supported(version))">@version.PackageVersion</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudText Typo="Typo.caption">Switching verifies saved settings. A successful switch discards the current draft.</MudText>
+                <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SwitchVersion"
+                    Disabled="@(_busy || form.TargetPackageVersion == form.Configuration.Instance.PackageVersion || !form.Versions.Any(version => version.PackageVersion == form.TargetPackageVersion && Supported(version)))">Use selected version (discard draft)</MudButton>
+                @if (!Supported(form.Provider))
+                {
+                    <MudAlert Severity="Severity.Warning">This provider requires a newer settings interface.</MudAlert>
+                    @if (form.Configuration.Instance.Status == "enabled") { <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="_busy">Disable integration</MudButton> }
+                }
+                else
+                {
+                    var step = Steps(form)[form.StepIndex];
+                    var publicValues = PublicValues(form);
+                    @if (form.Provider.UiLayout is not null)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-3">Step @(form.StepIndex + 1) of @Steps(form).Count · @step.Title</MudText>
+                        @if (step.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@step.Instructions</MudText> }
+                    }
+                    @foreach (var group in step.Groups.Where(group => IntegrationUiConditions.IsActive(group.ActiveWhen, publicValues)))
+                    {
+                        @if (form.Provider.UiLayout is not null)
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">@group.Title</MudText>
+                            @if (group.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@group.Instructions</MudText> }
+                        }
+                        @foreach (var field in form.Provider.Fields.Where(field => group.FieldKeys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, publicValues)))
+                        {
+                            <IntegrationFieldInput @key="field.Key" Field="field" Value="@TextValue(field.Key)" ValueChanged="@((string value) => SetText(field.Key, value))"
+                                SecretAction="@SecretAction(field.Key)" SecretActionChanged="@((string value) => SetSecretAction(field.Key, value))"
+                                SecretValue="@SecretValue(field.Key)" SecretValueChanged="@((string value) => SetSecretValue(field.Key, value))"
+                                SecretPresent="@(form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key))" Busy="_busy" />
+                        }
+                        <MudStack Row="true" Class="mt-3" Spacing="2">
+                            @if (group.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">Test connection</MudButton> }
+                            @if (group.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">Find devices</MudButton> }
+                            @if (group.Actions.Contains("oauth")) { <MudButton Variant="Variant.Outlined" OnClick="StartAuthorization" Disabled="_busy">Authorize provider account</MudButton> }
+                        </MudStack>
+                        @if (group.Actions.Contains("oauth") && form.Authorization is { } authorization)
+                        {
+                            @if (form.AuthorizationStale)
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mt-2">The draft changed. Start authorization again before using its result.</MudAlert>
+                            }
+                            else if (form.AuthorizationStatus == "pending" && SafeAuthorizationUrl(authorization.AuthorizationUrl))
+                            {
+                                <a href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">Open provider authorization</a>
+                            }
+                            <MudText Class="mt-2">Authorization status: @form.AuthorizationStatus</MudText>
+                            <MudButton OnClick="CheckAuthorization" Disabled="@(_busy || form.AuthorizationStale)">Check authorization</MudButton>
+                            <MudButton OnClick="CancelAuthorization" Disabled="_busy">Cancel authorization</MudButton>
+                        }
+                        @if (group.Actions.Contains("discover"))
+                        {
+                            <MudText Typo="Typo.caption" Class="mt-2">Save before choosing a discovered device. Unsaved changes remain a draft.</MudText>
+                            @foreach (var device in form.Discovery?.Devices ?? [])
+                            {
+                                <MudPaper Class="pa-2 mt-2" Outlined="true">
+                                    <MudText>@device.Name · @device.Kind @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
+                                    <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">Use device</MudButton>
+                                </MudPaper>
+                            }
+                        }
+                    }
+                    <MudStack Row="true" Class="mt-3" Spacing="2">
+                        @if (form.StepIndex > 0) { <MudButton OnClick="PreviousStep" Disabled="_busy">Previous step</MudButton> }
+                        @if (form.StepIndex + 1 < Steps(form).Count) { <MudButton OnClick="NextStep" Disabled="_busy">Next step</MudButton> }
+                        else { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save settings</MudButton> }
+                    </MudStack>
+                    <MudButton Class="mt-2" Variant="Variant.Text" OnClick="ReloadSaved" Disabled="_busy">Reload saved settings (discard draft)</MudButton>
+                    <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="@(_busy || (form.Configuration.Instance.Status != "enabled" && form.Dirty))">@(form.Configuration.Instance.Status == "enabled" ? "Disable integration" : "Enable integration")</MudButton>
+                    @foreach (var binding in form.Bindings)
+                    {
+                        <MudText Class="mt-2">@binding.Name · @binding.Kind @(binding.IsDefault ? "· selected inverter" : "· connected")</MudText>
+                    }
+                }
+            }
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@code {
+    private IReadOnlyList<IntegrationProviderDescriptor> _providers = [];
+    private IReadOnlyList<IntegrationInstanceDto> _instances = [];
+    private readonly Dictionary<Guid, FormState> _forms = [];
+    private string _newProvider = "";
+    private string _newName = "";
+    private Guid? _selected;
+    private bool _busy;
+    private bool _disposed;
+    private bool _catalogUnavailable = true;
+    private readonly CancellationTokenSource _lifetime = new();
+    private string? _error;
+    private string? _notice;
+    private ClaimsPrincipal _actor = new();
+    private FormState? Current => _selected.HasValue ? _forms.GetValueOrDefault(_selected.Value) : null;
+    private static bool Supported(IntegrationProviderDescriptor provider)
+    {
+        try { IntegrationDescriptorValidator.Validate(provider); return true; }
+        catch (InvalidDataException) { return false; }
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        _actor = (await Authentication.GetAuthenticationStateAsync()).User;
+        Changes.Changed += OnChanged;
+        await Run(async () => { await LoadCatalog(); if (_instances.Count > 0) await SelectCore(_instances[0].Id); });
+    }
+    private void OnChanged(string installation, Guid instance)
+    {
+        if (_disposed || installation.Length > 0 && installation != Installation.Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            if (_disposed) return;
+            try
+            {
+                await LoadCatalog();
+                if (Current?.Dirty == true) _notice = "The integration catalog changed. Your draft is preserved; save may require reloading the settings.";
+            }
+            catch (Exception) { _error = "The provider catalog could not be refreshed. Your draft is preserved."; }
+            StateHasChanged();
+        });
+    }
+    private async Task LoadCatalog()
+    {
+        _instances = await Setup.ListAsync(_lifetime.Token);
+        _catalogUnavailable = true;
+        _providers = await Catalog.GetProvidersAsync(_lifetime.Token);
+        _catalogUnavailable = false;
+        var forms = _forms.Values.ToArray();
+        var versions = await Task.WhenAll(forms.Select(form => Catalog.GetVersionsAsync(form.Configuration.Instance.ProviderId, _lifetime.Token)));
+        for (var index = 0; index < forms.Length; index++) forms[index].Versions = versions[index];
+    }
+    private Task RefreshCatalog() => Run(async () => { await LoadCatalog(); _notice = "Provider catalog refreshed. Existing drafts are preserved."; });
+    private Task Create() => Run(async () =>
+    {
+        var instance = await Setup.CreateAsync(new(_newProvider, _newName), _actor, _lifetime.Token);
+        await LoadCatalog();
+        await SelectCore(instance.Id);
+        _newName = "";
+        _notice = "Integration added. Enter its connection settings.";
+    });
+    private Task Select(Guid id) => Run(async () => { await SelectCore(id); _notice = null; });
+    private async Task SelectCore(Guid id)
+    {
+        if (!_forms.ContainsKey(id))
+        {
+            var configuration = await Setup.ReadAsync(id, _lifetime.Token);
+            var provider = await Catalog.GetAsync(configuration.Instance.ProviderId, configuration.Instance.PackageVersion, _lifetime.Token);
+            _forms[id] = new(configuration, provider) { Bindings = await Setup.DevicesAsync(id, _lifetime.Token),
+                Versions = await Catalog.GetVersionsAsync(configuration.Instance.ProviderId, _lifetime.Token) };
+        }
+        _selected = id;
+    }
+    private string TextValue(string key) => Current?.Values.GetValueOrDefault(key) ?? "";
+    private void SetText(string key, string value) { if (Current is { } f) { f.Values[key] = value; f.EditedFields.Add(key); f.Dirty = true; InvalidateAuthorization(f); } }
+    private string SecretAction(string key) => Current?.Secrets.GetValueOrDefault(key)?.Operation ?? "keep";
+    private string SecretValue(string key) => Current?.Secrets.GetValueOrDefault(key)?.Value ?? "";
+    private void SetSecretAction(string key, string operation) { if (Current is { } f) { f.Secrets[key] = new(operation); f.Dirty = true; InvalidateAuthorization(f); } }
+    private void SetSecretValue(string key, string value) { if (Current is { } f) { f.Secrets[key] = new("replace", value); f.Dirty = true; InvalidateAuthorization(f); } }
+    private static void InvalidateAuthorization(FormState form)
+    {
+        if (form.Authorization is null) return;
+        form.AuthorizationStale = true;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+    }
+    private static IReadOnlyList<IntegrationUiStep> Steps(FormState form) => form.Provider.UiLayout?.Steps
+        ?? [new("settings", "Connection settings", null, [new("settings", "Connection settings", null, form.Provider.Fields.Select(field => field.Key).ToArray(), form.Provider.Actions)])];
+    private static JsonElement PublicValues(FormState form)
+    {
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var field in form.Provider.Fields.Where(field => !IntegrationUiConditions.IsSecret(field)))
+        {
+            if (!form.Values.TryGetValue(field.Key, out var text)) continue;
+            if (!form.EditedFields.Contains(field.Key) && form.Configuration.Values.TryGetValue(field.Key, out var saved))
+            { values[field.Key] = saved.Clone(); continue; }
+            if (field.Kind is "number" or "integer")
+                values[field.Key] = decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number)
+                    ? IntegrationJson.Element(number) : IntegrationJson.Element<string?>(null);
+            else if (field.Kind == "boolean") values[field.Key] = text is "true" or "false" ? IntegrationJson.Element(text == "true") : IntegrationJson.Element<string?>(null);
+            else values[field.Key] = field.Kind == "select" && text.Length == 0 ? IntegrationJson.Element<string?>(null) : IntegrationJson.Element(text);
+        }
+        return IntegrationUiConditions.EffectiveValues(form.Provider, IntegrationJson.Element(values));
+    }
+    private Task PreviousStep() => Run(() => { Current!.StepIndex--; return Task.CompletedTask; });
+    private Task NextStep() => Run(() =>
+    {
+        var form = Current!;
+        var values = PublicValues(form);
+        var keys = Steps(form)[form.StepIndex].Groups.SelectMany(group => group.FieldKeys).ToHashSet(StringComparer.Ordinal);
+        foreach (var field in form.Provider.Fields.Where(field => keys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, values)))
+        {
+            if (IntegrationUiConditions.IsSecret(field))
+            {
+                var operation = form.Secrets.GetValueOrDefault(field.Key);
+                var present = operation?.Operation == "replace" ? !string.IsNullOrWhiteSpace(operation.Value)
+                    : operation?.Operation != "clear" && (form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key));
+                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter or authorize {field.Label}.");
+            }
+            else
+            {
+                var present = values.TryGetProperty(field.Key, out var value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                    && (value.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(value.GetString()));
+                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
+                if (present)
+                    try { IntegrationDescriptorValidator.ValidateValue(field, value); }
+                    catch (InvalidDataException) { throw new IntegrationRequestException("validation", $"Check {field.Label}."); }
+            }
+        }
+        form.StepIndex++;
+        return Task.CompletedTask;
+    });
+    private IntegrationConfigurationChange Draft()
+    {
+        var form = Current ?? throw new InvalidOperationException();
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var field in form.Provider.Fields.Where(f => !f.Secret && f.Kind != "secret"))
+        {
+            var required = field.Required && IntegrationUiConditions.IsFieldActive(form.Provider, field, PublicValues(form));
+            if (!required && !form.Values.ContainsKey(field.Key)) continue;
+            if (!form.EditedFields.Contains(field.Key) && form.Configuration.Values.TryGetValue(field.Key, out var saved))
+            { values[field.Key] = saved.Clone(); continue; }
+            var text = form.Values.GetValueOrDefault(field.Key) ?? "";
+            if (field.Kind == "select" && text.Length == 0)
+            { values[field.Key] = IntegrationJson.Element<string?>(null); continue; }
+            if (field.Kind is "number" or "integer")
+            {
+                if (text.Length == 0) { values[field.Key] = IntegrationJson.Element<string?>(null); continue; }
+                if (!decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
+                    throw new IntegrationRequestException("validation", $"Enter a number for {field.Label}.");
+                values[field.Key] = IntegrationJson.Element(number);
+            }
+            else values[field.Key] = field.Kind == "boolean"
+                ? text is "true" or "false" ? IntegrationJson.Element(text == "true") : IntegrationJson.Element<string?>(null)
+                : IntegrationJson.Element(text);
+        }
+        var instance = form.Configuration.Instance;
+        return new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, values, new(form.Secrets, StringComparer.Ordinal), form.OAuthFlowId);
+    }
+    private static bool SafeAuthorizationUrl(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo);
+    private Task StartAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is { } previous)
+            await Setup.CancelAuthorizationAsync(form.Configuration.Instance.Id, previous.FlowId, _actor, _lifetime.Token);
+        form.Authorization = null;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+        form.Authorization = await Setup.StartAuthorizationAsync(form.Configuration.Instance.Id, new(Draft(), "web"), _actor, _lifetime.Token);
+        form.AuthorizationStale = false;
+        form.AuthorizationStatus = "pending";
+        _notice = "Open provider authorization in a new tab, then return here and check its result. Settings are saved only when you choose Save.";
+    });
+    private Task CheckAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is not { } authorization || form.AuthorizationStale) return;
+        var result = await Setup.AuthorizationStatusAsync(form.Configuration.Instance.Id, authorization.FlowId, _actor, _lifetime.Token);
+        form.AuthorizationStatus = result.Status;
+        if (result.Status == "ready")
+        {
+            foreach (var (key, value) in result.Values) { form.Values[key] = DisplayValue(value); form.EditedFields.Add(key); }
+            form.OAuthSecretPresent = new(result.SecretPresent, StringComparer.Ordinal);
+            foreach (var key in form.Provider.OAuthDefinition!.SecretFieldKeys) form.Secrets[key] = new("keep");
+            form.OAuthFlowId = result.FlowId;
+            form.Dirty = true;
+            form.Discovery = null;
+            _notice = "Authorization is ready in this draft. Test the connection and save explicitly to use it.";
+        }
+        else { form.OAuthFlowId = null; form.OAuthSecretPresent.Clear(); _notice = "Authorization status: " + result.Status + "."; }
+    });
+    private Task CancelAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is not { } authorization) return;
+        await Setup.CancelAuthorizationAsync(form.Configuration.Instance.Id, authorization.FlowId, _actor, _lifetime.Token);
+        form.Authorization = null;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+        _notice = "Authorization cancelled. Saved credentials were not changed.";
+    });
+    private static string DisplayValue(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? ""
+        : value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText();
+    private Task Save() => Run(async () =>
+    {
+        var current = Current!;
+        var result = await Setup.SaveAsync(current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token);
+        _forms[result.Instance.Id] = new(result, current.Provider) { Bindings = current.Bindings, Versions = current.Versions };
+        _notice = "Settings saved. Credentials remain on the server.";
+        await LoadCatalog();
+    });
+    private Task Test() => Run(async () => { var result = await Setup.TestAsync(Current!.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = result.Message; });
+    private Task Discover() => Run(async () => { Current!.Discovery = await Setup.DiscoverAsync(Current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = "Choose a device explicitly after saving its connection settings."; });
+    private Task ChooseDevice(string token) => Run(async () =>
+    {
+        var form = Current!;
+        await Setup.SelectDeviceAsync(form.Configuration.Instance.Id, new(Draft(), token), _actor, _lifetime.Token);
+        form.Bindings = await Setup.DevicesAsync(form.Configuration.Instance.Id, _lifetime.Token);
+        form.Discovery = null;
+        _notice = "Device connected.";
+    });
+    private Task ToggleEnabled() => Run(async () =>
+    {
+        var form = Current!;
+        var instance = form.Configuration.Instance;
+        await Setup.SetEnabledAsync(instance.Id, instance.Status != "enabled", new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest), _actor, _lifetime.Token);
+        form.Configuration = await Setup.ReadAsync(instance.Id, _lifetime.Token);
+        await LoadCatalog();
+        _notice = form.Configuration.Instance.Status == "enabled" ? "Integration enabled." : "Integration disabled.";
+    });
+    private Task DisableInstance(IntegrationInstanceDto instance) => Run(async () =>
+    {
+        var result = await Setup.SetEnabledAsync(instance.Id, false,
+            new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest), _actor, _lifetime.Token);
+        if (_forms.TryGetValue(instance.Id, out var form)) form.Configuration = form.Configuration with { Instance = result };
+        _notice = "Integration disabled. Your draft is preserved.";
+        await LoadCatalog();
+    });
+    private Task ReloadSaved() => Run(async () =>
+    {
+        if (_selected is not { } id) return;
+        _forms.Remove(id);
+        await SelectCore(id);
+        _notice = "Saved settings loaded.";
+    });
+    private Task SwitchVersion() => Run(async () =>
+    {
+        var form = Current!;
+        var instance = form.Configuration.Instance;
+        await Setup.SwitchPackageAsync(instance.Id, new(new(instance.Revision, instance.PackageVersion,
+            instance.PackageDigest, instance.DescriptorDigest), form.TargetPackageVersion), _actor, _lifetime.Token);
+        _forms.Remove(instance.Id);
+        await LoadCatalog();
+        await SelectCore(instance.Id);
+        _notice = "Provider version changed. Saved settings loaded and the draft discarded.";
+    });
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try { await action(); }
+        catch (IntegrationRequestException ex) { _error = ex.Message; }
+        catch (Exception) { _error = "Integration settings are temporarily unavailable. Please try again."; }
+        finally { _busy = false; }
+    }
+    public void Dispose() { _disposed = true; Changes.Changed -= OnChanged; _lifetime.Cancel(); }
+    private sealed class FormState(IntegrationConfigurationDto configuration, IntegrationProviderDescriptor provider)
+    {
+        public IntegrationConfigurationDto Configuration { get; set; } = configuration;
+        public IntegrationProviderDescriptor Provider { get; } = provider;
+        public string TargetPackageVersion { get; set; } = configuration.Instance.PackageVersion;
+        public IReadOnlyList<IntegrationProviderDescriptor> Versions { get; set; } = [];
+        public Dictionary<string, string> Values { get; } = IntegrationUiConditions.EffectiveValues(provider, IntegrationJson.Element(configuration.Values))
+            .EnumerateObject().ToDictionary(p => p.Name, p => DisplayValue(p.Value), StringComparer.Ordinal);
+        public Dictionary<string, IntegrationSecretOperation> Secrets { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> EditedFields { get; } = new(StringComparer.Ordinal);
+        public int StepIndex { get; set; }
+        public IntegrationOAuthStartDto? Authorization { get; set; }
+        public string AuthorizationStatus { get; set; } = "pending";
+        public bool AuthorizationStale { get; set; }
+        public Guid? OAuthFlowId { get; set; }
+        public Dictionary<string, bool> OAuthSecretPresent { get; set; } = new(StringComparer.Ordinal);
+        public bool Dirty { get; set; }
+        public IntegrationDiscoveryResponse? Discovery { get; set; }
+        public IReadOnlyList<IntegrationBindingDto> Bindings { get; set; } = [];
+    }
+}

@@ -37,8 +37,10 @@ public sealed class AppSettingsDeviceLabelStore(AppSettingsService settings) : I
 public sealed class DeviceNameService(IDeviceLabelStore store, DeviceStatusSnapshot devices)
 {
     private static readonly SemaphoreSlim Write = new(1, 1);
-    public static string CanonicalId(string id) => SocketEntityIds.RawIdOrSelf(id.Trim()).ToLowerInvariant();
-    public static string LabelKey(string id) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("shelly:" + CanonicalId(id))));
+    public static string CanonicalId(string id) => Guid.TryParse(id, out var key) ? key.ToString("D")
+        : SocketEntityIds.RawIdOrSelf(id.Trim()).ToLowerInvariant();
+    public static string LabelKey(string id) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        (Guid.TryParse(id, out _) ? "socket:" : "shelly:") + CanonicalId(id))));
     public static bool TryName(string? value, out string? name)
     {
         name = string.IsNullOrWhiteSpace(value) ? null : value.Trim();

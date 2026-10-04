@@ -1,5 +1,7 @@
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
+using DeyeSolar.Web.Integrations;
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Data;
@@ -22,14 +24,17 @@ public class RuleRepository : IRuleRepository
     public async Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.TriggerRules.FindAsync(new object[] { id }, ct);
+        return await db.TriggerRules.SingleOrDefaultAsync(rule => rule.Id == id, ct);
     }
 
     public async Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await ValidateSourceAsync(db, rule, ct);
         db.TriggerRules.Add(rule);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return rule;
     }
 
@@ -37,25 +42,59 @@ public class RuleRepository : IRuleRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var originalState = await db.TriggerRules
-            .AsNoTracking()
-            .Where(r => r.Id == rule.Id)
-            .Select(r => (bool?)r.CurrentState)
-            .FirstOrDefaultAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await ValidateSourceAsync(db, rule, ct);
 
-        if (originalState.HasValue && originalState.Value != rule.CurrentState)
-        {
-            rule.CurrentStateChangedAt = DateTime.UtcNow;
-        }
-
-        db.TriggerRules.Update(rule);
+        var current = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == rule.Id, ct)
+            ?? throw new ArgumentException("Rule not found.");
+        // Configuration snapshots can predate an acknowledged command or another evaluation.
+        // Only the command coordinator owns runtime state; an editor cannot restore its stale copy.
+        current.Name = rule.Name;
+        current.EntityId = rule.EntityId;
+        current.SourceInverterId = rule.SourceInverterId;
+        current.Enabled = rule.Enabled;
+        current.SocTurnOnThreshold = rule.SocTurnOnThreshold;
+        current.UseSeparateSocTurnOffThreshold = rule.UseSeparateSocTurnOffThreshold;
+        current.SocTurnOffThreshold = rule.SocTurnOffThreshold;
+        current.UseSolarProductionThreshold = rule.UseSolarProductionThreshold;
+        current.MinAverageSolarProductionWatts = rule.MinAverageSolarProductionWatts;
+        current.CooldownMinutes = rule.CooldownMinutes;
+        current.IntervalSeconds = rule.IntervalSeconds;
+        current.ActiveFrom = rule.ActiveFrom;
+        current.ActiveTo = rule.ActiveTo;
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        rule.CurrentState = current.CurrentState;
+        rule.CurrentStateChangedAt = current.CurrentStateChangedAt;
+        rule.LastEvaluated = current.LastEvaluated;
+    }
+
+    public async Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await db.TriggerRules.Where(rule => rule.Id == ruleId && (!rule.LastEvaluated.HasValue || rule.LastEvaluated < when))
+            .ExecuteUpdateAsync(update => update.SetProperty(rule => rule.LastEvaluated, when), ct);
+    }
+
+    private static async Task ValidateSourceAsync(DeyeSolarDbContext db, TriggerRule rule, CancellationToken ct)
+    {
+        // Disabled drafts retain retired selections so an outage never prevents stopping a rule.
+        if (!rule.Enabled || rule.SourceInverterId is not { } sourceId) return;
+        var binding = await (from device in db.IntegrationDeviceBindings.AsNoTracking()
+            join instance in db.IntegrationInstances.AsNoTracking() on device.InstanceId equals instance.Id
+            where device.Id == sourceId && device.Enabled && device.Kind == "inverter" && instance.State == "enabled"
+            select device).SingleOrDefaultAsync(ct);
+        if (binding is null) throw new ArgumentException("Select an enabled inverter from this installation.");
+        var capabilities = IntegrationCapabilities.Read(binding);
+        if (!capabilities.HasBattery) throw new ArgumentException("The selected inverter does not provide battery SOC.");
+        if (rule.UseSolarProductionThreshold && !capabilities.HasSolarPower)
+            throw new ArgumentException("The selected inverter does not provide solar power.");
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var rule = await db.TriggerRules.FindAsync(new object[] { id }, ct);
+        var rule = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == id, ct);
         if (rule != null)
         {
             db.TriggerRules.Remove(rule);

@@ -25,6 +25,10 @@ spec:
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8080"
+            - name: Auth__DataProtectionKeysPath
+              value: "/data/keys"
+            - name: Integrations__KeyRingPath
+              value: "/data/keys/integrations"
             - name: ConnectionStrings__DefaultConnection
               value: "Server=sqlserver-service.production.svc.cluster.local,1433;Database=DeyeSolar;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;MultipleActiveResultSets=true"
             - name: Shelly__ServerUri
@@ -52,6 +56,19 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          volumeMounts:
+            - name: integration-packages
+              mountPath: /data/integration-packages
+            - name: protection-keys
+              mountPath: /data/keys
+            - name: integration-bundle
+              mountPath: /app/integration-bundle
+              subPath: integration-bundle
+              readOnly: true
+            - name: integration-bundle
+              mountPath: /app/integration-bootstrap.json
+              subPath: integration-bootstrap.json
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /
@@ -66,3 +83,13 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
+      volumes:
+        - name: integration-packages
+          persistentVolumeClaim:
+            claimName: deye-solar-integration-packages
+        - name: protection-keys
+          persistentVolumeClaim:
+            claimName: deye-solar-protection-keys
+        - name: integration-bundle
+          persistentVolumeClaim:
+            claimName: deye-solar-integration-bundle

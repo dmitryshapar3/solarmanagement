@@ -24,7 +24,7 @@ function SalesReportDetails({ data, period }: { data: ExportSalesResult; period:
         <Text style={styles.title}>Completed-hour coverage</Text>
         <Metric label="Export credited after hourly netting" value={amount(data.expectedHours > 0 ? data.creditedExportKwh : null, "kWh")} />
         <Metric label="Expected elapsed contract hours" value={String(data.expectedHours)} />
-        <Metric label="Hours with Deye readings" value={`${data.observedHours} of ${data.expectedHours}`} />
+        <Metric label="Hours with inverter readings" value={`${data.observedHours} of ${data.expectedHours}`} />
         <Metric label="Hours with an energy valuation" value={`${data.valuedHours} of ${data.observedHours} observed`} />
         {data.isPartial ? <Text style={styles.warning}>Partial data · totals cover only available hours.</Text> : null}
         {data.dataError ? <Text style={styles.warning}>{data.dataError}</Text> : null}
@@ -51,7 +51,7 @@ function SalesReportDetails({ data, period }: { data: ExportSalesResult; period:
         <Metric label="TAURON contract starts" value={dateCaption(data.contractStartDate)} />
         <Text style={styles.note}>Grid imports and exports are netted for each hour before credited export is calculated. Energy value uses the available RCE prices under the contract terms.</Text>
         <Text style={styles.note}>Estimated monthly deposit credit includes the 1.23 multiplier. It is not a bank payout or the remaining deposit balance.</Text>
-        <Text style={styles.note}>Final settlement uses the OSD billing meter. Deye readings and the values shown here are estimates. Individual RCE rates are not provided in this report.</Text>
+        <Text style={styles.note}>Final settlement uses the OSD billing meter. inverter readings and the values shown here are estimates. Individual RCE rates are not provided in this report.</Text>
       </Card>
 
       <Text style={styles.title}>Completed intervals</Text>
