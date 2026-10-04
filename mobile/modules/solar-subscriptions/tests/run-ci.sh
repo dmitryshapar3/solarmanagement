@@ -2,11 +2,13 @@
 set -euo pipefail
 
 script_root="$(cd -- "$(dirname -- "$0")" && pwd)"
+xcodebuild -version
 # Build an isolated simulator using an installed compatible runtime and device.
 # Avoid hard-coded Xcode paths, model names and pre-existing runner simulators.
 solar_storekit_selection="$(python3 - <<'PY'
 import json
 import subprocess
+import sys
 
 def simctl(*args):
     return json.loads(subprocess.check_output(['xcrun', 'simctl', *args, '--json']))
@@ -25,6 +27,10 @@ devices = [device for device in simctl('list', 'devicetypes')['devicetypes']
            and device.get('maxRuntimeVersion', 0xFFFFFFFF) >= runtime_version]
 if not devices:
     raise SystemExit('No iPhone device type supports the installed iOS runtime.')
+print('Selected StoreKit simulator inputs: ' + json.dumps({
+    'runtime': {key: runtime[key] for key in ('identifier', 'name', 'version')},
+    'device': {key: devices[-1][key] for key in ('identifier', 'name')}
+}), file=sys.stderr)
 print(runtime['identifier'])
 print(devices[-1]['identifier'])
 PY
@@ -37,6 +43,7 @@ cleanup() {
   xcrun simctl delete "$solar_storekit_simulator" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+printf 'Selected isolated StoreKit simulator UDID: %s\n' "$solar_storekit_simulator"
 xcrun simctl boot "$solar_storekit_simulator"
 xcrun simctl bootstatus "$solar_storekit_simulator" -b
 bash "$script_root/run-tests.sh" "$solar_storekit_simulator"

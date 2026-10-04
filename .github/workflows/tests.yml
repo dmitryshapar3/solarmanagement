@@ -58,6 +58,7 @@ jobs:
             mobile/modules/solar-subscriptions/tests/.build/test-*.json
           if-no-files-found: error
           retention-days: 14
+          include-hidden-files: true
 
   mobile:
     name: Mobile TypeScript, regression tests and iOS bundle
