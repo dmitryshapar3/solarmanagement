@@ -17,22 +17,22 @@ const strings = (keys: string[]) => Object.fromEntries(keys.map(k => [k, str]));
 const numbers = (keys: string[]) => Object.fromEntries(keys.map(k => [k, num]));
 const energy = numbers(["batterySoc", "batteryTemperature", "batteryVoltage", "batteryPower", "batteryCurrent", "solarProduction", "gridConsumption", "loadPower"]);
 const device = object({ id: str, name: str, category: nullable(str), online: bool, isOn: bool,
-  currentPowerW: nullable(num), stateKnown: optional(nullable(bool)), cloudName: optional(str), localName: optional(nullable(str)) });
+  currentPowerW: nullable(num), stateKnown: bool, cloudName: optional(nullable(str)), localName: optional(nullable(str)) });
 const rule = object({ id: num, name: str, entityId: str, enabled: bool, currentState: bool,
   ...numbers(["socTurnOnThreshold", "socTurnOffThreshold", "minAverageSolarProductionWatts", "cooldownMinutes", "intervalSeconds"]),
   useSeparateSocTurnOffThreshold: bool, useSolarProductionThreshold: bool, activeFrom: nullable(str), activeTo: nullable(str),
-  lastEvaluated: nullable(date), currentStateChangedAt: nullable(date), sourceInverterId: optional(nullable(str)), configurationVersion: optional(nullable(str)) });
+  lastEvaluated: nullable(date), currentStateChangedAt: nullable(date), sourceInverterId: nullable(str),
+  configurationVersion: v => typeof v === "string" && /^[a-fA-F0-9]{64}$/.test(v) });
 const inverter = object({ ...energy, timestamp: date, dataSource: str,
-  ...Object.fromEntries(["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"].map(k => [k, optional(nullable(bool))])) });
+  inverterId: nullable(str), solarObservedAt: nullable(date), gridObservedAt: nullable(date), solarDeviceSn: nullable(str), gridDeviceSn: nullable(str),
+  ...Object.fromEntries(["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"].map(k => [k, bool])) });
 const dashboard = object({ inverter: nullable(inverter), devicesLoaded: bool, deviceLastUpdated: nullable(date), devices: array(device), manualDevices: array(device), rules: array(rule), timeZoneId: str });
 const auth = object({ token: v => typeof v === "string" && v.length > 0 && v.length <= 4096, username: str, expiresAt: date });
 const verification = object({ verificationId: str, expiresAt: date, retryAfterSeconds: num });
-const deye = object({ ...strings(["baseUrl", "appId", "appSecret", "email", "password", "deviceSn"]), stationId: num });
-const settings = object({ deyeCloud: deye, shelly: object({ ...strings(["serverUri", "authKey", "deviceId"]), requestIntervalMilliseconds: num }),
-  polling: object({ intervalSeconds: num }), display: object({ timeZoneId: str }) });
+const settings = object({ polling: object({ intervalSeconds: num }), display: object({ timeZoneId: str }) });
 const site = object({ solarEstimate: object({ ...numbers(["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"]),
-  locationLabel: str, timeZoneId: str, deyeSolarPowerIsPvDcConfirmed: optional(bool), deyeSolarPowerConfirmedDeviceSn: optional(str) }),
-  solarSales: object({ contractStartDate: str, timeZoneId: str, payNegativePrices: bool }), selectedDeviceSn: optional(str) });
+  locationLabel: str, timeZoneId: str, deyeSolarPowerIsPvDcConfirmed: bool, deyeSolarPowerConfirmedDeviceSn: str }),
+  solarSales: object({ contractStartDate: str, timeZoneId: str, payNegativePrices: bool }), selectedDeviceSn: str });
 const instance = object({ ...strings(["id", "providerId", "name", "status", "packageVersion", "packageDigest", "descriptorDigest"]), revision: num, generation: num });
 const field = object({ key: str, kind: str, label: str, required: bool, secret: bool, defaultValue: optional(value), minimum: optional(nullable(num)), maximum: optional(nullable(num)),
   options: optional(nullable(array(object({ value: str, label: str })))) });
@@ -40,7 +40,7 @@ const provider = object({ ...strings(["providerId", "packageVersion", "packageDi
   requiredUiFeatures: array(str), fields: array(field), actions: array(str) });
 const configuration = object({ instance, values: record(value), secretPresent: record(bool) });
 const binding = object({ ...strings(["id", "instanceId", "kind", "name", "remoteId"]), isDefault: bool, channel: optional(nullable(str)), sourceInverterId: optional(nullable(str)), phaseCount: optional(oneOf(1, 3)) });
-const command = object({ commandId: str, deviceId: str, isOn: bool, status: oneOf("pending", "acknowledged", "rejected", "uncertain"), rejection: nullable(str), createdAt: date, completedAt: nullable(date) });
+const command = object({ commandId: str, deviceId: str, isOn: bool, status: oneOf("pending", "acknowledged", "rejected", "uncertain", "uncertain_closed"), rejection: nullable(str), createdAt: date, completedAt: nullable(date) });
 const oauthStatus = object({ flowId: str, status: str, expiresAt: date, values: record(value), secretPresent: record(bool), code: optional(nullable(str)) });
 const forecast = object({ timestamp: date, calculatedAt: date, basis: oneOf(0, 1, 2), ...numbers(["centralKw", "lowerKw", "upperKw", "totalKwp"]), weatherMissing: bool,
   observation: object({ timestamp: date, kind: oneOf(0, 1), retrievedAt: nullable(date), weatherTimestamp: nullable(date) }) });
@@ -71,12 +71,11 @@ function contract(path: string, method: string): Check | undefined {
   if (path === "/api/dashboard" || path === "/api/dashboard/refresh") return dashboard;
   if (path === "/api/devices") return object({ devices: array(device), lastUpdated: nullable(date) });
   if (/^\/api\/devices\/[^/]+\/name$/.test(path)) return device;
-  if (path === "/api/devices/state") return object({ entityId: str, isOn: bool, device: nullable(device) });
   if (path === "/api/rules") return method === "GET" ? array(rule) : rule;
   if (/^\/api\/rules\/\d+(?:\/enabled)?$/.test(path) && method !== "DELETE") return rule;
   if (path === "/api/settings" && method === "GET") return settings;
   if (path === "/api/settings/site" && method === "GET") return site;
-  if (/^\/api\/settings\/test\/[^/]+$/.test(path)) return object({ kind: str, success: bool, code: str, message: str, checkedAt: date });
+  if (/^\/api\/settings\/test\/(openmeteo|pse)$/.test(path)) return object({ kind: str, success: bool, code: str, message: str, checkedAt: date });
   if (path === "/api/readings") return array(object({ id: num, timestamp: date, ...energy, dataSource: str }));
   if (path === "/api/rule-runs") return array(object({ id: num, timestamp: date, ...strings(["ruleName", "action", "conditionKey", "reason"]), ...numbers(["batterySoc", "solarProduction", "batteryPower"]) }));
   if (path === "/api/solar/estimate") return solarState;

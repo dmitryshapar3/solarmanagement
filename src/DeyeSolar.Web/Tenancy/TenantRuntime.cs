@@ -29,11 +29,8 @@ public sealed class TenantRuntime : IAsyncDisposable
     private readonly IntegrationChangeNotifier _integrationChanges;
     private CancellationTokenSource? _cycleCancellation;
     private Task? _disposeTask;
-    private string _deyeKey;
-    private string _shellyKey;
     private string _siteKey;
     private int _solarReset;
-    private int _bootstrapRequested;
     private DateTimeOffset _nextPoll;
     private DateTimeOffset _nextDevices;
     private DateTimeOffset _nextSolar;
@@ -49,7 +46,7 @@ public sealed class TenantRuntime : IAsyncDisposable
         _logger = provider.GetRequiredService<ILogger<TenantRuntime>>();
         _integrationChanges = provider.GetRequiredService<IntegrationChangeNotifier>();
         _integrationChanges.Changed += IntegrationChanged;
-        (_deyeKey, _shellyKey, _siteKey) = ConfigurationKeys();
+        _siteKey = ConfigurationKey();
         if (!TenantRuntimeOptions.HasSolarConfiguration(_configuration.GetSection(SolarEstimateOptions.Section).Get<SolarEstimateOptions>()!))
             Resolve<SolarEstimateService>().Reset(TenantRuntimeOptions.ConfigureSiteMessage);
         _configurationSubscription = ChangeToken.OnChange(configuration.GetReloadToken, ConfigurationChanged);
@@ -58,11 +55,7 @@ public sealed class TenantRuntime : IAsyncDisposable
     public string InstallationId { get; }
     private void IntegrationChanged(string installationId, Guid instanceId)
     {
-        if (installationId.Length == 0)
-        {
-            Interlocked.Exchange(ref _bootstrapRequested, 1);
-            return;
-        }
+        if (installationId.Length == 0) return;
         if (installationId != InstallationId) return;
         CancellationTokenSource? operation;
         lock (_sync)
@@ -86,50 +79,37 @@ public sealed class TenantRuntime : IAsyncDisposable
         return _provider.GetRequiredService<T>();
     }
 
-    public async Task RefreshSettingsAsync(CancellationToken ct = default)
+    public Task RefreshSettingsAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         lock (_sync) ObjectDisposedException.ThrowIf(_disposeTask is not null, this);
-        if (Interlocked.Exchange(ref _bootstrapRequested, 0) != 0 && _provider.GetService<LegacyIntegrationBootstrap>() is { } bootstrap)
-            await bootstrap.RunAsync(Resolve<IDbContextFactory<DeyeSolarDbContext>>(), _configuration, ct);
         _configuration.Reload();
+        return Task.CompletedTask;
     }
 
-    private (string Deye, string Shelly, string Site) ConfigurationKeys() =>
-        // Read provider values directly: callback ordering must not rely on OptionsMonitor invalidation.
-        (Key(_configuration.GetSection(DeyeCloudOptions.Section).Get<DeyeCloudOptions>()!),
-         Key(_configuration.GetSection(ShellyOptions.Section).Get<ShellyOptions>()!),
-         Key(new { Estimate = _configuration.GetSection(SolarEstimateOptions.Section).Get<SolarEstimateOptions>(),
-             Sales = _configuration.GetSection(SolarSalesOptions.Section).Get<SolarSalesOptions>() }));
+    private string ConfigurationKey() =>
+        // Callback ordering must not rely on OptionsMonitor invalidation.
+        Key(new { Estimate = _configuration.GetSection(SolarEstimateOptions.Section).Get<SolarEstimateOptions>(),
+            Sales = _configuration.GetSection(SolarSalesOptions.Section).Get<SolarSalesOptions>() });
     private static string Key(object value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value))));
 
     private void ConfigurationChanged()
     {
         CancellationTokenSource? operation;
-        bool clearDeye, clearShelly;
-        var keys = ConfigurationKeys();
+        var key = ConfigurationKey();
         lock (_sync)
         {
             if (_disposeTask is not null) return;
-            clearDeye = keys.Deye != _deyeKey;
-            clearShelly = keys.Shelly != _shellyKey;
-            var siteChanged = keys.Site != _siteKey;
-            if (!clearDeye && !clearShelly && !siteChanged) return;
-            _deyeKey = keys.Deye;
-            _shellyKey = keys.Shelly;
-            _siteKey = keys.Site;
+            if (key == _siteKey) return;
+            _siteKey = key;
             _solarReset = 1;
             _nextPoll = _nextDevices = _nextSolar = DateTimeOffset.MinValue;
             operation = _cycleCancellation;
         }
         // Fence in-flight readers before clearing snapshots, even if our reload callback ran first.
-        if (clearDeye) _provider.GetRequiredService<IOptionsMonitorCache<DeyeCloudOptions>>().Clear();
-        if (clearShelly) _provider.GetRequiredService<IOptionsMonitorCache<ShellyOptions>>().Clear();
         _provider.GetRequiredService<IOptionsMonitorCache<SolarEstimateOptions>>().Clear();
         _provider.GetRequiredService<IOptionsMonitorCache<SolarSalesOptions>>().Clear();
         Cancel(operation);
-        if (clearDeye) Notify(() => Resolve<InverterDataSnapshot>().Clear());
-        if (clearShelly) Notify(() => Resolve<DeviceStatusSnapshot>().Clear());
         // The serialized cycle applies Reset after any canceled update has left the estimate service.
         _ = ResetEstimateAsync();
     }

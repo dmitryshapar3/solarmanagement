@@ -30,7 +30,7 @@ else
                 <MudText Typo="Typo.caption">@T.Translate(device.Category) @T["· ID:"] @device.Id</MudText>
                 <MudStack Row="true" Spacing="1" Class="mt-2 mb-2">
                     <MudChip T="string" Size="Size.Small" Color="@(device.Online ? Color.Success : Color.Default)">@(device.Online ? T["Online"] : T["Offline"])</MudChip>
-                    <MudChip T="string" Size="Size.Small">@(device.Online && device.StateKnown != false ? device.IsOn ? T["ON"] : T["OFF"] : T["State unavailable"])</MudChip>
+                    <MudChip T="string" Size="Size.Small">@(device.Online && device.StateKnown == true ? device.IsOn ? T["ON"] : T["OFF"] : T["State unavailable"])</MudChip>
                     <MudChip T="string" Size="Size.Small">@(device.CurrentPowerW.HasValue ? $"{device.CurrentPowerW} W" : T["Power unavailable"])</MudChip>
                 </MudStack>
                 <MudTextField T="string" @bind-Value="_names[device.Id]" Label="@T["Display name in DeyeSolar"]" MaxLength="80" Immediate="true" Disabled="@(_busyId is not null)" />

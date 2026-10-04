@@ -121,10 +121,10 @@ function validateReceipt(value: SocketCommandReceipt, deviceId: string, commandI
     || value.deviceId.toLowerCase() !== deviceId.toLowerCase() || typeof value.isOn !== "boolean"
     || commandId !== undefined && value.commandId.toLowerCase() !== commandId.toLowerCase()
     || isOn !== undefined && value.isOn !== isOn || typeof value.status !== "string"
-    || !["requested", "pending", "acknowledged", "uncertain", "uncertain_closed", "rejected"].includes(value.status.toLowerCase())) {
+    || !["pending", "acknowledged", "uncertain", "uncertain_closed", "rejected"].includes(value.status)) {
     throw new Error(t("The command response did not identify this operation."));
   }
-  return { ...value, status: value.status.toLowerCase() === "requested" ? "pending" : value.status.toLowerCase() };
+  return { ...value };
 }
 
 export function commandUnresolved(receipt: SocketCommandState | null): boolean {

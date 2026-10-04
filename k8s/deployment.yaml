@@ -48,24 +48,6 @@ spec:
                   key: runtime-connection
             - name: Operations__DatabaseMode
               value: validate
-            - name: Shelly__ServerUri
-              valueFrom:
-                secretKeyRef:
-                  name: deye-solar-shelly
-                  key: server-uri
-                  optional: true
-            - name: Shelly__AuthKey
-              valueFrom:
-                secretKeyRef:
-                  name: deye-solar-shelly
-                  key: auth-key
-                  optional: true
-            - name: Shelly__DeviceId
-              valueFrom:
-                secretKeyRef:
-                  name: deye-solar-shelly
-                  key: device-id
-                  optional: true
           resources:
             requests:
               memory: "256Mi"

@@ -183,25 +183,18 @@ test("session invalidation with the same username fences old setters and pending
 });
 
 
-test("an older backend preserves the local choice and the upgraded server later receives it", async () => {
-  const values = new Map<string, string>();
-  let app = await harness({ values, failStatus: 404 });
-  try {
-    await act(async () => { await app.read().setLanguage("pl"); });
-    assert.equal(app.read().language, "pl");
-    assert.equal(values.get(pendingKey("alice")), "pl");
-  } finally { await app.close(); }
-  let remoteReads = 0;
-  app = await harness({ values, getLanguage: async () => { remoteReads++; return { language: "en" }; } });
-  try {
-    assert.equal(app.read().language, "pl");
-    assert.equal(remoteReads, 0, "the older remote language cannot override the pending choice");
-    assert.deepEqual(app.remoteWrites, [{ username: "alice", language: "pl" }]);
-    assert.equal(values.get(pendingKey("alice")), "");
-  } finally { await app.close(); }
-});
+for (const status of [400, 404, 422]) {
+  test(`HTTP ${status} rejects a server preference write instead of succeeding through an old-server fallback`, async () => {
+    const app = await harness({ failStatus: status });
+    try {
+      await act(async () => { await assert.rejects(app.read().setLanguage("pl"), { message: `HTTP ${status}` }); });
+      assert.equal(app.read().language, "pl", "the local preference remains usable after the reported failure");
+      assert.equal(app.stored.get(pendingKey("alice")), "pl");
+    } finally { await app.close(); }
+  });
+}
 
-test("an offline pending preference remains selected instead of an older server value", async () => {
+test("an offline pending preference remains selected instead of a previously saved server value", async () => {
   const values = new Map([[globalKey, "pl"], [accountKey("alice"), "pl"], [pendingKey("alice"), "pl"]]);
   let remoteReads = 0;
   const app = await harness({ values, getLanguage: async () => { remoteReads++; return { language: "ru" }; }, setLanguage: async () => { throw new Error("Network unavailable"); } });

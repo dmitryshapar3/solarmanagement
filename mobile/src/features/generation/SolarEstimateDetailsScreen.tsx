@@ -42,8 +42,8 @@ export function SolarEstimateDetailsScreen() {
       onRefreshSnapshot={refresh} snapshotLoading={loading} />
     <CurrentSolarSnapshot state={state} liveInverter={inverter.data?.inverter} timeZoneId={timeZone}
       error={estimate.error ?? inverter.error} loading={loading} onRefresh={() => void refresh()} />
-    <Text style={styles.muted}>{t("inverter measurement time is not available in the latest reading; its polling time is shown. The hourly chart and the comparison below use separate historical measurements.")}</Text>
-    <Text style={styles.muted}>{t("The source may report zero when a solar reading is unavailable. Zero alone does not confirm that the panels produced no power.")}</Text>
+    <Text style={styles.muted}>{t("Polling time may differ from the source measurement time. The hourly chart and comparison use separate saved measurements.")}</Text>
+    <Text style={styles.muted}>{t("Unavailable measurements are shown with a dash. A valid measured zero is shown as 0.00.")}</Text>
     {loading && !state ? <LoadingState label={t("Loading estimate details...")} /> : null}
     <Card style={styles.card}>
       <TileHeader title={t("Weather calculation")} onRefresh={() => void refresh()} loading={loading} />

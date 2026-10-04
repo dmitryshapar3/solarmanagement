@@ -11,6 +11,6 @@ public sealed class AuthorizedRuleRepository(IConfigurationRules inner, Interact
     { await security.EnsureAsync(InstallationPermission.ManageRules, ct); return await inner.CreateAsync(rule, ct); }
     public async Task UpdateAsync(TriggerRule rule, CancellationToken ct)
     { await security.EnsureAsync(InstallationPermission.ManageRules, ct); await inner.UpdateAsync(rule, ct); }
-    public async Task DeleteAsync(int id, CancellationToken ct)
-    { await security.EnsureAsync(InstallationPermission.ManageRules, ct); await inner.DeleteAsync(id, ct); }
+    public async Task DeleteAsync(int id, string configurationVersion, CancellationToken ct)
+    { await security.EnsureAsync(InstallationPermission.ManageRules, ct); await inner.DeleteAsync(id, configurationVersion, ct); }
 }

@@ -97,11 +97,11 @@ public class DeyeCloudClient : IInverterDataSource, IExportGridHistorySource
         return devices;
     }
 
-    public async Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => (await ReadLatestAsync(ct)).Legacy;
+    public async Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => (await ReadLatestAsync(ct)).Snapshot;
 
     public async Task<ProviderInverterTelemetry> ReadNormalizedDataAsync(CancellationToken ct) => (await ReadLatestAsync(ct)).Normalized;
 
-    private async Task<(InverterData Legacy, ProviderInverterTelemetry Normalized)> ReadLatestAsync(CancellationToken ct)
+    private async Task<(InverterData Snapshot, ProviderInverterTelemetry Normalized)> ReadLatestAsync(CancellationToken ct)
     {
         var opts = _options.CurrentValue;
         if (string.IsNullOrWhiteSpace(opts.DeviceSn) || opts.DeviceSn.Length > 128)
@@ -174,7 +174,7 @@ public class DeyeCloudClient : IInverterDataSource, IExportGridHistorySource
         var validGrid = gridPointCount == 1 && TryReadGridWatts(gridValue, gridUnit, out _);
         var gridObservedAt = validGrid ? ReadCollectionTime(selected, polledAt) : null;
 
-        var legacy = new InverterData
+        var snapshot = new InverterData
         {
             BatterySoc = GetInt(dataMap, "SOC", "BMSSOC"),
             BatteryTemperature = GetDouble(dataMap, "Temperature- Battery"),
@@ -205,12 +205,12 @@ public class DeyeCloudClient : IInverterDataSource, IExportGridHistorySource
             Measurement(0, 100, "SOC", "BMSSOC"), Measurement(int.MinValue, int.MaxValue, "BatteryPower"),
             Measurement(-100, 150, "Temperature- Battery"), Measurement(0, 2000, "BatteryVoltage", "BMSVoltage"),
             Measurement(-10000, 10000, "BMSCurrent"),
-            solarObservedAt.HasValue ? new(legacy.SolarProduction, solarObservedAt, ProviderMeasurementQuality.Good)
+            solarObservedAt.HasValue ? new(snapshot.SolarProduction, solarObservedAt, ProviderMeasurementQuality.Good)
                 : new(null, null, dataMap.ContainsKey("TotalSolarPower") ? ProviderMeasurementQuality.Invalid : ProviderMeasurementQuality.Missing),
-            gridObservedAt.HasValue ? new(legacy.GridConsumption, gridObservedAt, ProviderMeasurementQuality.Good)
+            gridObservedAt.HasValue ? new(snapshot.GridConsumption, gridObservedAt, ProviderMeasurementQuality.Good)
                 : new(null, null, dataMap.ContainsKey("TotalGridPower") ? ProviderMeasurementQuality.Invalid : ProviderMeasurementQuality.Missing),
             Measurement(0, int.MaxValue, "TotalConsumptionPower"));
-        return (legacy, normalized);
+        return (snapshot, normalized);
     }
 
     public async Task<IReadOnlyList<ExportGridSample>> ReadAsync(string deviceSn, DateTimeOffset start,

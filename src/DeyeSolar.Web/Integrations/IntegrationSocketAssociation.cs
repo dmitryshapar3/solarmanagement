@@ -44,11 +44,7 @@ public static class IntegrationSocketAssociation
             return rules.ToDictionary(rule => rule.Id, rule => rule.SourceInverterId);
         var bindings = await db.IntegrationDeviceBindings.AsNoTracking().Where(b => b.Kind == "socket" && b.Enabled).ToListAsync(ct);
         var sources = bindings.ToDictionary(b => b.Id, b => Read(b).SourceInverterId);
-        var names = rules.Where(r => r.SourceInverterId is null && !Guid.TryParse(r.EntityId, out _))
-            .Select(r => r.EntityId).Distinct().ToArray();
-        var aliases = names.Length == 0 ? new Dictionary<string, Guid>() : await db.IntegrationDeviceAliases.AsNoTracking()
-            .Where(a => names.Contains(a.LegacyId)).ToDictionaryAsync(a => a.LegacyId, a => a.DeviceId, ct);
         return rules.ToDictionary(r => r.Id, r => r.SourceInverterId ??
-            (Guid.TryParse(r.EntityId, out var id) || aliases.TryGetValue(r.EntityId, out id) ? sources.GetValueOrDefault(id) : null));
+            (Guid.TryParse(r.EntityId, out var id) ? sources.GetValueOrDefault(id) : null));
     }
 }

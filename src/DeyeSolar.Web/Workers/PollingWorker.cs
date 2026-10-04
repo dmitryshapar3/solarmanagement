@@ -21,28 +21,6 @@ public class PollingWorker : BackgroundService
     public PollingWorker(IRulePollingCycle cycle, IOptionsMonitor<PollingOptions> pollingOptions, ILogger<PollingWorker> logger)
     { _cycle = cycle; _pollingOptions = pollingOptions; _logger = logger; }
 
-    // Explicit compatibility composition for existing integration fixtures; production DI uses the cycle port.
-    public PollingWorker(IInverterRefreshService inverterRefresh, IOptionsMonitor<InverterConnectionOptions> inverterOptions,
-        ISocketController socketController, IRuleRepository ruleRepository, RuleEvaluator ruleEvaluator,
-        IDbContextFactory<DeyeSolarDbContext> dbFactory, IOptionsMonitor<PollingOptions> pollingOptions,
-        IAppSettingsReader settingsService, ILogger<PollingWorker> logger,
-        IInverterDataSource? sources = null, ExportReadingStore? readings = null)
-        : this(CreateFixtureCycle(inverterRefresh, inverterOptions, socketController, ruleRepository, ruleEvaluator,
-            dbFactory, settingsService, logger, sources, readings), pollingOptions, logger) { }
-
-    private static IRulePollingCycle CreateFixtureCycle(IInverterRefreshService inverterRefresh,
-        IOptionsMonitor<InverterConnectionOptions> inverterOptions, ISocketController socketController,
-        IRuleRepository repository, RuleEvaluator evaluator, IDbContextFactory<DeyeSolarDbContext> factory,
-        IAppSettingsReader settings, ILogger logger, IInverterDataSource? sources, ExportReadingStore? readings)
-    {
-        var history = new RuleRunHistory(factory, logger);
-        var executor = new RuleAutomationExecutor(socketController, repository, evaluator, settings, history,
-            new RuleObservationReconciler(factory, socketController), logger);
-        return new RulePollingCycle(inverterRefresh, inverterOptions, repository, factory, history, executor,
-            new SocketReceiptReconciler(factory, socketController as SolarManagement.SmartSockets.Contracts.ISocketCommandTracker, logger),
-            logger, sources, readings);
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("PollingWorker started");

@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Text.Json.Serialization;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
-using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Data;
 
 namespace DeyeSolar.Web.Api;
@@ -40,14 +39,14 @@ public sealed record InverterDataDto(
     string? SolarDeviceSn = null,
     string? GridDeviceSn = null,
     Guid? InverterId = null,
-    bool? BatterySocValid = null,
-    bool? BatteryPowerValid = null,
-    bool? BatteryTemperatureValid = null,
-    bool? BatteryVoltageValid = null,
-    bool? BatteryCurrentValid = null,
-    bool? LoadPowerValid = null,
-    bool? GridPowerValid = null,
-    bool? SolarPowerValid = null);
+    bool BatterySocValid = false,
+    bool BatteryPowerValid = false,
+    bool BatteryTemperatureValid = false,
+    bool BatteryVoltageValid = false,
+    bool BatteryCurrentValid = false,
+    bool LoadPowerValid = false,
+    bool GridPowerValid = false,
+    bool SolarPowerValid = false);
 
 public sealed record DeviceDto(
     string Id,
@@ -58,7 +57,7 @@ public sealed record DeviceDto(
     int? CurrentPowerW,
     string? CloudName = null,
     string? LocalName = null,
-    bool? StateKnown = null);
+    bool StateKnown = false);
 
 public sealed record DeviceListResponse(
     IReadOnlyList<DeviceDto> Devices,
@@ -81,7 +80,8 @@ public sealed record RuleSummaryDto(
     int IntervalSeconds,
     string? ActiveFrom,
     string? ActiveTo,
-    Guid? SourceInverterId = null);
+    Guid? SourceInverterId,
+    string ConfigurationVersion);
 
 public sealed record TriggerRuleDto(
     int Id,
@@ -100,8 +100,8 @@ public sealed record TriggerRuleDto(
     bool CurrentState,
     DateTime? CurrentStateChangedAt,
     DateTime? LastEvaluated,
-    Guid? SourceInverterId = null,
-    string? ConfigurationVersion = null);
+    Guid? SourceInverterId,
+    string ConfigurationVersion);
 
 public sealed record TriggerRuleRequest(
     string Name,
@@ -118,22 +118,11 @@ public sealed record TriggerRuleRequest(
     string? ActiveTo)
 {
     public string? ConfigurationVersion { get; init; }
-    private Guid? _sourceInverterId;
-    public Guid? SourceInverterId
-    {
-        get => _sourceInverterId;
-        init { _sourceInverterId = value; SourceInverterSpecified = true; }
-    }
-    // An older client omits this property; explicit null selects the current primary inverter.
-    [JsonIgnore]
-    public bool SourceInverterSpecified { get; private set; }
+    [JsonRequired]
+    public Guid? SourceInverterId { get; init; }
 }
 
-public sealed record RuleEnabledRequest(bool Enabled);
-
-public sealed record SocketStateRequest(string EntityId, bool IsOn);
-
-public sealed record SocketStateResponse(string EntityId, bool IsOn, DeviceDto? Device);
+public sealed record RuleEnabledRequest(bool Enabled, string ConfigurationVersion);
 
 public sealed record ReadingDto(
     int Id,
@@ -160,37 +149,12 @@ public sealed record RuleRunLogDto(
     int BatteryPower);
 
 public sealed record MobileSettingsDto(
-    DeyeCloudSettingsDto DeyeCloud,
-    ShellySettingsDto Shelly,
     PollingSettingsDto Polling,
     DisplaySettingsDto Display);
-
-public sealed record DeyeCloudSettingsDto(
-    string BaseUrl,
-    string AppId,
-    string AppSecret,
-    string Email,
-    string Password,
-    long StationId,
-    string DeviceSn);
-
-public sealed record ShellySettingsDto(
-    string ServerUri,
-    string AuthKey,
-    string DeviceId,
-    int RequestIntervalMilliseconds);
 
 public sealed record PollingSettingsDto(int IntervalSeconds);
 
 public sealed record DisplaySettingsDto(string TimeZoneId);
-
-public sealed record DeyeStationDto(long Id, string Name, string? Address);
-
-public sealed record DeyeDeviceDto(string SerialNumber, string DeviceType, long DeviceId, long StationId);
-
-public sealed record DeyeDeviceSelectionRequest(long StationId, string SerialNumber);
-
-public sealed record SocketDeviceSelectionRequest(string EntityId);
 
 public static class MobileApiMappings
 {
@@ -220,7 +184,7 @@ public static class MobileApiMappings
             device.Category,
             device.Online,
             device.IsOn,
-            device.CurrentPowerW, StateKnown: device.StateKnown);
+            device.CurrentPowerW, StateKnown: device.StateKnown == true);
 
     public static RuleSummaryDto ToSummaryDto(this TriggerRule rule)
         => new(
@@ -240,7 +204,8 @@ public static class MobileApiMappings
             rule.IntervalSeconds,
             FormatTime(rule.ActiveFrom),
             FormatTime(rule.ActiveTo),
-            rule.SourceInverterId);
+            rule.SourceInverterId,
+            RuleConfigurationVersion.Read(rule));
 
     public static TriggerRuleDto ToDto(this TriggerRule rule)
         => new(
@@ -261,7 +226,7 @@ public static class MobileApiMappings
             rule.CurrentStateChangedAt,
             rule.LastEvaluated,
             rule.SourceInverterId,
-            rule.ConfigurationVersion);
+            RuleConfigurationVersion.Read(rule));
 
     public static ReadingDto ToDto(this Reading reading)
         => new(
@@ -289,51 +254,11 @@ public static class MobileApiMappings
             log.SolarProduction,
             log.BatteryPower);
 
-    public static DeyeCloudSettingsDto ToDto(this DeyeCloudOptions options)
-        => new(
-            options.BaseUrl,
-            options.AppId,
-            options.AppSecret,
-            options.Email,
-            options.Password,
-            options.StationId,
-            options.DeviceSn);
-
-    public static ShellySettingsDto ToDto(this ShellyOptions options)
-        => new(options.ServerUri, options.AuthKey, options.DeviceId, options.RequestIntervalMilliseconds);
-
     public static PollingSettingsDto ToDto(this PollingOptions options)
         => new(options.IntervalSeconds);
 
     public static DisplaySettingsDto ToDto(this DisplayOptions options)
         => new(options.TimeZoneId);
-
-    public static DeyeStationDto ToDto(this DeyeStation station)
-        => new(station.Id, station.Name, station.Address);
-
-    public static DeyeDeviceDto ToDto(this DeyeDevice device)
-        => new(device.SerialNumber, device.DeviceType, device.DeviceId, device.StationId);
-
-    public static DeyeCloudOptions ToOptions(this DeyeCloudSettingsDto dto)
-        => new()
-        {
-            BaseUrl = dto.BaseUrl,
-            AppId = dto.AppId,
-            AppSecret = dto.AppSecret,
-            Email = dto.Email,
-            Password = dto.Password,
-            StationId = dto.StationId,
-            DeviceSn = dto.DeviceSn
-        };
-
-    public static ShellyOptions ToOptions(this ShellySettingsDto dto)
-        => new()
-        {
-            ServerUri = dto.ServerUri,
-            AuthKey = dto.AuthKey,
-            DeviceId = dto.DeviceId,
-            RequestIntervalMilliseconds = dto.RequestIntervalMilliseconds
-        };
 
     public static PollingOptions ToOptions(this PollingSettingsDto dto)
         => new() { IntervalSeconds = dto.IntervalSeconds };
@@ -343,12 +268,14 @@ public static class MobileApiMappings
 
     public static TriggerRule ToRule(this TriggerRuleRequest request, TriggerRule? existing = null)
     {
+        if (request.Name is null || request.EntityId is null)
+            throw new InvalidOperationException("The request body is invalid or exceeds the allowed size.");
         var rule = existing ?? new TriggerRule();
-        if (request.ConfigurationVersion is not null) rule.ConfigurationVersion = request.ConfigurationVersion;
+        rule.ConfigurationVersion = request.ConfigurationVersion;
         rule.Name = request.Name.Trim();
         rule.EntityId = request.EntityId.Trim();
         rule.Enabled = request.Enabled;
-        if (request.SourceInverterSpecified) rule.SourceInverterId = request.SourceInverterId;
+        rule.SourceInverterId = request.SourceInverterId;
         rule.SocTurnOnThreshold = request.SocTurnOnThreshold;
         rule.UseSeparateSocTurnOffThreshold = request.UseSeparateSocTurnOffThreshold;
         rule.SocTurnOffThreshold = request.SocTurnOffThreshold;

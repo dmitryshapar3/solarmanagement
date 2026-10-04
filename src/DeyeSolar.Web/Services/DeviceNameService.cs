@@ -37,10 +37,8 @@ public sealed class AppSettingsDeviceLabelStore(IAppSettingsReader settings, IAp
 public sealed class DeviceNameService(IDeviceLabelStore store, DeviceStatusSnapshot devices)
 {
     private static readonly SemaphoreSlim Write = new(1, 1);
-    public static string CanonicalId(string id) => Guid.TryParse(id, out var key) ? key.ToString("D")
-        : SocketEntityIds.RawIdOrSelf(id.Trim()).ToLowerInvariant();
-    public static string LabelKey(string id) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-        (Guid.TryParse(id, out _) ? "socket:" : "shelly:") + CanonicalId(id))));
+    private static string LabelKey(Guid id) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+        "socket:" + id.ToString("D"))));
     public static bool TryName(string? value, out string? name)
     {
         name = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -53,17 +51,17 @@ public sealed class DeviceNameService(IDeviceLabelStore store, DeviceStatusSnaps
     }
     public async Task<DeviceDto?> RenameAsync(string id, string? name, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id.Any(char.IsControl)) return null;
+        if (!Guid.TryParse(id, out var deviceId)) return null;
         if (!TryName(name, out var normalized)) throw new ArgumentException("Use a device name of up to 80 characters without control characters.");
-        var device = devices.Current?.FirstOrDefault(device => CanonicalId(device.Id) == CanonicalId(id));
+        var device = devices.Current?.FirstOrDefault(device => Guid.TryParse(device.Id, out var discoveredId) && discoveredId == deviceId);
         // Discovery establishes membership. A caller cannot add an arbitrary cloud ID by naming it.
         if (device is null) return null;
         await Write.WaitAsync(ct);
         try
         {
             var labels = await store.LoadAsync(ct);
-            if (normalized is null) labels.Remove(LabelKey(device.Id));
-            else labels[LabelKey(device.Id)] = normalized;
+            if (normalized is null) labels.Remove(LabelKey(deviceId));
+            else labels[LabelKey(deviceId)] = normalized;
             await store.SaveAsync(labels, ct);
             return Describe(device, labels);
         }
@@ -71,9 +69,10 @@ public sealed class DeviceNameService(IDeviceLabelStore store, DeviceStatusSnaps
     }
     private static DeviceDto Describe(DevicePowerInfo device, IReadOnlyDictionary<string, string> labels)
     {
-        labels.TryGetValue(LabelKey(device.Id), out var name);
+        string? name = null;
+        if (Guid.TryParse(device.Id, out var deviceId)) labels.TryGetValue(LabelKey(deviceId), out name);
         if (!TryName(name, out name)) name = null;
         return new(device.Id, name ?? device.Name, device.Category, device.Online, device.IsOn, device.CurrentPowerW,
-            CloudName: device.Name, LocalName: name, StateKnown: device.StateKnown);
+            CloudName: device.Name, LocalName: name, StateKnown: device.StateKnown == true);
     }
 }

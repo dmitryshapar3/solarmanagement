@@ -131,7 +131,8 @@ export function RuleEditorScreen({ route, navigation }: Props) {
     try {
       const payload = normalizeRule(rule);
       if (ruleId) {
-        await api.updateRule(ruleId, payload);
+        if (!payload.configurationVersion) throw new Error(t("Unable to save rule."));
+        await api.updateRule(ruleId, { ...payload, configurationVersion: payload.configurationVersion });
       } else {
         await api.createRule(payload);
       }
@@ -187,7 +188,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
               key={device.id}
               accessibilityRole="button"
               accessibilityLabel={demoDisplayName(device.name)}
-              accessibilityHint={`${t(device.category ?? device.id)}, ${!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}`}
+              accessibilityHint={`${t(device.category ?? device.id)}, ${!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}`}
               accessibilityState={{ selected: rule.entityId === device.id }}
               onPress={() => { Keyboard.dismiss(); setField("entityId", device.id); }}
               style={[styles.deviceChoice, rule.entityId === device.id && styles.deviceChoiceSelected]}
@@ -196,7 +197,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
                 <Text style={styles.deviceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
                 <Text style={styles.deviceCategory}>{t(device.category ?? device.id)}</Text>
               </View>
-              <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
+              <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
             </Pressable>
           ))}
         </View>

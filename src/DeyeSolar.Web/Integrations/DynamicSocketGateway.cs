@@ -12,7 +12,7 @@ using SolarManagement.SmartSockets.Contracts;
 
 namespace DeyeSolar.Web.Integrations;
 
-/// <summary>Compatibility facade; inventory/cache and durable command lifecycle have separate owners.</summary>
+/// <summary>Socket facade; inventory/cache and durable command lifecycle have separate owners.</summary>
 public sealed class DynamicSocketGateway : ISmartSocketCatalog, ISocketCommandTracker, ISocketController, ISocketInventoryService,
     IAccountSocketCatalog, IAccountSocketControl
 {

@@ -30,12 +30,13 @@ namespace DeyeSolar.Web.Tests;
 public class DashboardTests
 {
     private static readonly DateTimeOffset Timestamp = new(2026, 9, 30, 10, 0, 0, TimeSpan.Zero);
-    private static InverterData Reading(int soc = 87, int battery = -2400, int grid = -1200, int solar = 4100) => new()
+    private static InverterData Reading(int soc = 87, int battery = -2400, int grid = -1200, int solar = 4100) => ConfirmedInverterReading.Create(new()
     {
         BatterySoc = soc, BatteryPower = battery, GridConsumption = grid, SolarProduction = solar, Timestamp = Timestamp,
         SolarObservedAt = Timestamp.AddMinutes(-1), SolarDeviceSn = "test-device",
+        GridObservedAt = Timestamp.AddMinutes(-1), GridDeviceSn = "test-device",
         BatteryVoltage = 51.5, BatteryCurrent = 4.2, BatteryTemperature = 24, LoadPower = 900
-    };
+    });
 
     [Fact]
     public async Task GenerationDetailKeepsBothPowerValuesAndTheFullHistoryControls()
@@ -132,7 +133,7 @@ public class DashboardTests
     }
 
     [SqlServerFact]
-    public async Task DashboardDistinguishesUnavailableGridAndSolarFromGoodZeroAndLegacyZeroWithoutMutations()
+    public async Task DashboardDistinguishesUnavailableGridAndSolarFromConfirmedZeroWithoutMutations()
     {
         foreach (var quality in new[] { MeasurementQuality.Missing, MeasurementQuality.Invalid, MeasurementQuality.Stale, MeasurementQuality.Good })
         {
@@ -158,12 +159,12 @@ public class DashboardTests
             }
             await fixture.AssertNoMutationsAsync();
         }
-        await using var legacy = await Fixture.CreateAsync(Reading(grid: 0, solar: 0));
-        var historical = await RenderAsync<DashboardHost>(legacy.Services);
-        var legacyGrid = Regex.Match(historical, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
-        Assert.Contains("Idle", legacyGrid);
-        Assert.Matches(">0<small[^>]*>W", legacyGrid);
-        await legacy.AssertNoMutationsAsync();
+        await using var unverified = await Fixture.CreateAsync(Reading(grid: 0, solar: 0) with { Telemetry = null, BatterySocValid = false });
+        var unverifiedHtml = await RenderAsync<DashboardHost>(unverified.Services);
+        var unknownGrid = Regex.Match(unverifiedHtml, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
+        Assert.DoesNotContain("Idle", unknownGrid);
+        Assert.Matches(">—<small[^>]*>W", unknownGrid);
+        await unverified.AssertNoMutationsAsync();
     }
 
     private static IInverterTelemetry ZeroFlows(MeasurementQuality quality) => new InverterTelemetry(new(Guid.NewGuid()), Timestamp,
@@ -392,6 +393,7 @@ public class DashboardTests
             await using (var db = factory.CreateDbContext())
             {
                 await db.Database.MigrateAsync();
+                await TestInstallation.EnsureAsync(db);
                 db.AppSettings.AddRange(new AppSetting { Section = "Display", Key = "TimeZoneId", Value = "Europe/Warsaw" },
                     new AppSetting { Section = "Neighbor", Key = "preserved", Value = "unchanged" });
                 await db.SaveChangesAsync();
@@ -445,7 +447,7 @@ public class DashboardTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
+        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }
@@ -489,7 +491,7 @@ public class DashboardTests
         public bool HoldFirst { get; set; }
         public TaskCompletionSource FirstReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<List<TriggerRule>> _pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private static List<TriggerRule> Rules() => [new() { Id = 17, Name = "Independent garden socket", EntityId = "switch.garden", CurrentState = false }];
+        private static List<TriggerRule> Rules() => [new() { Id = 17, Name = "Independent garden socket", EntityId = "e0b2fc78-61cd-421a-b7a3-ed43121a0daa", CurrentState = false }];
         public Task<List<TriggerRule>> GetAllAsync(CancellationToken ct)
         {
             Reads++;
@@ -501,7 +503,7 @@ public class DashboardTests
         public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.FromResult(rule); }
         public Task UpdateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
         public Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
-        public Task DeleteAsync(int id, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
+        public Task DeleteAsync(int id, string configurationVersion, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
     }
 
     private sealed class SocketController : ISocketController, ISocketInventoryService, ISmartSocketCatalog, ISocketCommandTracker

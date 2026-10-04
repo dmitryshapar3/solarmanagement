@@ -20,26 +20,24 @@ namespace DeyeSolar.Web.Tenancy;
 
 /// <summary>Builds completely separate credentials, options, HTTP clients and private service state per installation.</summary>
 public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> databaseOptions,
-    IConfiguration deployment, ILoggerFactory loggers, TimeProvider clock, IHostApplicationLifetime hostLifetime,
+    ILoggerFactory loggers, TimeProvider clock, IHostApplicationLifetime hostLifetime,
     IIntegrationRuntimeExecutor integrationExecutor, IntegrationSecretStore integrationSecrets,
-    IntegrationChangeNotifier integrationChanges, string? legacySolarApiKey = null,
-    LegacyIntegrationBootstrap? integrationBootstrap = null, IBillingAccessReader? billing = null, ITrialSocketQuota? quota = null) : IDisposable
+    IntegrationChangeNotifier integrationChanges, string? serverSolarApiKey = null,
+    IBillingAccessReader? billing = null, ITrialSocketQuota? quota = null) : IDisposable
 {
     private readonly SemaphoreSlim _requests = new(8, 8);
 
     public async Task<TenantRuntime> CreateAsync(string installationId, CancellationToken ct = default)
     {
         var factory = new TenantDbContextFactory(databaseOptions, installationId);
-        var defaults = TenantRuntimeOptions.ForInstallation(installationId, clock.GetUtcNow(), deployment, legacySolarApiKey);
-        var completed = false;
+        var defaults = TenantRuntimeOptions.Defaults(clock.GetUtcNow());
+        // Operator weather credentials are shared infrastructure, never editable installation settings.
+        defaults["SolarEstimate:ApiKey"] = serverSolarApiKey ?? "";
         await using (var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false))
         {
             if (!await db.Installations.AnyAsync(installation => installation.Id == installationId && installation.IsEnabled, ct).ConfigureAwait(false))
                 throw new InvalidOperationException("The installation is unavailable.");
             var existing = await db.AppSettings.AsNoTracking().Select(setting => new { setting.Section, setting.Key }).ToListAsync(ct).ConfigureAwait(false);
-            completed = await db.AppSettings.AnyAsync(setting => setting.Section == LegacyIntegrationBootstrap.MarkerSection
-                && setting.Key == LegacyIntegrationBootstrap.MarkerKey && setting.Value == "1", ct).ConfigureAwait(false);
-            if (completed) RemoveLegacySecretDefaults(defaults);
             var keys = existing.Select(setting => $"{setting.Section}:{setting.Key}").ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var (key, value) in defaults)
             {
@@ -50,19 +48,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
         var configuration = new ConfigurationBuilder().Add(new TenantSettingsConfigurationSource(factory, defaults)).Build();
-        if (!completed && integrationBootstrap is not null && await integrationBootstrap.RunAsync(factory, configuration, ct))
-        {
-            RemoveLegacySecretDefaults(defaults);
-            configuration.Reload();
-        }
         return BuildRuntime(factory, configuration);
-    }
-
-    private static void RemoveLegacySecretDefaults(IDictionary<string, string?> defaults)
-    {
-        defaults["DeyeCloud:AppSecret"] = "";
-        defaults["DeyeCloud:Password"] = "";
-        defaults["Shelly:AuthKey"] = "";
     }
 
     internal TenantRuntime BuildRuntime(TenantDbContextFactory factory, IConfigurationRoot configuration,
@@ -81,8 +67,6 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<AppSettingsService>();
         services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
         services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
-        services.Configure<DeyeCloudOptions>(configuration.GetSection(DeyeCloudOptions.Section));
-        services.Configure<ShellyOptions>(configuration.GetSection(ShellyOptions.Section));
         services.Configure<PollingOptions>(configuration.GetSection(PollingOptions.Section));
         services.Configure<DisplayOptions>(configuration.GetSection("Display"));
         services.Configure<SolarEstimateOptions>(configuration.GetSection(SolarEstimateOptions.Section));
@@ -91,7 +75,6 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton(integrationExecutor);
         services.AddSingleton(integrationSecrets);
         services.AddSingleton(integrationChanges);
-        if (integrationBootstrap is not null) services.AddSingleton(integrationBootstrap);
         services.AddSingleton<IIntegrationRegistry, IntegrationRegistry>();
         services.AddSingleton<InverterSelectionMonitor>();
         services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(provider => provider.GetRequiredService<InverterSelectionMonitor>());

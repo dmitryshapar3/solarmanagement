@@ -77,7 +77,10 @@ export function SettingsScreen() {
         const nextSite = await api.getSiteSettings();
         setSite(nextSite);
         setSiteNumbers(Object.fromEntries(siteNumberFields.map(([key]) => [key, String(nextSite.solarEstimate[key])])));
-      } catch { setSite(null); }
+      } catch (ex) {
+        setSite(null);
+        setError(ex instanceof Error ? ex.message : t("Settings could not be loaded."));
+      }
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Unable to load settings.");
     } finally {
@@ -254,7 +257,7 @@ export function SettingsScreen() {
               deyeSolarPowerConfirmedDeviceSn: current.solarEstimate.deyeSolarPowerIsPvDcConfirmed ? "" : current.selectedDeviceSn ?? "" } })} />
           <Text style={styles.activeInfo}>{t("Confirm only if the selected inverter reports DC solar-panel power. This enables comparison with the modeled PV generation.")}</Text>
           <AppButton label={t("Save solar site & sales")} icon={Save} onPress={() => void runBusy("site", saveSite)} loading={busy === "site"} disabled={Boolean(busy)} />
-        </> : <Text style={styles.activeInfo}>{t("Site setup will be available after the server supports account installations.")}</Text>}
+        </> : <Text style={styles.activeInfo}>{t("Settings could not be loaded.")}</Text>}
         {testAction("openmeteo", "Open-Meteo")}
         {testAction("pse", "PSE")}
       </Card>

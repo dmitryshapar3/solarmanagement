@@ -49,7 +49,7 @@ public class SolarEstimateStoreTests
     public void DeviceProvenanceIsNullableBoundedAndFilteredInTheDatabase()
     {
         using var db = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>()
-            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, InstallationIds.Legacy);
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, TestInstallation.Id);
         var property = db.Model.FindEntityType(typeof(Reading))!.FindProperty(nameof(DeyeSolar.Web.Data.Reading.SolarDeviceSn))!;
         Assert.True(property.IsNullable);
         Assert.Equal(128, property.GetMaxLength());

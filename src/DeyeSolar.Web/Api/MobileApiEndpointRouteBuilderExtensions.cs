@@ -114,8 +114,6 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 snapshot.LastUpdated));
         });
 
-        authorized.MapPost("/devices/state", () => Results.Json(new ApiError("Update the app to send commands with a persistent request identity."), statusCode: 426));
-
         authorized.MapGet("/rules", async (IConfigurationRules rules, CancellationToken ct) =>
             Results.Ok((await rules.GetAllAsync(ct)).Select(r => r.ToDto()).ToList()));
 
@@ -144,6 +142,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 var created = await rules.CreateAsync(rule!, ct);
                 return Results.Created($"/api/rules/{created.Id}", created.ToDto());
             }
+            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
             catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
@@ -167,6 +166,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.UpdateAsync(updated!, ct);
                 return Results.Ok(updated!.ToDto());
             }
+            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
             catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
@@ -182,22 +182,35 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 return Results.NotFound(new ApiError("Rule not found."));
 
             rule.Enabled = request.Enabled && !string.IsNullOrWhiteSpace(rule.EntityId);
+            rule.ConfigurationVersion = request.ConfigurationVersion;
             try
             {
                 await rules.UpdateAsync(rule, ct);
                 return Results.Ok(rule.ToDto());
             }
+            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
             catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapDelete("/rules/{id:int}", async Task<IResult> (
             int id,
+            HttpContext context,
             IConfigurationRules rules,
             CancellationToken ct) =>
         {
-            await rules.DeleteAsync(id, ct);
-            return Results.NoContent();
+            try
+            {
+                var values = context.Request.Headers.IfMatch;
+                var header = values.Count == 1 ? values[0] : null;
+                if (header is not { Length: 66 } || header[0] != '"' || header[^1] != '"')
+                    throw new RuleConfigurationPreconditionRequiredException();
+                await rules.DeleteAsync(id, header[1..^1], ct);
+                return Results.NoContent();
+            }
+            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
+            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
+            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapGet("/readings", async (
@@ -254,23 +267,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
         authorized.MapGet("/settings", async (IAppSettingsReader settings) =>
         {
-            var deye = await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-            var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
             var polling = await settings.LoadSectionAsync<PollingOptions>(PollingOptions.Section);
             var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
 
             return Results.Ok(new MobileSettingsDto(
-                new DeyeCloudSettingsDto(deye.BaseUrl, deye.AppId, "", deye.Email, "", deye.StationId, deye.DeviceSn),
-                new ShellySettingsDto(shelly.ServerUri, "", shelly.DeviceId, shelly.RequestIntervalMilliseconds),
                 polling.ToDto(),
                 display.ToDto()));
         });
 
-        foreach (var path in new[] { "/settings/deye", "/settings/shelly" })
-            authorized.MapPut(path, () => Results.Json(new ApiError("Update the app and configure this connection in Integrations."), statusCode: 426));
-        authorized.MapGet("/settings/deye/stations", () => Results.Json(new ApiError("Update the app to use integration discovery."), statusCode: 426));
-        authorized.MapGet("/settings/deye/stations/{stationId:long}/devices", () => Results.Json(new ApiError("Update the app to use integration discovery."), statusCode: 426));
-        authorized.MapPost("/settings/deye/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
         authorized.MapPut("/settings/polling", async Task<IResult> (
             PollingSettingsDto request,
             IAppSettingsWriter settings) =>
@@ -297,7 +301,6 @@ public static class MobileApiEndpointRouteBuilderExtensions
             return Results.NoContent();
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
 
-        authorized.MapPost("/settings/socket/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
     }
 
     private static async Task<MobileDashboardResponse> ReadDashboardAsync(
@@ -307,7 +310,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
         var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
         var rules = await ruleRepository.GetAllAsync(ct);
         var devices = deviceSnapshot.Current ?? Array.Empty<DevicePowerInfo>();
-        var manualDevices = ManualSocketDevices.Build(rules, null, deviceSnapshot.Current);
+        var manualDevices = ManualSocketDevices.Build(rules, deviceSnapshot.Current);
         return new(
             inverterSnapshot.Current?.ToDto(), deviceSnapshot.Current != null, deviceSnapshot.LastUpdated,
             await DescribeDevicesAsync(services, devices, ct), await DescribeDevicesAsync(services, manualDevices, ct),

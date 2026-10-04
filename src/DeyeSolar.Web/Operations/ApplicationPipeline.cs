@@ -19,6 +19,16 @@ public static class ApplicationPipeline
         app.UseMiddleware<ApiExceptionMiddleware>();
         app.UseStaticFiles();
         app.UseRouting();
+        // Unmapped API paths must never reach the page fallback or resolve account/tenant services.
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<UnknownApiEndpoint>() is not null)
+            {
+                await UnknownApiAsync(context);
+                return;
+            }
+            await next(context);
+        });
         app.UseRateLimiter();
         app.UseAccountIdentityOrigin();
         app.UseAuthentication();
@@ -38,6 +48,18 @@ public static class ApplicationPipeline
         app.MapIntegrationManagement();
         app.MapBlazorHub();
         app.MapRazorPages();
+        app.Map("/api/{**path}", UnknownApiAsync)
+            .WithOrder(int.MaxValue - 1).WithMetadata(new UnknownApiEndpoint()).AllowAnonymous();
         app.MapFallbackToPage("/_Host");
     }
+
+    private static Task UnknownApiAsync(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.Headers.CacheControl = "no-store";
+        return context.Response.WriteAsJsonAsync(new { code = "endpoint_not_found", message = "The requested endpoint does not exist." },
+            cancellationToken: context.RequestAborted);
+    }
+
+    private sealed class UnknownApiEndpoint { }
 }

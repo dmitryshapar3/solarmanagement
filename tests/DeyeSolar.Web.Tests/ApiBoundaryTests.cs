@@ -37,6 +37,20 @@ public sealed class ApiBoundaryTests
     }
 
     [Fact]
+    public async Task InvalidAntiforgeryTokenReturnsAControlledClientErrorWithoutLeakingDiagnostics()
+    {
+        var context = Context();
+        var middleware = new ApiExceptionMiddleware(_ => throw new Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException("private cookie validation details"),
+            NullLogger<ApiExceptionMiddleware>.Instance);
+        await middleware.InvokeAsync(context);
+        var problem = await ReadAsync(context);
+        Assert.Equal(400, context.Response.StatusCode);
+        Assert.Equal("antiforgery", problem.GetProperty("code").GetString());
+        Assert.Equal("A valid request verification token is required.", problem.GetProperty("message").GetString());
+        Assert.DoesNotContain("private", problem.ToString());
+    }
+
+    [Fact]
     public async Task DisconnectedCallerDoesNotBecomeAnInternalError()
     {
         var context = Context();

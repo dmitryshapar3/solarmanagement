@@ -16,9 +16,24 @@ internal static class RuleConfigurationVersion
 
     public static void Check(TriggerRule expected, TriggerRule current)
     {
-        if (expected.ConfigurationVersion is { } version && version != Read(current)) throw new RuleConfigurationConflictException();
+        Check(expected.ConfigurationVersion, current);
+    }
+
+    public static void Check(string? version, TriggerRule current)
+    {
+        Require(version);
+        if (version != Read(current)) throw new RuleConfigurationConflictException();
+    }
+
+    public static void Require(string? version)
+    {
+        if (version is not { Length: 64 } || !version.All(char.IsAsciiHexDigit))
+            throw new RuleConfigurationPreconditionRequiredException();
     }
 }
 
 public sealed class RuleConfigurationConflictException() : ArgumentException(
     "The rule changed in another session. Reload it before saving your changes.");
+
+public sealed class RuleConfigurationPreconditionRequiredException() : ArgumentException(
+    "The data changed. Reload it before continuing.");

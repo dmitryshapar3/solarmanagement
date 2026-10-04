@@ -16,15 +16,15 @@ export type SessionResponse = {
 };
 
 export type InverterData = {
-  inverterId?: string | null;
-  batterySocValid?: boolean | null;
-  batteryPowerValid?: boolean | null;
-  batteryTemperatureValid?: boolean | null;
-  batteryVoltageValid?: boolean | null;
-  batteryCurrentValid?: boolean | null;
-  loadPowerValid?: boolean | null;
-  gridPowerValid?: boolean | null;
-  solarPowerValid?: boolean | null;
+  inverterId: string | null;
+  batterySocValid: boolean;
+  batteryPowerValid: boolean;
+  batteryTemperatureValid: boolean;
+  batteryVoltageValid: boolean;
+  batteryCurrentValid: boolean;
+  loadPowerValid: boolean;
+  gridPowerValid: boolean;
+  solarPowerValid: boolean;
   batterySoc: number;
   batteryTemperature: number;
   batteryVoltage: number;
@@ -35,10 +35,10 @@ export type InverterData = {
   loadPower: number;
   timestamp: string;
   dataSource: string;
-  solarObservedAt?: string | null;
-  gridObservedAt?: string | null;
-  solarDeviceSn?: string | null;
-  gridDeviceSn?: string | null;
+  solarObservedAt: string | null;
+  gridObservedAt: string | null;
+  solarDeviceSn: string | null;
+  gridDeviceSn: string | null;
 };
 
 export type Device = {
@@ -47,16 +47,14 @@ export type Device = {
   category: string | null;
   online: boolean;
   isOn: boolean;
-  stateKnown?: boolean | null;
+  stateKnown: boolean;
   currentPowerW: number | null;
-  cloudName?: string;
+  cloudName?: string | null;
   localName?: string | null;
 };
 
-export type IntegrationKind = "deye" | "shelly" | "openmeteo" | "pse";
+export type IntegrationKind = "openmeteo" | "pse";
 export type IntegrationTestRequest = {
-  deyeCloud?: DeyeCloudSettings;
-  shelly?: ShellySettings;
   solarEstimate?: { latitude: number; longitude: number };
 };
 export type IntegrationTestResult = {
@@ -68,12 +66,12 @@ export type IntegrationTestResult = {
 };
 
 export type SolarSiteSettings = {
-  selectedDeviceSn?: string;
+  selectedDeviceSn: string;
   solarEstimate: {
     latitude: number; longitude: number; locationLabel: string; timeZoneId: string;
     roof1Kwp: number; roof2Kwp: number; roof1Tilt: number; roof2Tilt: number;
     roof1Azimuth: number; roof2Azimuth: number;
-    deyeSolarPowerIsPvDcConfirmed?: boolean; deyeSolarPowerConfirmedDeviceSn?: string;
+    deyeSolarPowerIsPvDcConfirmed: boolean; deyeSolarPowerConfirmedDeviceSn: string;
   };
   solarSales: { contractStartDate: string; timeZoneId: string; payNegativePrices: boolean };
 };
@@ -84,11 +82,11 @@ export type DeviceList = {
 };
 
 export type Rule = {
-  configurationVersion?: string | null;
+  configurationVersion: string;
   id: number;
   name: string;
   entityId: string;
-  sourceInverterId?: string | null;
+  sourceInverterId: string | null;
   enabled: boolean;
   socTurnOnThreshold: number;
   useSeparateSocTurnOffThreshold: boolean;
@@ -106,8 +104,10 @@ export type Rule = {
 
 export type RuleRequest = Omit<
   Rule,
-  "id" | "currentState" | "currentStateChangedAt" | "lastEvaluated"
->;
+  "id" | "currentState" | "currentStateChangedAt" | "lastEvaluated" | "configurationVersion"
+> & { configurationVersion?: string };
+
+export type RuleUpdateRequest = RuleRequest & { configurationVersion: string };
 
 export type Dashboard = {
   inverter: InverterData | null;
@@ -145,23 +145,6 @@ export type RuleRunLog = {
   batteryPower: number;
 };
 
-export type DeyeCloudSettings = {
-  baseUrl: string;
-  appId: string;
-  appSecret: string;
-  email: string;
-  password: string;
-  stationId: number;
-  deviceSn: string;
-};
-
-export type ShellySettings = {
-  serverUri: string;
-  authKey: string;
-  deviceId: string;
-  requestIntervalMilliseconds: number;
-};
-
 export type PollingSettings = {
   intervalSeconds: number;
 };
@@ -171,29 +154,8 @@ export type DisplaySettings = {
 };
 
 export type Settings = {
-  deyeCloud: DeyeCloudSettings;
-  shelly: ShellySettings;
   polling: PollingSettings;
   display: DisplaySettings;
-};
-
-export type DeyeStation = {
-  id: number;
-  name: string;
-  address: string | null;
-};
-
-export type DeyeDevice = {
-  serialNumber: string;
-  deviceType: string;
-  deviceId: number;
-  stationId: number;
-};
-
-export type SocketStateResponse = {
-  entityId: string;
-  isOn: boolean;
-  device: Device | null;
 };
 
 export type SolarPowerBasis = 0 | 1 | 2;

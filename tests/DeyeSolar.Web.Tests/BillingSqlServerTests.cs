@@ -227,12 +227,44 @@ public class BillingSqlServerTests
         }
         var own = await host.CreateSavedAsync(SiteA, "First installation");
         var other = await host.CreateSavedAsync(SiteB, "Second installation");
-        await host.AddSocketAsync(SiteB, other.Id);
+        await host.AddSocketAsync(SiteB, other.Id, OwnerA);
         var discovery = await host.Setup(SiteA).DiscoverAsync(own.Id, Change(own), host.Actor(SiteA), default);
         var before = await host.PersistedStateAsync();
         var denied = await Assert.ThrowsAsync<IntegrationRequestException>(() => host.Setup(SiteA).SelectDeviceAsync(own.Id,
             new(Change(own), Assert.Single(discovery.Devices).SelectionToken), host.Actor(SiteA), default));
         Assert.Equal("trial_socket_limit", denied.Code);
+        Assert.Equal(before, await host.PersistedStateAsync());
+    }
+
+    [SqlServerFact]
+    public async Task UnattributedBindingsDoNotConsumeAnAccountsTrialQuota()
+    {
+        await using var host = await Host.StartAsync();
+        var unassigned = await host.CreateSavedAsync(SiteA, "Unattributed connection");
+        var unassignedDevice = await host.AddSocketAsync(SiteA, unassigned.Id);
+        await using (var db = host.Factory(SiteA).CreateDbContext())
+        {
+            (await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Id == unassignedDevice)).AddedByUserId = null;
+            await db.SaveChangesAsync();
+        }
+        var current = await host.CreateSavedAsync(SiteA, "Account's selected connection");
+        var draft = Change(current);
+        var discovered = await host.Setup(SiteA).DiscoverAsync(current.Id, draft, host.Actor(SiteA), default);
+        var selected = await host.Setup(SiteA).SelectDeviceAsync(current.Id,
+            new(draft, Assert.Single(discovered.Devices).SelectionToken), host.Actor(SiteA), default);
+        await using (var db = host.Factory(SiteA).CreateDbContext())
+        {
+            Assert.Equal(2, await db.IntegrationDeviceBindings.CountAsync());
+            Assert.Null((await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Id == unassignedDevice)).AddedByUserId);
+            Assert.Equal(OwnerA, (await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Id == selected.Id)).AddedByUserId);
+        }
+        var another = await host.CreateSavedAsync(SiteA, "Second account selection");
+        var anotherDraft = Change(another);
+        var anotherDiscovery = await host.Setup(SiteA).DiscoverAsync(another.Id, anotherDraft, host.Actor(SiteA), default);
+        var before = await host.PersistedStateAsync();
+        var refused = await Assert.ThrowsAsync<IntegrationRequestException>(() => host.Setup(SiteA).SelectDeviceAsync(another.Id,
+            new(anotherDraft, Assert.Single(anotherDiscovery.Devices).SelectionToken), host.Actor(SiteA), default));
+        Assert.Equal("trial_socket_limit", refused.Code);
         Assert.Equal(before, await host.PersistedStateAsync());
     }
 
@@ -595,13 +627,14 @@ public class BillingSqlServerTests
             var created = await Setup(installation).CreateAsync(new("billing.fixture", name), Actor(installation), default);
             return (await Setup(installation).SaveAsync(created.Id, Change(created), Actor(installation), default)).Instance;
         }
-        public async Task<Guid> AddSocketAsync(string installation, Guid instanceId)
+        public async Task<Guid> AddSocketAsync(string installation, Guid instanceId, string? addedByUserId = null)
         {
             await using var db = Factory(installation).CreateDbContext();
             var device = new IntegrationDeviceBindingEntity
             {
                 Id = Guid.NewGuid(),
                 InstanceId = instanceId,
+                AddedByUserId = addedByUserId ?? (installation == SiteA ? OwnerA : OwnerB),
                 Kind = "socket",
                 RemoteId = "existing-socket",
                 Channel = "0",
@@ -733,8 +766,7 @@ public class BillingSqlServerTests
                 builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
                 builder.Services.AddSingleton<IntegrationOAuthService>();
                 builder.Services.AddSingleton<IIntegrationPackageManager>(new DeniedPackageManager());
-                builder.Services.AddSingleton<LegacyIntegrationBootstrap>();
-                builder.Services.AddSingleton(provider => new TenantRuntimeFactory(options, new ConfigurationBuilder().Build(),
+                    builder.Services.AddSingleton(provider => new TenantRuntimeFactory(options,
                     NullLoggerFactory.Instance, clock, provider.GetRequiredService<IHostApplicationLifetime>(), executor, secrets, changes));
                 builder.Services.AddSingleton<TenantRuntimeRegistry>();
                 builder.Services.AddScoped(provider => provider.GetRequiredService<TenantRuntimeRegistry>()

@@ -196,7 +196,7 @@ public class PersistentSessionSecurityTests
         public Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct) => Task.FromResult<TriggerRule?>(null);
         public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.FromResult(rule); }
         public Task UpdateAsync(TriggerRule rule, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
-        public Task DeleteAsync(int id, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
+        public Task DeleteAsync(int id, string configurationVersion, CancellationToken ct) { Mutations++; return Task.CompletedTask; }
     }
     private sealed class CancelAdmissionCommit(CancellationTokenSource cancellation) : DbTransactionInterceptor
     {

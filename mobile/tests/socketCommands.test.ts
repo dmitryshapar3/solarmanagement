@@ -48,7 +48,7 @@ test("a lost send response stays uncertain and result recovery reads the origina
 
 test("durable recovery after restart blocks a different command and leaves neighboring devices untouched", async () => {
   const { api, commands, sends } = fixture();
-  api.getUnresolvedCommands = async id => id === "socket-a" ? [receipt("socket-a", "original-command", "requested", false)] : [];
+  api.getUnresolvedCommands = async id => id === "socket-a" ? [receipt("socket-a", "original-command", "pending", false)] : [];
   await assert.rejects(commands.send("socket-a", true), /previous command/);
   assert.equal(commands.get("socket-a")!.commandId, "original-command");
   assert.equal(commands.get("socket-a")!.status, "pending");

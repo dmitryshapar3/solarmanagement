@@ -41,22 +41,22 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
         var session = await registry.GetRuntimeSessionAsync(binding.InstanceId, ct);
         return new Socket(this, binding, session, userId, authorizeCommand);
     }
-    public Task TurnOnAsync(string entityId, CancellationToken ct) => LegacyCommandAsync(entityId, true, ct);
-    public Task TurnOffAsync(string entityId, CancellationToken ct) => LegacyCommandAsync(entityId, false, ct);
+    public Task TurnOnAsync(string entityId, CancellationToken ct) => CommandAsync(entityId, true, ct);
+    public Task TurnOffAsync(string entityId, CancellationToken ct) => CommandAsync(entityId, false, ct);
     public Task SetPowerForUserAsync(string entityId, SwitchState desiredState, string userId, CancellationToken ct)
         => desiredState is SwitchState.On or SwitchState.Off
-            ? LegacyCommandAsync(entityId, desiredState == SwitchState.On, ct, userId)
+            ? CommandAsync(entityId, desiredState == SwitchState.On, ct, userId)
             : throw new ArgumentException("Provide an explicit On or Off state.", nameof(desiredState));
 
     public Task SetPowerForUserAsync(string entityId, SwitchState desiredState, string userId, Func<CancellationToken, Task> authorizeCommand, CancellationToken ct)
         => desiredState is SwitchState.On or SwitchState.Off
-            ? LegacyCommandAsync(entityId, desiredState == SwitchState.On, ct, userId,
+            ? CommandAsync(entityId, desiredState == SwitchState.On, ct, userId,
                 authorizeCommand ?? throw new ArgumentNullException(nameof(authorizeCommand)))
             : throw new ArgumentException("Provide an explicit On or Off state.", nameof(desiredState));
 
-    private async Task LegacyCommandAsync(string entityId, bool desired, CancellationToken ct, string? userId = null, Func<CancellationToken, Task>? authorizeCommand = null)
+    private async Task CommandAsync(string entityId, bool desired, CancellationToken ct, string? userId = null, Func<CancellationToken, Task>? authorizeCommand = null)
     {
-        var id = await ResolveIdAsync(entityId, ct);
+        var id = ResolveId(entityId);
         var socket = await GetSocketAsync(new(id), userId, ct, authorizeCommand);
         var result = await socket.SetPowerAsync(new(new(Guid.NewGuid()), desired ? SwitchState.On : SwitchState.Off), ct);
         if (result.Status != SocketCommandStatus.Acknowledged)
@@ -64,7 +64,7 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
     }
     public async Task<bool> GetStateAsync(string entityId, CancellationToken ct)
     {
-        var state = await (await GetAsync(new(await ResolveIdAsync(entityId, ct)), ct)).ReadAsync(ct);
+        var state = await (await GetAsync(new(ResolveId(entityId)), ct)).ReadAsync(ct);
         if (state.Reachability != Reachability.Online || state.ObservedAt is { } observed && clock.GetUtcNow() - observed > TimeSpan.FromMinutes(10))
             throw new InvalidOperationException("The socket state is unknown.");
         return state.Power switch
@@ -74,13 +74,8 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
             _ => throw new InvalidOperationException("The socket state is unknown.")
         };
     }
-    private async Task<Guid> ResolveIdAsync(string entityId, CancellationToken ct)
-    {
-        if (Guid.TryParse(entityId, out var id)) return id;
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var alias = await db.IntegrationDeviceAliases.AsNoTracking().SingleOrDefaultAsync(a => a.LegacyId == entityId, ct);
-        return alias?.DeviceId ?? throw new InvalidOperationException("The device identity is unknown. Refresh devices.");
-    }
+    private static Guid ResolveId(string entityId) => Guid.TryParse(entityId, out var id) && id != Guid.Empty ? id
+        : throw new InvalidOperationException("The device identity is unknown. Refresh devices.");
     public async Task<SocketCommandResult> ReadResultAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct)
     {
         await access.EnsureAsync(ct);

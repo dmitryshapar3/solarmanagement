@@ -33,18 +33,18 @@ public class TenantRuntimeSqliteTests
             system.Installations.AddRange(new Installation { Id = "first", CreatedAt = Now }, new Installation { Id = "second", CreatedAt = Now });
             await system.SaveChangesAsync();
         }
-        var deployment = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["DeyeCloud:AppSecret"] = "legacy-test-only", ["SolarEstimate:LocationLabel"] = "Legacy site" }).Build();
         var secrets = new IntegrationSecretStore(new EphemeralDataProtectionProvider());
-        using var factory = new TenantRuntimeFactory(options, deployment, NullLoggerFactory.Instance, new Clock(), new Lifetime(),
-            new TenantTestExecutor(), secrets, new(NullLogger<IntegrationChangeNotifier>.Instance), "legacy-key");
+        using var factory = new TenantRuntimeFactory(options, NullLoggerFactory.Instance, new Clock(), new Lifetime(),
+            new TenantTestExecutor(), secrets, new(NullLogger<IntegrationChangeNotifier>.Instance), "operator-weather-key");
         await using var first = await factory.CreateAsync("first");
         await using var second = await factory.CreateAsync("second");
         var firstSettings = first.Resolve<AppSettingsService>();
         var secondSettings = second.Resolve<AppSettingsService>();
         Assert.Equal("", (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).LocationLabel);
         Assert.Equal(0, (await secondSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).TotalKwp);
-        Assert.Equal("", (await secondSettings.LoadSectionAsync<DeyeCloudOptions>("DeyeCloud")).AppSecret);
+        Assert.Equal("operator-weather-key", second.Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue.ApiKey);
+        Assert.Null(first.Resolve<IConfiguration>()["DeyeCloud:AppSecret"]);
+        Assert.Null(second.Resolve<IConfiguration>()["Shelly:AuthKey"]);
 
         var instanceId = Guid.NewGuid();
         var deviceId = Guid.NewGuid();
@@ -73,7 +73,7 @@ public class TenantRuntimeSqliteTests
         Assert.Equal(new DateOnly(2025, 1, 2), (await firstSettings.LoadSectionAsync<SolarSalesOptions>("SolarSales")).ContractStartDate);
         Assert.Equal(new DateOnly(2026, 10, 1), (await secondSettings.LoadSectionAsync<SolarSalesOptions>("SolarSales")).ContractStartDate);
         Assert.Equal("", (await secondSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).LocationLabel);
-        Assert.Equal("", (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).ApiKey);
+        Assert.Equal("operator-weather-key", (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).ApiKey);
 
         var observation = new CachedSolarObservation("first-only", new(Now, 800, 400, 20, 1, Now, 0), Now);
         await first.Resolve<ISolarEstimateStore>().SaveAsync(observation, default);
@@ -82,15 +82,15 @@ public class TenantRuntimeSqliteTests
         await first.Resolve<IDeviceLabelStore>().SaveAsync(new() { ["test-label"] = "First label" }, default);
         Assert.Empty(await second.Resolve<IDeviceLabelStore>().LoadAsync(default));
 
-        // Neither a persisted key nor deployment fallback may select a server weather key for a new account.
+        // Editable SQL settings cannot replace the captured operator weather key.
         await using (var firstDb = new DeyeSolarDbContext(options, "first"))
         {
             firstDb.AppSettings.Add(new() { Section = "SolarEstimate", Key = "ApiKey", Value = "untrusted-sql-key" });
             await firstDb.SaveChangesAsync();
         }
         await first.RefreshSettingsAsync();
-        Assert.Equal("", first.Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue.ApiKey);
-        Assert.Equal("", (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).ApiKey);
+        Assert.Equal("operator-weather-key", first.Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue.ApiKey);
+        Assert.Equal("operator-weather-key", (await firstSettings.LoadSectionAsync<SolarEstimateOptions>("SolarEstimate")).ApiKey);
         await Assert.ThrowsAsync<InvalidOperationException>(() => factory.CreateAsync("absent"));
     }
 

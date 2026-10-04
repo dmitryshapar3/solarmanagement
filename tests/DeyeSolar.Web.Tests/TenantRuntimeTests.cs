@@ -30,18 +30,8 @@ public class TenantRuntimeTests
     [Fact]
     public void FreshInstallationNeverInheritsDeploymentCredentialsLocationCapacityOrContract()
     {
-        var deployment = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["DeyeCloud:AppSecret"] = "legacy-test-secret", ["DeyeCloud:DeviceSn"] = "legacy-device",
-            ["Shelly:AuthKey"] = "legacy-shelly-key", ["Shelly:ServerUri"] = "https://legacy.shelly.cloud",
-            ["SolarEstimate:Latitude"] = "50", ["SolarEstimate:LocationLabel"] = "Legacy private site",
-            ["SolarEstimate:Roof1Kwp"] = "4", ["SolarSales:ContractStartDate"] = "2026-09-28"
-        }).Build();
-        var defaults = TenantRuntimeOptions.ForInstallation("new-installation", Now, deployment, "legacy-weather-key");
-        Assert.Equal("", defaults["DeyeCloud:AppSecret"]);
-        Assert.Equal("", defaults["DeyeCloud:DeviceSn"]);
-        Assert.Equal("", defaults["Shelly:AuthKey"]);
-        Assert.Equal("", defaults["Shelly:ServerUri"]);
+        var defaults = TenantRuntimeOptions.Defaults(Now);
+        Assert.DoesNotContain(defaults.Keys, key => key.StartsWith("DeyeCloud:") || key.StartsWith("Shelly:"));
         Assert.Equal("0", defaults["SolarEstimate:Latitude"]);
         Assert.Equal("0", defaults["SolarEstimate:Roof1Kwp"]);
         Assert.Equal("0", defaults["SolarEstimate:Roof2Kwp"]);
@@ -52,21 +42,6 @@ public class TenantRuntimeTests
         var solar = new SolarEstimateOptions();
         new ConfigurationBuilder().AddInMemoryCollection(defaults).Build().GetSection("SolarEstimate").Bind(solar);
         Assert.False(TenantRuntimeOptions.HasSolarConfiguration(solar));
-    }
-
-    [Fact]
-    public void LegacyInstallationKeepsItsOriginalTypedSiteDefaultsAndOnlyItsCapturedServerWeatherKey()
-    {
-        var deployment = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["DeyeCloud:DeviceSn"] = "existing-device", ["SolarEstimate:ApiKey"] = "untrusted-sql-key" }).Build();
-        var values = TenantRuntimeOptions.ForInstallation(InstallationIds.Legacy, Now, deployment, "captured-server-key");
-        var options = new SolarEstimateOptions();
-        Assert.Equal(AppSettingsService.ToSettingValue(options.Latitude), values["SolarEstimate:Latitude"]);
-        Assert.Equal(AppSettingsService.ToSettingValue(options.Roof1Kwp), values["SolarEstimate:Roof1Kwp"]);
-        Assert.Equal(options.LocationLabel, values["SolarEstimate:LocationLabel"]);
-        Assert.Equal("existing-device", values["DeyeCloud:DeviceSn"]);
-        Assert.Equal("captured-server-key", values["SolarEstimate:ApiKey"]);
-        Assert.False(TenantRuntimeOptions.KnownSetting("SolarEstimate", "ApiKey"));
     }
 
     [Fact]
@@ -251,7 +226,7 @@ public class TenantRuntimeTests
         collection.AddSingleton(DatabaseOptions);
         collection.AddSingleton<IHostApplicationLifetime>(new Lifetime());
         collection.AddScoped<CurrentInstallation>();
-        collection.AddTenantRequestServices(new ConfigurationBuilder().Build(), null);
+        collection.AddTenantRequestServices(null);
         collection.AddSingleton(registry);
         await using var host = collection.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         using (var request = host.CreateScope())
@@ -283,7 +258,7 @@ public class TenantRuntimeTests
         }
     }
 
-    private static TenantRuntimeFactory Builder() => new(DatabaseOptions, new ConfigurationBuilder().Build(), NullLoggerFactory.Instance, new Clock(), new Lifetime(),
+    private static TenantRuntimeFactory Builder() => new(DatabaseOptions, NullLoggerFactory.Instance, new Clock(), new Lifetime(),
         new TenantTestExecutor(), new(new EphemeralDataProtectionProvider()), new(NullLogger<IntegrationChangeNotifier>.Instance));
     private static IConfigurationRoot Configuration(Dictionary<string, string?>? changes = null)
     {

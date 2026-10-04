@@ -267,7 +267,7 @@ public class ExportSalesApiTests
             try
             {
                 await owner.Database.EnsureCreatedAsync();
-            await LegacyTestInstallation.EnsureAsync(owner);
+            await TestInstallation.EnsureAsync(owner);
                 await SeedAsync(owner, latestCurrentMinute);
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
                 {
@@ -426,7 +426,7 @@ public class ExportSalesApiTests
         public SolarDataCommandCounter DataCommands { get; } = new();
         public DeyeSolarDbContext CreateDbContext()
         {
-            return new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options).AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
+            return new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options).AddInterceptors(DataCommands).Options, TestInstallation.Id);
         }
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
@@ -482,7 +482,7 @@ public class ExportSalesApiTests
                 return Task.FromResult(AuthenticateResult.Fail("Unknown synthetic test identity."));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(ClaimTypes.NameIdentifier, "synthetic-reader"), new Claim(ClaimTypes.Name, "synthetic-reader"),
-                    new Claim(InstallationIds.ClaimType, InstallationIds.Legacy)],
+                    new Claim(InstallationIds.ClaimType, TestInstallation.Id)],
                 AuthenticationScheme));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, AuthenticationScheme)));
         }

@@ -18,7 +18,7 @@ public sealed class IntegrationTestService(IHttpClientFactory clients,
     {
         kind = kind.ToLowerInvariant();
         if (kind is not ("openmeteo" or "pse"))
-            return Result(kind, false, "configuration", "Configure device manufacturers in the integrations section.");
+            throw new ArgumentException("Choose a supported read-only provider.", nameof(kind));
         if (!await gate.Lock.WaitAsync(0, ct)) return Result(kind, false, "busy", "Another connection test is running. Please try again shortly.");
         try
         {

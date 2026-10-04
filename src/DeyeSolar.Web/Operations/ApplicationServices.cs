@@ -22,8 +22,6 @@ public static class ApplicationServices
         builder.Services.AddScoped<UiText>();
         builder.Services.AddScoped<UserLanguageService>();
         // Database
-        ((IConfigurationBuilder)builder.Configuration).Add(new DbConfigurationSource(deployment.ConnectionString));
-
         builder.Services.AddDbContextFactory<DeyeSolarDbContext>(options =>
             options.UseSqlServer(deployment.ConnectionString));
         builder.Services.AddDbContext<DeyeSolarDbContext>(options =>
@@ -70,7 +68,7 @@ public static class ApplicationServices
         builder.Services.AddIntegrationRuntime();
         builder.Services.AddDynamicIntegrations(deployment.IntegrationConfiguration, builder.Environment.ContentRootPath);
         builder.Services.AddIntegrationManagement();
-        builder.Services.AddTenantRequestServices(builder.Configuration, deployment.OpenMeteoApiKey);
+        builder.Services.AddTenantRequestServices(deployment.OpenMeteoApiKey);
         builder.Services.AddBillingSocketAccess();
         builder.Services.AddSingleton(provider => MobileSessionStore.Persistent(
             provider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>(), provider.GetRequiredService<TimeProvider>()));

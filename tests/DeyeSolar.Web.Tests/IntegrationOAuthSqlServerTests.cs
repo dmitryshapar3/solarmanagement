@@ -301,7 +301,6 @@ public class IntegrationOAuthSqlServerTests
             builder.Services.AddScoped<IntegrationSetupService>();
             builder.Services.AddScoped<DynamicSocketGateway>(_ => throw new InvalidOperationException("This OAuth fixture must not execute device commands."));
             builder.Services.AddSingleton<IIntegrationPackageManager>(f.OriginManager);
-            builder.Services.AddSingleton<LegacyIntegrationBootstrap>(_ => throw new InvalidOperationException("This OAuth fixture does not bootstrap legacy connections."));
             builder.Services.AddSingleton<TenantRuntimeRegistry>(_ => throw new InvalidOperationException("This OAuth fixture must not start device polling."));
             f.App = builder.Build();
             f.App.UseAuthentication(); f.App.UseAuthorization();

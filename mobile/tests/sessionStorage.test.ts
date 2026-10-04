@@ -29,13 +29,10 @@ test("native sessions round-trip through secure storage without plaintext token 
   assert.ok(!JSON.stringify([...secure.values]).includes("never-persist-this"));
 });
 
-test("legacy unbound plaintext credentials are removed while preserving the chosen LAN endpoint", async () => {
+test("stored endpoint preferences cannot authenticate without the current secure session record", async () => {
   const { store, secure, preferences } = setup();
   preferences.values.set(sessionKeys.baseUrl, "http://192.168.31.190:5000");
-  preferences.values.set(sessionKeys.legacyToken, "unbound-old-token");
-  preferences.values.set(sessionKeys.legacyUsername, "old-user");
   assert.deepEqual(await store.load(baseUrl), { baseUrl: "http://192.168.31.190:5000", session: null });
-  assert.deepEqual([...preferences.values], [[sessionKeys.baseUrl, "http://192.168.31.190:5000"]]);
   assert.equal(secure.values.size, 0);
 });
 
@@ -68,12 +65,12 @@ test("web sessions live only in memory and never survive a new app instance", as
   assert.equal((await store.load(baseUrl)).session, null);
 });
 
-test("a failed secure write cannot authenticate or retain legacy plaintext", async () => {
+test("a failed secure write cannot authenticate or revive a previous secure session", async () => {
   const { store, secure, preferences } = setup();
-  preferences.values.set(sessionKeys.legacyToken, "old-token");
+  await store.save(session);
   secure.failSet = true;
   await assert.rejects(store.save(session), /save this session securely/);
-  assert.ok(!preferences.values.has(sessionKeys.legacyToken));
+  assert.equal(secure.values.size, 0);
   assert.equal((await store.load(baseUrl)).session, null);
   secure.failSet = false;
   await store.save(session);

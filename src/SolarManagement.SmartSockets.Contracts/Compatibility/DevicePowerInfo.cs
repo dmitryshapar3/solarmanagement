@@ -7,4 +7,4 @@ public record DevicePowerInfo(
     bool Online,
     bool IsOn,
     int? CurrentPowerW,
-    bool? StateKnown = null);
+    bool StateKnown = false);

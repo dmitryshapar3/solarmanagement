@@ -33,7 +33,7 @@ public class SolarHistoryStoreTests
     public void FilteringAndDeduplicationRemainInSql()
     {
         using var db = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>()
-            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, InstallationIds.Legacy);
+            .UseSqlServer("Server=unused;Database=unused;Integrated Security=true;TrustServerCertificate=true").Options, TestInstallation.Id);
         var sql = SolarHistoryStore.LatestMeasurements(db.Readings.AsNoTracking(), "selected", Start, Start.AddHours(1))
             .Select(r => new { r.SolarObservedAt, r.SolarProduction }).ToQueryString();
 
@@ -88,7 +88,7 @@ public class SolarHistoryStoreTests
         try
         {
             await owner.Database.EnsureCreatedAsync();
-            await LegacyTestInstallation.EnsureAsync(owner);
+            await TestInstallation.EnsureAsync(owner);
             owner.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
             await owner.SaveChangesAsync();
             var polling = new ExportReadingStore(factory, clock);
@@ -160,11 +160,11 @@ public class SolarHistoryStoreTests
         };
         var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(builder.ConnectionString).Options;
         var factory = new Factory(options);
-        await using var owner = new DeyeSolarDbContext(options, InstallationIds.Legacy);
+        await using var owner = new DeyeSolarDbContext(options, TestInstallation.Id);
         try
         {
             await owner.Database.EnsureCreatedAsync();
-            await LegacyTestInstallation.EnsureAsync(owner);
+            await TestInstallation.EnsureAsync(owner);
             var samples = Samples().Concat(RetentionSamples()).ToArray();
             foreach (var row in samples) row.Id = 0;
             owner.Readings.AddRange(samples);
@@ -251,7 +251,7 @@ public class SolarHistoryStoreTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
+        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

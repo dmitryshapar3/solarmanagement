@@ -7,12 +7,12 @@ namespace DeyeSolar.Web.Tests;
 public class PowerBalanceTests
 {
     private static readonly DateTimeOffset Observed = new(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
-    private static InverterData Reading() => new()
+    private static InverterData Reading() => ConfirmedInverterReading.Create(new()
     {
         SolarProduction = 4100, GridConsumption = -1200, BatteryPower = -2000, LoadPower = 900,
         SolarObservedAt = Observed, GridObservedAt = Observed, Timestamp = Observed.AddMinutes(1),
         SolarDeviceSn = "inverter-a", GridDeviceSn = "inverter-a"
-    };
+    });
 
     [Theory]
     [InlineData(4100, -1200, -2000, 900, 0)]

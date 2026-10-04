@@ -4,10 +4,18 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Operations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using System.Data.Common;
+using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -45,6 +53,79 @@ public class ApplicationOperationsTests
         var unsafeForwarding = Builder("validate");
         unsafeForwarding.Configuration["ASPNETCORE_FORWARDEDHEADERS_ENABLED"] = "true";
         Assert.Throws<InvalidOperationException>(() => DeploymentConfiguration.Capture(unsafeForwarding, false));
+    }
+
+    [Fact]
+    public async Task ProductionUnknownApiPathsReturnJsonForAllMethodsWithoutResolvingPrivateData()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "solar-unknown-api-" + Guid.NewGuid().ToString("N"));
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Production", ApplicationName = typeof(Program).Assembly.GetName().Name,
+            ContentRootPath = AppContext.BaseDirectory
+        });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Configuration.Sources.Clear();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Operations:DatabaseMode"] = "validate", ["ConnectionStrings:DefaultConnection"] = "Server=fixture.invalid;Database=UnknownApi;Encrypt=False",
+            ["Auth:PublicBaseUrl"] = "https://fixture.example", ["Auth:DataProtectionKeysPath"] = Path.Combine(directory, "auth"),
+            ["Integrations:KeyRingPath"] = Path.Combine(directory, "integrations"),
+            ["IntegrationRuntime:PackageDirectory"] = Path.Combine(directory, "packages")
+        });
+        var deployment = DeploymentConfiguration.Capture(builder, false);
+        builder.AddSolarApplication(deployment);
+        // This exercises the actual HTTP pipeline without running its separately tested startup/workers.
+        foreach (var service in builder.Services.Where(service => service.ServiceType == typeof(IHostedService)
+            && service.ImplementationType?.Assembly == typeof(Program).Assembly).ToArray())
+            builder.Services.Remove(service);
+        var database = new ForbiddenSqlConnection();
+        builder.Services.RemoveAll<DbContextOptions<DeyeSolarDbContext>>();
+        builder.Services.AddSingleton(new DbContextOptionsBuilder<DeyeSolarDbContext>()
+            .UseSqlServer(deployment.ConnectionString).AddInterceptors(database).Options);
+        await using var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Headers["X-Fixture-Authenticated"] == "yes")
+                context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "fixture-user")], "fixture"));
+            await next(context);
+        });
+        app.UseSolarApplication(deployment);
+        try
+        {
+            await app.StartAsync();
+            using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+            foreach (var authenticated in new[] { false, true })
+            {
+                if (authenticated)
+                {
+                    client.DefaultRequestHeaders.Add("X-Fixture-Authenticated", "yes");
+                    client.DefaultRequestHeaders.Authorization = new("Bearer", "fixture-token-that-must-not-query-sql");
+                }
+                foreach (var path in new[] { "/api", "/api/unknown-endpoint", "/api/unknown.json", "/api/devices/state", "/api/settings/deye", "/api/settings/test/shelly" })
+                    foreach (var method in new[] { HttpMethod.Get, HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete, HttpMethod.Options, HttpMethod.Head })
+                    {
+                        using var response = await client.SendAsync(new HttpRequestMessage(method, path));
+                        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
+                        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+                        Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
+                        if (method != HttpMethod.Head)
+                        {
+                            using var error = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                            Assert.Equal("endpoint_not_found", error.RootElement.GetProperty("code").GetString());
+                        }
+                    }
+            }
+            client.DefaultRequestHeaders.Remove("X-Fixture-Authenticated");
+            client.DefaultRequestHeaders.Authorization = null;
+            Assert.True((await client.GetAsync("/api/auth/options")).IsSuccessStatusCode);
+            Assert.Equal(0, database.Calls);
+        }
+        finally
+        {
+            await app.StopAsync();
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
     }
 
     [Fact]
@@ -88,6 +169,104 @@ public class ApplicationOperationsTests
         Assert.True(reporter.IsHealthy);
         reporter.Stopped("scheduler");
         Assert.True(reporter.IsHealthy);
+    }
+
+    [SqlServerFact]
+    public async Task FreshSchemaAndBootstrapRequireExplicitIndependentInstallationOwnership()
+    {
+        var connection = Connection("SolarFreshOwnership_");
+        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        await using var db = new DeyeSolarDbContext(options);
+        try
+        {
+            await db.Database.MigrateAsync();
+            Assert.Empty(await db.Installations.ToListAsync());
+            Assert.Empty(await db.Users.ToListAsync());
+            Assert.Equal(0, await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM sys.tables WHERE name='IntegrationDeviceAliases'
+                """).SingleAsync());
+            Assert.Equal(0, await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM sys.default_constraints d
+                JOIN sys.columns c ON c.object_id=d.parent_object_id AND c.column_id=d.parent_column_id
+                WHERE c.name='InstallationId'
+                """).SingleAsync());
+            Assert.Equal(0, await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM sys.columns WHERE object_id=OBJECT_ID('Readings')
+                    AND name='BatterySocValid' AND is_nullable=1
+                """).SingleAsync());
+
+            await ProvisionAsync(null);
+            Assert.Empty(await db.Installations.ToListAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => ProvisionAsync("short"));
+            Assert.Empty(await db.Installations.ToListAsync());
+            Assert.Empty(await db.Users.ToListAsync());
+
+            await ProvisionAsync("BootstrapFixture!42");
+            var installation = Assert.Single(await db.Installations.AsNoTracking().ToListAsync());
+            Assert.True(Guid.TryParseExact(installation.Id, "N", out _));
+            var user = Assert.Single(await db.Users.AsNoTracking().ToListAsync());
+            Assert.True(user.EmailConfirmed);
+            var membership = Assert.Single(await db.InstallationMemberships.AsNoTracking().ToListAsync());
+            Assert.Equal(user.Id, membership.UserId);
+            Assert.Equal(installation.Id, membership.InstallationId);
+            Assert.Equal("Owner", membership.Role);
+            Assert.Empty(await db.IntegrationInstances.IgnoreQueryFilters().ToListAsync());
+            Assert.Empty(await db.AppSettings.IgnoreQueryFilters().ToListAsync());
+
+            await ProvisionAsync("BootstrapFixture!42");
+            Assert.Equal(installation.Id, Assert.Single(await db.Installations.AsNoTracking().ToListAsync()).Id);
+            await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlRawAsync(
+                "INSERT AppSettings(Section,[Key],Value) VALUES ('Fixture','MissingOwner','Rejected')"));
+        }
+        finally { await db.Database.EnsureDeletedAsync(); }
+
+        async Task ProvisionAsync(string? password)
+        {
+            var configuration = new ConfigurationBuilder().Build();
+            var deployment = new DeploymentConfiguration(configuration, configuration, AuthProviderOptions.Capture(configuration),
+                new AppleBillingOptions(), connection.ConnectionString, password, null, DatabaseStartupMode.Migrate,
+                false, 120, null, Path.Combine(Path.GetTempPath(), "solar-test-integration-keys"), null);
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<DeyeSolarDbContext>(builder => builder.UseSqlServer(connection.ConnectionString));
+            services.AddIdentityCore<IdentityUser>(policy => policy.Password.RequiredLength = 12)
+                .AddEntityFrameworkStores<DeyeSolarDbContext>();
+            services.AddSingleton(deployment);
+            services.AddSingleton<TimeProvider>(new Clock());
+            services.AddScoped<IApplicationSeedData, ApplicationSeedData>();
+            await using var provider = services.BuildServiceProvider();
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IApplicationSeedData>().SeedAsync(default);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task ForwardSchemaCleanupDoesNotTreatMissingMeasurementValidityAsUsableData()
+    {
+        var connection = Connection("SolarValidityCleanup_");
+        await using var db = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
+        try
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261004215555_RecoverableAccountOffboarding");
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT Readings(InstallationId,Timestamp,BatterySoc,BatteryTemperature,BatteryVoltage,BatteryPower,
+                    BatteryCurrent,SolarProduction,GridConsumption,LoadPower,DataSource,ConfigurationRevision,RuntimeGeneration,BatterySocValid)
+                VALUES ('legacy',SYSUTCDATETIME(),90,20,48,0,0,5000,0,0,'validity-fixture',0,0,NULL);
+                INSERT AppSettings(Section,[Key],Value) VALUES ('DeyeCloud','Password','obsolete-test-only');
+                INSERT AppSettings(Section,[Key],Value) VALUES ('IntegrationMigration','Completed','1');
+                """);
+            await db.Database.MigrateAsync();
+            var reading = await db.Readings.IgnoreQueryFilters().SingleAsync();
+            Assert.False(reading.BatterySocValid);
+            Assert.Equal(90, reading.BatterySoc);
+            Assert.Empty(await db.AppSettings.IgnoreQueryFilters().ToListAsync());
+            Assert.Equal(0, await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM sys.default_constraints d
+                JOIN sys.columns c ON c.object_id=d.parent_object_id AND c.column_id=d.parent_column_id
+                WHERE c.name='InstallationId'
+                """).SingleAsync());
+        }
+        finally { await db.Database.EnsureDeletedAsync(); }
     }
 
     [SqlServerFact]
@@ -197,5 +376,18 @@ public class ApplicationOperationsTests
             Started.TrySetResult();
             return Completion.Task;
         }
+    }
+    private sealed class ForbiddenSqlConnection : DbConnectionInterceptor
+    {
+        private int _calls;
+        public int Calls => Volatile.Read(ref _calls);
+        private InterceptionResult Fail()
+        {
+            Interlocked.Increment(ref _calls);
+            throw new InvalidOperationException("Unknown API requests must not open SQL.");
+        }
+        public override InterceptionResult ConnectionOpening(DbConnection connection, ConnectionEventData eventData, InterceptionResult result) => Fail();
+        public override ValueTask<InterceptionResult> ConnectionOpeningAsync(DbConnection connection, ConnectionEventData eventData,
+            InterceptionResult result, CancellationToken cancellationToken = default) => new(Fail());
     }
 }

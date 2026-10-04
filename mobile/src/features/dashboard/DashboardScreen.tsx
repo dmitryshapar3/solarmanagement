@@ -78,8 +78,7 @@ export function DashboardScreen() {
     const deviceId = selectedDeviceId;
     let acknowledged = false;
     await command.run(isOn ? "on" : "off", async () => {
-      if (isDemo) { await api.setDeviceState(deviceId, isOn); acknowledged = true; }
-      else acknowledged = (await api.socketCommands.send(deviceId, isOn)).status === "acknowledged";
+      acknowledged = (await api.socketCommands.send(deviceId, isOn)).status === "acknowledged";
     }, {
       busyChanged: (value) => {
         setCommandBusy(value);
@@ -126,18 +125,18 @@ export function DashboardScreen() {
         <View style={styles.statusMetrics}>
           <View style={styles.statusMetric}>
             <Text style={styles.metaText}>{t("Solar power")}</Text>
-            <Text style={[styles.statusValue, { color: colors.primary }]}>{dashboard?.inverter?.solarPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.solarProduction)}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter?.solarPowerValid === false ? t("Awaiting reading") : t("Latest inverter reading")}</Text>
+            <Text style={[styles.statusValue, { color: colors.primary }]}>{dashboard?.inverter?.solarPowerValid !== true ? "—" : formatWatts(dashboard?.inverter?.solarProduction)}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter?.solarPowerValid !== true ? t("Awaiting reading") : t("Latest inverter reading")}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>{t("Load")}</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter?.loadPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.loadPower)}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.loadPowerValid !== false ? t("Consumption") : t("Awaiting reading")}</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter?.loadPowerValid !== true ? "—" : formatWatts(dashboard?.inverter?.loadPower)}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.loadPowerValid === true ? t("Consumption") : t("Awaiting reading")}</Text>
           </View>
           <View style={styles.statusMetric}>
             <Text style={styles.metaText}>{t("Grid")}</Text>
-            <Text style={styles.statusValue}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? gridModeLabel(dashboard.inverter.gridConsumption) : t("Awaiting reading")}</Text>
+            <Text style={styles.statusValue}>{dashboard?.inverter && dashboard.inverter.gridPowerValid === true ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.gridPowerValid === true ? gridModeLabel(dashboard.inverter.gridConsumption) : t("Awaiting reading")}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>{battery.label}</Text>
@@ -234,7 +233,7 @@ function DeviceChoice({ device, selected, onPress }: { device: Device; selected:
         <PlugZap color={device.online ? colors.primary : colors.subtle} size={16} />
         <Text style={styles.deviceChoiceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
       </View>
-      <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
+      <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
     </Pressable>
   );
 }
@@ -268,7 +267,7 @@ function DeviceLine({ device }: { device: Device }) {
       </View>
       <View style={styles.rowStatus}>
         <Text style={styles.powerText}>{formatWatts(device.currentPowerW)}</Text>
-        <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
+        <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
       </View>
     </Card>
   );

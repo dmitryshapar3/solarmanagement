@@ -53,6 +53,14 @@ public class BrowserBillingTests
         var allowed = await context.APIRequest.GetAsync(app.Address + "/api/devices?refresh=true");
         Assert.Equal(200, allowed.Status);
         var before = await app.ReadPrivateStateAsync();
+        var invalidMutation = await context.APIRequest.PostAsync(app.Address + "/api/rules", new()
+        {
+            DataObject = new { name = "Unverified browser mutation", entityId = "unknown", enabled = false, sourceInverterId = (Guid?)null }
+        });
+        Assert.Equal(400, invalidMutation.Status);
+        using (var problem = JsonDocument.Parse(await invalidMutation.TextAsync()))
+            Assert.Equal("antiforgery", problem.RootElement.GetProperty("code").GetString());
+        Assert.Equal(before, await app.ReadPrivateStateAsync());
         await app.ExpireTrialAsync();
         // This remains the same SignalR circuit and page: a navigation could hide stale circuit access.
         await Assertions.Expect(page.GetByText("Your trial has ended. Subscribe to read or control your sockets.",
@@ -189,8 +197,6 @@ public class BrowserBillingTests
                     || key.StartsWith("Billing__", StringComparison.OrdinalIgnoreCase)
                     || key.StartsWith("IntegrationRuntime__", StringComparison.OrdinalIgnoreCase)
                     || key.StartsWith("Integrations__", StringComparison.OrdinalIgnoreCase)
-                    || key.StartsWith("DeyeCloud__", StringComparison.OrdinalIgnoreCase)
-                    || key.StartsWith("Shelly__", StringComparison.OrdinalIgnoreCase)
                     || key.StartsWith("SolarEstimate__", StringComparison.OrdinalIgnoreCase)).ToArray())
                     info.Environment.Remove(key);
                 info.Environment.Remove("SOLAR_TEST_SQL_CONNECTION");
@@ -296,11 +302,10 @@ public class BrowserBillingTests
                     new InstallationMembership { InstallationId = NeighbourId, UserId = "browser-neighbour-owner", Role = "Owner" });
                 await db.SaveChangesAsync();
             }
-            foreach (var id in new[] { InstallationId, NeighbourId, InstallationIds.Legacy })
+            foreach (var id in new[] { InstallationId, NeighbourId })
             {
                 await using var db = new DeyeSolarDbContext(options, id);
-                db.AppSettings.AddRange(new AppSetting { Section = LegacyIntegrationBootstrap.MarkerSection, Key = LegacyIntegrationBootstrap.MarkerKey, Value = "1" },
-                    new AppSetting { Section = "SolarEstimate", Key = "Roof1Kwp", Value = "0" },
+                db.AppSettings.AddRange(new AppSetting { Section = "SolarEstimate", Key = "Roof1Kwp", Value = "0" },
                     new AppSetting { Section = "SolarEstimate", Key = "Roof2Kwp", Value = "0" },
                     new AppSetting { Section = "Polling", Key = "IntervalSeconds", Value = "600" });
                 if (id == NeighbourId)

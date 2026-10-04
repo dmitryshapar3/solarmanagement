@@ -52,7 +52,7 @@ public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> fac
         var earliest = timestamp.AddSeconds(-toleranceSeconds).UtcDateTime;
         var latest = (timestamp.AddSeconds(toleranceSeconds) < now ? timestamp.AddSeconds(toleranceSeconds) : now).UtcDateTime;
         // Only measurements from the currently selected inverter belong to this comparison.
-        // Legacy rows lack measured time/device provenance and must remain excluded.
+        // Rows without measured time and device provenance cannot authorize comparisons.
         var rows = await EligibleReadings(db.Readings.AsNoTracking(), deviceSn, earliest, latest)
             .Select(r => new { r.Id, r.SolarObservedAt, r.SolarProduction }).ToListAsync(ct);
         // Repeated measurements use the latest persisted valid correction, matching history.

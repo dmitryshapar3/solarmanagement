@@ -41,8 +41,7 @@ public class MobileAuthService
             ?? await _userManager.FindByEmailAsync(normalized)
             ?? await _userManager.Users.SingleOrDefaultAsync(u => u.PhoneNumber == normalized && u.PhoneNumberConfirmed);
         if (user == null) return null;
-        var membership = await _memberships.GetForUserAsync(user.Id);
-        if (!user.EmailConfirmed && !user.PhoneNumberConfirmed && membership?.InstallationId != InstallationIds.Legacy)
+        if (!user.EmailConfirmed && !user.PhoneNumberConfirmed)
             return null;
         var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
         return result.Succeeded ? user : null;

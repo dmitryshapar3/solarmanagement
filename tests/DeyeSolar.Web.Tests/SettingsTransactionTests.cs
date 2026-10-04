@@ -21,6 +21,7 @@ public sealed class SettingsTransactionTests
         try
         {
             await db.Database.MigrateAsync();
+                await TestInstallation.EnsureAsync(db);
             var settings = new AppSettingsService(factory, new ConfigurationBuilder().Build());
             await settings.SaveSectionsAsync(new Dictionary<string, object>
             {
@@ -50,7 +51,7 @@ public sealed class SettingsTransactionTests
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
+        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
     }
     private sealed class RejectSalesSave : SaveChangesInterceptor
     {

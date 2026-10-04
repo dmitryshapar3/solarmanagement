@@ -118,6 +118,6 @@ public class InventoryRefreshGenerationTests
         public Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct) => throw new NotSupportedException();
         public Task UpdateAsync(TriggerRule rule, CancellationToken ct) => throw new NotSupportedException();
         public Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct) => throw new NotSupportedException();
-        public Task DeleteAsync(int id, CancellationToken ct) => throw new NotSupportedException();
+        public Task DeleteAsync(int id, string configurationVersion, CancellationToken ct) => throw new NotSupportedException();
     }
 }

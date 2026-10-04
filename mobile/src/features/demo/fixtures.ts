@@ -1,5 +1,5 @@
 import type {
-  Device, DeyeDevice, DeyeStation, ExportSaleBucket, ExportSalesPeriod, ExportSalesResult,
+  Device, ExportSaleBucket, ExportSalesPeriod, ExportSalesResult,
   InverterData, Reading, Rule, RuleRunLog, Settings, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult, SolarSiteSettings
 } from "../../core/api/types";
 import { addDays, movePeriod, periodAnchor, zonedDate } from "../energy/chartPolicy";
@@ -12,27 +12,25 @@ export type DemoState = {
   rules: Rule[];
   settings: Settings;
   site: SolarSiteSettings;
-  stations: DeyeStation[];
-  inverters: DeyeDevice[];
   runs: RuleRunLog[];
 };
 
 export function createDemoState(now: Date): DemoState {
   const timestamp = now.toISOString();
   const devices: Device[] = [
-    { id: "shelly:demo-heater", name: "Demo water heater", category: "Socket", online: true, isOn: true, currentPowerW: 850 },
-    { id: "shelly:demo-lamp", name: "Demo garden lights", category: "Socket", online: true, isOn: false, currentPowerW: 0 }
+    { id: "b5dce685-8c30-4d48-b26b-4d267b8bf5a1", name: "Demo water heater", category: "Socket", online: true, isOn: true, stateKnown: true, currentPowerW: 850 },
+    { id: "9ac23f08-1bb3-44b4-8d4b-4f52136859ae", name: "Demo garden lights", category: "Socket", online: true, isOn: false, stateKnown: true, currentPowerW: 0 }
   ];
   const rules: Rule[] = [
     {
-      id: 1, name: "Demo solar surplus", entityId: devices[0]!.id, enabled: true,
+      id: 1, configurationVersion: "1".padStart(64, "0"), sourceInverterId: null, name: "Demo solar surplus", entityId: devices[0]!.id, enabled: true,
       socTurnOnThreshold: 75, useSeparateSocTurnOffThreshold: true, socTurnOffThreshold: 55,
       useSolarProductionThreshold: true, minAverageSolarProductionWatts: 1800,
       cooldownMinutes: 10, intervalSeconds: 60, activeFrom: "08:00", activeTo: "18:00",
       currentState: true, currentStateChangedAt: new Date(now.getTime() - 40 * 60000).toISOString(), lastEvaluated: timestamp
     },
     {
-      id: 2, name: "Demo battery reserve", entityId: devices[1]!.id, enabled: false,
+      id: 2, configurationVersion: "2".padStart(64, "0"), sourceInverterId: null, name: "Demo battery reserve", entityId: devices[1]!.id, enabled: false,
       socTurnOnThreshold: 85, useSeparateSocTurnOffThreshold: true, socTurnOffThreshold: 65,
       useSolarProductionThreshold: false, minAverageSolarProductionWatts: 2000,
       cooldownMinutes: 15, intervalSeconds: 60, activeFrom: null, activeTo: null,
@@ -42,8 +40,6 @@ export function createDemoState(now: Date): DemoState {
   return {
     devices, rules,
     settings: {
-      deyeCloud: { baseUrl: "https://cloud.demo.invalid", appId: "demo", appSecret: "", email: "", password: "", stationId: 1, deviceSn: "DEMO-INVERTER-001" },
-      shelly: { serverUri: "https://sockets.demo.invalid", authKey: "", deviceId: "demo-heater", requestIntervalMilliseconds: 1000 },
       polling: { intervalSeconds: 30 }, display: { timeZoneId: "Europe/Warsaw" }
     },
     site: {
@@ -52,14 +48,6 @@ export function createDemoState(now: Date): DemoState {
         roof1Kwp: 3.5, roof2Kwp: 3, roof1Tilt: 25, roof2Tilt: 25, roof1Azimuth: 180, roof2Azimuth: 90, deyeSolarPowerIsPvDcConfirmed: true, deyeSolarPowerConfirmedDeviceSn: "DEMO-INVERTER-001" },
       solarSales: { contractStartDate: "2026-01-01", timeZoneId: "Europe/Warsaw", payNegativePrices: false }
     },
-    stations: [
-      { id: 1, name: "Demo rooftop", address: "Fictional installation" },
-      { id: 2, name: "Demo workshop", address: "Fictional installation" }
-    ],
-    inverters: [
-      { serialNumber: "DEMO-INVERTER-001", deviceType: "Demo hybrid inverter", deviceId: 1, stationId: 1 },
-      { serialNumber: "DEMO-INVERTER-002", deviceType: "Demo hybrid inverter", deviceId: 2, stationId: 2 }
-    ],
     runs: Array.from({ length: 16 }, (_, index): RuleRunLog => ({
       id: index + 1, timestamp: new Date(now.getTime() - (index * 25 + 5) * 60000).toISOString(),
       ruleName: rules[index % 2]!.name, action: index % 3 === 0 ? "NO_CHANGE" : index % 2 === 0 ? "ON" : "OFF",
@@ -104,6 +92,10 @@ function midnight(date: string, timeZone: string): Date {
 export function demoInverter(now: Date, timeZone: string): InverterData {
   const solarProduction = Math.round(solarKw(now, timeZone) * 900);
   return {
+    inverterId: "766ce5fb-f18b-4438-8718-d837397a7c78", solarObservedAt: now.toISOString(), gridObservedAt: now.toISOString(),
+    solarDeviceSn: "DEMO-INVERTER-001", gridDeviceSn: "DEMO-INVERTER-001",
+    batterySocValid: true, batteryPowerValid: true, batteryTemperatureValid: true, batteryVoltageValid: true,
+    batteryCurrentValid: true, loadPowerValid: true, gridPowerValid: true, solarPowerValid: true,
     batterySoc: 78, batteryTemperature: 24.5, batteryVoltage: 51.8,
     batteryPower: solarProduction > 1000 ? -420 : 420, batteryCurrent: 8.1,
     solarProduction, gridConsumption: solarProduction > 1000 ? -Math.round(solarProduction * .4) : 180,

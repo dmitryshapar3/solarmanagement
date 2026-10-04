@@ -64,6 +64,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         modelBuilder.Entity<Reading>(e =>
         {
             e.HasKey(r => r.Id);
+            e.Property(r => r.BatterySocValid).HasDefaultValue(false);
             e.HasIndex(r => new { r.InstallationId, r.Timestamp });
             e.HasIndex(r => new { r.InstallationId, r.SolarObservedAt });
             e.Property(r => r.SolarDeviceSn).HasMaxLength(128);
@@ -157,7 +158,7 @@ public class Reading : IInstallationOwned
     public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public Guid? InverterId { get; set; }
-    public bool? BatterySocValid { get; set; }
+    public bool BatterySocValid { get; set; }
     public long ConfigurationRevision { get; set; }
     public long RuntimeGeneration { get; set; }
     public DateTime Timestamp { get; set; }

@@ -1,10 +1,10 @@
 # DeyeSolar App Store preparation
 
-Updated on 2026-10-01 from the mobile/server source and the saved App Store Connect draft. The app is **Prepare for Submission**; saving metadata or configuring products does not constitute Apple approval or publication. Keep review passwords, private review phone numbers, signing credentials, transaction payloads and production telemetry out of this repository.
+Source updated on 2026-10-05; the recorded App Store Connect draft was last checked on 2026-10-01 with status **Prepare for Submission**; saving metadata or configuring products does not constitute Apple approval or publication. Keep review passwords, private review phone numbers, signing credentials, transaction payloads and production telemetry out of this repository.
 
-**Source update on 2026-10-04:** the billing implementation now gives Solar accounts a one-calendar-month trial, limits new trial socket selection to one, and enforces reading/control access on the server. Existing accounts receive the month from billing migration. App Store purchasing remains disabled until the operator configures the backend Apple credentials and products. The saved draft below is historical: its two-week introductory offers and local-only entitlement description must be replaced before submitting the billing build. Remove those Apple introductory offers to avoid advertising a second free trial. Billing build `1.0.0 (9)` is prepared in source after the previously uploaded Google-linking build 8. Run the current native StoreKit harness and live Apple sandbox checks before building and uploading it. No App Store Connect metadata or publication action is performed by changing this file.
+The billing implementation gives each newly created Solar account a one-calendar-month trial, limits account-attributed trial socket selection to one, and enforces reading/control access on the server. App Store purchasing requires configured backend Apple credentials and products. The saved draft's two-week introductory offers and local-only entitlement description need synchronization with this release; remove those Apple introductory offers to avoid advertising a second free trial.
 
-The previous 2026-10-01 scope deferred App Store submission and kept TestFlight access free. The 2026-10-04 request resumes billing work and permits deployment/publication only after it works and all required checks pass. This source document prepares that release; native compilation and Apple sandbox checks remain outstanding on the current Windows host.
+On 2026-10-05, the current native StoreKit harness passed **11/11 tests**, the full native Expo app and subscription bridge compiled, and the signed device archive **1.0.0 (9)** was generated. Upload and App Store processing are pending. Live Apple sandbox/TestFlight product and payment verification remain required before submission. Changes to this document update the source draft only; they do not change external App Store Connect metadata or publish the app.
 
 ## App information
 
@@ -53,7 +53,7 @@ View smart socket status, send manual on/off commands and create or adjust autom
 Connected mode requires an existing Solar server account, an internet connection and a configured compatible installation. Enter your Solar server URL on the sign-in screen to connect. Available readings and controls depend on that server's integrations and configuration. The offline demo uses sample data and does not control real equipment.
 
 Subscription access
-Your Solar account starts with a free trial lasting one calendar month. You can add one smart socket during the trial. After the trial ends, an active subscription is required to read or control your sockets. Existing accounts receive one month from the server billing update.
+Your Solar account starts with a free trial lasting one calendar month. You can add one smart socket during the trial. After the trial ends, an active subscription is required to read or control your sockets.
 
 Choose a monthly or annual subscription through the App Store. The server verifies the purchase and binds it to your Solar account. The selected plan renews automatically at its displayed price unless cancelled. Prices are shown in your local currency before purchase and may vary by region.
 
@@ -90,7 +90,7 @@ DeyeSolar is a native client for an authenticated Solar installation. It display
 Review the offline demo:
 1. Open the app and tap Try demo on the sign-in screen. No account or server connection is required.
 2. Home shows current sample readings and summary cards. Generation and Sales offer period controls and detail charts. Devices lists simulated sockets.
-3. More opens Automation rules, Readings & run history, and Settings & account. You can switch simulated sockets, create/edit/enable/delete rules, discover fictional installations and edit sample settings.
+3. More opens Automation rules, Readings & run history, and Settings & account. You can switch simulated sockets, create/edit/enable/delete rules, edit sample solar-site, polling and display settings.
 4. Tap Exit demo to return to sign-in. Changes are held only in memory and discarded on exit.
 
 The demo uses fictional data in the same native screens as connected mode. It sends no network requests and never operates real equipment or submits integration credentials. Sales figures are illustrative electricity-export estimates, not trading, payments or guaranteed settlements.
@@ -100,7 +100,7 @@ Connected mode requires an existing Solar server account and configured compatib
 Subscription navigation in connected mode:
 After sign-in, a valid one-calendar-month Solar account trial opens connected access with a limit of one newly selected socket. More > Subscription shows the trial deadline and purchase actions. After expiry without a paid subscription, Solar Premium presents Monthly and Yearly plans, restore, policies and support. Select a plan and tap Subscribe. Purchases are verified by the Solar server and bound to the signed-in account before access starts. Both products provide the same connected features in one group (Solar Premium): com.dshapar.solar.monthly and com.dshapar.solar.yearly. Prices are localized by StoreKit. The Solar trial starts without a purchase; no separate Apple introductory trial is configured for this release.
 
-The offline demo bypasses paid connected access. The current native purchase and receipt acknowledgement flows require the updated local Xcode StoreKit harness and Apple sandbox/TestFlight verification before submission. Local tests do not establish sandbox or product-review readiness.
+The offline demo bypasses paid connected access. The native StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and the signed device archive 1.0.0 (9) was generated. Apple sandbox/TestFlight purchase verification is still required before submission; local checks do not establish product-review readiness.
 
 Privacy Policy: https://solar.dshapar.com/privacy
 Support: https://solar.dshapar.com/support
@@ -131,7 +131,7 @@ The public policy URL is saved in ASC, but **the collection questionnaire and Pu
 
 ## Trial and paid access
 
-StoreKit 2 is integrated with authenticated server verification in the current source. The earlier local nine-test harness passed before these changes; the updated 11-test harness and full Expo bridge build still require a current macOS run. The monthly/yearly products below were configured in ASC during previous preparation; contract readiness, Apple sandbox verification and review remain separate requirements. Both products belong to **Solar Premium, group ID `22429477`**, with English (U.S.) display name Solar Premium and app name DeyeSolar. They occupy the same level, 1, because they provide equal service. [Subscription setup](https://developer.apple.com/help/app-store-connect/manage-subscriptions/offer-auto-renewable-subscriptions/).
+StoreKit 2 is integrated with authenticated server verification in the current source. The current StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and signed device archive 1.0.0 (9) was generated on macOS. Upload, Apple processing and live sandbox verification remain pending. The monthly/yearly products below were configured in ASC during previous preparation; contract readiness, Apple sandbox verification and review remain separate requirements. Both products belong to **Solar Premium, group ID `22429477`**, with English (U.S.) display name Solar Premium and app name DeyeSolar. They occupy the same level, 1, because they provide equal service. [Subscription setup](https://developer.apple.com/help/app-store-connect/manage-subscriptions/offer-auto-renewable-subscriptions/).
 
 | Subscription field | Monthly plan | Annual plan |
 | --- | --- | --- |
@@ -155,7 +155,7 @@ Still complete product review screenshots/notes and any missing monthly localiza
 
 The Account Holder must accept the separate Paid Apps Agreement for in-app purchases. Complete the required banking and tax information in Business; an accepted Developer Program agreement alone does not establish paid-contract readiness. [Agreements](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/), [banking](https://developer.apple.com/help/app-store-connect/manage-banking-information/enter-banking-information/), [tax information](https://developer.apple.com/help/app-store-connect/manage-tax-information/provide-tax-information/).
 
-The current paid flow gates real connected screens on server-verified account access for every platform. The server enforces the trial deadline, socket limit and paid access at API boundaries. Native StoreKit supplies signed records for server verification and cannot unlock access locally. Offline demo exploration is free. Apple payment configuration and native/sandbox verification remain required before publishing the billing build.
+The current paid flow gates real connected screens on server-verified account access for every platform. The server enforces the trial deadline, socket limit and paid access at API boundaries. Native StoreKit supplies signed records for server verification and cannot unlock access locally. Offline demo exploration is free. Apple payment configuration and live sandbox verification remain required before publishing the billing build.
 
 ## App Store submission prerequisites
 

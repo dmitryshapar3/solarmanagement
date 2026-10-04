@@ -4,7 +4,6 @@ namespace DeyeSolar.Web.Data;
 
 public static class InstallationIds
 {
-    public const string Legacy = "legacy";
     public const string ClaimType = "solar:installation";
     public const string RoleClaimType = "solar:installation-role";
 }
@@ -30,7 +29,7 @@ public class InstallationMembership
     public IdentityUser User { get; set; } = null!;
 }
 
-// Request/circuit state is immutable after binding. No implicit legacy fallback.
+// Request/circuit state is immutable after binding. No implicit installation fallback.
 public sealed class CurrentInstallation
 {
     public string? Id { get; private set; }

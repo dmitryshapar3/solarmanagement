@@ -2,7 +2,7 @@ using DeyeSolar.Web.Operations;
 
 namespace DeyeSolar.Web.Tenancy;
 
-/// <summary>Schedules independent tenant cycles with bounded worker concurrency; never uses the legacy global worker.</summary>
+/// <summary>Schedules independent tenant cycles with bounded worker concurrency; each cycle is bound to its installation.</summary>
 public sealed class TenantRuntimeWorker(TenantRuntimeRegistry registry, ILogger<TenantRuntimeWorker> logger, IWorkerHealthReporter? health = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

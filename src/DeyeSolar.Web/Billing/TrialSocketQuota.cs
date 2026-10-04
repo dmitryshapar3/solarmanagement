@@ -37,9 +37,8 @@ public sealed class TrialSocketQuota(BillingAccessService billing) : ITrialSocke
         if (await db.IntegrationDeviceBindings.AnyAsync(b => b.InstanceId == selection.InstanceId
             && b.Kind == "socket" && b.RemoteId == selection.RemoteId && b.Channel == selection.Channel, ct)) return;
         if (access.SocketLimit is null) return;
-        var installations = db.InstallationMemberships.Where(m => m.UserId == userId).Select(m => m.InstallationId);
         if (await db.IntegrationDeviceBindings.IgnoreQueryFilters().CountAsync(b => b.Kind == "socket"
-            && (b.AddedByUserId == userId || b.AddedByUserId == null && installations.Contains(b.InstallationId)), ct) >= access.SocketLimit)
+            && b.AddedByUserId == userId, ct) >= access.SocketLimit)
             throw new IntegrationRequestException("trial_socket_limit", "The trial allows one socket. Subscribe to add more sockets.", 402);
     }
 

@@ -40,8 +40,10 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExce
 
     private static ApiProblem Describe(Exception exception) => exception switch
     {
+        DeyeSolar.Web.Data.RuleConfigurationPreconditionRequiredException e => new(428, "Precondition required", "rule_precondition_required", e.Message),
         DeyeSolar.Web.Data.RuleConfigurationConflictException e => new(409, "Update conflict", "rule_configuration_conflict", e.Message),
         BadHttpRequestException e => new(e.StatusCode, "Invalid request", "invalid_request", "The request body is invalid or exceeds the allowed size."),
+        Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException => new(400, "Invalid request", "antiforgery", "A valid request verification token is required."),
         IntegrationRequestException e => new(e.Status, "Integration operation failed", e.Code, e.Message),
         InstallationAccessException e => new(e.Status, "Access changed", "installation_access_denied", e.Message),
         AccountSecurityException e => new(e.Status, "Account operation failed", e.Code, e.Message),

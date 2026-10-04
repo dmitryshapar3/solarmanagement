@@ -35,7 +35,7 @@ internal sealed class SocketInventoryReader(IIntegrationRegistry registry, ISmar
         }
         var bindings = (await registry.ListBindingsAsync(ct)).Where(b => b.Kind == "socket").ToArray();
         var devices = new List<SocketDescriptor>();
-        var legacy = new List<DevicePowerInfo>();
+        var displayDevices = new List<DevicePowerInfo>();
         var issues = new List<SocketInventoryIssue>();
         foreach (var binding in bindings)
         {
@@ -45,7 +45,7 @@ internal sealed class SocketInventoryReader(IIntegrationRegistry registry, ISmar
                 var socket = await sockets.GetAsync(new(binding.Id), ct);
                 var state = await socket.ReadAsync(ct);
                 devices.Add(new(new(binding.Id), binding.Name, capabilities, state.Reachability));
-                legacy.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", state.Reachability == Reachability.Online,
+                displayDevices.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", state.Reachability == Reachability.Online,
                     state.Power == SwitchState.On, state.CurrentPower?.Value, state.Reachability == Reachability.Online && state.Power != SwitchState.Unknown
                     && (state.ObservedAt is null || clock.GetUtcNow() - state.ObservedAt <= TimeSpan.FromMinutes(10))));
             }
@@ -55,7 +55,7 @@ internal sealed class SocketInventoryReader(IIntegrationRegistry registry, ISmar
             {
                 devices.Add(new(new(binding.Id), binding.Name, capabilities, Reachability.Unknown));
                 issues.Add(new(binding.Name, SocketInventoryIssueKind.Unavailable));
-                legacy.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", false, false, null, false));
+                displayDevices.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", false, false, null, false));
             }
         }
         await access.EnsureAsync(ct);
@@ -64,18 +64,18 @@ internal sealed class SocketInventoryReader(IIntegrationRegistry registry, ISmar
             if (epoch != _inventoryEpoch) throw new InvalidOperationException("Socket integrations changed during discovery.");
             // Pending or cancelled readers cannot suppress a successful refresh; completed newer results win.
             if (_inventory is { } current && current.Request > request) return current;
-            return _inventory = new(request, new(devices, issues, clock.GetUtcNow()), legacy);
+            return _inventory = new(request, new(devices, issues, clock.GetUtcNow()), displayDevices);
         }
     }
-    public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => LegacyInventoryAsync(false, ct);
-    public Task<IReadOnlyList<DevicePowerInfo>> RefreshDevicesAsync(CancellationToken ct) => LegacyInventoryAsync(true, ct);
-    private async Task<IReadOnlyList<DevicePowerInfo>> LegacyInventoryAsync(bool force, CancellationToken ct)
+    public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => InventoryAsync(false, ct);
+    public Task<IReadOnlyList<DevicePowerInfo>> RefreshDevicesAsync(CancellationToken ct) => InventoryAsync(true, ct);
+    private async Task<IReadOnlyList<DevicePowerInfo>> InventoryAsync(bool force, CancellationToken ct)
     {
         var inventory = await ReadCacheAsync(force, ct);
-        var result = inventory.Legacy;
+        var result = inventory.DisplayDevices;
         if (inventory.Snapshot.Issues.Count > 0 && result.All(d => !d.Online))
             throw new InvalidOperationException("Socket integrations are unavailable. Previously registered devices have been retained.");
         return result;
     }
-    private sealed record InventoryCache(long Request, SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> Legacy);
+    private sealed record InventoryCache(long Request, SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> DisplayDevices);
 }

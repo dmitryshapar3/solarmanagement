@@ -24,9 +24,9 @@ public class EnergyDetailsTests
     public async Task InverterFlowUsesBatteryPowerSignAndAbsoluteWattsWithoutChangingSolar(int power, string label, string value)
     {
         var timestamp = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
-        var html = await RenderReadingsAsync(new() { SolarProduction = 4100, SolarObservedAt = timestamp,
+        var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 4100, SolarObservedAt = timestamp,
             Timestamp = timestamp.AddMinutes(1), BatteryPower = power, BatteryVoltage = 51.5,
-            BatteryCurrent = -4.2, BatteryTemperature = 24, BatterySoc = 87 }, timestamp.AddMinutes(2));
+            BatteryCurrent = -4.2, BatteryTemperature = 24, BatterySoc = 87 }), timestamp.AddMinutes(2));
         Assert.Contains(label, html);
         Assert.Contains(value, html);
         Assert.Contains("4.10 kW", html);
@@ -40,7 +40,7 @@ public class EnergyDetailsTests
     [Fact]
     public async Task MissingSolarMeasurementRemainsUnavailableEvenWhenTheSourceDefaultsPowerToZero()
     {
-        var html = await RenderReadingsAsync(new() { SolarProduction = 0, SolarObservedAt = null }, DateTimeOffset.UtcNow);
+        var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 0, SolarObservedAt = null }), DateTimeOffset.UtcNow);
         Assert.Matches("data-testid=\"inverter-pv\"[^>]*>— kW", html);
         Assert.Contains("Solar measurement", html);
         Assert.Contains("Unavailable", html);
@@ -54,9 +54,9 @@ public class EnergyDetailsTests
     public async Task InverterBalanceDisplaysTheSignedDifferenceAndDoesNotPresentItAsMeasuredLoss(int batteryPower, string value, string direction)
     {
         var observed = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
-        var html = await RenderReadingsAsync(new() { SolarProduction = 4100, SolarObservedAt = observed,
+        var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 4100, SolarObservedAt = observed,
             GridConsumption = -1200, GridObservedAt = observed, SolarDeviceSn = "inverter-a", GridDeviceSn = "inverter-a",
-            BatteryPower = batteryPower, LoadPower = 900, Timestamp = observed.AddMinutes(1) }, observed.AddMinutes(2));
+            BatteryPower = batteryPower, LoadPower = 900, Timestamp = observed.AddMinutes(1) }), observed.AddMinutes(2));
         Assert.Matches($"data-testid=\"inverter-balance\"[^>]*>{System.Text.RegularExpressions.Regex.Escape(value)}", html);
         Assert.Contains(direction, html);
         Assert.Contains("Solar + signed grid + signed battery − load", html);

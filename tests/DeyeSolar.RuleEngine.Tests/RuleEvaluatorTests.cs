@@ -1,5 +1,6 @@
 using DeyeSolar.Domain.Models;
 using DeyeSolar.RuleEngine;
+using SolarManagement.Inverters.Contracts;
 
 namespace DeyeSolar.RuleEngine.Tests;
 
@@ -25,6 +26,12 @@ public class RuleEvaluatorTests
     private InverterData MakeData(int soc = 90) => new()
     {
         BatterySoc = soc,
+        BatterySocValid = true,
+        Telemetry = new InverterTelemetry(new(Guid.Parse("00000000-0000-0000-0000-000000000001")), _now,
+            new(new Percent(soc), _now, MeasurementQuality.Good), new(null, null, MeasurementQuality.Missing),
+            new(null, null, MeasurementQuality.Missing), new(null, null, MeasurementQuality.Missing),
+            new(null, null, MeasurementQuality.Missing), new(null, null, MeasurementQuality.Missing),
+            new(null, null, MeasurementQuality.Missing), new(null, null, MeasurementQuality.Missing), SolarManagement.Inverters.Contracts.SolarPowerBasis.PvDc),
         BatteryPower = 0,
         GridConsumption = 0,
         SolarProduction = 3000,
@@ -78,6 +85,15 @@ public class RuleEvaluatorTests
         Assert.Equal(timestamp, rule.CurrentStateChangedAt);
         Assert.Null(rule.LastEvaluated);
         Assert.Single(_evaluator.Evaluate(data with { BatterySocValid = true }, [rule], _now, context: new(9000)));
+    }
+
+    [Fact]
+    public void MeasurementsWithoutQualityAndSourceTimeNeverAuthorizeAutomation()
+    {
+        var rule = MakeRule();
+        var reading = MakeData() with { Telemetry = null };
+        Assert.False(RuleEvaluator.HasFreshSoc(reading, _now));
+        Assert.Empty(_evaluator.Evaluate(reading, [rule], _now));
     }
 
     [Fact]

@@ -29,7 +29,7 @@ public class InverterMeasurementValidityTests
     }
 
     [Fact]
-    public async Task ValidZeroMeasurementsRemainVisibleAndHistoricalReadingsKeepTheirLegacyMeaning()
+    public async Task ValidZeroMeasurementsRemainVisibleAndUnverifiedReadingsAreUnavailable()
     {
         var valid = await RenderAsync(Reading(MeasurementQuality.Good));
         Assert.Contains("Battery idle", valid);
@@ -38,10 +38,10 @@ public class InverterMeasurementValidityTests
         Assert.Matches("data-testid=\"inverter-voltage\"[^>]*>0[.]00 V", valid);
         Assert.Matches("data-testid=\"inverter-balance\"[^>]*>\\+4,100 W", valid);
         Assert.DoesNotContain("legacy reading", valid);
-        var legacy = await RenderAsync(Reading(MeasurementQuality.Good) with { Telemetry = null, BatterySocValid = null });
-        Assert.Matches("data-testid=\"inverter-battery-power\"[^>]*>0 W", legacy);
-        Assert.Matches("data-testid=\"inverter-soc\"[^>]*>0 %", legacy);
-        Assert.Contains("legacy reading", legacy);
+        var unverified = await RenderAsync(Reading(MeasurementQuality.Good) with { Telemetry = null, BatterySocValid = false });
+        Assert.Matches("data-testid=\"inverter-battery-power\"[^>]*>— W", unverified);
+        Assert.Matches("data-testid=\"inverter-soc\"[^>]*>— %", unverified);
+        Assert.DoesNotContain("legacy reading", unverified);
     }
 
     [Theory]
@@ -60,10 +60,9 @@ public class InverterMeasurementValidityTests
     }
 
     [Fact]
-    public async Task GoodGridAndSolarZeroRemainVisibleAndNullLegacyValidityPreservesHistoricalZero()
+    public async Task GoodGridAndSolarZeroRemainVisibleOnlyWithConfirmedMeasurementQuality()
     {
-        foreach (var reading in new[] { Reading(MeasurementQuality.Good, solarPower: 0),
-            Reading(MeasurementQuality.Good, solarPower: 0) with { Telemetry = null } })
+        foreach (var reading in new[] { Reading(MeasurementQuality.Good, solarPower: 0) })
         {
             var html = await RenderAsync(reading);
             Assert.Matches("data-testid=\"inverter-grid\"[^>]*>0 W", html);

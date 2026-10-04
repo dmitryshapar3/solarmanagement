@@ -11,6 +11,7 @@ namespace DeyeSolar.Web.Tests;
 
 public class AccountIdentityTests
 {
+    private const string FixtureInstallation = "fixture-installation";
     private sealed class SqliteModelContext(DbContextOptions<DeyeSolarDbContext> options) : DeyeSolarDbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -36,7 +37,7 @@ public class AccountIdentityTests
             Options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlite(Connection).Options;
             await using var db = new SqliteModelContext(Options); await db.Database.EnsureCreatedAsync();
             Options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlite(Connection).UseModel(db.Model).Options;
-            db.Installations.Add(new Installation { Id = InstallationIds.Legacy, CreatedAt = DateTimeOffset.UtcNow }); await db.SaveChangesAsync();
+            db.Installations.Add(new Installation { Id = FixtureInstallation, CreatedAt = DateTimeOffset.UtcNow }); await db.SaveChangesAsync();
             var services = new ServiceCollection(); services.AddLogging(); services.AddScoped(_ => new DeyeSolarDbContext(Options));
             services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(new Factory(Options));
             services.AddIdentity<IdentityUser, IdentityRole>(options =>
@@ -53,15 +54,15 @@ public class AccountIdentityTests
     }
 
     [Fact]
-    public async Task VerifiedRegistrationGetsEmptyInstallationAndCannotSeeLegacySecrets()
+    public async Task VerifiedRegistrationGetsEmptyInstallationAndCannotSeeSiblingSecrets()
     {
         await using var fixture = new Fixture(); await fixture.InitializeAsync();
-        await using (var legacy = new DeyeSolarDbContext(fixture.Options, InstallationIds.Legacy))
-        { legacy.AppSettings.Add(new AppSetting { Section = "DeyeCloud", Key = "Password", Value = "legacy-private-value" }); await legacy.SaveChangesAsync(); }
+        await using (var sibling = new DeyeSolarDbContext(fixture.Options, FixtureInstallation))
+        { sibling.AppSettings.Add(new AppSetting { Section = "DeyeCloud", Key = "Password", Value = "sibling-private-value" }); await sibling.SaveChangesAsync(); }
         using var scope = fixture.Provider.CreateScope(); var accounts = scope.ServiceProvider.GetRequiredService<AccountIdentityService>();
         var user = await accounts.RegisterAsync(new("email", "owner@example.test"), "long-local-test-password", default);
         var session = await accounts.SessionAsync(user.Id, default); Assert.NotNull(session); Assert.Equal("owner@example.test", session.Username);
-        Assert.NotEqual(InstallationIds.Legacy, session.InstallationId); Assert.True(user.EmailConfirmed);
+        Assert.NotEqual(FixtureInstallation, session.InstallationId); Assert.True(user.EmailConfirmed);
         await using var own = new DeyeSolarDbContext(fixture.Options, session.InstallationId!);
         Assert.Empty(await own.AppSettings.ToListAsync()); Assert.Empty(await own.Readings.ToListAsync()); Assert.Empty(await own.TriggerRules.ToListAsync());
         Assert.Equal(2, await own.Installations.CountAsync());
@@ -98,7 +99,7 @@ public class AccountIdentityTests
         await Assert.ThrowsAsync<DbUpdateException>(() => accounts.GoogleAsync("google-new-subject", "new@example.test", true, null, default));
         await using var check = new DeyeSolarDbContext(fixture.Options);
         Assert.Empty(await check.Users.ToListAsync()); Assert.Empty(await check.InstallationMemberships.ToListAsync());
-        Assert.Equal(InstallationIds.Legacy, Assert.Single(await check.Installations.ToListAsync()).Id);
+        Assert.Equal(FixtureInstallation, Assert.Single(await check.Installations.ToListAsync()).Id);
     }
 
     [Fact]
@@ -119,8 +120,8 @@ public class AccountIdentityTests
         var user = await accounts.RegisterAsync(new("phone", "+48123456789"), "long-local-test-password", default);
         var resolver = scope.ServiceProvider.GetRequiredService<InstallationMembershipService>();
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id)], "test"));
-        var own = await resolver.ResolveAsync(principal); Assert.NotNull(own); Assert.NotEqual(InstallationIds.Legacy, own.InstallationId);
-        var forged = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(InstallationIds.ClaimType, InstallationIds.Legacy)], "test"));
+        var own = await resolver.ResolveAsync(principal); Assert.NotNull(own); Assert.NotEqual(FixtureInstallation, own.InstallationId);
+        var forged = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(InstallationIds.ClaimType, FixtureInstallation)], "test"));
         Assert.Null(await resolver.ResolveAsync(forged));
         await using var db = new DeyeSolarDbContext(fixture.Options); db.InstallationMemberships.Remove(await db.InstallationMemberships.SingleAsync()); await db.SaveChangesAsync();
         Assert.Null((await accounts.SessionAsync(user.Id, default))!.InstallationId);

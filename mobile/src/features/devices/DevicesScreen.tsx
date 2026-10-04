@@ -93,8 +93,7 @@ export function DevicesScreen() {
     setError(null);
     try {
       let acknowledged: boolean;
-      if (isDemo) { await api.setDeviceState(device.id, isOn); acknowledged = true; }
-      else acknowledged = (await api.socketCommands.send(device.id, isOn)).status === "acknowledged";
+      acknowledged = (await api.socketCommands.send(device.id, isOn)).status === "acknowledged";
       if (current() && acknowledged) { requestSeq.current++; await load("refresh"); }
     } catch (ex) {
       if (current()) setError(ex instanceof Error ? ex.message : "Unable to change socket state.");
@@ -226,8 +225,8 @@ function DeviceCard({
           <Text style={styles.category}>{device.id}</Text>
         </View>
         <StatusPill
-          label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}
-          tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"}
+          label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}
+          tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"}
         />
       </View>
 

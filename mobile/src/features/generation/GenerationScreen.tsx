@@ -51,7 +51,7 @@ export function CurrentSolarSnapshot({ state, liveInverter, timeZoneId = "Europe
 function SolarSnapshotValues({ state, liveInverter, timeZoneId }: Pick<SolarSnapshotProps, "state" | "liveInverter"> & { timeZoneId: string }) {
   const { t } = useLanguage();
   const sourceAvailable = state && !state.error && !state.refreshFailed;
-  const actualKw = liveInverter && liveInverter.solarPowerValid !== false && Number.isFinite(liveInverter.solarProduction) && liveInverter.solarProduction >= 0 ? liveInverter.solarProduction / 1000 : null;
+  const actualKw = liveInverter && liveInverter.solarPowerValid === true && Number.isFinite(liveInverter.solarProduction) && liveInverter.solarProduction >= 0 ? liveInverter.solarProduction / 1000 : null;
   return <>
     <View style={styles.metrics}>
       <View style={styles.metric}><Text style={styles.muted}>{t("Latest reported inverter")}</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(actualKw, "kW", 2)}</Text></View>

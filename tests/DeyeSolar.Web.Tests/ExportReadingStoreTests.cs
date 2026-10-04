@@ -90,7 +90,7 @@ public class ExportReadingStoreTests
     }
 
     [SqlServerFact]
-    public async Task FailedLegacySaveAndFailedHistoryBatchRollBackOnlyTheirOwnWork()
+    public async Task FailedPollingSaveAndFailedHistoryBatchRollBackOnlyTheirOwnWork()
     {
         await using var database = await Database.CreateAsync();
         await database.Store.UpsertHistoryAsync("neighbor", [new(Start, 1500)], Start, default);
@@ -127,7 +127,7 @@ public class ExportReadingStoreTests
     }
 
     [SqlServerFact]
-    public async Task MigrationUpgradeDoesNotCertifyLegacyGridOrAlterExistingSettings()
+    public async Task SchemaUpgradeNeverCertifiesUnattributedGridOrOverwritesSettings()
     {
         await using var database = await Database.CreateAsync(migrate: false);
         await using (var db = database.Factory.CreateDbContext())
@@ -146,8 +146,8 @@ public class ExportReadingStoreTests
         await using var check = database.Factory.CreateDbContext();
         Assert.Empty(await check.ExportReadings.ToListAsync());
         Assert.Empty(await check.ExportPrices.ToListAsync());
-        Assert.Equal(-4300, (await check.Readings.SingleAsync()).GridConsumption);
-        Assert.Equal("preserved", (await check.AppSettings.SingleAsync()).Value);
+        Assert.Equal(-4300, (await check.Readings.IgnoreQueryFilters().SingleAsync()).GridConsumption);
+        Assert.Equal("preserved", (await check.AppSettings.IgnoreQueryFilters().SingleAsync()).Value);
         Assert.Contains("20260930160000_AddExportReadings", await check.Database.GetAppliedMigrationsAsync());
     }
 
@@ -168,6 +168,7 @@ public class ExportReadingStoreTests
             {
                 await using var db = factory.CreateDbContext();
                 await db.Database.MigrateAsync();
+                await TestInstallation.EnsureAsync(db);
             }
             return database;
         }
@@ -180,7 +181,7 @@ public class ExportReadingStoreTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
+        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

@@ -1,14 +1,14 @@
 # Privacy, age rating and review answers
 
-Source audit: 2026-10-04; saved App Store draft status last checked 2026-10-01. These answers describe the checked-out mobile client, its StoreKit module and the Solar server. They do not establish the hosting operator's actual logging, vendor contracts, retention, or Apple approval. Recheck against the final submitted binary and deployed configuration. No real passwords, private review phone numbers, transaction payloads or customer readings belong in this document.
+Source audit: 2026-10-05; saved App Store draft status last checked 2026-10-01. These answers describe the checked-out mobile client, its StoreKit module and the Solar server. They do not establish the hosting operator's actual logging, vendor contracts, retention, or Apple approval. Recheck against the final submitted binary and deployed configuration. No real passwords, private review phone numbers, transaction payloads or customer readings belong in this document.
 
-The current billing source prepares build `1.0.0 (9)` with a one-calendar-month account trial and subscription access enforced on the server. StoreKit purchasing remains disabled until the operator configures Apple billing. Previously uploaded TestFlight build 8 does not contain this client integration. The saved App Store metadata and privacy questionnaire require synchronization with the final tested native build 9 before submission; this source update does not upload the app, publish those answers or establish purchase readiness.
+Build `1.0.0 (9)` implements a one-calendar-month trial for newly created accounts and subscription access enforced on the server. StoreKit purchasing requires configured backend Apple billing. On 2026-10-05, the native StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and the signed device archive was generated. Upload and Apple processing are pending. The saved App Store metadata and privacy questionnaire require synchronization before submission; this source draft does not publish those answers or establish live Apple purchase readiness.
 
 ## App Privacy: supported answers
 
 **Do you or your third-party partners collect data from this app? Yes.** The server retains account/session identifiers and installation configuration submitted by the app. Having no advertising SDK does not make this a no-data-collected app.
 
-For the following six data types, use these follow-up answers:
+For the following seven data types, use these follow-up answers:
 
 | App Store Connect question | Answer supported by the implemented use |
 | --- | --- |
@@ -19,14 +19,15 @@ For the following six data types, use these follow-up answers:
 
 | Data type to select | Source evidence and scope |
 | --- | --- |
-| **Contact Info > Email Address** | Settings sends a DeyeCloud account email to `/api/settings/deye`; `AppSettingsService` retains it. Identity accounts may also have email. Email has a specific category and should not be hidden under generic content |
+| **Contact Info > Email Address** | Verified email registration/sign-in and integration configuration may send an email address to the server. Identity persists account email; provider configuration is saved through the authenticated `/api/v2/integrations` API. Email has a specific category and should not be hidden under generic content |
+| **Contact Info > Phone Number** | Verified phone registration/sign-in and account identity linking submit and retain the verified number in the account record |
 | **Identifiers > User ID** | Sign-in uses username/email. `MobileSessionStore` retains user ID, username and token until expiry or revocation; Identity persists account records. Native session storage also contains username, although its local storage alone is not the reason for this declaration |
-| **Identifiers > Device ID** | Inverter serial numbers and Shelly device IDs are submitted in selection/configuration and retained with installation data. This describes connected-equipment IDs, not collection of the phone's advertising identifier |
+| **Identifiers > Device ID** | Inverter and smart-socket identifiers are submitted in selection/configuration and retained with installation data. This describes connected-equipment IDs, not collection of the phone's advertising identifier |
 | **User Content > Other User Content** | Users create and edit rule names and related configuration; rule records persist. These text fields have no public social feed |
 | **Other Data > Other Data Types** | Saved thresholds, schedules, polling/integration settings and other system configuration are retained. The service also retains installation energy/device observations; identify these explicitly in the policy, rather than claiming the service only stores login details |
 | **Purchases > Purchase History** | The app sends Apple-signed subscription transactions to the authenticated server. The server retains account trial dates, product and transaction identifiers, an account token shared with Apple, expiry/revocation dates and verified subscription status; it refreshes status through Apple and Server Notifications V2 |
 
-These data are not anonymized before the account/installation can be identified. The backend currently serves a shared installation to its authorized accounts; absence of a user-ID column on every reading is not an anonymization mechanism.
+These data remain associated with identifiable accounts and installations. A newly created account receives its own installation; access to an installation requires explicit membership and permissions. Additional members can share authorized access. Tenant-scoped storage does not anonymize those records.
 
 Apple distinguishes retained off-device collection from local processing and transient requests. The label must include qualifying partner collection and its actual purposes. [Apple App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/).
 
@@ -38,7 +39,7 @@ Apple distinguishes retained off-device collection from local processing and tra
 | **Financial Info > Other Financial Info** | **No off-device personal financial collection from the app found.** The server retains energy observations and public electricity-price rows; revenue/deposit totals are computed for each API response. No personal invoice, payout account or revenue ledger is persisted by this code | Reassess if deployed logs, exports, invoices or billing features retain users' financial results. Displaying a computed value alone is not evidence of retained collection |
 | **User Content > Customer Support** | **Operator confirmation needed.** Support is via the approved public email; there is no in-app support-message form or automatic diagnostic upload | Include retained app-related support submissions when applicable and not eligible for optional disclosure. Confirm what is retained and whether it can be tied to the sender/account |
 | **Diagnostics > Other Diagnostic Data** | **Operator confirmation needed.** No mobile crash-reporting SDK found, but server/proxy/security logging is outside the mobile dependency list | Include retained technical information originating from app requests, such as IP/request logs, under the category matching its actual use. App Functionality is appropriate for service/security operation; add Analytics only if actually used for behavior analysis |
-| **Location / Physical Address** | No mobile GPS permission, location sensor call or address input is implemented. Station addresses can be returned during cloud discovery; weather coordinates come from server configuration | Confirm whether the deployed service collects/retains user-provided installation location through other app-linked features or logs. Do not equate local timezone selection with GPS collection |
+| **Location / Physical Address** | The app does not request phone GPS. Solar-site settings accept latitude, longitude and a location label; these values are submitted to the authenticated server and retained in installation settings | Classify the submitted installation coordinates under the location category matching their actual precision, and include qualifying partner use by the weather service. Local timezone selection alone does not collect GPS coordinates |
 | **Usage Data > Product Interaction** | No tap/screen-event analytics upload found. Rule execution logs describe installation operation | Reassess if deployed analytics or server logs retain identifiable app interaction events for that purpose |
 
 Do not add speculative categories merely because a third-party SDK is present. Conversely, do not omit known server or partner collection. Apple's own collection and information processed only on the device are treated separately from the developer's retained collection. [Apple App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/).
@@ -50,13 +51,13 @@ Public URLs are `https://solar.dshapar.com/privacy` and `https://solar.dshapar.c
 The policy should match these source facts:
 
 - The login password is not persisted by the mobile app; its iOS session uses Keychain. Changing server/signing out clears that session.
-- Connection credentials saved in Settings are retained by the server for Deye/Shelly integration. Logging out does not remove them or delete the server account.
-- Ordinary readings have a 31-day cleanup window and rule execution logs a 3-day cleanup window in `PollingWorker`; cleanup can be delayed by operational failures. This is not a guarantee about backups or external logs.
+- Connection credentials saved through the provider-driven Integrations settings are retained by the server for the configured manufacturers. Logging out does not remove them or delete the server account.
+- Ordinary readings have a 31-day cleanup window and rule execution logs a 3-day cleanup window in `RuleRunHistory`; cleanup can be delayed by operational failures. This is not a guarantee about backups or external logs.
 - Identity, saved settings, rules, export observations and market-price rows have no automatic expiry implemented. Operator deletion and backup retention must be described accurately.
-- Deye Cloud, Shelly Cloud, Open-Meteo and hosting/network providers participate in the service. Open-Meteo receives server-configured installation coordinates; the mobile app does not request phone GPS.
+- Configured inverter/socket cloud providers, Open-Meteo, PSE and hosting/network providers participate in the service. Open-Meteo receives server-configured installation coordinates; the mobile app does not request phone GPS.
 - StoreKit purchase records are sent to Solar for authenticated verification and account binding. Signed payloads are not persisted in ordinary client storage. Server purchase identifiers and verified status have no automatic deletion period implemented; operator retention and deletion policy must cover them.
 
-The current app has verified email/phone registration and Google account sign-in/linking. Do not claim that an in-app account-deletion feature exists. The operator's correction/deletion process and contact route still need to work.
+The app has verified email/phone registration and Google account sign-in/linking. More > Settings & account provides password change, session revocation, account-data export and account deletion, confirmed by the current password or a fresh verification code. Account deletion removes identity, billing and session records plus exclusively owned installation data. An owner with other installation members must transfer ownership first; outstanding device commands must be resolved before deletion. Operator backup retention and the external support contact route still need an accurate policy.
 
 ## Age-rating questionnaire
 
@@ -107,7 +108,7 @@ Apple's checklist accepts a complete demo mode. Guideline 2.1(a) also retains a 
 These apply when App Store publication resumes, rather than as new requests for the current TestFlight work.
 
 1. **Deployment and operation:** confirm that the new public pages are deployed; identify hosting/proxy/security providers, retained IP/request/response logs, their uses, retention and backups. Confirm no advertising/data-broker use by the operator or partners before finalizing No tracking.
-2. **Privacy operations:** operator/legal identity and working access/correction/deletion process; backup retention and who can access the shared installation. Confirm treatment of support emails and whether financial result exports or other retained records exist outside this source.
+2. **Privacy operations:** operator/legal identity and working access/correction/deletion process; backup retention and the installation membership/permission policy. Confirm treatment of support emails and whether financial result exports or other retained records exist outside this source.
 3. **Review access:** Apple's applicable agreement to the demo-only hardware approach, or suitable isolated dedicated access if requested. Review contact details have already been supplied and saved; do not request them again. Do not put production equipment credentials in a public document.
 4. **Commercial account setup:** active Paid Apps Agreement, the owner's accurate bank/tax/trader information and any required territory-specific documents. Previously configured U.S. base prices are USD 4.99 monthly / USD 29.99 yearly in one subscription group. Remove the old two-week introductory offers; the Solar server provides the account's one-month trial. Verify Apple's sandbox catalog and final contract status before submission. ASC previously showed a non-trader declaration; the account holder must determine whether it remains accurate for paid distribution.
 5. **Connected-provider commercial configuration:** the current owner decision is to keep the free API arrangement for TestFlight. Before any future commercial release, confirm the permitted Open-Meteo arrangement and privately configure a paid API key if required. Open-Meteo excludes commercial use from its free tier and places historical/satellite APIs on Professional or higher plans. CC BY attribution already shown by the app does not establish a commercial API-service licence. [Open-Meteo pricing](https://open-meteo.com/en/pricing).

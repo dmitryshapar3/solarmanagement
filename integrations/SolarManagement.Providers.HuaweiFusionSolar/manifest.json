@@ -1,6 +1,6 @@
 {
   "providerId": "huawei.fusionsolar",
-  "packageVersion": "1.0.1",
+  "packageVersion": "1.0.2",
   "publisherId": "solar-management",
   "wireVersion": 1,
   "runtimeIdentifier": "portable",
@@ -12,7 +12,7 @@
   ],
   "descriptor": {
     "providerId": "huawei.fusionsolar",
-    "packageVersion": "1.0.1",
+    "packageVersion": "1.0.2",
     "packageDigest": "",
     "descriptorDigest": "",
     "displayName": "Huawei FusionSolar",

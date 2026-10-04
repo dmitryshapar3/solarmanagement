@@ -202,13 +202,13 @@ public class AppleBillingSqlServerTests
 
     [SqlServerFact]
     public async Task AppleFreeOfferCannotExpandServerTrialQuotaOrExtendItsMonthAndPaidRenewalUnlocksAccess()
-        => await VerifyFreeOfferAsync(useLegacyZeroPrice: false);
+        => await VerifyFreeOfferAsync(useZeroPrice: false);
 
     [SqlServerFact]
-    public async Task LegacyZeroPriceTransactionCannotExpandTrialQuotaOrExtendItsMonthAndPaidRenewalUnlocksAccess()
-        => await VerifyFreeOfferAsync(useLegacyZeroPrice: true);
+    public async Task ZeroPriceTransactionCannotExpandTrialQuotaOrExtendItsMonthAndPaidRenewalUnlocksAccess()
+        => await VerifyFreeOfferAsync(useZeroPrice: true);
 
-    private static async Task VerifyFreeOfferAsync(bool useLegacyZeroPrice)
+    private static async Task VerifyFreeOfferAsync(bool useZeroPrice)
     {
         await using var host = await Host.StartAsync();
         await using (var db = host.Context())
@@ -219,8 +219,8 @@ public class AppleBillingSqlServerTests
         }
         using var own = await host.LoginAsync(UserA);
         var original = (await own.GetFromJsonAsync<BillingAccess>("/api/billing/access"))!;
-        host.Apple.IsFreeTrial = !useLegacyZeroPrice;
-        host.Apple.Price = useLegacyZeroPrice ? 0 : null;
+        host.Apple.IsFreeTrial = !useZeroPrice;
+        host.Apple.Price = useZeroPrice ? 0 : null;
         using (var purchase = await own.PostAsJsonAsync("/api/billing/apple/verify", new AppleVerifyRequest(host.Receipt())))
         {
             Assert.Equal(HttpStatusCode.OK, purchase.StatusCode);

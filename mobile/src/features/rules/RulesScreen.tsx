@@ -55,7 +55,7 @@ export function RulesScreen({ navigation }: Props) {
     setError(null);
     setRules((current) => current.map((item) => (item.id === rule.id ? { ...item, enabled } : item)));
     try {
-      const updated = await api.setRuleEnabled(rule.id, enabled);
+      const updated = await api.setRuleEnabled(rule.id, enabled, rule.configurationVersion);
       setRules((current) => current.map((item) => (item.id === rule.id ? updated : item)));
       if (enabled && !updated.enabled) {
         setError("Select a device before enabling this rule.");
@@ -80,7 +80,7 @@ export function RulesScreen({ navigation }: Props) {
   async function deleteRule(rule: Rule) {
     setError(null);
     try {
-      await api.deleteRule(rule.id);
+      await api.deleteRule(rule.id, rule.configurationVersion);
       setRules((current) => current.filter((item) => item.id !== rule.id));
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "Unable to delete rule.");

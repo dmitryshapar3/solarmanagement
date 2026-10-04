@@ -10,8 +10,6 @@ export type StringStorage = {
 
 export const sessionKeys = {
   baseUrl: "deyeSolar.mobile.apiBaseUrl",
-  legacyToken: "deyeSolar.mobile.token",
-  legacyUsername: "deyeSolar.mobile.username",
   secureSession: "deyeSolar.mobile.session.v2",
   disabled: "deyeSolar.mobile.sessionDisabled"
 };
@@ -30,9 +28,7 @@ export class SessionStorage {
       try {
         baseUrl = normalizeBaseUrl(storedBase || defaultBaseUrl);
         hasStoredBinding = Boolean(storedBase);
-      } catch { /* Invalid legacy settings cannot bind a token. */ }
-      // The old app could change servers without changing its plaintext token, so its endpoint binding is untrustworthy.
-      await this.removeLegacy();
+      } catch { /* Invalid stored settings cannot bind a token. */ }
       if (await this.preferences.getItem(sessionKeys.disabled)) {
         await this.clearCore();
         return { baseUrl, session: null };
@@ -57,7 +53,6 @@ export class SessionStorage {
       try {
         // A failed write cannot revive a previous Keychain session on the next launch.
         await this.preferences.setItem(sessionKeys.disabled, "1");
-        await this.removeLegacy();
         if (this.secure) await this.secure.setItem(sessionKeys.secureSession, JSON.stringify(stored));
         await this.preferences.setItem(sessionKeys.baseUrl, stored.baseUrl);
         await this.preferences.removeItem(sessionKeys.disabled);
@@ -83,20 +78,11 @@ export class SessionStorage {
     this.memory = null;
     const outcomes = await Promise.allSettled([
       this.preferences.setItem(sessionKeys.disabled, "1"),
-      this.removeLegacy(),
       this.secure?.removeItem(sessionKeys.secureSession) ?? Promise.resolve()
     ]);
     if (outcomes.some(result => result.status === "rejected")) {
       throw new Error(t("The session is signed out, but local session storage could not be cleared. Please try again."));
     }
-  }
-
-  private async removeLegacy(): Promise<void> {
-    const outcomes = await Promise.allSettled([
-      this.preferences.removeItem(sessionKeys.legacyToken),
-      this.preferences.removeItem(sessionKeys.legacyUsername)
-    ]);
-    if (outcomes.some(result => result.status === "rejected")) throw new Error(t("Unable to clear old session storage."));
   }
 
   private enqueue<T>(action: () => Promise<T>): Promise<T> {

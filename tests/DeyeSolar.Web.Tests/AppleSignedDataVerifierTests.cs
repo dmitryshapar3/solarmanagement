@@ -65,7 +65,7 @@ public sealed class AppleSignedDataVerifierTests
     }
 
     [Fact]
-    public void LegacySignedTransactionWithoutOptionalPriceOrOfferModeRemainsSupported()
+    public void CurrentAppleProtocolAllowsTransactionWithoutOptionalPriceOrOfferMode()
     {
         using var fixture = new AppleSignedFixture();
         Assert.False(fixture.Verifier.VerifyTransaction(fixture.Sign(fixture.Transaction())).IsFreeTrial);

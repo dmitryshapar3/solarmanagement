@@ -30,8 +30,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       await api.setLanguage(next);
     } catch (error) {
       if (!current()) return;
-      // A local choice remains usable offline and before the separately deployed server supports preferences.
-      if (!(error instanceof ApiError) || error.status !== 400 && error.status !== 422) return;
+      // Network outages and temporary service failures retain the pending local choice.
+      if (!(error instanceof ApiError) || error.status >= 500 || error.status === 408 || error.status === 429) return;
       throw error;
     }
     if (current()) await AsyncStorage.multiSet([[pendingKey, ""]]);
@@ -85,7 +85,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
           await write;
         }
       } catch {
-        // Older servers and offline startup keep the local preference.
+        // Startup keeps the cached preference when its server cannot be read.
       }
     })().catch(() => {});
     return () => controller.abort();

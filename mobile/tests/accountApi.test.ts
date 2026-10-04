@@ -22,8 +22,8 @@ test("Connection tests do not save settings or operate a demo socket", async () 
   const api = new DeyeSolarApi(new DemoApiClient());
   const settings = await api.getSettings();
   const devices = await api.getDevices();
-  await api.testIntegration("deye", { deyeCloud: { ...settings.deyeCloud, email: "fake@example.test" } });
-  await api.testIntegration("shelly", { shelly: { ...settings.shelly, authKey: "fake" } });
+  await api.testIntegration("openmeteo", { solarEstimate: { latitude: 50, longitude: 20 } });
+  await api.testIntegration("pse");
   assert.deepEqual(await api.getSettings(), settings);
   assert.deepEqual((await api.getDevices()).devices, devices.devices);
 });

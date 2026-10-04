@@ -30,14 +30,14 @@ namespace DeyeSolar.Web.Tests;
 
 public class IntegrationManagementTests
 {
+    private const string SocketId = "5748365a-4d79-4cf2-9cba-663df1e37c5a";
     [Theory]
     [InlineData("deye")]
     [InlineData("shelly")]
-    public async Task LegacyDeviceProbeRoutesCannotInvokeAProviderOrLoadCredentials(string provider)
+    public async Task UnsupportedProbeKindsCannotInvokeAProviderOrLoadCredentials(string provider)
     {
         var fixture = Probe();
-        var result = await fixture.Service.TestAsync(provider, new(), CancellationToken.None);
-        Assert.False(result.Success); Assert.Equal("configuration", result.Code);
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Service.TestAsync(provider, new(), CancellationToken.None));
         Assert.Equal(0, fixture.Transport.Calls);
     }
 
@@ -110,13 +110,13 @@ public class IntegrationManagementTests
     {
         var store = new Labels(); var snapshot = Devices();
         var first = new DeviceNameService(store, snapshot);
-        var renamed = await first.RenameAsync("shelly:ABCDEF", "  Garden socket  ", CancellationToken.None);
-        Assert.Equal("Garden socket", renamed!.Name); Assert.Equal("Cloud socket", renamed.CloudName); Assert.Equal("abcdef", renamed.Id);
+        var renamed = await first.RenameAsync(SocketId.ToUpperInvariant(), "  Garden socket  ", CancellationToken.None);
+        Assert.Equal("Garden socket", renamed!.Name); Assert.Equal("Cloud socket", renamed.CloudName); Assert.Equal(SocketId, renamed.Id);
         var inventory = snapshot.Current; Assert.NotNull(inventory);
         Assert.Equal("Cloud socket", inventory.Single().Name); Assert.False(inventory.Single().IsOn);
         var next = new DeviceNameService(store, snapshot);
         Assert.Equal("Garden socket", (await next.DescribeAsync(inventory, CancellationToken.None)).Single().LocalName);
-        var reset = await next.RenameAsync("abcdef", null, CancellationToken.None);
+        var reset = await next.RenameAsync(SocketId, null, CancellationToken.None);
         Assert.Equal("Cloud socket", reset!.Name); Assert.Null(reset.LocalName);
     }
 
@@ -126,9 +126,50 @@ public class IntegrationManagementTests
         var store = new Labels(); var service = new DeviceNameService(store, Devices());
         Assert.Null(await service.RenameAsync("neighbour-device", "Forbidden", CancellationToken.None));
         Assert.Equal(0, store.Saves);
-        await Assert.ThrowsAsync<ArgumentException>(() => service.RenameAsync("abcdef", "name\nwith-control", CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.RenameAsync(SocketId, "name\nwith-control", CancellationToken.None));
         Assert.False(DeviceNameService.TryName(new string('x', 81), out _));
         Assert.Equal(0, store.Saves);
+    }
+
+    [Theory]
+    [InlineData("abcdef")]
+    [InlineData("shelly:abcdef")]
+    [InlineData("shelly:" + SocketId)]
+    [InlineData("socket:" + SocketId)]
+    public async Task RawAndPrefixedDeviceIdsCannotReadOrCreateLabelsEvenWhenDiscovered(string id)
+    {
+        var store = new Labels();
+        var snapshot = Devices();
+        snapshot.Update(snapshot.Current!.Append(new DevicePowerInfo(id, "Invalid fixture device", "Socket", true, false, 0)).ToArray());
+        var service = new DeviceNameService(store, snapshot);
+
+        Assert.Null(await service.RenameAsync(id, "Forbidden", CancellationToken.None));
+        Assert.Equal(0, store.Loads);
+        Assert.Equal(0, store.Saves);
+    }
+
+    [Fact]
+    public void ManualDevicesUseTheCurrentGuidIdentityAsAnUnnamedFallback()
+    {
+        var device = Assert.Single(ManualSocketDevices.Build([new TriggerRule { EntityId = SocketId }]));
+        Assert.Equal(SocketId, device.Id);
+        Assert.Equal(SocketId, device.Name);
+        Assert.Equal("Socket", device.Category);
+    }
+
+    [Theory]
+    [InlineData("abcdef")]
+    [InlineData("shelly:abcdef")]
+    [InlineData("shelly:" + SocketId)]
+    public async Task InvalidDisabledDraftsDoNotBecomeManualDevicesAndRetiredGuidDraftsRemainReadable(string id)
+    {
+        var devices = ManualSocketDevices.Build([
+            new TriggerRule { EntityId = id, Enabled = false },
+            new TriggerRule { EntityId = SocketId, Enabled = false }
+        ]);
+        Assert.Equal(SocketId, Assert.Single(devices).Id);
+        var described = await new DeviceNameService(new Labels(), new DeviceStatusSnapshot()).DescribeAsync(devices, CancellationToken.None);
+        Assert.Equal(SocketId, Assert.Single(described).Id);
     }
 
     [Fact]
@@ -153,8 +194,7 @@ public class IntegrationManagementTests
         {
             await db.Database.EnsureCreatedAsync();
             db.Installations.Add(new Installation { Id = "fictional-site", CreatedAt = DateTimeOffset.UtcNow });
-            db.AppSettings.AddRange(new AppSetting { Section = "DeyeCloud", Key = "DeviceSn", Value = "saved-inverter" },
-                new AppSetting { Section = "SolarEstimate", Key = "ApiKey", Value = "server-only-secret" },
+            db.AppSettings.AddRange(new AppSetting { Section = "SolarEstimate", Key = "ApiKey", Value = "server-only-secret" },
                 new AppSetting { Section = "SolarEstimate", Key = "InverterEfficiency", Value = "0.91" });
             await db.SaveChangesAsync();
         }
@@ -219,11 +259,15 @@ public class IntegrationManagementTests
         client.DefaultRequestHeaders.Remove("X-Fixture-Cookie"); client.DefaultRequestHeaders.Authorization = new("Bearer", "fixture-valid");
         using (var bearer = await client.PostAsJsonAsync("/api/settings/test/pse", new IntegrationTestRequest())) Assert.Equal(HttpStatusCode.OK, bearer.StatusCode);
         Assert.Equal(2, tests.Calls);
+        foreach (var removed in new[] { "deye", "shelly" })
+            using (var removedProbe = await client.PostAsJsonAsync("/api/settings/test/" + removed, new IntegrationTestRequest()))
+                Assert.Equal(HttpStatusCode.NotFound, removedProbe.StatusCode);
+        Assert.Equal(2, tests.Calls);
         using (var alias = await client.PatchAsJsonAsync("/api/devices/foreign/name", new DeviceNameRequest("Forbidden"))) Assert.Equal(HttpStatusCode.NotFound, alias.StatusCode);
     }
 
     private static SiteSettingsDto Site() => new(new(0, 0, "Fictional site", "UTC", 5, 0, 20, 0, 180, 0), new("2026-10-01", "UTC", false));
-    private static DeviceStatusSnapshot Devices() { var value = new DeviceStatusSnapshot(); value.Update([new("abcdef", "Cloud socket", "Socket", true, false, 0)]); return value; }
+    private static DeviceStatusSnapshot Devices() { var value = new DeviceStatusSnapshot(); value.Update([new(SocketId, "Cloud socket", "Socket", true, false, 0)]); return value; }
     private static HttpResponseMessage Json(HttpRequestMessage request, string json) => new(HttpStatusCode.OK) { RequestMessage = request, Content = new StringContent(json) };
     private static (IntegrationTestService Service, Transport Transport) Probe(Func<HttpRequestMessage, int, HttpResponseMessage>? response = null, string? key = null)
     {
@@ -246,8 +290,8 @@ public class IntegrationManagementTests
     }
     private sealed class Labels : IDeviceLabelStore
     {
-        public int Saves; private Dictionary<string, string> _labels = [];
-        public Task<Dictionary<string, string>> LoadAsync(CancellationToken ct) => Task.FromResult(new Dictionary<string, string>(_labels));
+        public int Loads; public int Saves; private Dictionary<string, string> _labels = [];
+        public Task<Dictionary<string, string>> LoadAsync(CancellationToken ct) { Loads++; return Task.FromResult(new Dictionary<string, string>(_labels)); }
         public Task SaveAsync(Dictionary<string, string> labels, CancellationToken ct) { Saves++; _labels = new(labels); return Task.CompletedTask; }
     }
     private sealed class CountingTests : IIntegrationTestService { public int Calls; public Task<IntegrationTestResult> TestAsync(string kind, IntegrationTestRequest request, CancellationToken ct) { Calls++; return Task.FromResult(new IntegrationTestResult(kind, true, "ok", "Fictional provider verified.", DateTimeOffset.UtcNow)); } }

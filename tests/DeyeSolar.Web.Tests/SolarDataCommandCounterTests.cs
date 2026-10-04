@@ -14,10 +14,10 @@ public class SolarDataCommandCounterTests
         connection.CreateCollation("Latin1_General_100_BIN2", string.CompareOrdinal);
         var counter = new SolarDataCommandCounter();
         var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlite(connection).AddInterceptors(counter).Options;
-        await using var db = new DeyeSolarDbContext(options, InstallationIds.Legacy); await db.Database.EnsureCreatedAsync();
-        db.Installations.Add(new Installation { Id = InstallationIds.Legacy, CreatedAt = DateTimeOffset.UtcNow });
+        await using var db = new DeyeSolarDbContext(options, TestInstallation.Id); await db.Database.EnsureCreatedAsync();
+        db.Installations.Add(new Installation { Id = TestInstallation.Id, CreatedAt = DateTimeOffset.UtcNow });
         var user = new IdentityUser { Id = "test-user", UserName = "reader" }; db.Users.Add(user);
-        db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = InstallationIds.Legacy }); await db.SaveChangesAsync();
+        db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = TestInstallation.Id }); await db.SaveChangesAsync();
         var before = counter.Commands;
         Assert.Single(await db.Users.AsNoTracking().ToListAsync());
         Assert.Single(await db.InstallationMemberships.AsNoTracking().Include(m => m.Installation).ToListAsync());

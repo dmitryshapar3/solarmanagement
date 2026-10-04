@@ -18,15 +18,15 @@ namespace DeyeSolar.Web.Tenancy;
 
 public static class TenantRequestServices
 {
-    public static IServiceCollection AddTenantRequestServices(this IServiceCollection services, IConfiguration deployment, string? solarApiKey)
+    public static IServiceCollection AddTenantRequestServices(this IServiceCollection services, string? solarApiKey)
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(provider => new TenantRuntimeFactory(
-            provider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>(), deployment,
+            provider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>(),
             provider.GetRequiredService<ILoggerFactory>(), provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<IIntegrationRuntimeExecutor>(),
             provider.GetRequiredService<IntegrationSecretStore>(), provider.GetRequiredService<IntegrationChangeNotifier>(), solarApiKey,
-            provider.GetRequiredService<LegacyIntegrationBootstrap>(), provider.GetRequiredService<IBillingAccessReader>(), provider.GetRequiredService<ITrialSocketQuota>()));
+            provider.GetRequiredService<IBillingAccessReader>(), provider.GetRequiredService<ITrialSocketQuota>()));
         services.AddSingleton<TenantRuntimeRegistry>();
         services.AddScoped<IDbContextFactory<DeyeSolarDbContext>, RequestDbContextFactory>();
         Add<AppSettingsService>(services);
@@ -57,8 +57,6 @@ public static class TenantRequestServices
         // The request container must not dispose resources owned by the installation container.
         services.AddScoped<IInverterRefreshService>(provider => new RefreshBorrow(Resolve<IInverterRefreshService>(provider)));
         services.AddScoped<ISolarHistoryService>(provider => new HistoryBorrow(Resolve<ISolarHistoryService>(provider)));
-        AddOptions<DeyeCloudOptions>(services);
-        AddOptions<ShellyOptions>(services);
         AddOptions<InverterConnectionOptions>(services);
         Add<IInverterCatalog>(services);
         Add<ISmartSocketCatalog>(services);

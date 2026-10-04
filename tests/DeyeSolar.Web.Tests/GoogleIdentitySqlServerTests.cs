@@ -27,6 +27,7 @@ namespace DeyeSolar.Web.Tests;
 
 public class GoogleIdentitySqlServerTests
 {
+    private const string FixtureInstallation = "fixture-installation";
     private const string Password = "Local Google password 42!";
     private const string Verifier = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string State = "local_google_state_1234567890";
@@ -71,7 +72,7 @@ public class GoogleIdentitySqlServerTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var session = (await response.Content.ReadFromJsonAsync<MobileAuthResponse>())!;
             sessions.Add(session);
-            Assert.NotEqual(InstallationIds.Legacy, session.InstallationId);
+            Assert.NotEqual(FixtureInstallation, session.InstallationId);
             Assert.NotEqual(Neighbor, session.InstallationId);
             await using var own = host.Factory.ForInstallation(session.InstallationId!);
             Assert.Empty(await own.AppSettings.ToListAsync());
@@ -104,12 +105,12 @@ public class GoogleIdentitySqlServerTests
         before = await host.StateAsync();
         using var response = await host.ExchangeAsync(Code(await host.OAuthAsync("known", "neighbor@example.test")), null);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(InstallationIds.Legacy, (await response.Content.ReadFromJsonAsync<MobileAuthResponse>())!.InstallationId);
+        Assert.Equal(FixtureInstallation, (await response.Content.ReadFromJsonAsync<MobileAuthResponse>())!.InstallationId);
         Assert.Equal(before, await host.StateAsync());
     }
 
     [SqlServerFact]
-    public async Task UsernameOnlyAccountLinksVerifiedGoogleEmailOnlyAfterSameBearerAndPkceProof()
+    public async Task PhoneVerifiedAccountLinksGoogleEmailOnlyAfterSameBearerAndPkceProof()
     {
         await using var host = await Host.StartAsync(false);
         var before = await host.StateAsync();
@@ -129,7 +130,7 @@ public class GoogleIdentitySqlServerTests
         using (var linked = await host.ExchangeAsync(code, host.OwnerToken))
         {
             Assert.Equal(HttpStatusCode.OK, linked.StatusCode);
-            Assert.Equal("username-only", (await linked.Content.ReadFromJsonAsync<MobileAuthResponse>())!.Username);
+            Assert.Equal("phone-owner", (await linked.Content.ReadFromJsonAsync<MobileAuthResponse>())!.Username);
         }
         await using (var db = host.Factory.CreateDbContext())
         {
@@ -148,7 +149,7 @@ public class GoogleIdentitySqlServerTests
         using (var known = await host.ExchangeAsync(Code(await host.OAuthAsync("owner-google", "owner@example.test")), null))
         {
             Assert.Equal(HttpStatusCode.OK, known.StatusCode);
-            Assert.Equal(InstallationIds.Legacy, (await known.Content.ReadFromJsonAsync<MobileAuthResponse>())!.InstallationId);
+            Assert.Equal(FixtureInstallation, (await known.Content.ReadFromJsonAsync<MobileAuthResponse>())!.InstallationId);
         }
         Assert.Equal(linkedState, await host.StateAsync());
         using (var repeatedLink = await host.ExchangeAsync(Code(await host.OAuthAsync("owner-google", "owner@example.test", host.OwnerToken)), host.OwnerToken))
@@ -385,7 +386,7 @@ public class GoogleIdentitySqlServerTests
             {
                 await using (var db = factory.CreateDbContext())
                 {
-                    await db.Database.MigrateAsync(); db.Installations.Add(new() { Id = Neighbor }); await db.SaveChangesAsync();
+                    await db.Database.MigrateAsync(); db.Installations.AddRange(new Installation { Id = FixtureInstallation }, new Installation { Id = Neighbor }); await db.SaveChangesAsync();
                 }
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory });
                 builder.WebHost.UseUrls("http://127.0.0.1:0"); builder.Logging.ClearProviders();
@@ -410,7 +411,7 @@ public class GoogleIdentitySqlServerTests
                 // Test-only web setup creates a real Identity cookie; the real OAuth middleware and callback enforce it after lockout changes.
                 app.MapGet("/test/web-google", async (SignInManager<IdentityUser> signIn, GoogleMobileTicketStore tickets) =>
                 {
-                    var user = (await signIn.UserManager.FindByNameAsync("username-only"))!;
+                    var user = (await signIn.UserManager.FindByNameAsync("phone-owner"))!;
                     await signIn.SignInAsync(user, true);
                     var properties = new AuthenticationProperties { RedirectUri = "/auth/google/complete" };
                     properties.Items["solar.link.user"] = user.Id;
@@ -423,9 +424,9 @@ public class GoogleIdentitySqlServerTests
                 using (var scope = app.Services.CreateScope())
                 {
                     var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
-                    foreach (var (name, email, installation) in new[] { ("username-only", (string?)null, InstallationIds.Legacy), ("neighbor", "neighbor@example.test", Neighbor) })
+                    foreach (var (name, email, installation) in new[] { ("phone-owner", (string?)null, FixtureInstallation), ("neighbor", "neighbor@example.test", Neighbor) })
                     {
-                        var user = new IdentityUser { UserName = name, Email = email, EmailConfirmed = email is not null };
+                        var user = new IdentityUser { UserName = name, Email = email, EmailConfirmed = email is not null, PhoneNumber = email is null ? "+48123456780" : null, PhoneNumberConfirmed = email is null };
                         Assert.True((await users.CreateAsync(user, Password)).Succeeded);
                         await using (var db = factory.CreateDbContext())
                         {
@@ -433,7 +434,7 @@ public class GoogleIdentitySqlServerTests
                         }
                         Assert.True((await users.AddClaimAsync(user, new("preserved.preference", name))).Succeeded);
                         var session = await scope.ServiceProvider.GetRequiredService<MobileAuthService>().SignInAsync(new(name, Password)); Assert.NotNull(session);
-                        if (installation == InstallationIds.Legacy) { host.OwnerId = user.Id; host.OwnerToken = session.Token; }
+                        if (installation == FixtureInstallation) { host.OwnerId = user.Id; host.OwnerToken = session.Token; }
                         else { host.NeighborId = user.Id; host.NeighborToken = session.Token; }
                         await using var owned = factory.ForInstallation(installation);
                         owned.AppSettings.Add(new() { Section = "DeyeCloud", Key = "Password", Value = name + "-private" });

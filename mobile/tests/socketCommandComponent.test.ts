@@ -42,8 +42,8 @@ for (const lostResponse of [false, true]) {
       calls.push({ path: route, method: init.method, body: init.body ? JSON.parse(init.body) : null });
       if (init.method === "POST" && lostResponse) throw new Error("Lost response");
       const result = route === "/api/devices" ? { devices: [
-        { id: "socket-a", name: "Heater", category: null, online: true, isOn: ++inventoryReads > 1, currentPowerW: 0 },
-        { id: "socket-b", name: "Neighbor", category: null, online: true, isOn: false, currentPowerW: 0 }
+        { id: "socket-a", name: "Heater", category: null, online: true, stateKnown: true, isOn: ++inventoryReads > 1, currentPowerW: 0 },
+        { id: "socket-b", name: "Neighbor", category: null, online: true, stateKnown: true, isOn: false, currentPowerW: 0 }
       ], lastUpdated: null }
         : init.method === "POST" ? receipt
         : route.endsWith("/fixed-command") ? { ...receipt, status: "acknowledged" } : [];

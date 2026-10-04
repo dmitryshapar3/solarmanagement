@@ -457,19 +457,16 @@ public class DynamicIntegrationSetupTests
     }
     private sealed record HttpLogin(string User, string Password, bool Cookie);
     [Fact]
-    public void OlderRuleRequestsPreserveSourceWhileExplicitNullSelectsPrimary()
+    public void RuleRequestsRequireExplicitSourceAndExplicitNullSelectsPrimary()
     {
         var source = Guid.NewGuid();
         var existing = new TriggerRule { SourceInverterId = source };
         const string json = "{\"name\":\"Rule\",\"entityId\":\"socket\",\"enabled\":false}";
-        var old = JsonSerializer.Deserialize<TriggerRuleRequest>(json, IntegrationJson.Options)!;
-        Assert.False(old.SourceInverterSpecified);
-        Assert.Equal(source, old.ToRule(existing).SourceInverterId);
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TriggerRuleRequest>(json, IntegrationJson.Options));
         var primary = JsonSerializer.Deserialize<TriggerRuleRequest>(json[..^1] + ",\"sourceInverterId\":null}", IntegrationJson.Options)!;
-        Assert.True(primary.SourceInverterSpecified);
         Assert.Null(primary.ToRule(existing).SourceInverterId);
         var explicitSource = Guid.NewGuid();
-        Assert.Equal(explicitSource, (old with { SourceInverterId = explicitSource }).ToRule(existing).SourceInverterId);
+        Assert.Equal(explicitSource, (primary with { SourceInverterId = explicitSource }).ToRule(existing).SourceInverterId);
     }
 
     [SqlServerFact]
@@ -480,17 +477,19 @@ public class DynamicIntegrationSetupTests
         var neighbour = await fixture.CreateSavedAsync("site-b", "B");
         var selected = await fixture.AddInverterAsync("site-a", first.Id, true, true);
         var foreign = await fixture.AddInverterAsync("site-b", neighbour.Id, true, true);
+        var socket = await fixture.AddSocketAsync("site-a", first.Id);
+        var otherSocket = await fixture.AddSocketAsync("site-a", first.Id);
         var repository = new RuleRepository(fixture.Factory("site-a"));
-        var rule = await repository.CreateAsync(new TriggerRule { Name = "Own rule", EntityId = "own-socket", Enabled = true, SourceInverterId = selected }, default);
+        var rule = await repository.CreateAsync(new TriggerRule { Name = "Own rule", EntityId = socket.ToString("D"), Enabled = true, SourceInverterId = selected }, default);
         var before = await fixture.StateAsync();
-        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "Forbidden", Enabled = true, SourceInverterId = foreign }, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "Forbidden", EntityId = otherSocket.ToString("D"), Enabled = true, SourceInverterId = foreign }, default));
         rule.SourceInverterId = foreign;
         await Assert.ThrowsAsync<ArgumentException>(() => repository.UpdateAsync(rule, default));
         Assert.Equal(before, await fixture.StateAsync());
         await using var check = fixture.Factory("site-a").CreateDbContext();
         var saved = await check.TriggerRules.AsNoTracking().SingleAsync();
         Assert.Equal(selected, saved.SourceInverterId);
-        Assert.Equal("own-socket", saved.EntityId);
+        Assert.Equal(socket.ToString("D"), saved.EntityId);
         Assert.Empty(await check.TriggerRules.IgnoreQueryFilters().Where(row => row.InstallationId == "site-b").ToListAsync());
     }
 
@@ -501,10 +500,11 @@ public class DynamicIntegrationSetupTests
         var instance = await fixture.CreateSavedAsync("site-a", "A");
         var noBattery = await fixture.AddInverterAsync("site-a", instance.Id, false, true);
         var noSolar = await fixture.AddInverterAsync("site-a", instance.Id, true, false);
+        var socket = await fixture.AddSocketAsync("site-a", instance.Id);
         var repository = new RuleRepository(fixture.Factory("site-a"));
-        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "No SOC", Enabled = true, SourceInverterId = noBattery }, default));
-        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "No PV", Enabled = true, UseSolarProductionThreshold = true, SourceInverterId = noSolar }, default));
-        var rule = await repository.CreateAsync(new TriggerRule { Name = "Battery rule", Enabled = true, SourceInverterId = noSolar }, default);
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "No SOC", EntityId = socket.ToString("D"), Enabled = true, SourceInverterId = noBattery }, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new TriggerRule { Name = "No PV", EntityId = socket.ToString("D"), Enabled = true, UseSolarProductionThreshold = true, SourceInverterId = noSolar }, default));
+        var rule = await repository.CreateAsync(new TriggerRule { Name = "Battery rule", EntityId = socket.ToString("D"), Enabled = true, SourceInverterId = noSolar }, default);
         await using (var db = fixture.Factory("site-a").CreateDbContext())
         {
             (await db.IntegrationInstances.SingleAsync()).State = "disabled";
@@ -516,7 +516,6 @@ public class DynamicIntegrationSetupTests
         var saved = await repository.GetByIdAsync(rule.Id, default);
         Assert.False(saved!.Enabled);
         Assert.Equal(noSolar, saved.SourceInverterId);
-        await repository.CreateAsync(new TriggerRule { Name = "Legacy primary", Enabled = true }, default);
     }
     [Fact]
     public void EncryptedCredentialsAreBoundToInstallationInstanceAndRevision()
@@ -975,10 +974,9 @@ public class DynamicIntegrationSetupTests
             builder.Services.AddSingleton<IIntegrationProviderCatalog>(new Catalog());
             builder.Services.AddSingleton<IIntegrationSetupExecutor>(Executor);
             builder.Services.AddSingleton<IIntegrationPackageManager>(new DeniedPackageManager());
-            builder.Services.AddSingleton<LegacyIntegrationBootstrap>();
             builder.Services.AddSingleton<MobileSessionStore>();
             builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
-            builder.Services.AddSingleton(provider => new TenantRuntimeFactory(options, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
+            builder.Services.AddSingleton(provider => new TenantRuntimeFactory(options,
                 NullLoggerFactory.Instance, TimeProvider.System, provider.GetRequiredService<IHostApplicationLifetime>(), new TenantTestExecutor(), Secrets, _changes));
             builder.Services.AddSingleton<TenantRuntimeRegistry>();
             builder.Services.AddScoped(provider => provider.GetRequiredService<TenantRuntimeRegistry>()
@@ -1051,6 +1049,18 @@ public class DynamicIntegrationSetupTests
                 devices = await db.IntegrationDeviceBindings.IgnoreQueryFilters().OrderBy(b => b.Id).ToListAsync(),
                 rules = await db.TriggerRules.IgnoreQueryFilters().OrderBy(r => r.Id).ToListAsync()
             });
+        }
+        public async Task<Guid> AddSocketAsync(string installation, Guid instance)
+        {
+            await using var db = Factory(installation).CreateDbContext();
+            var device = new IntegrationDeviceBindingEntity
+            {
+                Id = Guid.NewGuid(), InstanceId = instance, Kind = "socket", RemoteId = Guid.NewGuid().ToString("D"),
+                MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}"
+            };
+            db.IntegrationDeviceBindings.Add(device);
+            await db.SaveChangesAsync();
+            return device.Id;
         }
         public async Task<Guid> AddInverterAsync(string installation, Guid instance, bool battery, bool solar)
         {

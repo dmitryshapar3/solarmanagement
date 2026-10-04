@@ -24,7 +24,7 @@ public sealed class ProviderWorkerEndpointTests
     [InlineData("https://shelly-1-eu.shelly.cloud?key=fixture")]
     [InlineData("https://user@shelly-1-eu.shelly.cloud")]
     public void ShellyWorkerRejectsUnauthorizedEndpointBeforeCreatingSession(string serverUri)
-        => Assert.Throws<ArgumentException>(() => new ShellyProvider(Config("shelly.cloud", new { serverUri }, ["https://*.shelly.cloud"])));
+        => Assert.Throws<ArgumentException>(() => new SolarManagement.Providers.ShellyCloud.ShellyCloudProvider(Config("shelly.cloud", new { serverUri }, ["https://*.shelly.cloud"])));
     [Theory]
     [InlineData("https://eu1-developer.deyecloud.com/v1.0")]
     [InlineData("https://us1-developer.deyecloud.com/v1.0/")]
@@ -38,14 +38,14 @@ public sealed class ProviderWorkerEndpointTests
     [InlineData("shelly-1-eu.shelly.cloud")]
     public async Task ShellyWorkerAcceptsApprovedRegionAndLegacyMissingSchemeWithoutCallingCloud(string serverUri)
     {
-        await using var provider = new ShellyProvider(Config("shelly.cloud", new { serverUri }, ["https://*.shelly.cloud"]));
+        await using var provider = new SolarManagement.Providers.ShellyCloud.ShellyCloudProvider(Config("shelly.cloud", new { serverUri }, ["https://*.shelly.cloud"]));
     }
     [Theory]
     [InlineData(30000, 120)]
     [InlineData(120000, 300)]
     public async Task ShellyPreservesLargeLegacyIntervalsWithinBoundedExecutionDeadline(int interval, int deadline)
     {
-        await using var provider = new ShellyProvider(Config("shelly.cloud", new
+        await using var provider = new SolarManagement.Providers.ShellyCloud.ShellyCloudProvider(Config("shelly.cloud", new
         {
             serverUri = "https://shelly-1-eu.shelly.cloud",
             requestIntervalMilliseconds = interval
@@ -57,7 +57,7 @@ public sealed class ProviderWorkerEndpointTests
     [InlineData(30000, 119)]
     [InlineData(int.MaxValue, 300)]
     public void ShellyRejectsIntervalsBeyondRepresentableOperatorDeadline(int interval, int deadline)
-        => Assert.Throws<ArgumentException>(() => new ShellyProvider(Config("shelly.cloud", new
+        => Assert.Throws<ArgumentException>(() => new SolarManagement.Providers.ShellyCloud.ShellyCloudProvider(Config("shelly.cloud", new
         {
             serverUri = "https://shelly-1-eu.shelly.cloud",
             requestIntervalMilliseconds = interval

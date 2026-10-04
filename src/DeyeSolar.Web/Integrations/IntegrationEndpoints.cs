@@ -33,7 +33,6 @@ public static class IntegrationEndpoints
         });
         services.AddSingleton<IntegrationOAuthService>();
         services.AddSingleton<IIntegrationOriginPolicyStore, IntegrationOriginPolicyFileStore>();
-        services.AddSingleton<LegacyIntegrationBootstrap>();
         services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
         services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
         services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
@@ -130,7 +129,6 @@ public static class IntegrationEndpoints
             })).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ControlDevices));
         api.MapPost("/integration-packages/install", async Task<IResult> (IntegrationPackageInstallRequest request, IIntegrationPackageManager manager,
             HttpContext context, IAntiforgery antiforgery, UserManager<IdentityUser> users,
-            LegacyIntegrationBootstrap legacy, CurrentInstallation installation, TenantRuntimeRegistry runtimes,
             IntegrationChangeNotifier changes, CancellationToken ct) =>
         {
             if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new IntegrationApiError("antiforgery", "A valid request verification token is required."));
@@ -141,10 +139,6 @@ public static class IntegrationEndpoints
             {
                 var installed = await manager.InstallAsync(request, ct);
                 changes.Publish("", Guid.Empty);
-                var id = installation.Id ?? throw new InvalidOperationException("An installation is required.");
-                var runtime = await runtimes.GetAsync(id, ct);
-                if (await legacy.RunAsync(runtime.Resolve<IDbContextFactory<DeyeSolarDbContext>>(), runtime.Resolve<IConfiguration>(), ct))
-                    await runtime.RefreshSettingsAsync(ct);
                 return installed;
             });
         });

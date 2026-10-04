@@ -60,7 +60,7 @@ public sealed class AppleSignedDataVerifier : IAppleSignedDataVerifier, IDisposa
         if (data.TryGetProperty("price", out var price))
         {
             if (price.ValueKind != JsonValueKind.Number || !price.TryGetInt64(out var amount) || amount < 0) throw Invalid();
-            // Older signed transactions may omit offerDiscountType, but a zero-price purchase still cannot grant paid access.
+            // An explicitly uncharged transaction cannot grant paid access, regardless of its offer mode.
             isFreeTrial |= amount == 0;
         }
         if (data.TryGetProperty("isUpgraded", out var upgradedFlag)

@@ -9,7 +9,6 @@ public partial class DeyeSolarDbContext
     public DbSet<IntegrationConfigurationEntity> IntegrationConfigurations => Set<IntegrationConfigurationEntity>();
     public DbSet<IntegrationDeviceBindingEntity> IntegrationDeviceBindings => Set<IntegrationDeviceBindingEntity>();
     public DbSet<IntegrationCommandEntity> IntegrationCommands => Set<IntegrationCommandEntity>();
-    public DbSet<IntegrationDeviceAliasEntity> IntegrationDeviceAliases => Set<IntegrationDeviceAliasEntity>();
     public DbSet<IntegrationOAuthFlowEntity> IntegrationOAuthFlows => Set<IntegrationOAuthFlowEntity>();
 
     private void ConfigureDynamicIntegrations(ModelBuilder modelBuilder)
@@ -18,7 +17,6 @@ public partial class DeyeSolarDbContext
         ConfigureInstallation<IntegrationConfigurationEntity>(modelBuilder);
         ConfigureInstallation<IntegrationDeviceBindingEntity>(modelBuilder);
         ConfigureInstallation<IntegrationCommandEntity>(modelBuilder);
-        ConfigureInstallation<IntegrationDeviceAliasEntity>(modelBuilder);
         ConfigureInstallation<IntegrationOAuthFlowEntity>(modelBuilder);
         modelBuilder.Entity<IntegrationOAuthFlowEntity>(e =>
         {
@@ -40,16 +38,6 @@ public partial class DeyeSolarDbContext
             e.HasOne<IntegrationInstanceEntity>().WithMany().HasForeignKey(x => new { x.InstallationId, x.InstanceId })
                 .HasPrincipalKey(x => new { x.InstallationId, x.Id }).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Microsoft.AspNetCore.Identity.IdentityUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
-        });
-        modelBuilder.Entity<IntegrationDeviceAliasEntity>(e =>
-        {
-            e.ToTable("IntegrationDeviceAliases");
-            e.HasKey(x => new { x.InstallationId, x.LegacyId });
-            e.HasQueryFilter(x => InstallationId != null && x.InstallationId == InstallationId);
-            e.Property(x => x.LegacyId).HasMaxLength(256).UseCollation("Latin1_General_100_BIN2");
-            e.HasOne<IntegrationDeviceBindingEntity>().WithMany().HasForeignKey(x => new { x.InstallationId, x.DeviceId })
-                .HasPrincipalKey(x => new { x.InstallationId, x.Id })
-                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<IntegrationInstanceEntity>(e =>
         {

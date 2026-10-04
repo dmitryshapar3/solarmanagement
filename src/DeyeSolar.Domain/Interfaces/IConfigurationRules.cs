@@ -9,5 +9,5 @@ public interface IConfigurationRules
     Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct);
     Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct);
     Task UpdateAsync(TriggerRule rule, CancellationToken ct);
-    Task DeleteAsync(int id, CancellationToken ct);
+    Task DeleteAsync(int id, string configurationVersion, CancellationToken ct);
 }

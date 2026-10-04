@@ -4,15 +4,16 @@ import { balanceDirection, batteryFlow, calculatePowerBalance, formatBalanceWatt
 
 const timestamp = "2026-10-01T10:00:00Z";
 const now = Date.parse(timestamp) + 60_000;
-const reading = (changes = {}) => ({ solarProduction: 4100, gridConsumption: -1200, batteryPower: -2000, loadPower: 900, timestamp, ...changes });
+const reading = (changes = {}) => ({ solarProduction: 4100, gridConsumption: -1200, batteryPower: -2000, loadPower: 900, timestamp, batteryPowerValid: true, loadPowerValid: true, gridPowerValid: true, solarPowerValid: true,
+  solarObservedAt: timestamp, gridObservedAt: timestamp, solarDeviceSn: "inverter-a", gridDeviceSn: "inverter-a", ...changes });
 
 test("battery charging and discharging display their magnitude without changing solar production", () => {
-  assert.deepEqual(batteryFlow(-2742), { label: "Battery charging", watts: 2742 });
-  assert.deepEqual(batteryFlow(2742), { label: "Battery discharging", watts: 2742 });
-  assert.deepEqual(batteryFlow(0), { label: "Battery idle", watts: 0 });
-  assert.deepEqual(batteryFlow(-2147483648), { label: "Battery charging", watts: 2147483648 });
+  assert.deepEqual(batteryFlow(-2742, true), { label: "Battery charging", watts: 2742 });
+  assert.deepEqual(batteryFlow(2742, true), { label: "Battery discharging", watts: 2742 });
+  assert.deepEqual(batteryFlow(0, true), { label: "Battery idle", watts: 0 });
+  assert.deepEqual(batteryFlow(-2147483648, true), { label: "Battery charging", watts: 2147483648 });
   for (const value of [undefined, null, Number.NaN, Infinity])
-    assert.deepEqual(batteryFlow(value), { label: "Battery power", watts: null });
+    assert.deepEqual(batteryFlow(value, true), { label: "Battery power", watts: null });
 });
 
 test("balanced charging, discharging, importing and exporting retain the power signs", () => {
@@ -62,20 +63,24 @@ test("provided source metadata must establish recent aligned solar and grid read
     { solarObservedAt: "2026-10-01T10:02:00Z" }, { gridObservedAt: "not-a-date" }
   ]) assert.equal(reportedPowerBalance(reading({ ...measured, ...changes }), now).watts, null);
   assert.equal(reportedPowerBalance(reading({ solarObservedAt: null, gridObservedAt: null, solarDeviceSn: null, gridDeviceSn: null }), now).watts, null);
-  assert.equal(reportedPowerBalance(reading(), now).watts, 0); // Backward-compatible poll-only estimate is explicit in the UI.
+  assert.equal(reportedPowerBalance(reading({ solarObservedAt: undefined, gridObservedAt: undefined, solarDeviceSn: undefined, gridDeviceSn: undefined }), now).watts, null);
 });
 
-test("explicit invalid power flags hide default zeros while real zero and legacy readings remain available", () => {
+test("power flags must explicitly confirm a measurement before showing its reported zero", () => {
   const zero = reading({ solarProduction: 0, gridConsumption: 0, batteryPower: 0, loadPower: 0 });
   for (const key of ["batteryPowerValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"]) {
     assert.equal(calculatePowerBalance({ ...zero, [key]: false }), null);
     assert.equal(reportedPowerBalance({ ...zero, [key]: false }, now).watts, null);
     assert.equal(calculatePowerBalance({ ...zero, [key]: true }), 0);
-    assert.equal(calculatePowerBalance({ ...zero, [key]: null }), 0);
+    for (const unavailable of [false, null, undefined]) {
+      assert.equal(calculatePowerBalance({ ...zero, [key]: unavailable }), null);
+      assert.equal(reportedPowerBalance({ ...zero, [key]: unavailable }, now).watts, null);
+    }
   }
   assert.deepEqual(batteryFlow(0, false), { label: "Battery power", watts: null });
   assert.deepEqual(batteryFlow(0, true), { label: "Battery idle", watts: 0 });
-  assert.deepEqual(batteryFlow(0, null), { label: "Battery idle", watts: 0 });
+  for (const unavailable of [false, null, undefined])
+    assert.deepEqual(batteryFlow(0, unavailable), { label: "Battery power", watts: null });
   assert.equal(zero.batteryPower, 0);
   assert.equal(zero.loadPower, 0);
 });

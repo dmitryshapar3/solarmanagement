@@ -53,7 +53,7 @@
                     </div>
                     <div class="energy-status-metric" data-testid="load-power">
                         <span class="energy-status-label">@T["Load"]</span>
-                        <strong>@Power(_data?.LoadPowerValid == false ? null : _data?.LoadPower)<small>W</small></strong>
+                        <strong>@Power(_data?.LoadPowerValid != true ? null : _data?.LoadPower)<small>W</small></strong>
                     </div>
                     <div class="energy-status-metric" data-testid="grid-power">
                         <span class="energy-status-label">@T["Grid"]</span>
@@ -61,9 +61,9 @@
                         <span class="energy-status-direction @GridClass">@GridDirection</span>
                     </div>
                     <div class="energy-status-metric" data-testid="battery-power">
-                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)</span>
-                        <strong>@Power(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)<small>W</small></strong>
-                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid == false ? T["Awaiting reading"] : T["Reported inverter power"])</span>
+                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPowerValid != true ? null : _data?.BatteryPower)</span>
+                        <strong>@Power(_data?.BatteryPowerValid != true ? null : _data?.BatteryPower)<small>W</small></strong>
+                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid != true ? T["Awaiting reading"] : T["Reported inverter power"])</span>
                     </div>
                 </div>
                 @if (_data is null)
@@ -173,11 +173,11 @@
     private string? _refreshError;
     private readonly CancellationTokenSource _lifetime = new();
     private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.CurrentCulture) : "—";
-    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid != false
+    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid == true
         && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == InverterOptions.CurrentValue.DeviceKey
         && observed <= Clock.GetUtcNow() && (Clock.GetUtcNow() - observed).TotalMinutes <= EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes;
     private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.CurrentCulture) : "—";
-    private int? GridPower => _data?.GridPowerValid == false ? null : _data?.GridConsumption;
+    private int? GridPower => _data?.GridPowerValid != true ? null : _data?.GridConsumption;
     private string GridDirection => _data is null ? T["Awaiting reading"] : GridPower is null ? T["Grid measurement unavailable"] : GridPower < 0 ? T["Exporting"] : GridPower > 0 ? T["Importing"] : T["Idle"];
     private string GridClass => GridPower < 0 ? "energy-status-positive" : GridPower > 0 ? "energy-status-active" : "";
     private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
@@ -281,7 +281,7 @@
     }
 
     private IReadOnlyList<DevicePowerInfo> BuildManualDevices(IReadOnlyList<TriggerRule> rules)
-        => DeviceSnapshot.Current ?? ManualSocketDevices.Build(rules, null);
+        => DeviceSnapshot.Current ?? ManualSocketDevices.Build(rules);
 
     private void SelectDefaultManualDevice()
     {

@@ -110,14 +110,16 @@ public class RuleRepository : IRuleRepository
             throw new ArgumentException("The selected inverter does not provide solar power.");
     }
 
-    public async Task DeleteAsync(int id, CancellationToken ct)
+    public async Task DeleteAsync(int id, string configurationVersion, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         await RuleTargetPolicy.LockInstallationAsync(db, ct);
+        RuleConfigurationVersion.Require(configurationVersion);
         var rule = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == id, ct);
         if (rule != null)
         {
+            RuleConfigurationVersion.Check(configurationVersion, rule);
             db.TriggerRules.Remove(rule);
             await db.SaveChangesAsync(ct);
         }

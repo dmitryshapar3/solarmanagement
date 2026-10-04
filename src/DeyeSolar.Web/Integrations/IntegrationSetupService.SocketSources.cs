@@ -44,11 +44,9 @@ public sealed partial class IntegrationSetupService
                 throw new IntegrationRequestException("invalid_source", "Choose an enabled inverter with battery SOC from this installation.");
             if (!IntegrationCapabilities.Read(source).HasSolarPower)
             {
-                var identities = await db.IntegrationDeviceAliases.AsNoTracking().Where(a => a.DeviceId == deviceId)
-                    .Select(a => a.LegacyId).ToListAsync(ct);
-                identities.Add(deviceId.ToString("D"));
+                var identity = deviceId.ToString("D");
                 if (await db.TriggerRules.AnyAsync(r => r.Enabled && r.SourceInverterId == null
-                    && r.UseSolarProductionThreshold && identities.Contains(r.EntityId), ct))
+                    && r.UseSolarProductionThreshold && r.EntityId == identity, ct))
                     throw new IntegrationRequestException("invalid_source", "This socket has a solar-power rule. Choose an inverter that also provides solar power.");
             }
         }

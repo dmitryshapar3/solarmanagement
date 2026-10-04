@@ -26,12 +26,12 @@ $providers = @(Get-ChildItem -LiteralPath (Join-Path $projectDirectory 'integrat
 foreach ($project in $providers) {
     $manifestPath = Join-Path $project.FullName 'manifest.json'
     if (-not (Test-Path -LiteralPath $manifestPath)) {
-        $legacyId = switch ($project.Name) {
+        $providerId = switch ($project.Name) {
             'SolarManagement.Providers.DeyeCloud' { 'deye.cloud' }
             'SolarManagement.Providers.ShellyCloud' { 'shelly.cloud' }
             default { throw ('Provider manifest is missing: ' + $project.Name) }
         }
-        $manifestPath = Join-Path $projectDirectory ('integrations/manifests/' + $legacyId + '.json')
+        $manifestPath = Join-Path $projectDirectory ('integrations/manifests/' + $providerId + '.json')
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $provider = @{ Id = $manifest.providerId; Project = $project.Name }

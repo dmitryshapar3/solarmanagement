@@ -129,7 +129,7 @@ public class BillingRuntimeTests
         public Executor Executor { get; } = executor;
         public BillingAccessService Access { get; } = access;
         public DeyeSolarDbContext Db(string? installation = null) => installation is null ? new(options) : new(options, installation);
-        public TenantRuntimeFactory RuntimeFactory() => new(options, new ConfigurationBuilder().Build(), NullLoggerFactory.Instance,
+        public TenantRuntimeFactory RuntimeFactory() => new(options, NullLoggerFactory.Instance,
             Clock, new Lifetime(), Executor, secrets, new IntegrationChangeNotifier(NullLogger<IntegrationChangeNotifier>.Instance), billing: Access);
         public async Task SetTrialStartAsync(string userId, DateTimeOffset start)
         {
@@ -223,7 +223,6 @@ public class BillingRuntimeTests
                     { Name = "Charge surplus automation", EntityId = socket.ToString("D"), Enabled = true, SocTurnOnThreshold = 50 });
                     // The expired cycle must not even delete old retained data; the active cycle may clean its own history.
                     db.Readings.Add(new Reading { Timestamp = DateTime.UtcNow.AddDays(id == ExpiredSite ? -40 : 0), SolarProduction = 123 });
-                    db.AppSettings.Add(new() { Section = LegacyIntegrationBootstrap.MarkerSection, Key = LegacyIntegrationBootstrap.MarkerKey, Value = "1" });
                     await db.SaveChangesAsync();
                 }
                 return fixture;

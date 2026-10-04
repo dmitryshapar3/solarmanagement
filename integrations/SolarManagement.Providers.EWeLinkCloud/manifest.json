@@ -1,6 +1,6 @@
 {
   "providerId": "ewelink.cloud",
-  "packageVersion": "1.0.1",
+  "packageVersion": "1.0.2",
   "publisherId": "solar-management",
   "wireVersion": 1,
   "runtimeIdentifier": "portable",
@@ -14,7 +14,7 @@
   ],
   "descriptor": {
     "providerId": "ewelink.cloud",
-    "packageVersion": "1.0.1",
+    "packageVersion": "1.0.2",
     "packageDigest": "",
     "descriptorDigest": "",
     "displayName": "SONOFF / eWeLink",

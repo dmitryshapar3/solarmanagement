@@ -34,11 +34,10 @@ public static class IntegrationManagementEndpoints
             catch (ArgumentException exception) { return Results.BadRequest(new ApiError(exception.Message)); }
             return Results.NoContent();
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
-        api.MapPost("/settings/test/{kind}", async Task<IResult> (string kind, IntegrationTestRequest request,
+        api.MapPost("/settings/test/{kind:regex(^(openmeteo|pse)$)}", async Task<IResult> (string kind, IntegrationTestRequest request,
             HttpContext context, IAntiforgery antiforgery, IIntegrationTestService tests, CancellationToken ct) =>
         {
             if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new ApiError("A valid request verification token is required."));
-            if (kind is not ("deye" or "shelly" or "openmeteo" or "pse")) return Results.BadRequest(new ApiError("Choose a supported integration."));
             return Results.Ok(await tests.TestAsync(kind, request, ct));
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
         api.MapPatch("/devices/{id}/name", async Task<IResult> (string id, DeviceNameRequest request,

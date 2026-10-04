@@ -45,8 +45,7 @@ public class RuleEvaluator
 
     public static bool HasFreshSoc([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] InverterData? current, DateTimeOffset now)
     {
-        if (current is null || current.BatterySocValid == false) return false;
-        if (current.Telemetry is null) return true; // Compatibility data sources retain their existing validity contract.
+        if (current is null || !current.BatterySocValid || current.Telemetry is null) return false;
         var soc = current.Telemetry.BatterySoc;
         return soc.Quality == SolarManagement.Inverters.Contracts.MeasurementQuality.Good
             && soc.ObservedAt is { } observed && observed <= now && now - observed <= TimeSpan.FromMinutes(10);

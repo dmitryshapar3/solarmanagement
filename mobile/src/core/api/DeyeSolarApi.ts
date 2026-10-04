@@ -7,30 +7,20 @@ import {
   AuthResponse,
   Dashboard,
   DeviceList,
-  DeyeDevice,
-  DeyeStation,
   DisplaySettings,
-  DeyeCloudSettings,
   PollingSettings,
   Reading,
   Rule,
   RuleRequest,
   RuleRunLog,
   SessionResponse,
-  Settings,
-  ShellySettings,
-  SocketStateResponse
+  Settings
 } from "./types";
 import type { Device, IntegrationKind, IntegrationTestRequest, IntegrationTestResult } from "./types";
 import type { AuthOptions, VerificationChannel, VerificationPurpose, VerificationResponse } from "./types";
 import type { SolarSiteSettings } from "./types";
 import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "./types";
 import { BillingAccess, readBillingAccess } from "../../features/subscription/billingPolicy";
-
-type DeyeDeviceSelectionRequest = {
-  stationId: number;
-  serialNumber: string;
-};
 
 export class DeyeSolarApi {
   getLanguage(signal?: AbortSignal): Promise<{ language: string | null }> {
@@ -148,13 +138,6 @@ export class DeyeSolarApi {
     });
   }
 
-  setDeviceState(entityId: string, isOn: boolean): Promise<SocketStateResponse> {
-    return this.client.request<SocketStateResponse>("/api/devices/state", {
-      method: "POST",
-      body: { entityId, isOn }
-    });
-  }
-
   renameDevice(entityId: string, name: string | null): Promise<Device> {
     return this.client.request<Device>(`/api/devices/${encodeURIComponent(entityId)}/name`, {
       method: "PATCH", body: { name }
@@ -182,23 +165,23 @@ export class DeyeSolarApi {
     });
   }
 
-  updateRule(id: number, rule: RuleRequest): Promise<Rule> {
+  updateRule(id: number, rule: RuleRequest & { configurationVersion: string }): Promise<Rule> {
     return this.client.request<Rule>(`/api/rules/${id}`, {
       method: "PUT",
       body: rule
     });
   }
 
-  setRuleEnabled(id: number, enabled: boolean): Promise<Rule> {
+  setRuleEnabled(id: number, enabled: boolean, configurationVersion: string): Promise<Rule> {
     return this.client.request<Rule>(`/api/rules/${id}/enabled`, {
       method: "PATCH",
-      body: { enabled }
+      body: { enabled, configurationVersion }
     });
   }
 
-  deleteRule(id: number): Promise<void> {
+  deleteRule(id: number, configurationVersion: string): Promise<void> {
     return this.client.request<void>(`/api/rules/${id}`, {
-      method: "DELETE"
+      method: "DELETE", ifMatch: `"${configurationVersion}"`
     });
   }
 
@@ -224,42 +207,6 @@ export class DeyeSolarApi {
 
   saveSiteSettings(settings: SolarSiteSettings): Promise<void> {
     return this.client.request("/api/settings/site", { method: "PUT", body: settings });
-  }
-
-  saveDeyeCloud(settings: DeyeCloudSettings): Promise<void> {
-    return this.client.request<void>("/api/settings/deye", {
-      method: "PUT",
-      body: settings
-    });
-  }
-
-  fetchDeyeStations(): Promise<DeyeStation[]> {
-    return this.client.request<DeyeStation[]>("/api/settings/deye/stations");
-  }
-
-  fetchDeyeDevices(stationId: number): Promise<DeyeDevice[]> {
-    return this.client.request<DeyeDevice[]>(`/api/settings/deye/stations/${stationId}/devices`);
-  }
-
-  selectDeyeDevice(request: DeyeDeviceSelectionRequest): Promise<DeyeCloudSettings> {
-    return this.client.request<DeyeCloudSettings>("/api/settings/deye/selected-device", {
-      method: "POST",
-      body: request
-    });
-  }
-
-  saveShelly(settings: ShellySettings): Promise<void> {
-    return this.client.request<void>("/api/settings/shelly", {
-      method: "PUT",
-      body: settings
-    });
-  }
-
-  selectSocketDevice(entityId: string): Promise<Settings> {
-    return this.client.request<Settings>("/api/settings/socket/selected-device", {
-      method: "POST",
-      body: { entityId }
-    });
   }
 
   savePolling(settings: PollingSettings): Promise<void> {

@@ -22,8 +22,7 @@ public sealed class ApplicationDatabaseInitializer(IServiceScopeFactory scopes, 
         await scope.ServiceProvider.GetRequiredService<IntegrationPackageBootstrap>().EnsureInstalledAsync(ct);
         await scope.ServiceProvider.GetRequiredService<IIntegrationProviderCatalog>().GetProvidersAsync(ct);
         var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>();
-        var dbFactory = new TenantDbContextFactory(options, InstallationIds.Legacy);
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await using var db = new DeyeSolarDbContext(options);
         if (deployment.DatabaseMode == DatabaseStartupMode.Validate)
         {
             await DatabaseSchemaVerifier.VerifyAsync(db, deployment.RequireLeastPrivilege, ct);

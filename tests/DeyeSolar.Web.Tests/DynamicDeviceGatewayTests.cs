@@ -132,7 +132,7 @@ public sealed class DynamicDeviceGatewayTests
         Assert.True(Assert.Single(await repository.GetAllAsync(default)).CurrentState);
     }
 
-    private static PollingWorker Worker(Fixture f, Func<CancellationToken, Task<InverterData>> refresh) => new(new Refresh(refresh),
+    private static PollingWorker Worker(Fixture f, Func<CancellationToken, Task<InverterData>> refresh) => PollingWorkerFixture.Create(new Refresh(refresh),
         new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), f.Sockets("a"),
         new RuleRepository(f.Factory("a")), new DeyeSolar.RuleEngine.RuleEvaluator(), f.Factory("a"),
         new Monitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder()
@@ -262,7 +262,7 @@ public sealed class DynamicDeviceGatewayTests
         var socket = await gateway.GetForUserAsync(new(f.SocketA), "actor", Authorize, default);
         var rule = Assert.Single(await new RuleRepository(f.Factory("a")).GetAllAsync(default));
         using var decision = IntegrationAutomationSourceGuard.Enter(null, rule,
-            new InverterData { BatterySoc = 95, BatterySocValid = true }, true, () => decisionCurrent);
+            ConfirmedInverterReading.Create(new InverterData { BatterySoc = 95, Timestamp = DateTimeOffset.UtcNow }), true, () => decisionCurrent);
         var result = await socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.On), default);
         Assert.Equal(SocketCommandStatus.Rejected, result.Status);
         Assert.Equal(0, f.Executor.Sends);
@@ -500,7 +500,7 @@ public sealed class DynamicDeviceGatewayTests
         var source = f.Inverters("a");
         var store = new ExportReadingStore(f.Factory("a"), TimeProvider.System);
         var socket = f.Sockets("a");
-        using var worker = new PollingWorker(new Refresh(async ct =>
+        using var worker = PollingWorkerFixture.Create(new Refresh(async ct =>
         {
             var data = await source.ReadDeviceAsync(new(f.InverterA), ct);
             await store.SavePollingAsync(data, ct); return data;

@@ -49,7 +49,7 @@ internal sealed class RuleRunHistory(IDbContextFactory<DeyeSolarDbContext> _dbFa
                         if (!string.IsNullOrEmpty(solarReason))
                             reason += $"; {solarReason}";
                     }
-                    else if (data.BatterySocValid != false && data.BatterySoc <= turnOffThreshold)
+                    else if (data.BatterySocValid == true && data.BatterySoc <= turnOffThreshold)
                     {
                         conditionKey = "action:off:soc-threshold";
                         reason = $"SOC={data.BatterySoc}% <= turn-off threshold {turnOffThreshold}%";
@@ -183,7 +183,7 @@ internal sealed class RuleRunHistory(IDbContextFactory<DeyeSolarDbContext> _dbFa
         var cutoff = now.AddMinutes(-RuleEvaluator.SolarProductionAverageWindowMinutes);
 
         var averageSolar = await db.Readings
-            .Where(r => r.Timestamp >= cutoff && r.SolarObservedAt >= cutoff && r.BatterySocValid != false
+            .Where(r => r.Timestamp >= cutoff && r.SolarObservedAt >= cutoff && r.BatterySocValid == true
                 && r.SolarDeviceSn == deviceKey &&
                 r.BatterySoc < RuleEvaluator.SolarProductionBypassSocThreshold)
             .AverageAsync(r => (double?)r.SolarProduction, ct);

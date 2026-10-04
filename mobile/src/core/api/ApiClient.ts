@@ -29,6 +29,7 @@ export type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
+  ifMatch?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
   // Wrong login credentials must not expire an unrelated session.
@@ -101,6 +102,7 @@ export class ApiClient {
     if (options.signal?.aborted) controller.abort();
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     const headers: Record<string, string> = { Accept: "application/json", "Accept-Language": currentLocale() };
+    if (options.ifMatch !== undefined) headers["If-Match"] = options.ifMatch;
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
     let rejectAborted: () => void = () => {};

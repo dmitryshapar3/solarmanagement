@@ -1,6 +1,7 @@
 import { translate as t } from "../../core/i18n";
+import type { SocketCommandReceipt } from "../../core/api/IntegrationApi";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
-import type { DeyeCloudSettings, DisplaySettings, PollingSettings, Rule, RuleRequest, ShellySettings, SolarSiteSettings } from "../../core/api/types";
+import type { DisplaySettings, PollingSettings, Rule, RuleRequest, SolarSiteSettings } from "../../core/api/types";
 import {
   createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, type DemoState
 } from "./fixtures";
@@ -10,6 +11,8 @@ export class DemoApiClient extends ApiClient {
   private readonly state: DemoState;
   private active = true;
   private nextRuleId = 3;
+  private nextRuleRevision = 3;
+  private readonly commandReceipts = new Map<string, SocketCommandReceipt>();
 
   constructor(private readonly clock: () => Date = () => new Date()) {
     super({ baseUrl: DEMO_API_BASE_URL, transport: async () => { throw new Error(t("Demo transport is disabled.")); } });
@@ -75,9 +78,25 @@ export class DemoApiClient extends ApiClient {
       device.name = device.localName ?? device.cloudName;
       return device;
     }
-    if (route === "POST /api/devices/state") {
+    const commandRoute = /^\/api\/v2\/devices\/([^/]+)\/commands(?:\/([^/]+))?$/.exec(path);
+    if (commandRoute) {
+      const deviceId = decodeURIComponent(commandRoute[1]!);
+      const receiptId = commandRoute[2] ? decodeURIComponent(commandRoute[2]) : null;
+      if (method === "GET") {
+        if (!receiptId) return [];
+        const receipt = this.commandReceipts.get(receiptId);
+        if (!receipt || receipt.deviceId !== deviceId) throw new ApiError(404, t("Demo device not found."));
+        return receipt;
+      }
+      if (method !== "POST" || receiptId) throw new ApiError(404, t("This operation is not available in the offline demo."));
       const body = objectBody(options.body);
-      const device = this.state.devices.find(item => item.id === body.entityId);
+      if (typeof body.commandId !== "string" || !body.commandId.trim()) throw new ApiError(400, t("The command response did not identify this operation."));
+      const existing = this.commandReceipts.get(body.commandId);
+      if (existing) {
+        if (existing.deviceId !== deviceId || existing.isOn !== body.isOn) throw new ApiError(409, t("The command response did not identify this operation."));
+        return existing;
+      }
+      const device = this.state.devices.find(item => item.id === deviceId);
       if (!device) throw new ApiError(404, t("Demo device not found."));
       if (typeof body.isOn !== "boolean") throw new ApiError(400, t("Choose an on/off state."));
       device.isOn = body.isOn;
@@ -94,13 +113,16 @@ export class DemoApiClient extends ApiClient {
         batterySoc: inverter.batterySoc, solarProduction: inverter.solarProduction, batteryPower: inverter.batteryPower
       });
       this.state.runs = this.state.runs.slice(0, 500);
-      return { entityId: device.id, isOn: device.isOn, device };
+      const receipt: SocketCommandReceipt = { commandId: body.commandId, deviceId, isOn: body.isOn,
+        status: "acknowledged", rejection: null, createdAt: now.toISOString(), completedAt: now.toISOString() };
+      this.commandReceipts.set(body.commandId, receipt);
+      return receipt;
     }
     if (route === "GET /api/rules") return this.state.rules;
     if (route === "POST /api/rules") {
       const request = this.ruleRequest(options.body);
       const device = this.state.devices.find(item => item.id === request.entityId)!;
-      const rule: Rule = { ...request, id: this.nextRuleId++, currentState: device.isOn, currentStateChangedAt: now.toISOString(), lastEvaluated: now.toISOString() };
+      const rule: Rule = { ...request, id: this.nextRuleId++, configurationVersion: this.ruleVersion(), currentState: device.isOn, currentStateChangedAt: now.toISOString(), lastEvaluated: now.toISOString() };
       this.state.rules.push(rule);
       return rule;
     }
@@ -112,16 +134,23 @@ export class DemoApiClient extends ApiClient {
       if (!rule) throw new ApiError(404, t("Demo rule not found."));
       if (method === "GET" && !ruleRoute[2]) return rule;
       if (method === "PUT" && !ruleRoute[2]) {
-        this.state.rules[index] = { ...rule, ...this.ruleRequest(options.body) };
+        this.requireRuleVersion(rule, objectBody(options.body).configurationVersion);
+        this.state.rules[index] = { ...rule, ...this.ruleRequest(options.body), configurationVersion: this.ruleVersion() };
         return this.state.rules[index];
       }
       if (method === "PATCH" && ruleRoute[2]) {
-        const { enabled } = objectBody(options.body);
+        const { enabled, configurationVersion } = objectBody(options.body);
+        this.requireRuleVersion(rule, configurationVersion);
         if (typeof enabled !== "boolean") throw new ApiError(400, t("Choose an enabled state."));
         rule.enabled = enabled;
+        rule.configurationVersion = this.ruleVersion();
         return rule;
       }
-      if (method === "DELETE" && !ruleRoute[2]) { this.state.rules.splice(index, 1); return; }
+      if (method === "DELETE" && !ruleRoute[2]) {
+        this.requireRuleVersion(rule, options.ifMatch?.replace(/^"(.*)"$/, "$1"));
+        this.state.rules.splice(index, 1);
+        return;
+      }
     }
     if (route === "GET /api/readings") return demoReadings(historyHours(options.query?.hours), now, timeZone);
     if (route === "GET /api/rule-runs") {
@@ -131,10 +160,7 @@ export class DemoApiClient extends ApiClient {
         (filter === "ON" || filter === "OFF" ? run.action === filter : filter === "CHANGES" ? run.action !== "NO_CHANGE" : true));
     }
     if (route === "GET /api/settings") return this.state.settings;
-    if (route === "GET /api/settings/site") return { ...this.state.site, selectedDeviceSn: this.state.settings.deyeCloud.deviceSn,
-      solarEstimate: { ...this.state.site.solarEstimate,
-        deyeSolarPowerIsPvDcConfirmed: this.state.site.solarEstimate.deyeSolarPowerIsPvDcConfirmed === true
-          && this.state.site.solarEstimate.deyeSolarPowerConfirmedDeviceSn === this.state.settings.deyeCloud.deviceSn } };
+    if (route === "GET /api/settings/site") return this.state.site;
     if (route === "PUT /api/settings/site") {
       const body = objectBody(options.body);
       const estimate = objectBody(body.solarEstimate);
@@ -144,49 +170,18 @@ export class DemoApiClient extends ApiClient {
       if (typeof estimate.locationLabel !== "string" || typeof estimate.timeZoneId !== "string"
         || typeof sales.contractStartDate !== "string" || typeof sales.timeZoneId !== "string" || typeof sales.payNegativePrices !== "boolean")
         throw new ApiError(400, t("Enter valid site and sales settings."));
-      if (estimate.deyeSolarPowerIsPvDcConfirmed === true && (!this.state.settings.deyeCloud.deviceSn
-        || estimate.deyeSolarPowerConfirmedDeviceSn !== this.state.settings.deyeCloud.deviceSn))
+      if (estimate.deyeSolarPowerIsPvDcConfirmed === true && (!this.state.site.selectedDeviceSn
+        || estimate.deyeSolarPowerConfirmedDeviceSn !== this.state.site.selectedDeviceSn))
         throw new ApiError(400, t("Confirm the currently saved selected inverter's PV source."));
-      this.state.site = JSON.parse(JSON.stringify({ ...body, selectedDeviceSn: this.state.settings.deyeCloud.deviceSn,
+      this.state.site = JSON.parse(JSON.stringify({ ...body, selectedDeviceSn: this.state.site.selectedDeviceSn,
         solarEstimate: { ...estimate, deyeSolarPowerConfirmedDeviceSn: estimate.deyeSolarPowerIsPvDcConfirmed === true
-          ? this.state.settings.deyeCloud.deviceSn : "" } })) as SolarSiteSettings;
+          ? this.state.site.selectedDeviceSn : "" } })) as SolarSiteSettings;
       return;
     }
-    if (method === "POST" && /^\/api\/settings\/test\/(deye|shelly|openmeteo|pse)$/.test(path)) return {
+    if (method === "POST" && /^\/api\/settings\/test\/(openmeteo|pse)$/.test(path)) return {
       kind: path.split("/").at(-1), success: true, code: "ok", checkedAt: now.toISOString(),
       message: t("Demo connection check simulated. No external services contacted and no settings saved.")
     };
-    if (route === "PUT /api/settings/deye") {
-      const value = objectBody(options.body) as unknown as DeyeCloudSettings;
-      requireStrings(value, ["baseUrl", "appId", "appSecret", "email", "password", "deviceSn"]);
-      requireNumber(value.stationId, 0, Number.MAX_SAFE_INTEGER, t("station ID"));
-      this.state.settings.deyeCloud = { ...value };
-      return;
-    }
-    if (route === "GET /api/settings/deye/stations") return this.state.stations;
-    const stationRoute = /^\/api\/settings\/deye\/stations\/(\d+)\/devices$/.exec(path);
-    if (method === "GET" && stationRoute) return this.state.inverters.filter(device => device.stationId === Number(stationRoute[1]));
-    if (route === "POST /api/settings/deye/selected-device") {
-      const body = objectBody(options.body);
-      const inverter = this.state.inverters.find(device => device.stationId === body.stationId && device.serialNumber === body.serialNumber);
-      if (!inverter) throw new ApiError(404, t("Demo inverter not found."));
-      this.state.settings.deyeCloud = { ...this.state.settings.deyeCloud, stationId: inverter.stationId, deviceSn: inverter.serialNumber };
-      return this.state.settings.deyeCloud;
-    }
-    if (route === "PUT /api/settings/shelly") {
-      const value = objectBody(options.body) as unknown as ShellySettings;
-      requireStrings(value, ["serverUri", "authKey", "deviceId"]);
-      requireNumber(value.requestIntervalMilliseconds, 100, 60000, t("request interval"));
-      this.state.settings.shelly = { ...value };
-      return;
-    }
-    if (route === "POST /api/settings/socket/selected-device") {
-      const { entityId } = objectBody(options.body);
-      const device = this.state.devices.find(item => item.id === entityId);
-      if (!device) throw new ApiError(404, t("Demo socket not found."));
-      this.state.settings.shelly.deviceId = device.id.replace(/^shelly:/, "");
-      return this.state.settings;
-    }
     if (route === "PUT /api/settings/polling") {
       const value = objectBody(options.body) as unknown as PollingSettings;
       requireNumber(value.intervalSeconds, 5, 300, t("polling interval"));
@@ -223,12 +218,20 @@ export class DemoApiClient extends ApiClient {
     if (value.useSeparateSocTurnOffThreshold && value.socTurnOffThreshold > value.socTurnOnThreshold) throw new ApiError(400, t("Turn OFF SOC cannot exceed turn ON SOC."));
     // Store only known configuration fields, not caller-provided state or IDs.
     return {
-      name: value.name.trim(), entityId: value.entityId, enabled: value.enabled,
+      name: value.name.trim(), entityId: value.entityId, sourceInverterId: value.sourceInverterId, enabled: value.enabled,
       socTurnOnThreshold: value.socTurnOnThreshold, useSeparateSocTurnOffThreshold: value.useSeparateSocTurnOffThreshold,
       socTurnOffThreshold: value.socTurnOffThreshold, useSolarProductionThreshold: value.useSolarProductionThreshold,
       minAverageSolarProductionWatts: value.minAverageSolarProductionWatts, cooldownMinutes: value.cooldownMinutes,
       intervalSeconds: value.intervalSeconds, activeFrom: value.activeFrom, activeTo: value.activeTo
     };
+  }
+
+  private ruleVersion(): string { return (this.nextRuleRevision++).toString(16).padStart(64, "0"); }
+
+  private requireRuleVersion(rule: Rule, supplied: unknown): void {
+    if (typeof supplied !== "string" || !/^[a-fA-F0-9]{64}$/.test(supplied))
+      throw new ApiError(428, t("Unable to save rule."));
+    if (supplied !== rule.configurationVersion) throw new ApiError(409, t("Unable to save rule."));
   }
 }
 

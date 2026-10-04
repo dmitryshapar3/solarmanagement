@@ -1,5 +1,6 @@
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Integrations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,31 @@ namespace DeyeSolar.Web.Tests;
 
 public class RuleRepositoryStateTests
 {
+    [SqlServerFact]
+    public async Task MissingAndStaleVersionsCannotUpdateOrDeleteAndRuntimeBookkeepingKeepsVersionValid()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        var current = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        var version = current.ConfigurationVersion!;
+        var name = current.Name;
+        current.ConfigurationVersion = null;
+        current.Name = "Unconditional edit";
+        await Assert.ThrowsAsync<RuleConfigurationPreconditionRequiredException>(() => repository.UpdateAsync(current, default));
+        await Assert.ThrowsAsync<RuleConfigurationPreconditionRequiredException>(() => repository.DeleteAsync(current.Id, "", default));
+        Assert.Equal(name, (await repository.GetByIdAsync(current.Id, default))!.Name);
+        current = (await repository.GetByIdAsync(current.Id, default))!;
+        current.Name = "Concurrent editor saved";
+        await repository.UpdateAsync(current, default);
+        await Assert.ThrowsAsync<RuleConfigurationConflictException>(() => repository.DeleteAsync(current.Id, version, default));
+        Assert.Equal("Concurrent editor saved", (await repository.GetByIdAsync(current.Id, default))!.Name);
+        var latest = (await repository.GetByIdAsync(current.Id, default))!;
+        await repository.RecordEvaluationAsync(latest.Id, DateTime.UtcNow, default);
+        await repository.DeleteAsync(latest.Id, latest.ConfigurationVersion!, default);
+        Assert.Null(await repository.GetByIdAsync(latest.Id, default));
+        await Assert.ThrowsAsync<RuleConfigurationPreconditionRequiredException>(() => repository.DeleteAsync(latest.Id, "", default));
+    }
+
     [SqlServerFact]
     public async Task DisabledInstallationRejectsStaleRuleCreateUpdateAndDelete()
     {
@@ -22,7 +48,7 @@ public class RuleRepositoryStateTests
         }
         await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.CreateAsync(new() { EntityId = "late-target", Name = "Late create" }, default));
         await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.UpdateAsync(edited, default));
-        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.DeleteAsync(edited.Id, default));
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.DeleteAsync(edited.Id, edited.ConfigurationVersion!, default));
         Assert.Equal(originalName, (await repository.GetByIdAsync(edited.Id, default))!.Name);
     }
 
@@ -59,7 +85,7 @@ public class RuleRepositoryStateTests
             await db.SaveChangesAsync();
         }
         var edited = (await repository.GetByIdAsync(fixture.TargetId, default))!;
-        edited.EntityId = "new-physical-socket";
+        edited.EntityId = fixture.ReplacementSocket.ToString("D");
         await repository.UpdateAsync(edited, default);
         var saved = (await repository.GetByIdAsync(fixture.TargetId, default))!;
         Assert.False(saved.CurrentState);
@@ -72,7 +98,7 @@ public class RuleRepositoryStateTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var repository = new RuleRepository(fixture.Factory("site-a"));
-        var duplicate = new TriggerRule { EntityId = "socket-one", Name = "Duplicate" };
+        var duplicate = new TriggerRule { EntityId = fixture.TargetSocket.ToString("D"), Name = "Duplicate" };
         Assert.Contains("already has an enabled automation rule", (await Assert.ThrowsAsync<ArgumentException>(
             () => repository.CreateAsync(duplicate, default))).Message);
         duplicate.Enabled = false;
@@ -90,12 +116,42 @@ public class RuleRepositoryStateTests
         {
             try
             {
-                await new RuleRepository(fixture.Factory("site-a")).CreateAsync(new() { EntityId = "contended-target", Name = name }, default);
+                await new RuleRepository(fixture.Factory("site-a")).CreateAsync(new() { EntityId = fixture.ContendedSocket.ToString("D"), Name = name }, default);
                 return true;
             }
             catch (ArgumentException) { return false; }
         }
         Assert.Single(await Task.WhenAll(AdmitAsync("First"), AdmitAsync("Second")), winner => winner);
+    }
+    [SqlServerFact]
+    public async Task EnabledRulesRequireAnOwnedEnabledSwitchableSocketButRetiredDraftsCanBeStopped()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        foreach (var invalidTarget in fixture.InvalidTargets)
+        {
+            var before = await repository.GetAllAsync(default);
+            await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new()
+            { Name = "Invalid target", EntityId = invalidTarget }, default));
+            var edited = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+            edited.EntityId = invalidTarget;
+            await Assert.ThrowsAsync<ArgumentException>(() => repository.UpdateAsync(edited, default));
+            Assert.Equal(before.Count, (await repository.GetAllAsync(default)).Count);
+            Assert.Equal(fixture.TargetSocket.ToString("D"), (await repository.GetByIdAsync(fixture.TargetId, default))!.EntityId);
+        }
+        var draft = await repository.CreateAsync(new() { Name = "Retired draft", EntityId = fixture.InvalidTargets[0], Enabled = false }, default);
+        draft.Enabled = true;
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.UpdateAsync(draft, default));
+        Assert.False((await repository.GetByIdAsync(draft.Id, default))!.Enabled);
+        var current = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            (await db.IntegrationDeviceBindings.SingleAsync(device => device.Id == fixture.TargetSocket)).Enabled = false;
+            await db.SaveChangesAsync();
+        }
+        current.Enabled = false;
+        await repository.UpdateAsync(current, default);
+        Assert.False((await repository.GetByIdAsync(current.Id, default))!.Enabled);
     }
     [SqlServerFact]
     public async Task StaleConfigurationSavePreservesAcknowledgedStateAndEvaluationAcrossIndependentRules()
@@ -174,6 +230,10 @@ public class RuleRepositoryStateTests
     private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
     {
         public int TargetId { get; private set; }
+        public Guid TargetSocket { get; } = Guid.NewGuid();
+        public Guid ReplacementSocket { get; } = Guid.NewGuid();
+        public Guid ContendedSocket { get; } = Guid.NewGuid();
+        public string[] InvalidTargets { get; private set; } = [];
         public IDbContextFactory<DeyeSolarDbContext> Factory(string installation) => new Factory(options, installation);
         public async Task<string> NeighboursAsync()
         {
@@ -189,11 +249,31 @@ public class RuleRepositoryStateTests
             await using var db = fixture.Factory("site-a").CreateDbContext();
             await db.Database.MigrateAsync();
             db.Installations.AddRange(new Installation { Id = "site-a", CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = "site-b", CreatedAt = DateTimeOffset.UtcNow });
-            var target = new TriggerRule { Name = "Target", EntityId = "socket-one", SocTurnOnThreshold = 70 };
+            var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
+            var paused = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "disabled" };
+            db.IntegrationInstances.AddRange(instance, paused);
+            Guid AddBinding(Guid connectionId, Guid? id = null, string kind = "socket", bool enabled = true, string metadata = "{\"capabilities\":{\"canSwitch\":true}}")
+            {
+                var deviceId = id ?? Guid.NewGuid();
+                db.IntegrationDeviceBindings.Add(new() { Id = deviceId, InstanceId = connectionId, RemoteId = deviceId.ToString("D"),
+                    Kind = kind, Enabled = enabled, MetadataJson = metadata });
+                return deviceId;
+            }
+            AddBinding(instance.Id, fixture.TargetSocket);
+            AddBinding(instance.Id, fixture.ReplacementSocket);
+            AddBinding(instance.Id, fixture.ContendedSocket);
+            var otherSocket = AddBinding(instance.Id);
+            fixture.InvalidTargets = ["raw-provider-id", Guid.Empty.ToString("D"), Guid.NewGuid().ToString("D"),
+                AddBinding(instance.Id, kind: "inverter").ToString("D"),
+                AddBinding(instance.Id, enabled: false).ToString("D"),
+                AddBinding(instance.Id, metadata: "{\"capabilities\":{\"canSwitch\":false}}").ToString("D"),
+                AddBinding(instance.Id, metadata: "invalid-json").ToString("D"),
+                AddBinding(paused.Id).ToString("D")];
+            var target = new TriggerRule { Name = "Target", EntityId = fixture.TargetSocket.ToString("D"), SocTurnOnThreshold = 70 };
             db.TriggerRules.AddRange(target, new TriggerRule
             {
                 Name = "Independent neighbour",
-                EntityId = "socket-two",
+                EntityId = otherSocket.ToString("D"),
                 CurrentState = true,
                 CurrentStateChangedAt = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc),
                 LastEvaluated = new DateTime(2026, 10, 2, 12, 0, 0, DateTimeKind.Utc)
@@ -201,7 +281,13 @@ public class RuleRepositoryStateTests
             await db.SaveChangesAsync();
             fixture.TargetId = target.Id;
             await using var foreign = fixture.Factory("site-b").CreateDbContext();
-            foreign.TriggerRules.Add(new() { Name = "Foreign same socket", EntityId = "socket-one", Enabled = false, SocTurnOnThreshold = 11 });
+            var foreignInstance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
+            var foreignSocket = Guid.NewGuid();
+            foreign.IntegrationInstances.Add(foreignInstance);
+            foreign.IntegrationDeviceBindings.Add(new() { Id = foreignSocket, InstanceId = foreignInstance.Id, Kind = "socket", RemoteId = "foreign",
+                MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}" });
+            fixture.InvalidTargets = [.. fixture.InvalidTargets, foreignSocket.ToString("D")];
+            foreign.TriggerRules.Add(new() { Name = "Foreign same socket", EntityId = fixture.TargetSocket.ToString("D"), Enabled = false, SocTurnOnThreshold = 11 });
             await foreign.SaveChangesAsync();
             return fixture;
         }

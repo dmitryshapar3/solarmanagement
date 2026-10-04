@@ -22,6 +22,7 @@ namespace DeyeSolar.Web.Tests;
 
 public class AccountIdentitySqlServerTests
 {
+    private const string FixtureInstallation = "fixture-installation";
     private const string Password = "Local registration password 42!";
     private const string SiblingInstallation = "independent-installation";
 
@@ -37,7 +38,7 @@ public class AccountIdentitySqlServerTests
         foreach (var session in new[] { first, second })
         {
             Assert.NotNull(session.InstallationId);
-            Assert.NotEqual(InstallationIds.Legacy, session.InstallationId);
+            Assert.NotEqual(FixtureInstallation, session.InstallationId);
             Assert.NotEqual(SiblingInstallation, session.InstallationId);
             await using var own = host.Factory.ForInstallation(session.InstallationId);
             Assert.Empty(await own.AppSettings.ToListAsync());
@@ -404,8 +405,8 @@ public class AccountIdentitySqlServerTests
                 await using (var db = factory.CreateDbContext())
                 {
                     await db.Database.MigrateAsync();
-                    db.Installations.Add(new Installation { Id = SiblingInstallation, CreatedAt = DateTimeOffset.UtcNow });
-                    foreach (var installationId in new[] { InstallationIds.Legacy, SiblingInstallation })
+                    db.Installations.AddRange(new Installation { Id = FixtureInstallation, CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = SiblingInstallation, CreatedAt = DateTimeOffset.UtcNow });
+                    foreach (var installationId in new[] { FixtureInstallation, SiblingInstallation })
                     {
                         var user = new IdentityUser
                         {
@@ -421,7 +422,7 @@ public class AccountIdentitySqlServerTests
                     }
                     await db.SaveChangesAsync();
                 }
-                foreach (var installationId in new[] { InstallationIds.Legacy, SiblingInstallation })
+                foreach (var installationId in new[] { FixtureInstallation, SiblingInstallation })
                 {
                     await using var db = factory.ForInstallation(installationId);
                     db.AppSettings.Add(new AppSetting { Section = "DeyeCloud", Key = "Password", Value = installationId + "-private" });

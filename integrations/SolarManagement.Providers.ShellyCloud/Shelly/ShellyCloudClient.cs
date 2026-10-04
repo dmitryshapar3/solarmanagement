@@ -348,10 +348,10 @@ public class ShellyCloudClient : ISocketController
         var category = string.Join(" ", new[] { "Shelly", code, gen ?? type }.Where(v => !string.IsNullOrWhiteSpace(v)));
         var name = ExtractName(settings) ?? ExtractName(status) ?? BuildDisplayName(code, id);
         var online = ReadBoolish(state, "online") ?? ReadBoolish(devInfo, "online") ?? true;
-        var isOn = ReadSwitchState(status, channel) ?? false;
+        var output = ReadSwitchState(status, channel);
         var powerW = ReadCurrentPower(status, channel);
 
-        return new DevicePowerInfo(id, name, category, online, isOn, powerW);
+        return new DevicePowerInfo(id, name, category, online, output.GetValueOrDefault(), powerW, output.HasValue);
     }
 
     private static bool IsSwitchLikeDevice(JsonElement state, int channel, string? category)

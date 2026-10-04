@@ -32,11 +32,9 @@ public class SocketSourceIntegrationTests
         Assert.Equal(3, shelly.PhaseCount); Assert.Equal(1, tuya.PhaseCount);
         Assert.Equal(f.Secondary, shelly.SourceInverterId); Assert.Equal(f.Secondary, tuya.SourceInverterId);
         await using var db = f.Factory("a").CreateDbContext();
-        db.IntegrationDeviceAliases.Add(new() { LegacyId = "legacy-tuya", DeviceId = f.Tuya });
         db.TriggerRules.AddRange(new TriggerRule { Name = "Shelly inherited", EntityId = f.Shelly.ToString("D") },
             new TriggerRule { Name = "Tuya inherited", EntityId = f.Tuya.ToString("D") },
-            new TriggerRule { Name = "Explicit override", EntityId = f.Shelly.ToString("D"), SourceInverterId = f.Primary },
-            new TriggerRule { Name = "Legacy alias", EntityId = "legacy-tuya" });
+            new TriggerRule { Name = "Explicit override", EntityId = f.Shelly.ToString("D"), SourceInverterId = f.Primary });
         await db.SaveChangesAsync();
         var rules = await db.TriggerRules.AsNoTracking().ToListAsync();
         var sources = await IntegrationSocketAssociation.ResolveSourcesAsync(db, rules, default);
@@ -230,7 +228,7 @@ public class SocketSourceIntegrationTests
         var registry = new IntegrationRegistry(f.Factory("a"), f.Secrets);
         var source = new DynamicInverterGateway(registry, f.Executor, new(registry), TimeProvider.System);
         var readings = new ExportReadingStore(f.Factory("a"), TimeProvider.System);
-        using var worker = new PollingWorker(new Refresh(ct => source.ReadDeviceAsync(new(f.Primary), ct)),
+        using var worker = PollingWorkerFixture.Create(new Refresh(ct => source.ReadDeviceAsync(new(f.Primary), ct)),
             new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.Primary.ToString("D") }), f.Sockets("a"), repository,
             new RuleEvaluator(), f.Factory("a"), new Monitor<PollingOptions>(new()),
             new AppSettingsService(f.Factory("a"), new ConfigurationBuilder().Build()), NullLogger<PollingWorker>.Instance, source, readings);

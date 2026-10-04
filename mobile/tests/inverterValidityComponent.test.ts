@@ -7,6 +7,16 @@ import { act, create } from "react-test-renderer";
 import { build } from "esbuild";
 import type { InverterData } from "../src/core/api/types";
 
+function inverterFixture(): InverterData {
+  const timestamp = new Date().toISOString();
+  return { inverterId: "fixture-inverter", solarObservedAt: timestamp, gridObservedAt: timestamp,
+    solarDeviceSn: "fixture-inverter", gridDeviceSn: "fixture-inverter", timestamp, dataSource: "Fixture inverter",
+    batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0, batteryVoltage: 0,
+    loadPower: 0, solarProduction: 0, gridConsumption: 0, batterySocValid: false, batteryPowerValid: false,
+    batteryTemperatureValid: false, batteryVoltageValid: false, batteryCurrentValid: false,
+    loadPowerValid: false, gridPowerValid: false, solarPowerValid: false };
+}
+
 async function components() {
   const bundle = await build({
     stdin: { contents: 'export { InverterDetailsScreen } from "./src/features/dashboard/InverterDetailsScreen"; export { DashboardScreen } from "./src/features/dashboard/DashboardScreen"; export { CurrentSolarSnapshot } from "./src/features/generation/GenerationScreen";', resolveDir: process.cwd(), loader: "ts" },
@@ -37,9 +47,9 @@ async function components() {
   return module.exports;
 }
 
-test("the actual inverter details hide missing power values while retaining valid and legacy zeros", async () => {
+test("the actual inverter details hide missing power values while retaining only explicitly valid zeros", async () => {
   const globals = globalThis as typeof globalThis & { __inverterValidityReading?: InverterData; IS_REACT_ACT_ENVIRONMENT?: boolean };
-  const reading: InverterData = { batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
+  const reading: InverterData = { ...inverterFixture(), batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
     batteryVoltage: 0, loadPower: 0, solarProduction: 4100, gridConsumption: 0, timestamp: new Date().toISOString(),
     dataSource: "Fixture inverter", batterySocValid: false, batteryPowerValid: false, batteryTemperatureValid: false,
     batteryVoltageValid: false, batteryCurrentValid: false, loadPowerValid: false, gridPowerValid: false, solarPowerValid: true };
@@ -63,7 +73,7 @@ test("the actual inverter details hide missing power values while retaining vali
     await act(async () => { renderer!.update(React.createElement(Component)); });
     assert.equal(value("Solar generation"), "-");
     assert.equal(value("Grid power"), "0 W");
-    for (const flag of [true, null]) {
+    for (const flag of [true]) {
       globals.__inverterValidityReading = { ...reading, solarProduction: 0, batterySocValid: flag, batteryPowerValid: flag, batteryTemperatureValid: flag,
         batteryVoltageValid: flag, batteryCurrentValid: flag, loadPowerValid: flag, gridPowerValid: flag, solarPowerValid: flag };
       await act(async () => { renderer!.update(React.createElement(Component)); });
@@ -78,6 +88,16 @@ test("the actual inverter details hide missing power values while retaining vali
       assert.equal(value("Solar generation"), "0 W");
       assert.equal(value("Balance difference"), "0 W");
     }
+    for (const flag of [null, undefined]) {
+      globals.__inverterValidityReading = { ...reading, solarProduction: 0, batterySocValid: flag, batteryPowerValid: flag,
+        batteryTemperatureValid: flag, batteryVoltageValid: flag, batteryCurrentValid: flag,
+        loadPowerValid: flag, gridPowerValid: flag, solarPowerValid: flag } as unknown as InverterData;
+      await act(async () => { renderer!.update(React.createElement(Component)); });
+      for (const label of ["State of charge", "Power", "Load", "Grid power", "Solar generation"]) assert.equal(value(label), "-", label);
+      assert.equal(value("Balance difference"), "—");
+      assert.equal(renderer!.root.findAllByType("ProgressBar").length, 0);
+    }
+
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     delete globals.__inverterValidityReading;
@@ -85,9 +105,9 @@ test("the actual inverter details hide missing power values while retaining vali
   }
 });
 
-test("the actual dashboard shows missing grid and solar as unavailable and preserves confirmed and legacy zero", async () => {
+test("the actual dashboard shows missing grid and solar as unavailable and preserves explicitly confirmed zero", async () => {
   const globals = globalThis as typeof globalThis & { __inverterValidityReading?: InverterData; IS_REACT_ACT_ENVIRONMENT?: boolean };
-  const reading: InverterData = { batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
+  const reading: InverterData = { ...inverterFixture(), batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
     batteryVoltage: 0, loadPower: 0, solarProduction: 0, gridConsumption: 0, timestamp: new Date().toISOString(),
     dataSource: "Fixture inverter", gridPowerValid: false, solarPowerValid: false };
   globals.__inverterValidityReading = reading;
@@ -103,12 +123,19 @@ test("the actual dashboard shows missing grid and solar as unavailable and prese
     const metricText = (label: string) => metric(label).findAllByType("Text").map(item => item.props.children);
     assert.deepEqual(metricText("Grid"), ["Grid", "—", "Awaiting reading"]);
     assert.deepEqual(metricText("Solar power"), ["Solar power", "—", "Awaiting reading"]);
-    for (const flag of [true, null]) {
+    for (const flag of [true]) {
       globals.__inverterValidityReading = { ...reading, gridPowerValid: flag, solarPowerValid: flag };
       await act(async () => { renderer!.update(React.createElement(Component)); });
       assert.deepEqual(metricText("Grid"), ["Grid", "0 W", "Idle"]);
       assert.deepEqual(metricText("Solar power"), ["Solar power", "0 W", "Latest inverter reading"]);
     }
+    for (const flag of [null, undefined]) {
+      globals.__inverterValidityReading = { ...reading, gridPowerValid: flag, solarPowerValid: flag } as unknown as InverterData;
+      await act(async () => { renderer!.update(React.createElement(Component)); });
+      assert.deepEqual(metricText("Grid"), ["Grid", "—", "Awaiting reading"]);
+      assert.deepEqual(metricText("Solar power"), ["Solar power", "—", "Awaiting reading"]);
+    }
+
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     delete globals.__inverterValidityReading;
@@ -116,9 +143,9 @@ test("the actual dashboard shows missing grid and solar as unavailable and prese
   }
 });
 
-test("the generation snapshot preserves the distinction between missing PV and confirmed or legacy zero", async () => {
+test("the generation snapshot preserves the distinction between missing PV and explicitly confirmed zero", async () => {
   const Component = (await components()).CurrentSolarSnapshot;
-  const reading: InverterData = { batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
+  const reading: InverterData = { ...inverterFixture(), batterySoc: 0, batteryPower: 0, batteryCurrent: 0, batteryTemperature: 0,
     batteryVoltage: 0, loadPower: 0, solarProduction: 0, gridConsumption: 0, timestamp: new Date().toISOString(), dataSource: "Fixture inverter" };
   const globals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
   globals.IS_REACT_ACT_ENVIRONMENT = true;
@@ -131,10 +158,15 @@ test("the generation snapshot preserves the distinction between missing PV and c
       return text.length === 2 && text[0]?.props.children === "Latest reported inverter";
     })!.findAllByType("Text")[1]!.props.children;
     assert.equal(value(), "— kW");
-    for (const flag of [true, null]) {
+    for (const flag of [true]) {
       await act(async () => { renderer!.update(React.createElement(Component, { ...props, liveInverter: { ...reading, solarPowerValid: flag } })); });
       assert.equal(value(), "0.00 kW");
     }
+    for (const flag of [null, undefined]) {
+      await act(async () => { renderer!.update(React.createElement(Component, { ...props, liveInverter: { ...reading, solarPowerValid: flag } })); });
+      assert.equal(value(), "— kW");
+    }
+
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     delete globals.IS_REACT_ACT_ENVIRONMENT;

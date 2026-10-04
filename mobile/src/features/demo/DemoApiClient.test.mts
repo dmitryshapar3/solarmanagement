@@ -19,7 +19,7 @@ test("every existing screen API works offline, including device commands, rule C
 
   const devices = await api.getDevices(true);
   const selected = devices.devices[0]!;
-  await api.setDeviceState(selected.id, false);
+  await api.integrations.sendDeviceCommand(selected.id, "00000000-0000-0000-0000-000000000001", false);
   assert.equal((await api.getDevices()).devices[0]!.isOn, false);
   assert.equal((await api.getDashboard()).manualDevices[0]!.isOn, false);
   assert.equal((await api.getRuleRuns(1, "OFF"))[0]!.action, "OFF");
@@ -29,25 +29,16 @@ test("every existing screen API works offline, including device commands, rule C
   const request: RuleRequest = { ...original, name: "Demo added rule" };
   const created = await api.createRule(request);
   assert.equal((await api.getRule(created.id)).name, request.name);
-  await api.updateRule(created.id, { ...request, name: "Demo edited rule" });
-  assert.equal((await api.setRuleEnabled(created.id, false)).enabled, false);
+  const updated = await api.updateRule(created.id, { ...request, configurationVersion: created.configurationVersion, name: "Demo edited rule" });
+  const disabled = await api.setRuleEnabled(created.id, false, updated.configurationVersion);
+  assert.equal(disabled.enabled, false);
   assert.equal((await api.getRule(created.id)).name, "Demo edited rule");
-  await api.deleteRule(created.id);
+  await api.deleteRule(created.id, disabled.configurationVersion);
   await assert.rejects(api.getRule(created.id), httpStatus(404));
 
-  const settings = await api.getSettings();
-  await api.saveDeyeCloud({ ...settings.deyeCloud, appId: "demo-edited" });
-  const station = (await api.fetchDeyeStations())[1]!;
-  const inverter = (await api.fetchDeyeDevices(station.id))[0]!;
-  assert.equal((await api.selectDeyeDevice({ stationId: station.id, serialNumber: inverter.serialNumber })).deviceSn, inverter.serialNumber);
-  await api.saveShelly({ ...settings.shelly, requestIntervalMilliseconds: 2000 });
-  await api.selectSocketDevice(devices.devices[1]!.id);
   await api.savePolling({ intervalSeconds: 60 });
   await api.saveDisplay({ timeZoneId: "UTC" });
   const saved = await api.getSettings();
-  assert.equal(saved.deyeCloud.appId, "demo-edited");
-  assert.equal(saved.shelly.deviceId, "demo-lamp");
-  assert.equal(saved.shelly.requestIntervalMilliseconds, 2000);
   assert.equal(saved.polling.intervalSeconds, 60);
   assert.equal(saved.display.timeZoneId, "UTC");
   await api.logout();
@@ -78,7 +69,7 @@ test("demo state is isolated from returned snapshots and from another demo sessi
   const snapshot = await first.getDevices();
   snapshot.devices[0]!.name = "Edited snapshot";
   assert.equal((await first.getDevices()).devices[0]!.name, "Demo water heater");
-  await first.setDeviceState(snapshot.devices[0]!.id, false);
+  await first.integrations.sendDeviceCommand(snapshot.devices[0]!.id, "00000000-0000-0000-0000-000000000001", false);
   assert.equal((await second.getDevices()).devices[0]!.isOn, true);
   const settings = await first.getSettings();
   settings.polling.intervalSeconds = 99;
@@ -99,4 +90,39 @@ test("synthetic charts preserve local calendar boundaries, DST hours and provisi
   const completed = current.buckets.reduce((sum, item) => sum + (item.exportKwh ?? 0), 0);
   assert.ok(Math.abs(completed - current.exportKwh!) < .05);
   assert.equal(current.buckets.find(item => item.start === current.currentHour!.start)?.expectedHours, 0);
+});
+
+
+test("demo requires current configuration versions for edits, toggles and deletion", async () => {
+  const client = new DemoApiClient(clock);
+  const api = new DeyeSolarApi(client);
+  const original = (await api.getRules())[0]!;
+  await assert.rejects(client.request(`/api/rules/${original.id}/enabled`, { method: "PATCH", body: { enabled: false } }), httpStatus(428));
+  const updated = await api.setRuleEnabled(original.id, false, original.configurationVersion);
+  assert.notEqual(updated.configurationVersion, original.configurationVersion);
+  await assert.rejects(api.setRuleEnabled(original.id, true, original.configurationVersion), httpStatus(409));
+  await assert.rejects(api.updateRule(original.id, { ...original, name: "Stale edit" }), httpStatus(409));
+  await assert.rejects(api.deleteRule(original.id, original.configurationVersion), httpStatus(409));
+  await assert.rejects(client.request(`/api/rules/${original.id}`, { method: "DELETE" }), httpStatus(428));
+  assert.equal((await api.getRule(original.id)).enabled, false);
+  await api.deleteRule(original.id, updated.configurationVersion);
+  await assert.rejects(api.getRule(original.id), httpStatus(404));
+});
+
+
+test("demo accepts only current receipt-based socket commands and keeps replay idempotent", async () => {
+  const client = new DemoApiClient(clock);
+  const api = new DeyeSolarApi(client);
+  const device = (await api.getDevices()).devices[0]!;
+  const commandId = "00000000-0000-0000-0000-000000000001";
+  const receipt = await api.integrations.sendDeviceCommand(device.id, commandId, false);
+  assert.equal(receipt.status, "acknowledged");
+  assert.equal((await api.getDevices()).devices[0]!.isOn, false);
+  assert.deepEqual(await api.integrations.getDeviceCommand(device.id, commandId), receipt);
+  assert.deepEqual(await api.integrations.sendDeviceCommand(device.id, commandId, false), receipt);
+  assert.equal((await api.getRuleRuns(1, "OFF")).filter(run => run.ruleName === "Demo manual override").length, 1);
+  await assert.rejects(api.integrations.sendDeviceCommand(device.id, commandId, true), httpStatus(409));
+  assert.deepEqual(await api.integrations.getUnresolvedCommands(device.id), []);
+  for (const [path, method] of [["/api/devices/state", "POST"], ["/api/settings/deye", "PUT"], ["/api/settings/shelly", "PUT"], ["/api/settings/deye/stations", "GET"]] as const)
+    await assert.rejects(client.request(path, { method, body: {} }), httpStatus(404));
 });

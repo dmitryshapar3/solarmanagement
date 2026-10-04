@@ -44,7 +44,6 @@ public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> 
             await CheckConflictsAsync(db, user.Id, owned, ct);
             await db.IntegrationOAuthFlows.IgnoreQueryFilters().Where(f => owned.Contains(f.InstallationId) || f.UserId == user.Id).ExecuteDeleteAsync(ct);
             await db.IntegrationCommands.IgnoreQueryFilters().Where(c => owned.Contains(c.InstallationId)).ExecuteDeleteAsync(ct);
-            await db.IntegrationDeviceAliases.IgnoreQueryFilters().Where(a => owned.Contains(a.InstallationId)).ExecuteDeleteAsync(ct);
             await db.IntegrationDeviceBindings.IgnoreQueryFilters().Where(b => owned.Contains(b.InstallationId)).ExecuteDeleteAsync(ct);
             await db.IntegrationConfigurations.IgnoreQueryFilters().Where(c => owned.Contains(c.InstallationId)).ExecuteDeleteAsync(ct);
             await db.IntegrationInstances.IgnoreQueryFilters().Where(i => owned.Contains(i.InstallationId)).ExecuteDeleteAsync(ct);

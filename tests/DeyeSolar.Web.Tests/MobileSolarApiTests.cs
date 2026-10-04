@@ -12,6 +12,7 @@ using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -30,11 +31,130 @@ namespace DeyeSolar.Web.Tests;
 
 public class MobileSolarApiTests
 {
+    private const string FixtureInstallation = "fixture-installation";
+    private static readonly Guid EditableSocket = new("996356a7-c311-4e0d-9426-7a0df8b63b4b");
     private static readonly DateTimeOffset Now = new(2026, 9, 30, 12, 20, 0, TimeSpan.Zero);
     private const string Username = "mobile-api-reader";
     private const string Password = "LocalTestPassword!42";
     private static readonly string[] ProtectedRoutes =
     ["/api/sales?period=Day&date=2026-09-30", "/api/solar/estimate", "/api/solar/history?period=Today", "/api/dashboard/refresh"];
+
+    [SqlServerFact]
+    public async Task PasswordLoginRequiresVerifiedIdentityForEveryInstallation()
+    {
+        await using var host = await ApiHost.StartAsync();
+        await using (var db = host.Factory.CreateDbContext())
+        {
+            var user = await db.Users.SingleAsync(user => user.UserName == Username);
+            user.EmailConfirmed = false;
+            user.PhoneNumberConfirmed = false;
+            await db.SaveChangesAsync();
+        }
+        using var refused = await host.Client.PostAsJsonAsync("/api/auth/login", new MobileLoginRequest(Username, Password));
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        await using (var db = host.Factory.CreateDbContext())
+        {
+            var user = await db.Users.SingleAsync(user => user.UserName == Username);
+            user.PhoneNumber = "+48123456789";
+            user.PhoneNumberConfirmed = true;
+            await db.SaveChangesAsync();
+        }
+        Assert.NotNull(await host.LoginAsync());
+    }
+
+    [SqlServerFact]
+    public async Task RuleUpdateToggleAndDeleteRequireTheClientsCurrentConfigurationVersion()
+    {
+        await using var host = await ApiHost.StartAsync();
+        var session = await host.LoginAsync();
+        host.Client.DefaultRequestHeaders.Authorization = new("Bearer", session.Token);
+        var initial = new TriggerRuleRequest("Client snapshot", EditableSocket.ToString("D"), false, 80, false, 80, false, 3000, 15, 30, null, null)
+        { SourceInverterId = null };
+        using var createdResponse = await host.Client.PostAsJsonAsync("/api/rules", initial);
+        Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        var created = (await createdResponse.Content.ReadFromJsonAsync<TriggerRuleDto>())!;
+        Assert.Matches("^[A-F0-9]{64}$", created.ConfigurationVersion);
+        var route = $"/api/rules/{created.Id}";
+        using (var missing = await host.Client.PutAsJsonAsync(route, initial with { Name = "Unconditional overwrite" }))
+            Assert.Equal((HttpStatusCode)428, missing.StatusCode);
+        using (var missing = await host.Client.PatchAsJsonAsync(route + "/enabled", new { enabled = true }))
+            Assert.Equal((HttpStatusCode)428, missing.StatusCode);
+        using (var missing = await host.Client.DeleteAsync(route))
+            Assert.Equal((HttpStatusCode)428, missing.StatusCode);
+        using var changedResponse = await host.Client.PutAsJsonAsync(route, initial with
+        { Name = "Concurrent saved edit", ConfigurationVersion = created.ConfigurationVersion });
+        Assert.Equal(HttpStatusCode.OK, changedResponse.StatusCode);
+        var changed = (await changedResponse.Content.ReadFromJsonAsync<TriggerRuleDto>())!;
+        Assert.NotEqual(created.ConfigurationVersion, changed.ConfigurationVersion);
+        using (var stale = await host.Client.PutAsJsonAsync(route, initial with { ConfigurationVersion = created.ConfigurationVersion }))
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        using (var stale = await host.Client.PatchAsJsonAsync(route + "/enabled", new RuleEnabledRequest(false, created.ConfigurationVersion)))
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        using (var staleRequest = new HttpRequestMessage(HttpMethod.Delete, route))
+        {
+            staleRequest.Headers.IfMatch.Add(new EntityTagHeaderValue('"' + created.ConfigurationVersion + '"'));
+            using var stale = await host.Client.SendAsync(staleRequest);
+            Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        }
+        using (var fresh = await host.Client.PatchAsJsonAsync(route + "/enabled", new RuleEnabledRequest(false, changed.ConfigurationVersion)))
+            Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
+        using var read = await host.Client.GetAsync(route);
+        var retained = (await read.Content.ReadFromJsonAsync<TriggerRuleDto>())!;
+        Assert.Equal("Concurrent saved edit", retained.Name);
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, route);
+        delete.Headers.IfMatch.Add(new EntityTagHeaderValue('"' + retained.ConfigurationVersion + '"'));
+        using var removed = await host.Client.SendAsync(delete);
+        Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        using var absent = await host.Client.GetAsync(route);
+        Assert.Equal(HttpStatusCode.NotFound, absent.StatusCode);
+        using var unconditionalAbsentDelete = await host.Client.DeleteAsync(route);
+        Assert.Equal((HttpStatusCode)428, unconditionalAbsentDelete.StatusCode);
+        using var repeatedDelete = new HttpRequestMessage(HttpMethod.Delete, route);
+        repeatedDelete.Headers.IfMatch.Add(new EntityTagHeaderValue('"' + retained.ConfigurationVersion + '"'));
+        using var repeatedResponse = await host.Client.SendAsync(repeatedDelete);
+        Assert.Equal(HttpStatusCode.NoContent, repeatedResponse.StatusCode);
+    }
+
+    [SqlServerFact]
+    public async Task NullRuleFieldsAreClientErrorsAndInvalidTargetsCannotBeEnabledByAnyRuleMutation()
+    {
+        await using var host = await ApiHost.StartAsync();
+        host.Client.DefaultRequestHeaders.Authorization = new("Bearer", (await host.LoginAsync()).Token);
+        var initial = new TriggerRuleRequest("Valid draft", EditableSocket.ToString("D"), false, 80, false, 80, false, 3000, 15, 30, null, null)
+        { SourceInverterId = null };
+        using var createdResponse = await host.Client.PostAsJsonAsync("/api/rules", initial);
+        Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        var created = (await createdResponse.Content.ReadFromJsonAsync<TriggerRuleDto>())!;
+        var route = $"/api/rules/{created.Id}";
+        var before = await host.ReadStateAsync();
+        foreach (var field in new[] { "name", "entityId" })
+        {
+            var body = JsonSerializer.SerializeToNode(initial with { ConfigurationVersion = created.ConfigurationVersion }, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+            body[field] = null;
+            using var invalidCreate = await host.Client.PostAsJsonAsync("/api/rules", body);
+            using var invalidUpdate = await host.Client.PutAsJsonAsync(route, body);
+            Assert.Equal(HttpStatusCode.BadRequest, invalidCreate.StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, invalidUpdate.StatusCode);
+            Assert.Equal(before, await host.ReadStateAsync());
+        }
+        using (var invalidCreate = await host.Client.PostAsJsonAsync("/api/rules", initial with { EntityId = "unregistered-provider-id", Enabled = true }))
+            Assert.Equal(HttpStatusCode.BadRequest, invalidCreate.StatusCode);
+        using (var invalidUpdate = await host.Client.PutAsJsonAsync(route, initial with
+        { EntityId = Guid.NewGuid().ToString("D"), Enabled = true, ConfigurationVersion = created.ConfigurationVersion }))
+            Assert.Equal(HttpStatusCode.BadRequest, invalidUpdate.StatusCode);
+        Assert.Equal(before, await host.ReadStateAsync());
+        await using (var db = host.Factory.CreateDbContext())
+        {
+            (await db.IntegrationDeviceBindings.SingleAsync(device => device.Id == EditableSocket)).Enabled = false;
+            await db.SaveChangesAsync();
+        }
+        using var invalidToggle = await host.Client.PatchAsJsonAsync(route + "/enabled", new RuleEnabledRequest(true, created.ConfigurationVersion));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidToggle.StatusCode);
+        var saved = (await host.Client.GetFromJsonAsync<TriggerRuleDto>(route))!;
+        Assert.False(saved.Enabled);
+        Assert.Equal(created.ConfigurationVersion, saved.ConfigurationVersion);
+        Assert.Equal(0, host.Socket.Calls);
+    }
 
     [SqlServerFact]
     public async Task SalesAcceptsRealMobileBearerWithoutCookie()
@@ -51,7 +171,7 @@ public class MobileSolarApiTests
     }
 
     [SqlServerFact]
-    public async Task LegacySocketMutationRequiresAnUpdatedClientWithoutHardwareOrPersistenceEffects()
+    public async Task RemovedSocketMutationEndpointCannotReachHardwareOrPersistence()
     {
         await using var host = await ApiHost.StartAsync();
         var session = await host.LoginAsync();
@@ -60,7 +180,7 @@ public class MobileSolarApiTests
         { Content = JsonContent.Create(new { entityId = "socket-neighbor", turnOn = true }) };
         request.Headers.Authorization = new("Bearer", session.Token);
         using var response = await host.Client.SendAsync(request);
-        Assert.Equal((HttpStatusCode)426, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(0, host.Socket.Calls);
         Assert.Equal(before, await host.ReadStateAsync());
     }
@@ -210,7 +330,7 @@ public class MobileSolarApiTests
         Assert.False(rule.CurrentState);
         Assert.Null(rule.LastEvaluated);
         Assert.Empty(await db.RuleRunLogs.ToListAsync());
-        Assert.Equal("private-test-credential", (await db.AppSettings.SingleAsync(row => row.Section == "DeyeCloud")).Value);
+        Assert.Equal("private-test-credential", (await db.AppSettings.SingleAsync(row => row.Section == "PrivateFixture")).Value);
         Assert.Equal(0, host.Socket.Calls);
     }
 
@@ -288,6 +408,11 @@ public class MobileSolarApiTests
                 await using (var db = factory.CreateDbContext())
                 {
                     await db.Database.MigrateAsync();
+                    db.Installations.Add(new Installation { Id = FixtureInstallation, CreatedAt = DateTimeOffset.UtcNow });
+                    var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
+                    db.IntegrationInstances.Add(instance);
+                    db.IntegrationDeviceBindings.Add(new() { Id = EditableSocket, InstanceId = instance.Id, Kind = "socket", RemoteId = "editable-socket",
+                        MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}" });
                     for (var minute = 0; minute <= 60; minute += 5)
                     {
                         var observed = Now.Date.AddHours(11).AddMinutes(minute);
@@ -296,9 +421,9 @@ public class MobileSolarApiTests
                             new Reading { Timestamp = Now.UtcDateTime, SolarObservedAt = observed, SolarDeviceSn = "neighbor", SolarProduction = 9000 });
                     }
                     db.ExportReadings.Add(new() { DeviceSn = "neighbor", ObservedAt = Now.AddMinutes(-1).UtcDateTime, PolledAt = Now.UtcDateTime, GridPowerWatts = 8765 });
-                    db.TriggerRules.Add(new() { Name = "independent rule", EntityId = "socket-neighbor", SocTurnOnThreshold = 50 });
+                    db.TriggerRules.Add(new() { Name = "independent rule", EntityId = EditableSocket.ToString("D"), SocTurnOnThreshold = 50 });
                     db.AppSettings.AddRange(new AppSetting { Section = "Display", Key = "TimeZoneId", Value = "Europe/Warsaw" },
-                        new AppSetting { Section = "DeyeCloud", Key = "Password", Value = "private-test-credential" });
+                        new AppSetting { Section = "PrivateFixture", Key = "Secret", Value = "private-test-credential" });
                     await db.SaveChangesAsync();
                 }
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory });
@@ -344,15 +469,15 @@ public class MobileSolarApiTests
                         ? Results.NoContent() : Results.Unauthorized());
                 using (var scope = app.Services.CreateScope())
                 {
-                    var user = new IdentityUser { UserName = Username };
+                    var user = new IdentityUser { UserName = Username, Email = "mobile-reader@example.test", EmailConfirmed = true };
                     var result = await scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>().CreateAsync(user, Password);
                     Assert.True(result.Succeeded, string.Join(",", result.Errors.Select(error => error.Code)));
                     var db = scope.ServiceProvider.GetRequiredService<DeyeSolarDbContext>();
-                    db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = InstallationIds.Legacy });
+                    db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = FixtureInstallation });
                     await db.SaveChangesAsync();
                 }
                 app.Services.GetRequiredService<InverterDataSnapshot>().Update(new() { Timestamp = Now.AddMinutes(-5), GridConsumption = -100 });
-                app.Services.GetRequiredService<DeviceStatusSnapshot>().Update([new("socket-neighbor", "Neighbor socket", null, true, false, 0)]);
+                app.Services.GetRequiredService<DeviceStatusSnapshot>().Update([new(EditableSocket.ToString("D"), "Neighbor socket", null, true, false, 0)]);
                 await app.Services.GetRequiredService<SolarEstimateService>().UpdateAsync(default);
                 await app.StartAsync();
                 var address = new Uri(Assert.Single(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses));
@@ -379,7 +504,7 @@ public class MobileSolarApiTests
     {
         public SolarDataCommandCounter DataCommands { get; } = new();
         public DeyeSolarDbContext CreateDbContext() => new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options)
-            .AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
+            .AddInterceptors(DataCommands).Options, FixtureInstallation);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

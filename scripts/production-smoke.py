@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Run the production image with real isolated Docker SQL, signed packages and a verified restore drill."""
 import argparse
-import copy
 import hashlib
 import json
 import os
@@ -75,13 +74,10 @@ def start_sql(name):
 def prepare_bundle():
     bundle = root / "bundle"
     bundle.mkdir()
-    previous_bundle = root / "previous-bundle"
-    previous_bundle.mkdir()
     command("dotnet", "run", "--project", "tools/SolarManagement.IntegrationPackager", "-c", "Release", "--",
         "--generate-key", str(root / "publisher-private.pem"), str(bundle / "publisher-public-key.pem"))
-    shutil.copyfile(bundle / "publisher-public-key.pem", previous_bundle / "publisher-public-key.pem")
-    entries, previous_entries, origins = [], [], []
-    previous_pin = None
+    entries, origins = [], []
+    package_pin = None
     for project in sorted((repository / "integrations").glob("SolarManagement.Providers.*")):
         manifest = project / "manifest.json"
         if not manifest.exists():
@@ -94,26 +90,13 @@ def prepare_bundle():
         command("dotnet", "run", "--project", "tools/SolarManagement.IntegrationPackager", "-c", "Release", "--",
             str(published), str(manifest), str(root / "publisher-private.pem"), str(archive))
         entries.append({"ArchivePath": "/app/integration-bundle/" + archive.name, "ExpectedSha256": hashlib.sha256(archive.read_bytes()).hexdigest().upper()})
-        # A signed preceding-version fixture exercises catalog upgrades with a live SQL package pin.
-        # Worker payload is the current fixture implementation; this verifies package identity/data preservation.
-        previous = copy.deepcopy(definition)
-        previous_version = "1.0.1" if definition["providerId"] in ("deye.cloud", "shelly.cloud") else "1.0.0"
-        assert previous["packageVersion"] != previous_version, "Changed provider payload must have a new immutable package version"
-        previous["packageVersion"] = previous["descriptor"]["packageVersion"] = previous_version
-        previous_manifest = root / (definition["providerId"] + "-previous-manifest.json")
-        previous_manifest.write_text(json.dumps(previous))
-        previous_archive = previous_bundle / (definition["providerId"] + "-" + previous_version + ".zip")
-        command("dotnet", "run", "--project", "tools/SolarManagement.IntegrationPackager", "-c", "Release", "--",
-            str(published), str(previous_manifest), str(root / "publisher-private.pem"), str(previous_archive))
-        previous_digest = hashlib.sha256(previous_archive.read_bytes()).hexdigest().upper()
-        previous_entries.append({"ArchivePath": "/app/integration-bundle/" + previous_archive.name, "ExpectedSha256": previous_digest})
-        if previous_pin is None:
-            with zipfile.ZipFile(previous_archive) as packaged:
+        if package_pin is None:
+            with zipfile.ZipFile(archive) as packaged:
                 signed_manifest = packaged.read("manifest.json").decode()
             descriptor_start = signed_manifest.index('"descriptor":') + len('"descriptor":')
             _, descriptor_length = json.JSONDecoder().raw_decode(signed_manifest[descriptor_start:])
-            previous_pin = {"providerId": definition["providerId"], "digest": previous_digest,
-                "version": previous_version,
+            package_pin = {"providerId": definition["providerId"], "digest": hashlib.sha256(archive.read_bytes()).hexdigest().upper(),
+                "version": definition["packageVersion"],
                 "configurationVersion": definition["descriptor"]["configurationVersion"],
                 "descriptorDigest": hashlib.sha256(signed_manifest[descriptor_start:descriptor_start + descriptor_length].encode()).hexdigest().upper()}
         origins.extend(definition["allowedOrigins"])
@@ -121,10 +104,7 @@ def prepare_bundle():
         "PackageDirectory": "/data/integration-packages", "TrustedPublisherPublicKeyFiles": {"solar-management": "/app/integration-bundle/publisher-public-key.pem"},
         "ApprovedOrigins": sorted(set(origins)), "BootstrapPackages": entries}}
     (root / "integration-bootstrap.json").write_text(json.dumps(config))
-    previous_config = copy.deepcopy(config)
-    previous_config["IntegrationRuntime"]["BootstrapPackages"] = previous_entries
-    (root / "integration-bootstrap-previous.json").write_text(json.dumps(previous_config))
-    return len(entries), previous_pin
+    return len(entries), package_pin
 
 
 def new_volumes(suffix):
@@ -210,7 +190,7 @@ try:
         print("Building production image", flush=True)
         command(docker, "build", "--platform", "linux/amd64", "-t", image, ".")
     print("Preparing signed provider release", flush=True)
-    provider_count, previous_pin = prepare_bundle()
+    provider_count, package_pin = prepare_bundle()
     command(docker, "network", "create", network)
     source_sql = prefix + "-sql"
     print("Starting isolated SQL and verifying preflight before schema changes", flush=True)
@@ -218,19 +198,22 @@ try:
     state_volumes = new_volumes("source")
     migrate(prefix + "-invalid-migration", source_sql, state_volumes, corrupt=True, expect_failure=True)
     assert sql(source_sql, "SET NOCOUNT ON; SELECT CASE WHEN DB_ID('DeyeSolar') IS NULL THEN 0 ELSE 1 END;") == "0"
-    bundle_source, config_source = root / "previous-bundle", root / "integration-bootstrap-previous.json"
     migrate(prefix + "-migration", source_sql, state_volumes)
+    assert sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM Installations WHERE Id='legacy';") == "0"
+    assert sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables WHERE name='IntegrationDeviceAliases';") == "0"
+    assert sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM sys.default_constraints d JOIN sys.columns c ON c.object_id=d.parent_object_id AND c.column_id=d.parent_column_id WHERE c.name='InstallationId';") == "0"
+    installation_id = sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT m.InstallationId FROM InstallationMemberships m JOIN AspNetUsers u ON u.Id=m.UserId WHERE u.NormalizedUserName='ADMIN';")
+    assert len(installation_id) == 32, "Bootstrap administrator needs an independently provisioned installation"
     sql(source_sql, f"""USE DeyeSolar;
         INSERT IntegrationInstances (Id,InstallationId,ProviderId,Name,PackageVersion,PackageDigest,DescriptorDigest,
             ConfigurationVersion,Revision,Generation,State,CreatedAt,UpdatedAt)
-        VALUES (NEWID(),'legacy','{previous_pin['providerId']}','Pinned upgrade fixture','{previous_pin['version']}','{previous_pin['digest']}',
-            '{previous_pin['descriptorDigest']}',{previous_pin['configurationVersion']},1,1,'draft',SYSDATETIMEOFFSET(),SYSDATETIMEOFFSET());""")
-    billing_at_cutover = sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT CONVERT(varchar(64),HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(SELECT * FROM BillingAccounts ORDER BY UserId FOR XML RAW))),2);")
-    bundle_source, config_source = root / "bundle", root / "integration-bootstrap.json"
-    print("Upgrading signed package catalog while preserving prior package pin and trial cutover", flush=True)
-    migrate(prefix + "-upgrade-migration", source_sql, state_volumes)
-    assert billing_at_cutover == sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT CONVERT(varchar(64),HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(SELECT * FROM BillingAccounts ORDER BY UserId FOR XML RAW))),2);")
-    assert sql(source_sql, f"USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM IntegrationInstances WHERE Name='Pinned upgrade fixture' AND PackageVersion='{previous_pin['version']}';") == "1"
+        VALUES (NEWID(),'{installation_id}','{package_pin['providerId']}','Pinned package fixture','{package_pin['version']}','{package_pin['digest']}',
+            '{package_pin['descriptorDigest']}',{package_pin['configurationVersion']},1,1,'draft',SYSDATETIMEOFFSET(),SYSDATETIMEOFFSET());""")
+    billing_after_provisioning = sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT CONVERT(varchar(64),HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(SELECT * FROM BillingAccounts ORDER BY UserId FOR XML RAW))),2);")
+    print("Verifying repeat migration preserves the package pin and account trial", flush=True)
+    migrate(prefix + "-repeat-migration", source_sql, state_volumes)
+    assert billing_after_provisioning == sql(source_sql, "USE DeyeSolar; SET NOCOUNT ON; SELECT CONVERT(varchar(64),HASHBYTES('SHA2_256',CONVERT(nvarchar(max),(SELECT * FROM BillingAccounts ORDER BY UserId FOR XML RAW))),2);")
+    assert sql(source_sql, f"USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM IntegrationInstances WHERE Name='Pinned package fixture' AND PackageVersion='{package_pin['version']}';") == "1"
     # Runtime cannot use the privileged account, and validate mode never repairs schema implicitly.
     privileged = prefix + "-privileged-runtime"
     containers.append(privileged)
@@ -240,9 +223,17 @@ try:
     address = start_app(app_name, source_sql, state_volumes)
     assert command(docker, "exec", app_name, "id", "-u").stdout.strip() != b"0"
     assert request(address, "/health/live")[0] == 200
+    removed_routes = [("GET", "/api/unknown-endpoint"), ("POST", "/api/devices/state"),
+        ("PUT", "/api/settings/deye"), ("PUT", "/api/settings/shelly"), ("POST", "/api/settings/test/deye")]
+    for method, path in removed_routes:
+        status, error = request(address, path, method=method)
+        assert status == 404 and error["code"] == "endpoint_not_found", "Unknown API route reached account or page fallback"
     status, session = request(address, "/api/auth/login", {"username": "admin", "password": admin_password})
     assert status == 200, "Production administrator could not sign in"
     token = session["token"]
+    for method, path in removed_routes:
+        status, error = request(address, path, token=token, method=method)
+        assert status == 404 and error["code"] == "endpoint_not_found", "Authenticated unknown API route resolved private services"
     assert request(address, "/api/billing/access", token=token)[1]["status"] == "trial"
     assert len(request(address, "/api/v2/integration-providers", token=token)[1]["providers"]) == provider_count
     assert request(address, "/api/v2/integrations", token=token)[0] == 200
@@ -299,8 +290,8 @@ try:
     assert request(restored_address, "/api/settings", token=token)[1]["display"]["timeZoneId"] == settings_timezone
     assert request(restored_address, "/api/settings/site", token=token)[0] == 200
     assert len(request(restored_address, "/api/v2/integration-providers", token=token)[1]["providers"]) == provider_count
-    assert sql(restore_sql, f"USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM IntegrationInstances WHERE Name='Pinned upgrade fixture' AND PackageVersion='{previous_pin['version']}';") == "1"
-    print("PASS: production image, signed package upgrade/pin, privileged migration, restricted runtime, trial, settings read/write persistence, durable sessions, restart, bounded outage and encrypted restore", flush=True)
+    assert sql(restore_sql, f"USE DeyeSolar; SET NOCOUNT ON; SELECT COUNT(*) FROM IntegrationInstances WHERE Name='Pinned package fixture' AND PackageVersion='{package_pin['version']}';") == "1"
+    print("PASS: production image, fresh independent installation, unknown API JSON404, signed package pin, idempotent migration, restricted runtime, trial, settings read/write persistence, durable sessions, restart, bounded outage and encrypted restore", flush=True)
 except Exception:
     failed = True
     for name in containers:

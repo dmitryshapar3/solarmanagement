@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { ApiClient, ApiError } from "../src/core/api/ApiClient";
 import { DeyeSolarApi } from "../src/core/api/DeyeSolarApi";
 import { validApiResponse } from "../src/core/api/responseContracts";
+import { demoInverter, createDemoState } from "../src/features/demo/fixtures";
 import { integrationFixture } from "./support/integrationFixture";
 const invalidMessage = "The server returned an invalid API response. Check the server URL and try again.";
 for (const [path, payload] of [
@@ -27,11 +28,52 @@ test("malformed token and expiry cannot reach successful sign-in persistence", a
     text: async () => JSON.stringify({ token: "otherwise-valid", username: "owner", expiresAt: "never" }) }) }));
   await assert.rejects(api.login("owner", "password"), { message: invalidMessage });
 });
-test("valid optional device state and future optional provider fields retain protocol compatibility", () => {
+test("explicit device state is required while additional provider fields remain extensible", () => {
   const { provider } = integrationFixture();
   assert.equal(validApiResponse("/api/v2/integration-providers", "GET", { providers: [{ ...provider, futureOptionalField: "opaque" }], revision: "fixture" }), true);
-  const device = { id: "socket", name: "Socket", category: null, online: true, isOn: false, currentPowerW: null };
+  const device = { id: "socket", name: "Socket", category: null, online: true, isOn: false, stateKnown: true, currentPowerW: null };
   assert.equal(validApiResponse("/api/devices", "GET", { devices: [device], lastUpdated: null }), true);
   assert.equal(validApiResponse("/api/devices", "GET", { devices: [{ ...device, stateKnown: false }], lastUpdated: null }), true);
   assert.equal(validApiResponse("/api/devices", "GET", { devices: [{ ...device, currentPowerW: Number.POSITIVE_INFINITY }], lastUpdated: null }), false);
+});
+
+
+test("device responses reject omitted or nullable state knowledge instead of assuming OFF", () => {
+  const device = { id: "socket", name: "Socket", category: null, online: true, isOn: false, currentPowerW: null };
+  for (const stateKnown of [undefined, null, "true"])
+    assert.equal(validApiResponse("/api/devices", "GET", { devices: [{ ...device, stateKnown }], lastUpdated: null }), false);
+});
+
+
+test("current dashboard requires explicit measurement validity and source metadata keys", () => {
+  const now = new Date("2026-10-05T12:00:00Z");
+  const inverter = demoInverter(now, "UTC");
+  const dashboard = { inverter, devicesLoaded: true, deviceLastUpdated: null, devices: [], manualDevices: [], rules: [], timeZoneId: "UTC" };
+  assert.equal(validApiResponse("/api/dashboard", "GET", dashboard), true);
+  for (const key of ["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"])
+    for (const value of [undefined, null])
+      assert.equal(validApiResponse("/api/dashboard", "GET", { ...dashboard, inverter: { ...inverter, [key]: value } }), false, key);
+  for (const key of ["inverterId", "solarObservedAt", "gridObservedAt", "solarDeviceSn", "gridDeviceSn"])
+    assert.equal(validApiResponse("/api/dashboard", "GET", { ...dashboard, inverter: { ...inverter, [key]: undefined } }), false, key);
+  assert.equal(validApiResponse("/api/dashboard", "GET", { ...dashboard, inverter: { ...inverter, solarPowerValid: false, solarObservedAt: null, solarDeviceSn: null } }), true);
+});
+
+test("rule responses require a current configuration token", () => {
+  const rule = createDemoState(new Date("2026-10-05T12:00:00Z")).rules[0]!;
+  assert.equal(validApiResponse("/api/rules", "GET", [rule]), true);
+  for (const configurationVersion of [undefined, null, "", "bad-version", "z".repeat(64)])
+    assert.equal(validApiResponse("/api/rules", "GET", [{ ...rule, configurationVersion }]), false);
+});
+
+test("rule toggle and delete forward the configuration token read by the view", async () => {
+  const rule = createDemoState(new Date("2026-10-05T12:00:00Z")).rules[0]!;
+  const sent: Array<{ method: string; body?: string; headers: Record<string, string> }> = [];
+  const api = new DeyeSolarApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (_url, init) => {
+    sent.push(init);
+    return { status: init.method === "DELETE" ? 204 : 200, ok: true, text: async () => init.method === "DELETE" ? "" : JSON.stringify(rule) };
+  } }));
+  await api.setRuleEnabled(rule.id, false, rule.configurationVersion);
+  assert.deepEqual(JSON.parse(sent[0]!.body!), { enabled: false, configurationVersion: rule.configurationVersion });
+  await api.deleteRule(rule.id, rule.configurationVersion);
+  assert.equal(sent[1]!.headers["If-Match"], `"${rule.configurationVersion}"`);
 });
