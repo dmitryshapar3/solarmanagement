@@ -118,7 +118,7 @@ function MainTabs() {
           name="Dashboard"
           component={DashboardScreen}
           options={{
-            tabBarLabel: t("Home"),
+            tabBarLabel: ({ color }) => <Text style={[styles.tabLabel, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{t("Home")}</Text>,
             tabBarButtonTestID: "tab-home",
             tabBarAccessibilityLabel: t("Home"),
             tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />
@@ -128,7 +128,7 @@ function MainTabs() {
           name="Generation"
           component={GenerationScreen}
           options={{
-            tabBarLabel: t("Generation"),
+            tabBarLabel: ({ color }) => <Text style={[styles.tabLabel, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{t("Generation")}</Text>,
             tabBarButtonTestID: "tab-generation",
             tabBarAccessibilityLabel: t("Generation"),
             tabBarIcon: ({ color, size }) => <SunMedium color={color} size={size} />
@@ -138,7 +138,7 @@ function MainTabs() {
           name="Sales"
           component={SalesScreen}
           options={{
-            tabBarLabel: t("Sales"),
+            tabBarLabel: ({ color }) => <Text style={[styles.tabLabel, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{t("Sales")}</Text>,
             tabBarButtonTestID: "tab-sales",
             tabBarAccessibilityLabel: t("Sales"),
             tabBarIcon: ({ color, size }) => <Banknote color={color} size={size} />
@@ -148,7 +148,7 @@ function MainTabs() {
           name="Devices"
           component={DevicesScreen}
           options={{
-            tabBarLabel: t("Devices"),
+            tabBarLabel: ({ color }) => <Text style={[styles.tabLabel, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{t("Devices")}</Text>,
             tabBarButtonTestID: "tab-devices",
             tabBarAccessibilityLabel: t("Devices"),
             tabBarIcon: ({ color, size }) => <PlugZap color={color} size={size} />
@@ -158,7 +158,7 @@ function MainTabs() {
           name="More"
           component={MoreStackNavigator}
           options={{
-            tabBarLabel: t("More"),
+            tabBarLabel: ({ color }) => <Text style={[styles.tabLabel, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{t("More")}</Text>,
             tabBarButtonTestID: "tab-more",
             tabBarAccessibilityLabel: t("More"),
             tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />
@@ -249,6 +249,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border
   },
   tabLabel: {
+    width: "100%",
+    textAlign: "center",
     fontSize: 11,
     fontWeight: "700"
   }

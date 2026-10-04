@@ -404,12 +404,14 @@ const styles = StyleSheet.create({
   header: {
     minHeight: 48,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: spacing.md
   },
   headerCopy: {
-    flex: 1
+    flex: 1,
+    minWidth: 220
   },
   title: {
     color: colors.text,
