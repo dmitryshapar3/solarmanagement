@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Tu compra está pendiente de aprobación por parte de la App Store. El acceso se activará cuando Apple verifique la transacción.",
   "Your Solar installation": "Tu instalación solar",
   "Your subscription": "Tu suscripción",
-  "Your subscription has been restored.": "Tu suscripción se ha restablecido."
+  "Your subscription has been restored.": "Tu suscripción se ha restablecido.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Esta cuenta de Google no está vinculada y el registro de cuentas nuevas está desactivado. Inicia sesión en tu cuenta existente con tu contraseña o un código de acceso y luego abre Ajustes > Vincular cuenta de Google.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Inicia sesión en tu cuenta existente con tu contraseña o un código de acceso y luego abre Ajustes > Vincular cuenta de Google.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Esta cuenta de Google ya está vinculada a otra cuenta. Inicia sesión en esa cuenta o elige otra cuenta de Google.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "No se pudo vincular Google a esta cuenta. Vuelve a iniciar sesión y abre Ajustes > Vincular cuenta de Google para intentarlo de nuevo.",
+  "This account is currently unavailable. Contact the administrator for help.": "Esta cuenta no está disponible actualmente. Contacta con el administrador para obtener ayuda.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "El inicio de sesión con Google no está configurado en este servidor. Usa otro método de acceso o contacta con el administrador.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "No se pudo completar el inicio de sesión con Google. Inténtalo de nuevo o usa otro método de acceso.",
+  "The identity operation was canceled.": "Se canceló la operación de identidad de acceso.",
+  "Enter a valid server URL before requesting a code.": "Introduce una URL de servidor válida antes de solicitar un código.",
+  "Sign in before linking Google.": "Inicia sesión antes de vincular Google.",
+  "Google is linked to this account.": "Google está vinculado a esta cuenta."
 }

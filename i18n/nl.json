@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Uw aankoop wacht op goedkeuring van de App Store. Toegang wordt mogelijk zodra Apple de transactie heeft geverifieerd.",
   "Your Solar installation": "Uw Solar-installatie",
   "Your subscription": "Uw abonnement",
-  "Your subscription has been restored.": "Uw abonnement is hersteld."
+  "Your subscription has been restored.": "Uw abonnement is hersteld.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Dit Google-account is niet gekoppeld en registratie van nieuwe accounts is uitgeschakeld. Meld u met uw wachtwoord of een aanmeldcode aan bij uw bestaande account en open daarna Instellingen > Google-account koppelen.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Meld u met uw wachtwoord of een aanmeldcode aan bij uw bestaande account en open daarna Instellingen > Google-account koppelen.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Dit Google-account is al aan een ander account gekoppeld. Meld u bij dat account aan of kies een ander Google-account.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google kon niet aan dit account worden gekoppeld. Meld u opnieuw aan en open Instellingen > Google-account koppelen om het nogmaals te proberen.",
+  "This account is currently unavailable. Contact the administrator for help.": "Dit account is momenteel niet beschikbaar. Neem contact op met de beheerder voor hulp.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Aanmelden met Google is niet ingesteld op deze server. Gebruik een andere aanmeldmethode of neem contact op met de beheerder.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Aanmelden met Google kon niet worden voltooid. Probeer het opnieuw of gebruik een andere aanmeldmethode.",
+  "The identity operation was canceled.": "De bewerking voor de aanmeldidentiteit is geannuleerd.",
+  "Enter a valid server URL before requesting a code.": "Voer een geldige server-URL in voordat u een code aanvraagt.",
+  "Sign in before linking Google.": "Meld u aan voordat u Google koppelt.",
+  "Google is linked to this account.": "Google is aan dit account gekoppeld."
 }

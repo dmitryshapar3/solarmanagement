@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DeyeSolar.Domain.Models;
+using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
 using Microsoft.AspNetCore.DataProtection;
@@ -136,14 +137,177 @@ public sealed class DeviceGatewayConcurrencyTests
             return IntegrationJson.Element(new ProviderSocketTelemetry(p.GetProperty("remoteId").GetString()!, "0", !old, true, old ? 100 : 200, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
         });
         var gateway = new DynamicSocketGateway(new Registry([binding], _ => Task.FromResult<IReadOnlyList<IntegrationDeviceBindingEntity>>([binding])), executor, new UnusedFactory(), TimeProvider.System);
-        var delayed = gateway.RefreshDevicesAsync(default);
+        var snapshot = new DeviceStatusSnapshot();
+        async Task<IReadOnlyList<DevicePowerInfo>> RefreshAndPublishAsync()
+        {
+            var epoch = snapshot.Epoch;
+            var devices = await gateway.RefreshDevicesAsync(default);
+            Assert.True(snapshot.TryUpdate(devices, epoch));
+            return devices;
+        }
+        var delayed = RefreshAndPublishAsync();
         await started.Task;
-        Assert.Equal(200, Assert.Single(await gateway.RefreshDevicesAsync(default)).CurrentPowerW);
+        Assert.Equal(200, Assert.Single(await RefreshAndPublishAsync()).CurrentPowerW);
         release.SetResult();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => delayed);
+        Assert.Equal(200, Assert.Single(await delayed).CurrentPowerW);
+        Assert.Equal(200, Assert.Single(snapshot.Current!).CurrentPowerW);
         Assert.Equal(200, Assert.Single(await gateway.GetCachedDevicesAsync(default)).CurrentPowerW);
         Assert.Equal(binding.Id, Assert.Single((await gateway.ReadInventoryAsync(false, default)).Devices).Id.Value);
         Assert.Equal(2, reads);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NewerPendingOrCancelledReaderCannotReplaceFreshResultWithPreexistingCache(bool cancelNewer)
+    {
+        var binding = Binding("Socket");
+        var olderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var newerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOlder = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseNewer = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        var reads = 0;
+        var executor = new Executor(async (_, _, p, ct) =>
+        {
+            var read = Interlocked.Increment(ref reads);
+            if (read == 2) { olderStarted.SetResult(); await releaseOlder.Task.WaitAsync(ct); }
+            if (read == 3) { newerStarted.SetResult(); await releaseNewer.Task.WaitAsync(ct); }
+            return IntegrationJson.Element(new ProviderSocketTelemetry(p.GetProperty("remoteId").GetString()!, "0", true, true,
+                read * 100, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        });
+        var gateway = new DynamicSocketGateway(new Registry([binding], _ => Task.FromResult<IReadOnlyList<IntegrationDeviceBindingEntity>>([binding])), executor, new UnusedFactory(), TimeProvider.System);
+        var snapshot = new DeviceStatusSnapshot();
+        async Task<IReadOnlyList<DevicePowerInfo>> ReadAndPublishAsync(bool refresh, CancellationToken ct)
+        {
+            var epoch = snapshot.Epoch;
+            var devices = refresh ? await gateway.RefreshDevicesAsync(ct) : await gateway.GetCachedDevicesAsync(ct);
+            Assert.True(snapshot.TryUpdate(devices, epoch));
+            return devices;
+        }
+        Assert.Equal(100, Assert.Single(await ReadAndPublishAsync(true, default)).CurrentPowerW);
+        var earlier = ReadAndPublishAsync(true, default);
+        await olderStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var newer = ReadAndPublishAsync(true, cancellation.Token);
+        await newerStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        if (cancelNewer)
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => newer);
+        }
+        releaseOlder.SetResult();
+        Assert.Equal(200, Assert.Single(await earlier).CurrentPowerW);
+        Assert.Equal(200, Assert.Single(snapshot.Current!).CurrentPowerW);
+        await ReadAndPublishAsync(false, default);
+        Assert.Equal(200, Assert.Single(snapshot.Current!).CurrentPowerW);
+        if (!cancelNewer)
+        {
+            releaseNewer.SetResult();
+            Assert.Equal(300, Assert.Single(await newer).CurrentPowerW);
+            await ReadAndPublishAsync(false, default);
+            Assert.Equal(300, Assert.Single(snapshot.Current!).CurrentPowerW);
+        }
+        Assert.Equal(3, reads);
+    }
+
+    [SqlServerFact]
+    public async Task ConcurrentInventoryReadersReturnValidSnapshotsWithoutChangingConnectionsOrNeighborData()
+    {
+        var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
+        { InitialCatalog = "GatewayInventoryRace_" + Guid.NewGuid().ToString("N") };
+        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var factory = new Factory(options, "a");
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads = 0;
+        var owned = Guid.NewGuid();
+        var executor = new Executor(async (session, method, parameters, ct) =>
+        {
+            Assert.Equal("a", session.InstallationId);
+            Assert.Equal(owned, session.InstanceId);
+            Assert.Equal("socket.read", method);
+            Assert.Equal("same-remote", parameters.GetProperty("remoteId").GetString());
+            var earlier = Interlocked.Increment(ref reads) == 1;
+            if (earlier) { started.SetResult(); await release.Task.WaitAsync(ct); }
+            return IntegrationJson.Element(new ProviderSocketTelemetry("same-remote", "0", !earlier, true,
+                earlier ? 100 : 200, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        });
+        try
+        {
+            await using (var db = factory.CreateDbContext())
+            {
+                await db.Database.EnsureCreatedAsync();
+                db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
+                await db.SaveChangesAsync();
+            }
+            foreach (var site in new[] { "a", "b" })
+            {
+                await using var db = new Factory(options, site).CreateDbContext();
+                var instance = site == "a" ? owned : Guid.NewGuid();
+                var binding = Guid.NewGuid();
+                db.IntegrationInstances.Add(new() { Id = instance, ProviderId = "test.provider", PackageVersion = "1.0.0", PackageDigest = "fixture", State = "enabled" });
+                db.IntegrationConfigurations.Add(new() { InstanceId = instance, Revision = 1 });
+                db.IntegrationDeviceBindings.Add(new() { Id = binding, InstanceId = instance, RemoteId = "same-remote", Channel = "0", Kind = "socket", MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}" });
+                db.TriggerRules.Add(new() { EntityId = binding.ToString("D"), Name = site, CurrentState = site == "b" });
+                db.AppSettings.Add(new() { Section = "DeviceLabels", Key = "LabelsJson", Value = "{}" });
+                await db.SaveChangesAsync();
+            }
+            var before = await InventoryDatabaseStateAsync(options);
+            var registry = new IntegrationRegistry(factory, new IntegrationSecretStore(new EphemeralDataProtectionProvider()));
+            var gateway = new DynamicSocketGateway(registry, executor, factory, TimeProvider.System);
+            var snapshot = new DeviceStatusSnapshot();
+            var neighbor = new DeviceStatusSnapshot();
+            neighbor.Update([new("neighbor", "Neighbor", "Socket", true, true, 900)]);
+            async Task<IReadOnlyList<DevicePowerInfo>> RefreshAndPublishAsync()
+            {
+                var epoch = snapshot.Epoch;
+                var devices = await gateway.RefreshDevicesAsync(default);
+                Assert.True(snapshot.TryUpdate(devices, epoch));
+                return devices;
+            }
+            var earlier = RefreshAndPublishAsync();
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var later = await RefreshAndPublishAsync();
+            Assert.Equal(200, Assert.Single(later).CurrentPowerW);
+            release.SetResult();
+            Assert.Equal(200, Assert.Single(await earlier).CurrentPowerW);
+            Assert.Equal(200, Assert.Single(snapshot.Current!).CurrentPowerW);
+            Assert.Equal(900, Assert.Single(neighbor.Current!).CurrentPowerW);
+            Assert.Equal(200, Assert.Single(await gateway.GetCachedDevicesAsync(default)).CurrentPowerW);
+            Assert.Equal(Reachability.Online, Assert.Single((await gateway.ReadInventoryAsync(false, default)).Devices).Reachability);
+            Assert.Equal(2, reads);
+            Assert.Equal(before, await InventoryDatabaseStateAsync(options));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await using var db = factory.CreateDbContext();
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    private static async Task<string> InventoryDatabaseStateAsync(DbContextOptions<DeyeSolarDbContext> options)
+    {
+        await using var db = new DeyeSolarDbContext(options);
+        var state = new
+        {
+            Instances = await db.IntegrationInstances.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(),
+            Configurations = await db.IntegrationConfigurations.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.InstanceId).ThenBy(row => row.Revision).ToArrayAsync(),
+            Bindings = await db.IntegrationDeviceBindings.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(),
+            Rules = await db.TriggerRules.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(),
+            Settings = await db.AppSettings.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.Id).ToArrayAsync(),
+            Commands = await db.IntegrationCommands.IgnoreQueryFilters().AsNoTracking().OrderBy(row => row.Id).ToArrayAsync()
+        };
+        Assert.Equal(2, state.Instances.Length);
+        Assert.Equal(2, state.Configurations.Length);
+        Assert.Equal(2, state.Bindings.Length);
+        Assert.Equal(2, state.Rules.Length);
+        Assert.Equal(2, state.Settings.Length);
+        Assert.Equal(new[] { "a", "b" }, state.Instances.Select(row => row.InstallationId).OrderBy(id => id));
+        Assert.False(Assert.Single(state.Rules, row => row.InstallationId == "a").CurrentState);
+        Assert.True(Assert.Single(state.Rules, row => row.InstallationId == "b").CurrentState);
+        Assert.Empty(state.Commands);
+        return JsonSerializer.Serialize(state);
     }
 
     private static IntegrationDeviceBindingEntity Binding(string name) => new() { Id = Guid.NewGuid(), InstanceId = Guid.NewGuid(), RemoteId = name, Name = name, Channel = "0", Kind = "socket", MetadataJson = "{\"capabilities\":{\"canSwitch\":true,\"canMeasurePower\":true}}" };

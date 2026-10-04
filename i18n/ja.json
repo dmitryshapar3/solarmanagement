@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "ご購入はApp Storeの承認待ちです。Appleが取引を確認次第、アクセスが可能になります。",
   "Your Solar installation": "ソーラー設置状況",
   "Your subscription": "ご契約内容",
-  "Your subscription has been restored.": "ご契約が復元されました。"
+  "Your subscription has been restored.": "ご契約が復元されました。",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "この Google アカウントはリンクされておらず、新規アカウント登録も無効になっています。パスワードまたはログインコードで既存のアカウントにログインし、設定 > Google アカウントをリンク を開いてください。",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "パスワードまたはログインコードで既存のアカウントにログインし、設定 > Google アカウントをリンク を開いてください。",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "この Google アカウントは別のアカウントにリンクされています。そのアカウントにログインするか、別の Google アカウントを選択してください。",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google をこのアカウントにリンクできませんでした。再度ログインし、設定 > Google アカウントをリンク を開いてやり直してください。",
+  "This account is currently unavailable. Contact the administrator for help.": "このアカウントは現在利用できません。管理者にお問い合わせください。",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "このサーバーでは Google ログインが設定されていません。別のログイン方法を使用するか、管理者にお問い合わせください。",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Google ログインを完了できませんでした。再試行するか、別のログイン方法を使用してください。",
+  "The identity operation was canceled.": "ログイン識別情報の操作がキャンセルされました。",
+  "Enter a valid server URL before requesting a code.": "コードをリクエストする前に、有効なサーバー URL を入力してください。",
+  "Sign in before linking Google.": "Google をリンクする前にログインしてください。",
+  "Google is linked to this account.": "Google はこのアカウントにリンクされています。"
 }

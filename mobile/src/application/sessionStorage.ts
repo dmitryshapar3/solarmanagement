@@ -117,6 +117,8 @@ function isSession(value: unknown): value is StoredSession {
 export class SessionOperations {
   private current = new AbortController();
 
+  capture(): AbortSignal { return this.current.signal; }
+
   begin(): AbortSignal {
     this.current.abort();
     this.current = new AbortController();

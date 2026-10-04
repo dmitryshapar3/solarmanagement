@@ -11,6 +11,7 @@ import { ApiClient } from "../../core/api/ApiClient";
 import { DeyeSolarApi } from "../../core/api/DeyeSolarApi";
 import type { AuthOptions, VerificationChannel, VerificationResponse } from "../../core/api/types";
 import { googleSignIn } from "./googleSignIn";
+import { VerificationRequests } from "./identityOperations";
 
 export function LoginScreen() {
   const { t } = useLanguage();
@@ -28,6 +29,7 @@ export function LoginScreen() {
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [options, setOptions] = useState<AuthOptions | null>(null);
+  const [verificationRequests] = useState(() => new VerificationRequests());
   const anonymousApi = useMemo(() => {
     try { return new DeyeSolarApi(new ApiClient({ baseUrl, transport: expoFetch })); }
     catch { return null; }
@@ -42,6 +44,7 @@ export function LoginScreen() {
 
   useEffect(() => {
     const controller = new AbortController();
+    verificationRequests.replace(anonymousApi);
     setOptions(null); setVerification(null); setCode("");
     if (anonymousApi) void anonymousApi.getAuthOptions(controller.signal).then(value => {
       if (!controller.signal.aborted) {
@@ -49,8 +52,8 @@ export function LoginScreen() {
         setChannel(value.emailEnabled ? "email" : "phone");
       }
     }).catch(() => {});
-    return () => controller.abort();
-  }, [anonymousApi]);
+    return () => { controller.abort(); verificationRequests.cancel(); };
+  }, [anonymousApi, verificationRequests]);
 
   useEffect(() => {
     if (!verification) return;
@@ -61,6 +64,13 @@ export function LoginScreen() {
   function changeMode(value: typeof mode) {
     if (submitting.current) return;
     setMode(value); setVerification(null); setCode(""); setPassword(""); setError(null);
+  }
+
+  function changeBaseUrl(value: string) {
+    if (value === baseUrl) return;
+    verificationRequests.cancel();
+    setVerification(null); setCode(""); setPassword(""); setOptions(null); setError(null); setResendAt(0);
+    setBaseUrl(value);
   }
 
   async function handleLogin() {
@@ -96,12 +106,15 @@ export function LoginScreen() {
     if (!destination.trim()) { setError("Enter your email address or phone number."); return; }
     submitting.current = true; setPending("send"); setError(null); Keyboard.dismiss();
     try {
-      const response = await anonymousApi.startVerification(channel, destination.trim(), mode === "register" ? "register" : "login");
+      const response = await verificationRequests.start(channel, destination.trim(), mode === "register" ? "register" : "login");
       if (mounted.current) {
         setVerification(response); setCode(""); setNow(Date.now());
         setResendAt(Date.now() + response.retryAfterSeconds * 1000);
       }
-    } catch (ex) { if (mounted.current) setError(ex instanceof Error ? ex.message : "Unable to send the code."); }
+    } catch (ex) {
+      if (mounted.current && !(ex instanceof Error && ex.name === "AbortError"))
+        setError(ex instanceof Error ? ex.message : "Unable to send the code.");
+    }
     finally { submitting.current = false; if (mounted.current) setPending(null); }
   }
 
@@ -153,7 +166,7 @@ export function LoginScreen() {
       </View>
 
       <Card style={styles.form}>
-        <TextField label={t("API URL")} value={baseUrl} onChangeText={setBaseUrl} placeholder="https://solar.dshapar.com" />
+        <TextField label={t("API URL")} value={baseUrl} onChangeText={changeBaseUrl} editable={!pending} placeholder="https://solar.dshapar.com" />
         {baseUrl.trim().toLowerCase().startsWith("http:") && (
           <Text style={styles.warning}>{t("HTTP is unencrypted. Use it only for a trusted local development server.")}</Text>
         )}

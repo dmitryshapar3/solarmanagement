@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Ваша покупка очікує на схвалення App Store. Доступ відкриється після того, як Apple підтвердить транзакцію.",
   "Your Solar installation": "Ваша сонячна електростанція",
   "Your subscription": "Ваша підписка",
-  "Your subscription has been restored.": "Вашу підписку відновлено."
+  "Your subscription has been restored.": "Вашу підписку відновлено.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Цей обліковий запис Google не прив’язано, а реєстрацію нових облікових записів вимкнено. Увійдіть до наявного облікового запису за допомогою пароля або коду входу, потім відкрийте Налаштування > Підключити обліковий запис Google.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Увійдіть до наявного облікового запису за допомогою пароля або коду входу, потім відкрийте Налаштування > Підключити обліковий запис Google.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Цей обліковий запис Google уже прив’язано до іншого облікового запису. Увійдіть до нього або виберіть інший обліковий запис Google.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Не вдалося прив’язати Google до цього облікового запису. Увійдіть знову, потім відкрийте Налаштування > Підключити обліковий запис Google і повторіть спробу.",
+  "This account is currently unavailable. Contact the administrator for help.": "Цей обліковий запис зараз недоступний. Зверніться по допомогу до адміністратора.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Вхід через Google на цьому сервері не налаштовано. Скористайтеся іншим способом входу або зверніться до адміністратора.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Не вдалося завершити вхід через Google. Повторіть спробу або скористайтеся іншим способом входу.",
+  "The identity operation was canceled.": "Операцію з даними для входу скасовано.",
+  "Enter a valid server URL before requesting a code.": "Перш ніж запитувати код, введіть дійсну URL-адресу сервера.",
+  "Sign in before linking Google.": "Увійдіть до облікового запису перед прив’язуванням Google.",
+  "Google is linked to this account.": "Google прив’язано до цього облікового запису."
 }

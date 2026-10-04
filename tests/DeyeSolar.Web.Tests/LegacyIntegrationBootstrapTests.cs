@@ -1,20 +1,97 @@
 using System.Text.Json;
+using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Tenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SolarManagement.Integrations.Contracts;
 
 namespace DeyeSolar.Web.Tests;
 
 public sealed class LegacyIntegrationBootstrapTests
 {
+    [SqlServerFact]
+    public async Task LegacyPvConfirmationSurvivesRuntimeSeedingReloadAndReconfirmation()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            // This is the persisted pre-upgrade format, without the new generic aliases.
+            db.AppSettings.Add(new() { Section = "SolarEstimate", Key = "DeyeSolarPowerIsPvDcConfirmed", Value = "True" });
+            await db.SaveChangesAsync();
+            Assert.False(await db.AppSettings.AnyAsync(setting => setting.Key == "ConfirmedInverterKey" || setting.Key == "SolarPowerIsPvDcConfirmed"));
+        }
+        var neighbor = await fixture.StateAsync("site-b");
+        Assert.True(await fixture.Bootstrap.RunAsync(fixture.Factory("site-a"), fixture.Effective, default));
+        string selected;
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+            selected = (await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Kind == "inverter")).Id.ToString("D");
+
+        using var builder = fixture.RuntimeFactory();
+        await using var runtime = await builder.CreateAsync("site-a");
+        var monitor = runtime.Resolve<IOptionsMonitor<SolarEstimateOptions>>();
+        Assert.True(monitor.CurrentValue.SolarPowerIsPvDcConfirmed);
+        Assert.Equal(selected, monitor.CurrentValue.ConfirmedInverterKey);
+        var settings = runtime.Resolve<AppSettingsService>();
+        var loaded = await settings.LoadSectionAsync<SolarEstimateOptions>(SolarEstimateOptions.Section);
+        Assert.True(loaded.SolarPowerIsPvDcConfirmed);
+        Assert.Equal(selected, loaded.ConfirmedInverterKey);
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+            Assert.False(await db.AppSettings.AnyAsync(setting => setting.Key == "ConfirmedInverterKey" || setting.Key == "SolarPowerIsPvDcConfirmed"));
+
+        await settings.SaveSectionAsync(SolarEstimateOptions.Section,
+            new { DeyeSolarPowerIsPvDcConfirmed = false, DeyeConfirmedDeviceSn = "" });
+        Assert.False(monitor.CurrentValue.SolarPowerIsPvDcConfirmed);
+        Assert.Equal("", monitor.CurrentValue.ConfirmedInverterKey);
+        await settings.SaveSectionAsync(SolarEstimateOptions.Section,
+            new { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = selected });
+        await runtime.RefreshSettingsAsync();
+        Assert.True(monitor.CurrentValue.SolarPowerIsPvDcConfirmed);
+        Assert.Equal(selected, monitor.CurrentValue.ConfirmedInverterKey);
+        await using var restarted = await builder.CreateAsync("site-a");
+        var afterRestart = restarted.Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue;
+        Assert.True(afterRestart.SolarPowerIsPvDcConfirmed);
+        Assert.Equal(selected, afterRestart.ConfirmedInverterKey);
+        Assert.Equal(neighbor, await fixture.StateAsync("site-b"));
+    }
+
+    [SqlServerFact]
+    public async Task StaleGenericConfirmationRowsCannotAuthorizeAnotherInverter()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var neighbor = await fixture.StateAsync("site-b");
+        Assert.True(await fixture.Bootstrap.RunAsync(fixture.Factory("site-a"), fixture.Effective, default));
+        string selected;
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            selected = (await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Kind == "inverter")).Id.ToString("D");
+            db.AppSettings.AddRange(
+                new AppSetting { Section = "SolarEstimate", Key = "DeyeSolarPowerIsPvDcConfirmed", Value = "False" },
+                new AppSetting { Section = "SolarEstimate", Key = "SolarPowerIsPvDcConfirmed", Value = "True" },
+                new AppSetting { Section = "SolarEstimate", Key = "ConfirmedInverterKey", Value = Guid.NewGuid().ToString("D") });
+            await db.SaveChangesAsync();
+        }
+        using var builder = fixture.RuntimeFactory();
+        await using var runtime = await builder.CreateAsync("site-a");
+        var configured = runtime.Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue;
+        var loaded = await runtime.Resolve<AppSettingsService>().LoadSectionAsync<SolarEstimateOptions>(SolarEstimateOptions.Section);
+        foreach (var options in new[] { configured, loaded })
+        {
+            Assert.False(options.SolarPowerIsPvDcConfirmed);
+            Assert.Equal(selected, options.ConfirmedInverterKey);
+        }
+        Assert.Equal(neighbor, await fixture.StateAsync("site-b"));
+    }
+
     [SqlServerFact]
     public async Task UpgradeImportsEffectiveCredentialsAndOnlyProvenSelectedHistoryAndPreservesNeighbor()
     {
@@ -166,6 +243,8 @@ public sealed class LegacyIntegrationBootstrapTests
         }).Build();
         public LegacyIntegrationBootstrap Bootstrap => new(Catalog, Secrets, TimeProvider.System, Notifier);
         public IDbContextFactory<DeyeSolarDbContext> Factory(string site) => new Factory(options, site);
+        public TenantRuntimeFactory RuntimeFactory() => new(options, Effective, NullLoggerFactory.Instance, TimeProvider.System,
+            new Lifetime(), new TenantTestExecutor(), Secrets, Notifier, integrationBootstrap: Bootstrap);
         public async Task<string> StateAsync(string site)
         {
             await using var db = Factory(site).CreateDbContext();
@@ -246,6 +325,13 @@ public sealed class LegacyIntegrationBootstrapTests
     {
         public DeyeSolarDbContext CreateDbContext() => new(options, site);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default) { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
+    }
+    private sealed class Lifetime : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => CancellationToken.None;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public void StopApplication() { }
     }
     private sealed class Catalog : IIntegrationProviderCatalog
     {

@@ -66,8 +66,10 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
         }
         lock (_inventorySync)
         {
-            if (epoch != _inventoryEpoch || request != _inventoryRequest) throw new InvalidOperationException("Socket integrations changed during discovery.");
-            return _inventory = new(new(devices, issues, clock.GetUtcNow()), legacy);
+            if (epoch != _inventoryEpoch) throw new InvalidOperationException("Socket integrations changed during discovery.");
+            // Pending or cancelled readers cannot suppress a successful refresh; completed newer results win.
+            if (_inventory is { } current && current.Request > request) return current;
+            return _inventory = new(request, new(devices, issues, clock.GetUtcNow()), legacy);
         }
     }
     public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => LegacyInventoryAsync(false, ct);
@@ -342,6 +344,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
         }
         finally { gate.Release(); }
     }
+
     private static void ApplyResponse(IntegrationCommandEntity command, ProviderSocketCommandResult response)
     {
         if (response.CommandId != command.Id.ToString("D") || response.OperationToken?.Length > 256)
@@ -382,5 +385,5 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
         public Task<SocketCommandResult> SetPowerAsync(SetSocketPowerCommand command, CancellationToken ct)
             => owner.SetAsync(binding, session, command, ct);
     }
-    private sealed record InventoryCache(SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> Legacy);
+    private sealed record InventoryCache(long Request, SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> Legacy);
 }

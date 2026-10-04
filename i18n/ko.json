@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "구매 내역이 App Store 승인을 기다리고 있습니다. Apple에서 거래를 확인하면 액세스가 시작됩니다.",
   "Your Solar installation": "태양광 설치 파일",
   "Your subscription": "구독 정보",
-  "Your subscription has been restored.": "구독이 복원되었습니다."
+  "Your subscription has been restored.": "구독이 복원되었습니다.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "이 Google 계정은 연결되어 있지 않으며 새 계정 등록이 비활성화되어 있습니다. 비밀번호 또는 로그인 코드로 기존 계정에 로그인한 다음 설정 > Google 계정 연결을 여세요.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "비밀번호 또는 로그인 코드로 기존 계정에 로그인한 다음 설정 > Google 계정 연결을 여세요.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "이 Google 계정은 이미 다른 계정에 연결되어 있습니다. 해당 계정에 로그인하거나 다른 Google 계정을 선택하세요.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google을 이 계정에 연결하지 못했습니다. 다시 로그인한 다음 설정 > Google 계정 연결을 열어 재시도하세요.",
+  "This account is currently unavailable. Contact the administrator for help.": "현재 이 계정을 사용할 수 없습니다. 관리자에게 도움을 요청하세요.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "이 서버에는 Google 로그인이 설정되어 있지 않습니다. 다른 로그인 방법을 사용하거나 관리자에게 문의하세요.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Google 로그인을 완료하지 못했습니다. 다시 시도하거나 다른 로그인 방법을 사용하세요.",
+  "The identity operation was canceled.": "로그인 신원 작업이 취소되었습니다.",
+  "Enter a valid server URL before requesting a code.": "코드를 요청하기 전에 유효한 서버 URL을 입력하세요.",
+  "Sign in before linking Google.": "Google을 연결하기 전에 로그인하세요.",
+  "Google is linked to this account.": "Google이 이 계정에 연결되어 있습니다."
 }

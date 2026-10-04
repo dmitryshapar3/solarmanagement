@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.",
   "Your Solar installation": "Your Solar installation",
   "Your subscription": "Your subscription",
-  "Your subscription has been restored.": "Your subscription has been restored."
+  "Your subscription has been restored.": "Your subscription has been restored.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "This Google account is already linked to another account. Sign in to that account or choose a different Google account.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.",
+  "This account is currently unavailable. Contact the administrator for help.": "This account is currently unavailable. Contact the administrator for help.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Google sign-in could not be completed. Please try again or use another sign-in method.",
+  "The identity operation was canceled.": "The identity operation was canceled.",
+  "Enter a valid server URL before requesting a code.": "Enter a valid server URL before requesting a code.",
+  "Sign in before linking Google.": "Sign in before linking Google.",
+  "Google is linked to this account.": "Google is linked to this account."
 }

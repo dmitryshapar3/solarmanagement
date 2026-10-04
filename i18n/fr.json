@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Votre achat est en attente d'approbation par l'App Store. L'accès sera disponible dès qu'Apple aura vérifié la transaction.",
   "Your Solar installation": "Votre installation solaire",
   "Your subscription": "Votre abonnement",
-  "Your subscription has been restored.": "Votre abonnement a été rétabli."
+  "Your subscription has been restored.": "Votre abonnement a été rétabli.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Ce compte Google n’est pas lié et la création de nouveaux comptes est désactivée. Connectez-vous à votre compte existant avec votre mot de passe ou un code de connexion, puis ouvrez Paramètres > Lier un compte Google.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Connectez-vous à votre compte existant avec votre mot de passe ou un code de connexion, puis ouvrez Paramètres > Lier un compte Google.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Ce compte Google est déjà lié à un autre compte. Connectez-vous à cet autre compte ou choisissez un autre compte Google.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google n’a pas pu être lié à ce compte. Reconnectez-vous, puis ouvrez Paramètres > Lier un compte Google pour réessayer.",
+  "This account is currently unavailable. Contact the administrator for help.": "Ce compte est actuellement indisponible. Contactez l’administrateur pour obtenir de l’aide.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "La connexion Google n’est pas configurée sur ce serveur. Utilisez un autre mode de connexion ou contactez l’administrateur.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "La connexion Google n’a pas pu aboutir. Réessayez ou utilisez un autre mode de connexion.",
+  "The identity operation was canceled.": "L’opération relative à l’identité de connexion a été annulée.",
+  "Enter a valid server URL before requesting a code.": "Saisissez une URL de serveur valide avant de demander un code.",
+  "Sign in before linking Google.": "Connectez-vous avant de lier Google.",
+  "Google is linked to this account.": "Google est lié à ce compte."
 }

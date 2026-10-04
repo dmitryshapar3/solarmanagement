@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Satın alma işleminiz App Store onayını bekliyor. Apple işlemi doğruladığında erişim başlar.",
   "Your Solar installation": "Güneş enerjisi kurulumunuz",
   "Your subscription": "Aboneliğiniz",
-  "Your subscription has been restored.": "Aboneliğiniz geri yüklendi."
+  "Your subscription has been restored.": "Aboneliğiniz geri yüklendi.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Bu Google hesabı bağlı değil ve yeni hesap kaydı devre dışı. Şifrenizle veya bir giriş koduyla mevcut hesabınıza giriş yapın, ardından Ayarlar > Google hesabını bağla bölümünü açın.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Şifrenizle veya bir giriş koduyla mevcut hesabınıza giriş yapın, ardından Ayarlar > Google hesabını bağla bölümünü açın.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Bu Google hesabı zaten başka bir hesaba bağlı. O hesaba giriş yapın veya farklı bir Google hesabı seçin.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google bu hesaba bağlanamadı. Tekrar giriş yapın, ardından yeniden denemek için Ayarlar > Google hesabını bağla bölümünü açın.",
+  "This account is currently unavailable. Contact the administrator for help.": "Bu hesap şu anda kullanılamıyor. Yardım için yöneticiyle iletişime geçin.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Bu sunucuda Google ile giriş yapılandırılmamış. Başka bir giriş yöntemi kullanın veya yöneticiyle iletişime geçin.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Google ile giriş tamamlanamadı. Tekrar deneyin veya başka bir giriş yöntemi kullanın.",
+  "The identity operation was canceled.": "Giriş kimliği işlemi iptal edildi.",
+  "Enter a valid server URL before requesting a code.": "Kod istemeden önce geçerli bir sunucu URL’si girin.",
+  "Sign in before linking Google.": "Google hesabını bağlamadan önce giriş yapın.",
+  "Google is linked to this account.": "Google bu hesaba bağlı."
 }

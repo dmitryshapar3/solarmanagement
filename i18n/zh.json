@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "您的购买正在等待 App Store 审核。Apple 验证交易后即可开始访问。",
   "Your Solar installation": "您的太阳能安装",
   "Your subscription": "您的订阅",
-  "Your subscription has been restored.": "您的订阅已恢复。"
+  "Your subscription has been restored.": "您的订阅已恢复。",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "此 Google 帐户尚未关联，且新帐户注册已禁用。请使用密码或登录验证码登录现有帐户，然后打开设置 > 关联 Google 帐户。",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "请使用密码或登录验证码登录现有帐户，然后打开设置 > 关联 Google 帐户。",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "此 Google 帐户已关联到另一个帐户。请登录该帐户，或选择其他 Google 帐户。",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "无法将 Google 关联到此帐户。请重新登录，然后打开设置 > 关联 Google 帐户重试。",
+  "This account is currently unavailable. Contact the administrator for help.": "此帐户目前不可用。请联系管理员寻求帮助。",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "此服务器尚未配置 Google 登录。请使用其他登录方式或联系管理员。",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "无法完成 Google 登录。请重试或使用其他登录方式。",
+  "The identity operation was canceled.": "登录身份操作已取消。",
+  "Enter a valid server URL before requesting a code.": "请求验证码前，请输入有效的服务器 URL。",
+  "Sign in before linking Google.": "请先登录，再关联 Google。",
+  "Google is linked to this account.": "Google 已关联到此帐户。"
 }

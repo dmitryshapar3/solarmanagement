@@ -45,6 +45,7 @@ public class AccountIdentityTests
                 options.Password.RequireDigit = false; options.Password.RequireUppercase = false; options.Password.RequireLowercase = false;
             }).AddEntityFrameworkStores<DeyeSolarDbContext>();
             services.AddScoped<InstallationMembershipService>(); services.AddScoped<AccountIdentityService>(); services.AddSingleton<MobileSessionStore>();
+            services.AddSingleton(new AuthProviderOptions());
             Provider = services.BuildServiceProvider();
         }
         public async ValueTask DisposeAsync() { await Provider.DisposeAsync(); await Connection.DisposeAsync(); }

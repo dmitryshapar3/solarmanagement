@@ -41,16 +41,9 @@ public sealed class SolarEstimateOptions
     // Enable only after checking the device's measurePoints / PV inputs. Export or hybrid AC is not comparable.
     public bool DeyeSolarPowerIsPvDcConfirmed { get; set; }
     public string DeyeConfirmedDeviceSn { get; set; } = "";
-    public bool SolarPowerIsPvDcConfirmed
-    {
-        get => DeyeSolarPowerIsPvDcConfirmed;
-        set => DeyeSolarPowerIsPvDcConfirmed = value;
-    }
-    public string ConfirmedInverterKey
-    {
-        get => DeyeConfirmedDeviceSn;
-        set => DeyeConfirmedDeviceSn = value;
-    }
+    // Keep the persisted names authoritative; writable aliases would seed conflicting defaults on upgrade.
+    public bool SolarPowerIsPvDcConfirmed => DeyeSolarPowerIsPvDcConfirmed;
+    public string ConfirmedInverterKey => DeyeConfirmedDeviceSn;
     public string OperatingModeNote { get; set; } = "";
     public double InverterEfficiency { get; set; } = 0.97;
     public double? InverterAcLimitKw { get; set; }

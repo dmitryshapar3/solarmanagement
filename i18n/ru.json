@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Ваша покупка ожидает подтверждения App Store. Доступ будет предоставлен после того, как Apple подтвердит транзакцию.",
   "Your Solar installation": "Ваша солнечная энергосистема",
   "Your subscription": "Ваша подписка",
-  "Your subscription has been restored.": "Ваша подписка восстановлена."
+  "Your subscription has been restored.": "Ваша подписка восстановлена.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Этот аккаунт Google не привязан, а регистрация новых аккаунтов отключена. Войдите в существующий аккаунт с паролем или кодом входа, затем откройте Настройки > Привязать аккаунт Google.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Войдите в существующий аккаунт с паролем или кодом входа, затем откройте Настройки > Привязать аккаунт Google.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Этот аккаунт Google уже привязан к другому аккаунту. Войдите в тот аккаунт или выберите другой аккаунт Google.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Не удалось привязать Google к этому аккаунту. Войдите снова, затем откройте Настройки > Привязать аккаунт Google и повторите попытку.",
+  "This account is currently unavailable. Contact the administrator for help.": "Этот аккаунт сейчас недоступен. Обратитесь за помощью к администратору.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Вход через Google на этом сервере не настроен. Используйте другой способ входа или обратитесь к администратору.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Не удалось завершить вход через Google. Повторите попытку или используйте другой способ входа.",
+  "The identity operation was canceled.": "Операция с данными для входа отменена.",
+  "Enter a valid server URL before requesting a code.": "Перед запросом кода укажите действительный URL сервера.",
+  "Sign in before linking Google.": "Войдите в аккаунт перед привязкой Google.",
+  "Google is linked to this account.": "Google привязан к этому аккаунту."
 }

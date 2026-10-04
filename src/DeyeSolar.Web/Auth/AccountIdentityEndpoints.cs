@@ -17,7 +17,10 @@ public static class AccountIdentityEndpoints
         api.MapGet("/options", (AuthProviderOptions options) => Results.Ok(new
         {
             registrationEnabled = options.RegistrationEnabled && (options.EmailEnabled || options.PhoneEnabled || options.GoogleEnabled),
-            emailEnabled = options.EmailEnabled, phoneEnabled = options.PhoneEnabled, googleEnabled = options.GoogleEnabled
+            googleRegistrationEnabled = options.GoogleEnabled && options.AllowGoogleRegistration,
+            emailEnabled = options.EmailEnabled,
+            phoneEnabled = options.PhoneEnabled,
+            googleEnabled = options.GoogleEnabled
         })).AllowAnonymous();
 
         api.MapPost("/verification/start", async Task<IResult> (VerificationStartRequest request, HttpContext context,
@@ -93,8 +96,11 @@ public static class AccountIdentityEndpoints
             if (!options.GoogleEnabled) return Error("Google sign-in is currently unavailable.", 503);
             if (!GoogleMobileTicketStore.ValidFlow(request.CodeChallenge, request.State)) return Error("The sign-in request is invalid.");
             var ticket = tickets.StartLink(new(request.CodeChallenge, request.State, userId));
-            return Results.Ok(new { authorizationUrl = $"{options.PublicBaseUrl.TrimEnd('/')}/auth/google?linkTicket={Uri.EscapeDataString(ticket)}",
-                expiresAt = DateTimeOffset.UtcNow.AddMinutes(2) });
+            return Results.Ok(new
+            {
+                authorizationUrl = $"{options.PublicBaseUrl.TrimEnd('/')}/auth/google?linkTicket={Uri.EscapeDataString(ticket)}",
+                expiresAt = DateTimeOffset.UtcNow.AddMinutes(2)
+            });
         }).RequireAuthorization(ApiAuthorization.BearerUser);
 
         api.MapPost("/google/exchange", async Task<IResult> (GoogleMobileExchangeRequest request, HttpContext context,
@@ -104,16 +110,37 @@ public static class AccountIdentityEndpoints
             {
                 var principal = await AuthenticateBearerAsync(context);
                 var proof = tickets.Exchange(request.Code, request.CodeVerifier, principal?.FindFirstValue(ClaimTypes.NameIdentifier));
-                if (proof is null) return Error("Google sign-in expired. Please start again.", 401);
+                if (proof is null)
+                {
+                    app.Logger.LogWarning("Google mobile exchange denied ({Reason}).", "invalid_or_expired_proof");
+                    return Error("Google sign-in expired. Please start again.", 401);
+                }
                 var userId = proof.UserId;
                 if (proof.Link is not null)
                     userId = (await accounts.GoogleAsync(proof.Link.Subject, proof.Link.Email, true, proof.Link.UserId, ct)).Id;
                 var session = userId is null ? null : await accounts.SessionAsync(userId, ct);
-                return session is null ? Error("Google sign-in expired. Please start again.", 401) : Results.Ok(session);
+                if (session is null)
+                {
+                    app.Logger.LogWarning("Google mobile exchange denied ({Reason}).", "account_unavailable");
+                    return Error("Google sign-in expired. Please start again.", 401);
+                }
+                return Results.Ok(session);
             }
-            catch (AccountIdentityException exception) { return Error(exception.Message, 409, exception.Code); }
-            catch (DbUpdateException) { return Error("This Google identity already belongs to another account.", 409, "link_conflict"); }
-            catch (Exception) when (!ct.IsCancellationRequested) { return Error("Google sign-in is temporarily unavailable.", 503); }
+            catch (AccountIdentityException exception)
+            {
+                app.Logger.LogWarning("Google mobile exchange denied ({Reason}).", exception.Code);
+                return Error(exception.Message, 409, exception.Code);
+            }
+            catch (DbUpdateException)
+            {
+                app.Logger.LogWarning("Google mobile exchange denied ({Reason}).", "link_conflict");
+                return Error("This Google identity already belongs to another account.", 409, "link_conflict");
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                app.Logger.LogWarning("Google mobile exchange denied ({Reason}).", "google_failed");
+                return Error("Google sign-in is temporarily unavailable.", 503);
+            }
         }).AllowAnonymous();
     }
 

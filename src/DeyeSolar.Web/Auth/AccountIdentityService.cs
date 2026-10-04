@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace DeyeSolar.Web.Auth;
 
 public sealed class AccountIdentityService(UserManager<IdentityUser> users, DeyeSolarDbContext db,
-    InstallationMembershipService memberships, MobileSessionStore sessions)
+    InstallationMembershipService memberships, MobileSessionStore sessions, AuthProviderOptions providers)
 {
     public async Task<MobileAuthResponse?> SessionAsync(string userId, CancellationToken ct)
     {
@@ -78,17 +78,38 @@ public sealed class AccountIdentityService(UserManager<IdentityUser> users, Deye
         {
             if (linkingUserId is not null && existing.Id != linkingUserId)
                 throw new AccountIdentityException("link_conflict", "This Google identity already belongs to another account.");
-            return existing;
+            // The stable provider subject identifies a returning account even if its Google email later changes.
+            if (linkingUserId is null) return existing;
         }
+        var alreadyLinked = existing is not null;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (linkingUserId is null)
         {
             if (await DestinationInUse(new("email", normalized), null, ct))
                 throw new AccountIdentityException("link_required", "Sign in to your existing account to link Google.");
+            if (!providers.AllowGoogleRegistration)
+                throw new AccountIdentityException("registration_disabled", "Registration is currently unavailable.");
             existing = await RegisterCoreAsync(new("email", normalized), null, ct);
         }
         else existing = await users.FindByIdAsync(linkingUserId) ?? throw new AccountIdentityException("link_failed", "Sign in again before linking Google.");
-        var result = await users.AddLoginAsync(existing, new UserLoginInfo("Google", subject, "Google"));
+        if (await users.IsLockedOutAsync(existing))
+            throw new AccountIdentityException("account_unavailable", "This account is currently unavailable.");
+        var emailChanged = false;
+        if (linkingUserId is not null)
+        {
+            if (await DestinationInUse(new("email", normalized), existing.Id, ct))
+                throw new AccountIdentityException("link_conflict", "This identity already belongs to another account.");
+            if (string.IsNullOrWhiteSpace(existing.Email)
+                || !existing.EmailConfirmed && users.NormalizeEmail(existing.Email) == users.NormalizeEmail(normalized))
+            {
+                existing.Email = normalized;
+                existing.EmailConfirmed = true;
+                emailChanged = true;
+            }
+        }
+        // AddLoginAsync saves the tracked email and provider binding in the same transaction.
+        var result = !alreadyLinked ? await users.AddLoginAsync(existing, new UserLoginInfo("Google", subject, "Google"))
+            : emailChanged ? await users.UpdateAsync(existing) : IdentityResult.Success;
         if (!result.Succeeded) throw new AccountIdentityException("link_failed", "Google could not be linked to this account.");
         await transaction.CommitAsync(ct);
         return existing;

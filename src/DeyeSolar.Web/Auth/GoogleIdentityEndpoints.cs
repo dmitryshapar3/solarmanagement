@@ -37,7 +37,7 @@ public static class GoogleIdentityEndpoints
         }).AllowAnonymous().RequireRateLimiting("identity-auth");
 
         app.MapGet("/auth/google/complete", async Task<IResult> (HttpContext context, SignInManager<IdentityUser> signIn,
-            AccountIdentityService accounts, GoogleMobileTicketStore tickets, AuthProviderOptions options, CancellationToken ct) =>
+            AccountIdentityService accounts, GoogleMobileTicketStore tickets, CancellationToken ct) =>
         {
             var external = await context.AuthenticateAsync(IdentityConstants.ExternalScheme);
             if (!external.Succeeded || external.Principal is null || external.Properties is null)
@@ -73,9 +73,6 @@ public static class GoogleIdentityEndpoints
                     if (!owner.Succeeded || owner.Principal?.FindFirstValue(ClaimTypes.NameIdentifier) != linkingUserId)
                         throw new AccountIdentityException("link_failed", "Sign in to the account that started linking Google.");
                 }
-                var known = await signIn.UserManager.FindByLoginAsync(Scheme, subject);
-                if (known is null && linkingUserId is null && !options.RegistrationEnabled)
-                    throw new AccountIdentityException("registration_disabled", "Registration is currently unavailable.");
                 var user = await accounts.GoogleAsync(subject, email, verified, linkingUserId, ct);
                 if (await signIn.UserManager.IsLockedOutAsync(user))
                     throw new AccountIdentityException("account_unavailable", "This account is currently unavailable.");
@@ -89,10 +86,19 @@ public static class GoogleIdentityEndpoints
             }
             catch (AccountIdentityException exception)
             {
+                app.Logger.LogWarning("Google identity completion denied ({Reason}).", exception.Code);
                 return Failure(flow, exception.Code);
             }
-            catch (DbUpdateException) { return Failure(flow, "link_required"); }
-            catch (Exception) when (!ct.IsCancellationRequested) { return Failure(flow, "google_failed"); }
+            catch (DbUpdateException)
+            {
+                app.Logger.LogWarning("Google identity completion denied ({Reason}).", "link_required");
+                return Failure(flow, "link_required");
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                app.Logger.LogWarning("Google identity completion denied ({Reason}).", "google_failed");
+                return Failure(flow, "google_failed");
+            }
             finally { await context.SignOutAsync(IdentityConstants.ExternalScheme); }
         }).AllowAnonymous().RequireRateLimiting("identity-auth");
     }

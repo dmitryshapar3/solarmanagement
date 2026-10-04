@@ -1599,5 +1599,16 @@
   "Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.": "Váš nákup čeká na schválení v App Storu. Přístup bude spuštěn, jakmile Apple ověří transakci.",
   "Your Solar installation": "Vaše solární instalace",
   "Your subscription": "Vaše předplatné",
-  "Your subscription has been restored.": "Vaše předplatné bylo obnoveno."
+  "Your subscription has been restored.": "Vaše předplatné bylo obnoveno.",
+  "This Google account is not linked, and new account registration is disabled. Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Tento účet Google není propojen a registrace nových účtů je vypnuta. Přihlaste se ke svému stávajícímu účtu heslem nebo přihlašovacím kódem a pak otevřete Nastavení > Propojit účet Google.",
+  "Sign in to your existing account with your password or a sign-in code, then open Settings > Link Google account.": "Přihlaste se ke svému stávajícímu účtu heslem nebo přihlašovacím kódem a pak otevřete Nastavení > Propojit účet Google.",
+  "This Google account is already linked to another account. Sign in to that account or choose a different Google account.": "Tento účet Google je již propojen s jiným účtem. Přihlaste se k tomuto účtu nebo zvolte jiný účet Google.",
+  "Google could not be linked to this account. Sign in again, then open Settings > Link Google account to retry.": "Google se nepodařilo propojit s tímto účtem. Přihlaste se znovu a otevřete Nastavení > Propojit účet Google pro další pokus.",
+  "This account is currently unavailable. Contact the administrator for help.": "Tento účet je nyní nedostupný. Požádejte správce o pomoc.",
+  "Google sign-in is not configured on this server. Use another sign-in method or contact the administrator.": "Přihlášení přes Google není na tomto serveru nastaveno. Použijte jiný způsob přihlášení nebo kontaktujte správce.",
+  "Google sign-in could not be completed. Please try again or use another sign-in method.": "Přihlášení přes Google se nepodařilo dokončit. Zkuste to znovu nebo použijte jiný způsob přihlášení.",
+  "The identity operation was canceled.": "Operace s přihlašovací identitou byla zrušena.",
+  "Enter a valid server URL before requesting a code.": "Před vyžádáním kódu zadejte platnou adresu URL serveru.",
+  "Sign in before linking Google.": "Před propojením Googlu se přihlaste.",
+  "Google is linked to this account.": "Google je propojen s tímto účtem."
 }

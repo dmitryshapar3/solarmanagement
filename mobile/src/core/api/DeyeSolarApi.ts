@@ -78,8 +78,8 @@ export class DeyeSolarApi {
     return this.client.request("/api/auth/identities/link", { method: "POST", body: { verificationId, code } });
   }
 
-  startGoogleLink(codeChallenge: string, state: string): Promise<{ authorizationUrl: string; expiresAt: string }> {
-    return this.client.request("/api/auth/google/link/start", { method: "POST", body: { codeChallenge, state } });
+  startGoogleLink(codeChallenge: string, state: string, signal?: AbortSignal): Promise<{ authorizationUrl: string; expiresAt: string }> {
+    return this.client.request("/api/auth/google/link/start", { method: "POST", body: { codeChallenge, state }, signal });
   }
 
   async login(username: string, password: string, signal?: AbortSignal): Promise<AuthResponse> {
