@@ -30,6 +30,10 @@ xcodebuild test-without-building -xctestrun "${solar_storekit_xctestrun[0]}" \
   -default-test-execution-time-allowance 30 -maximum-test-execution-time-allowance 45 \
   -resultBundlePath "$solar_storekit_result" \
   > "$script_root/.build/test.log" 2>&1 || solar_storekit_test_exit=$?
+if [[ "$solar_storekit_test_exit" -ne 0 ]]; then
+  echo 'xcodebuild test failure output (full log is retained in the native artifact):' >&2
+  tail -n 200 "$script_root/.build/test.log" >&2
+fi
 xcrun xcresulttool get test-results summary --path "$solar_storekit_result" \
   > "$script_root/.build/test-summary.json"
 xcrun xcresulttool get test-results tests --path "$solar_storekit_result" \
@@ -57,6 +61,10 @@ expected = {
 }
 counts = {key: summary.get(key) for key in ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests')}
 if counts != {'totalTestCount': 11, 'passedTests': 11, 'failedTests': 0, 'skippedTests': 0}:
+    print('StoreKit XCTest failure summary:')
+    print(json.dumps(summary, indent=2))
+    print('StoreKit XCTest test results:')
+    print(json.dumps(results, indent=2), flush=True)
     raise SystemExit(f'Expected 11 passing StoreKit tests with no failures/skips; actual: {counts}')
 serialized = json.dumps(results)
 missing = sorted(name for name in expected if name not in serialized)
