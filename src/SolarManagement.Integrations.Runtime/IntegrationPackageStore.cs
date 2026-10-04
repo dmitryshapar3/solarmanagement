@@ -12,9 +12,13 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
     private readonly Dictionary<string, string> _publisherKeys;
     private readonly string _root;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    public IntegrationPackageStore(IOptions<IntegrationRuntimeOptions> options)
+    private readonly IIntegrationOriginPolicyStore? _originPolicy;
+    private HashSet<string> _dynamicOrigins = new(StringComparer.Ordinal);
+    private bool _originPolicyLoaded;
+    public IntegrationPackageStore(IOptions<IntegrationRuntimeOptions> options, IIntegrationOriginPolicyStore? originPolicy = null)
     {
         _options = options.Value;
+        _originPolicy = originPolicy;
         _options.Validate();
         _publisherKeys = new(_options.TrustedPublisherPublicKeys, StringComparer.Ordinal);
         foreach (var (publisher, path) in _options.TrustedPublisherPublicKeyFiles)
@@ -33,6 +37,7 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
         string? staging = null;
         try
         {
+            await LoadOriginPolicyAsync(ct);
             await using var source = File.OpenRead(request.ArchivePath);
             if (source.Length > 64 * 1024 * 1024) throw new InvalidDataException("Package archive is too large.");
             var digest = Convert.ToHexString(await SHA256.HashDataAsync(source, ct));
@@ -115,6 +120,7 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
         await _gate.WaitAsync(ct);
         try
         {
+            await LoadOriginPolicyAsync(ct);
             var package = (await ReadCatalogAsync(ct)).SingleOrDefault(package => package.Identity == identity)
                 ?? throw new InvalidOperationException("The exact trusted package version is not installed.");
             await VerifyInstalledAsync(package, ct);
@@ -127,6 +133,7 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
         await _gate.WaitAsync(ct);
         try
         {
+            await LoadOriginPolicyAsync(ct);
             var packages = await ReadCatalogAsync(ct);
             foreach (var package in packages) await VerifyInstalledAsync(package, ct);
             return packages;
@@ -157,16 +164,60 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
     }
     private void ValidateManifest(IntegrationPackageManifest manifest)
     {
-        if (!ValidIdentifier(manifest.ProviderId) || !SemanticPackageVersion.TryParse(manifest.PackageVersion, out _)
+        if (manifest.Descriptor is null || manifest.Files is null || manifest.AllowedOrigins is null
+            || manifest.AllowedOrigins.Count > 16 || manifest.AllowedOrigins.Distinct(StringComparer.Ordinal).Count() != manifest.AllowedOrigins.Count
+            || !ValidIdentifier(manifest.ProviderId) || !SemanticPackageVersion.TryParse(manifest.PackageVersion, out _)
             || manifest.WireVersion != 1 || !_publisherKeys.ContainsKey(manifest.PublisherId)
             || manifest.Descriptor.ProviderId != manifest.ProviderId || manifest.Descriptor.PackageVersion != manifest.PackageVersion
             || manifest.Descriptor.UiContractVersion != 1 || manifest.Descriptor.ConfigurationVersion < 1
             || !manifest.EntryPoint.EndsWith(".dll", StringComparison.Ordinal)
-            || manifest.AllowedOrigins.Any(origin => !_options.ApprovedOrigins.Contains(origin, StringComparer.Ordinal)))
+            || manifest.AllowedOrigins.Any(origin => !OriginAdmitted(origin)))
             throw new InvalidDataException("Package identity, publisher, contract or network permission is not supported.");
         ValidateRelative(manifest.EntryPoint);
+        IntegrationDescriptorValidator.Validate(manifest.Descriptor);
         if (manifest.RuntimeIdentifier != "portable" && manifest.RuntimeIdentifier != System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier)
             throw new InvalidDataException("The package runtime does not match this host.");
+    }
+    public async Task ApproveOriginAsync(string origin, CancellationToken ct)
+    {
+        var normalized = IntegrationOriginPolicy.NormalizeExactOrigin(origin);
+        if (_originPolicy is null) throw new InvalidOperationException("A protected origin policy store is required for live approval.");
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await LoadOriginPolicyAsync(ct);
+            if (_dynamicOrigins.Contains(normalized) || OriginAdmitted(normalized)) return;
+            if (_dynamicOrigins.Count >= 128) throw new InvalidOperationException("The additive origin approval limit has been reached.");
+            var next = new HashSet<string>(_dynamicOrigins, StringComparer.Ordinal) { normalized };
+            await _originPolicy.SaveAsync(next.Order(StringComparer.Ordinal).ToArray(), ct);
+            _dynamicOrigins = next;
+        }
+        finally { _gate.Release(); }
+    }
+    private async Task LoadOriginPolicyAsync(CancellationToken ct)
+    {
+        if (_originPolicyLoaded) return;
+        var origins = _originPolicy is null ? [] : await _originPolicy.LoadAsync(ct);
+        if (origins is null || origins.Count > 128) throw new InvalidDataException("The protected origin policy exceeds its limit.");
+        var loaded = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var origin in origins)
+        {
+            string normalized;
+            try { normalized = IntegrationOriginPolicy.NormalizeExactOrigin(origin); }
+            catch (ArgumentException exception) { throw new InvalidDataException("The protected origin policy contains an invalid approval.", exception); }
+            if (normalized != origin || !loaded.Add(normalized)) throw new InvalidDataException("The protected origin policy is not canonical.");
+        }
+        _dynamicOrigins = loaded;
+        _originPolicyLoaded = true;
+    }
+    private bool OriginAdmitted(string origin)
+    {
+        if (_options.ApprovedOrigins.Contains(origin, StringComparer.Ordinal)) return true;
+        string normalized;
+        try { normalized = IntegrationOriginPolicy.NormalizeExactOrigin(origin); }
+        catch (ArgumentException) { return false; }
+        return _dynamicOrigins.Contains(normalized)
+            || IntegrationOAuthProtocol.IsApprovedAuthorizationUrl(normalized, _options.ApprovedOrigins);
     }
     private async Task VerifyInstalledAsync(IntegrationInstalledPackage package, CancellationToken ct)
     {

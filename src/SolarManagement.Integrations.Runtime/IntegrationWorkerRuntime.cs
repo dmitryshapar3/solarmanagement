@@ -199,6 +199,47 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
     }
     public Task<IntegrationTestResult> TestAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, CancellationToken ct)
         => SetupAsync<IntegrationTestResult>(package, draft, "test", new { }, ct);
+    public async Task<IntegrationOAuthBeginResult> BeginAuthorizationAsync(ProviderPackageIdentity package,
+        IntegrationDraftConfiguration draft, IntegrationOAuthBeginRequest request, CancellationToken ct)
+    {
+        IntegrationOAuthProtocol.ValidateBegin(request);
+        var installed = await OAuthPackageAsync(package, ct);
+        var result = await SetupAsync<IntegrationOAuthBeginResult>(package, draft, "oauth.begin", request, ct);
+        IntegrationOAuthProtocol.ValidateAuthorizationUrl(result.AuthorizationUrl, request, installed.Manifest.AllowedOrigins);
+        return result;
+    }
+    public async Task<IntegrationOAuthCompleteResult> CompleteAuthorizationAsync(ProviderPackageIdentity package,
+        IntegrationDraftConfiguration draft, IntegrationOAuthCompleteRequest request, CancellationToken ct)
+    {
+        IntegrationOAuthProtocol.ValidateComplete(request);
+        var installed = await OAuthPackageAsync(package, ct);
+        var result = await SetupAsync<IntegrationOAuthCompleteResult>(package, draft, "oauth.complete", request, ct);
+        var descriptor = installed.Manifest.Descriptor;
+        if (result.PublicValues.ValueKind != JsonValueKind.Object || result.SecretValues is null || result.SecretValues.Count > 32
+            || result.AccountIdentity?.Length > 256 || result.AccountIdentity is not null && string.IsNullOrWhiteSpace(result.AccountIdentity))
+            throw new InvalidDataException("OAuth returned invalid configuration or identity.");
+        var publicKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in result.PublicValues.EnumerateObject())
+        {
+            var field = descriptor.Fields.SingleOrDefault(field => field.Key == property.Name);
+            if (!publicKeys.Add(property.Name) || field is null || IntegrationUiConditions.IsSecret(field))
+                throw new InvalidDataException("OAuth public output contains an undeclared or secret field.");
+            IntegrationDescriptorValidator.ValidateValue(field, property.Value);
+        }
+        foreach (var (key, value) in result.SecretValues)
+            if (!descriptor.OAuthDefinition!.SecretFieldKeys.Contains(key, StringComparer.Ordinal)
+                || string.IsNullOrWhiteSpace(value) || value.Length > 8192)
+                throw new InvalidDataException("OAuth secret output is outside the declared whitelist.");
+        if (!result.Success && (publicKeys.Count != 0 || result.SecretValues.Count != 0 || result.AccountIdentity is not null))
+            throw new InvalidDataException("An unsuccessful OAuth result must not return credentials or configuration.");
+        return result;
+    }
+    private async Task<IntegrationInstalledPackage> OAuthPackageAsync(ProviderPackageIdentity package, CancellationToken ct)
+    {
+        var installed = await _packages.ResolveAsync(package, ct);
+        if (installed.Manifest.Descriptor.OAuthDefinition is null) throw new NotSupportedException("This provider does not support OAuth.");
+        return installed;
+    }
     public async Task<IReadOnlyList<IntegrationDiscoveredDevice>> DiscoverAsync(ProviderPackageIdentity package,
         IntegrationDraftConfiguration draft, IntegrationDiscoveryQuery query, CancellationToken ct)
     {

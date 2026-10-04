@@ -1,0 +1,33 @@
+{
+  "conditions": [
+    {"name":"missing-present","condition":{"field":"mode","operator":"present"},"values":{},"expected":false},
+    {"name":"missing-absent","condition":{"field":"mode","operator":"absent"},"values":{},"expected":true},
+    {"name":"null-present","condition":{"field":"mode","operator":"present"},"values":{"mode":null},"expected":false},
+    {"name":"null-absent","condition":{"field":"mode","operator":"absent"},"values":{"mode":null},"expected":true},
+    {"name":"blank-present","condition":{"field":"mode","operator":"present"},"values":{"mode":" \t"},"expected":false},
+    {"name":"unicode-next-line-is-blank","condition":{"field":"mode","operator":"present"},"values":{"mode":"\u0085"},"expected":false},
+    {"name":"unicode-bom-is-present","condition":{"field":"mode","operator":"present"},"values":{"mode":"\ufeff"},"expected":true},
+    {"name":"blank-not-equal","condition":{"field":"mode","operator":"notEq","value":"api"},"values":{"mode":""},"expected":false},
+    {"name":"missing-not-equal","condition":{"field":"mode","operator":"notEq","value":"api"},"values":{},"expected":false},
+    {"name":"null-not-equal","condition":{"field":"mode","operator":"notEq","value":"api"},"values":{"mode":null},"expected":false},
+    {"name":"string-equal","condition":{"field":"mode","operator":"eq","value":"api"},"values":{"mode":"api"},"expected":true},
+    {"name":"string-ordinal","condition":{"field":"mode","operator":"eq","value":"api"},"values":{"mode":"API"},"expected":false},
+    {"name":"string-not-trimmed","condition":{"field":"mode","operator":"eq","value":"api"},"values":{"mode":" api "},"expected":false},
+    {"name":"string-different","condition":{"field":"mode","operator":"notEq","value":"api"},"values":{"mode":"oauth"},"expected":true},
+    {"name":"boolean-false-present","condition":{"field":"enabled","operator":"present"},"values":{"enabled":false},"expected":true},
+    {"name":"boolean-false-equal","condition":{"field":"enabled","operator":"eq","value":false},"values":{"enabled":false},"expected":true},
+    {"name":"boolean-typed","condition":{"field":"enabled","operator":"eq","value":false},"values":{"enabled":"false"},"expected":false},
+    {"name":"zero-present","condition":{"field":"channel","operator":"present"},"values":{"channel":0},"expected":true},
+    {"name":"zero-equal","condition":{"field":"channel","operator":"eq","value":0},"values":{"channel":0.0},"expected":true},
+    {"name":"decimal-normalized","condition":{"field":"channel","operator":"eq","value":1},"values":{"channel":1.00},"expected":true},
+    {"name":"decimal-different","condition":{"field":"channel","operator":"notEq","value":1},"values":{"channel":1.25},"expected":true},
+    {"name":"number-string-different","condition":{"field":"channel","operator":"eq","value":1},"values":{"channel":"1"},"expected":false}
+  ],
+  "fields": [
+    {"name":"missing-controller-uses-default","fields":[{"key":"mode","kind":"select","label":"Mode","required":true,"defaultValue":"api","options":[{"value":"api","label":"API"},{"value":"oauth","label":"OAuth"}]},{"key":"apiKey","kind":"secret","label":"Key","required":true,"activeWhen":{"field":"mode","operator":"eq","value":"api"}}],"fieldKey":"apiKey","values":{},"expected":true},
+    {"name":"explicit-null-overrides-default","fields":[{"key":"mode","kind":"text","label":"Mode","required":false,"defaultValue":"api"},{"key":"apiKey","kind":"secret","label":"Key","required":true,"activeWhen":{"field":"mode","operator":"eq","value":"api"}}],"fieldKey":"apiKey","values":{"mode":null},"expected":false},
+    {"name":"group-and-field-active","fields":[{"key":"mode","kind":"text","label":"Mode","required":false},{"key":"enabled","kind":"boolean","label":"Enabled","required":false},{"key":"apiKey","kind":"secret","label":"Key","required":true,"activeWhen":{"field":"mode","operator":"eq","value":"api"}}],"groupCondition":{"field":"enabled","operator":"eq","value":true},"fieldKey":"apiKey","values":{"mode":"api","enabled":true},"expected":true},
+    {"name":"group-inactive-overrides-field","fields":[{"key":"mode","kind":"text","label":"Mode","required":false},{"key":"enabled","kind":"boolean","label":"Enabled","required":false},{"key":"apiKey","kind":"secret","label":"Key","required":true,"activeWhen":{"field":"mode","operator":"eq","value":"api"}}],"groupCondition":{"field":"enabled","operator":"eq","value":true},"fieldKey":"apiKey","values":{"mode":"api","enabled":false},"expected":false},
+    {"name":"field-inactive-overrides-group","fields":[{"key":"mode","kind":"text","label":"Mode","required":false},{"key":"enabled","kind":"boolean","label":"Enabled","required":false},{"key":"apiKey","kind":"secret","label":"Key","required":true,"activeWhen":{"field":"mode","operator":"eq","value":"api"}}],"groupCondition":{"field":"enabled","operator":"eq","value":true},"fieldKey":"apiKey","values":{"mode":"oauth","enabled":true},"expected":false}
+  ]
+}

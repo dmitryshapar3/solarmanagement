@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SolarManagement.Integrations.Contracts;
 
@@ -6,11 +7,20 @@ public sealed record ProviderPackageIdentity(string ProviderId, string PackageVe
 public sealed record IntegrationSelectOption(string Value, string Label);
 public sealed record IntegrationFieldDescriptor(string Key, string Kind, string Label, bool Required,
     JsonElement? DefaultValue = null, decimal? Minimum = null, decimal? Maximum = null,
-    IReadOnlyList<IntegrationSelectOption>? Options = null, bool Secret = false);
+    IReadOnlyList<IntegrationSelectOption>? Options = null, bool Secret = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IntegrationUiCondition? ActiveWhen = null);
 public sealed record IntegrationProviderDescriptor(string ProviderId, string PackageVersion, string PackageDigest,
     string DescriptorDigest, string DisplayName, int UiContractVersion, int ConfigurationVersion,
     IReadOnlyList<string> RequiredUiFeatures, IReadOnlyList<IntegrationFieldDescriptor> Fields,
-    IReadOnlyList<string> Actions);
+    IReadOnlyList<string> Actions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IntegrationUiLayout? UiLayout = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IntegrationOAuthDefinition? OAuthDefinition = null);
+public sealed record IntegrationUiCondition(string Field, string Operator, JsonElement? Value = null);
+public sealed record IntegrationUiGroup(string Id, string Title, string? Instructions,
+    IReadOnlyList<string> FieldKeys, IReadOnlyList<string> Actions, IntegrationUiCondition? ActiveWhen = null);
+public sealed record IntegrationUiStep(string Id, string Title, string? Instructions, IReadOnlyList<IntegrationUiGroup> Groups);
+public sealed record IntegrationUiLayout(int Version, IReadOnlyList<IntegrationUiStep> Steps);
+public sealed record IntegrationOAuthDefinition(IReadOnlyList<string> SecretFieldKeys);
 public interface IIntegrationProviderCatalog
 {
     Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct);
@@ -28,7 +38,16 @@ public interface IIntegrationSetupExecutor
     Task<IntegrationTestResult> TestAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, CancellationToken ct);
     Task<IReadOnlyList<IntegrationDiscoveredDevice>> DiscoverAsync(ProviderPackageIdentity package,
         IntegrationDraftConfiguration draft, IntegrationDiscoveryQuery query, CancellationToken ct);
+    Task<IntegrationOAuthBeginResult> BeginAuthorizationAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft,
+        IntegrationOAuthBeginRequest request, CancellationToken ct) => throw new NotSupportedException("OAuth is not supported by this executor.");
+    Task<IntegrationOAuthCompleteResult> CompleteAuthorizationAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft,
+        IntegrationOAuthCompleteRequest request, CancellationToken ct) => throw new NotSupportedException("OAuth is not supported by this executor.");
 }
+public sealed record IntegrationOAuthBeginRequest(string RedirectUri, string State, string CodeChallenge, string CodeChallengeMethod = "S256");
+public sealed record IntegrationOAuthBeginResult(string AuthorizationUrl);
+public sealed record IntegrationOAuthCompleteRequest(string Code, string RedirectUri, string CodeVerifier);
+public sealed record IntegrationOAuthCompleteResult(bool Success, JsonElement PublicValues,
+    IReadOnlyDictionary<string, string> SecretValues, string? AccountIdentity = null);
 public sealed record IntegrationSession(string InstallationId, Guid InstanceId, ProviderPackageIdentity Package,
     long ConfigurationRevision, long Generation, IntegrationDraftConfiguration Configuration);
 public interface IIntegrationRuntimeExecutor
@@ -65,6 +84,12 @@ public interface IIntegrationPackageManager
 {
     Task<IntegrationInstalledPackage> InstallAsync(IntegrationPackageInstallRequest request, CancellationToken ct);
     Task<IntegrationInstalledPackage> ResolveAsync(ProviderPackageIdentity identity, CancellationToken ct);
+    Task ApproveOriginAsync(string origin, CancellationToken ct) => throw new NotSupportedException("Dynamic origin approval is unavailable.");
+}
+public interface IIntegrationOriginPolicyStore
+{
+    Task<IReadOnlyList<string>> LoadAsync(CancellationToken ct);
+    Task SaveAsync(IReadOnlyList<string> origins, CancellationToken ct);
 }
 public static class IntegrationJson
 {

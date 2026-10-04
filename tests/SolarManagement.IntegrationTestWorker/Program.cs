@@ -2,7 +2,7 @@ using System.Text.Json;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.Integrations.WorkerSdk;
 
-await IntegrationWorkerHost.RunAsync("test.provider", ["test", "discover", "inverter.read", "socket.read", "socket.set", "socket.result"],
+await IntegrationWorkerHost.RunAsync("test.provider", ["test", "discover", "inverter.read", "socket.read", "socket.set", "socket.result", "oauth.begin", "oauth.complete"],
     config => new TestProvider(config));
 
 internal sealed class TestProvider(WorkerConfiguration configuration) : IIntegrationWorkerProvider
@@ -14,6 +14,37 @@ internal sealed class TestProvider(WorkerConfiguration configuration) : IIntegra
     public async Task<JsonElement> InvokeAsync(string method, JsonElement parameters, CancellationToken ct)
     {
         var account = configuration.Configuration.Values.GetProperty("account").GetString()!;
+        if (method == "oauth.begin")
+        {
+            var request = parameters.Deserialize<IntegrationOAuthBeginRequest>(IntegrationJson.Options)!;
+            var origin = configuration.Configuration.Values.TryGetProperty("oauthForeignOrigin", out var foreign) && foreign.GetBoolean()
+                ? "https://foreign.example.test" : "https://oauth.example.test";
+            var query = new Dictionary<string, string>
+            {
+                ["response_type"] = "code",
+                ["client_id"] = "fixture-client",
+                ["state"] = request.State,
+                ["redirect_uri"] = request.RedirectUri,
+                ["code_challenge"] = request.CodeChallenge,
+                ["code_challenge_method"] = request.CodeChallengeMethod
+            };
+            return IntegrationJson.Element(new IntegrationOAuthBeginResult(origin + "/authorize?"
+                + string.Join("&", query.Select(pair => Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)))));
+        }
+        if (method == "oauth.complete")
+        {
+            var request = parameters.Deserialize<IntegrationOAuthCompleteRequest>(IntegrationJson.Options)!;
+            var challenge = IntegrationOAuthProtocol.Challenge(request.CodeVerifier);
+            var foreign = request.Code == "foreign-code:" + challenge;
+            if (request.Code != "fixture-code:" + challenge && !foreign)
+                return IntegrationJson.Element(new IntegrationOAuthCompleteResult(false, IntegrationJson.Element(new { }), new Dictionary<string, string>()));
+            var values = configuration.Configuration.Values.TryGetProperty("oauthPublicSecret", out var publicSecret) && publicSecret.GetBoolean()
+                ? IntegrationJson.Element(new { apiKey = "must-never-escape" }) : IntegrationJson.Element(new { account });
+            var key = configuration.Configuration.Values.TryGetProperty("oauthExtraSecret", out var extraSecret) && extraSecret.GetBoolean()
+                ? "undeclaredToken" : "apiKey";
+            return IntegrationJson.Element(new IntegrationOAuthCompleteResult(true, values,
+                new Dictionary<string, string> { [key] = "fixture-oauth-token:" + account }, foreign ? "foreign-account" : account));
+        }
         if (method == "test") return IntegrationJson.Element(new IntegrationTestResult(
             Environment.GetEnvironmentVariable("SOLAR_WORKER_SECRET_TEST") is null, "connected", "Connected", account));
         if (method == "discover") return IntegrationJson.Element(new[] { new IntegrationDiscoveredDevice("same-id", "0", "socket", account, account,

@@ -19,6 +19,18 @@ public interface IIntegrationRegistry
 
 public sealed class IntegrationSecretStore(IDataProtectionProvider protection)
 {
+    public string ProtectOperatorOrigins(string value) => protection.CreateProtector("IntegrationApprovedOrigins.v1").Protect(value);
+    public string UnprotectOperatorOrigins(string value) => protection.CreateProtector("IntegrationApprovedOrigins.v1").Unprotect(value);
+    private IDataProtector OAuthProtector(string installation, Guid flow)
+        => protection.CreateProtector("IntegrationOAuthFlow.v1", installation, flow.ToString("D"));
+    public string ProtectOAuth(string installation, Guid flow, string value) => OAuthProtector(installation, flow).Protect(value);
+    public string UnprotectOAuth(string installation, Guid flow, string value)
+    {
+        try { return OAuthProtector(installation, flow).Unprotect(value); }
+        catch (System.Security.Cryptography.CryptographicException)
+        { throw new IntegrationRequestException("secret_store_unavailable", "The authorization cannot be opened. Start it again after restoring the installation's encryption keys.", 503); }
+    }
+
     private IDataProtector Protector(string installation, Guid instance, long revision)
         => protection.CreateProtector("IntegrationSecrets.v1", installation, instance.ToString("D"), revision.ToString(System.Globalization.CultureInfo.InvariantCulture));
 

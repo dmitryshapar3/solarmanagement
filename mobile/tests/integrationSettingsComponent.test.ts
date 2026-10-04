@@ -15,11 +15,12 @@ async function component() {
     bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
     plugins: [{ name: "integration-native-boundaries", setup(builder) {
       builder.onResolve({ filter: /core\/api\/ApiClient$/ }, () => ({ path: path.join(process.cwd(), "src/core/api/ApiClient.ts"), external: true }));
-      builder.onResolve({ filter: /^(react-native|@react-navigation\/native)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+      builder.onResolve({ filter: /^(react-native|@react-navigation\/native|expo-web-browser)$/ }, args => ({ path: args.path, namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
       builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({
         loader: "js", contents: args.path === "react-native"
           ? 'export const Keyboard = {dismiss(){}}; export const StyleSheet = {create: value => value}; export const Text = "Text"; export const View = "View";'
+          : args.path === "expo-web-browser" ? 'export const openAuthSessionAsync = (...args) => globalThis.__integrationOAuthBrowser.open(...args); export const dismissAuthSession = () => globalThis.__integrationOAuthBrowser.dismiss();'
           : args.path === "@react-navigation/native"
             ? 'import React from "react"; export const useFocusEffect = callback => { globalThis.__integrationFocus = callback; React.useEffect(callback, [callback]); };'
             : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card = "Card"; export const SectionTitle = "SectionTitle"; export const ErrorBanner = "ErrorBanner"; export const TextField = "TextField"; export const EmptyState = "EmptyState"; export const StatusPill = "StatusPill"; export const SwitchRow = "SwitchRow";'
@@ -30,6 +31,194 @@ async function component() {
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
   return module.exports.IntegrationSettings;
 }
+
+test("declarative wizard navigation retains hidden drafts, renders plain instructions and puts discovery in its active group", async () => {
+  const { provider, configuration } = integrationFixture();
+  provider.requiredUiFeatures.push("wizard", "groups", "instructions", "conditional-fields", "device-selector");
+  provider.fields.find(field => field.key === "mode")!.options!.push({ value: "local", label: "Local" });
+  provider.fields.find(field => field.key === "interval")!.activeWhen = { field: "readOnly", operator: "eq", value: false };
+  provider.uiLayout = { version: 1, steps: [
+    { id: "connect", title: "Connection", instructions: "<script>plain instruction</script>", groups: [
+      { id: "account", title: "Account", fieldKeys: ["region", "mode", "token"], actions: ["test"], instructions: "Credentials remain private." }
+    ] },
+    { id: "resources", title: "Resources", groups: [
+      { id: "polling", title: "Polling", fieldKeys: ["readOnly", "interval"], actions: ["discover"], activeWhen: { field: "mode", operator: "eq", value: "cloud" } }
+    ] }
+  ] };
+  let saved = structuredClone(configuration);
+  const calls: { route: string; method: string; body: any }[] = [];
+  const api = new IntegrationApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url, init) => {
+    const route = new URL(url).pathname;
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    calls.push({ route, method: init.method, body });
+    let result: unknown = [];
+    if (route.endsWith("integration-providers")) result = { providers: [provider], revision: "1" };
+    else if (route === "/api/v2/integrations") result = [saved.instance];
+    else if (route.endsWith("/configuration")) {
+      if (init.method === "PUT") saved = { ...saved, instance: { ...saved.instance, revision: saved.instance.revision + 1 }, values: body.values };
+      result = saved;
+    } else if (route.endsWith("/versions")) result = [provider];
+    else if (route.endsWith("/discovery")) result = { devices: [{ selectionToken: "wizard-proof", name: "Wizard socket", kind: "socket", remoteId: "one" }], expiresAt: "2099-01-01T00:00:00Z" };
+    return { status: 200, ok: true, text: async () => JSON.stringify(result) };
+  } }));
+  const globals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean; __integrationFocus?: unknown };
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const IntegrationSettings = await component();
+    await act(async () => { renderer = create(React.createElement(IntegrationSettings, { api })); });
+    const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
+    const field = (label: string) => renderer!.root.findAllByType("TextField").find(item => item.props.label === label);
+    await act(async () => { button("Configure My equipment").props.onPress(); });
+    assert.ok(renderer!.root.findAllByType("Text").some(item => item.props.children === "<script>plain instruction</script>"));
+    assert.equal(field("Interval *"), undefined);
+    assert.equal(button("Discover draft devices"), undefined);
+    await act(async () => { field("Region *")!.props.onChangeText("unsaved-region"); button("Next step").props.onPress(); });
+    assert.equal(field("Interval *")!.props.value, "10");
+    await act(async () => { field("Interval *")!.props.onChangeText("17"); });
+    await act(async () => { button("Discover draft devices").props.onPress(); });
+    assert.ok(button("Use Wizard socket"));
+    assert.equal(button("Use Wizard socket").props.disabled, true);
+    assert.equal(calls.filter(call => call.method === "PUT").length, 0);
+    assert.equal(calls.find(call => call.route.endsWith("/discovery"))!.body.values.interval, 17);
+    await act(async () => { renderer!.root.findByType("SwitchRow").props.onValueChange(true); });
+    assert.equal(field("Interval *"), undefined);
+    await act(async () => { renderer!.root.findByType("SwitchRow").props.onValueChange(false); });
+    assert.equal(field("Interval *")!.props.value, "17");
+    await act(async () => { button("Previous step").props.onPress(); });
+    assert.equal(field("Region *")!.props.value, "unsaved-region");
+    await act(async () => { button("Local").props.onPress(); button("Next step").props.onPress(); });
+    assert.equal(field("Interval *"), undefined);
+    assert.equal(button("Discover draft devices"), undefined);
+    await act(async () => { button("Save integration settings").props.onPress(); });
+    assert.equal(saved.values.interval, 17);
+    assert.equal(saved.values.region, "unsaved-region");
+    assert.equal(saved.values.mode, "local");
+    assert.equal(calls.filter(call => call.method === "PUT").length, 1);
+    assert.equal(configuration.values.region, "eu");
+    assert.equal(configuration.values.interval, 10);
+  } finally {
+    if (renderer) await act(async () => renderer!.unmount());
+    delete globals.__integrationFocus; delete globals.IS_REACT_ACT_ENVIRONMENT;
+  }
+});
+
+test("real OAuth form authorizes a private draft, invalidates it on edit and consumes it only on explicit Save", async () => {
+  const { provider, configuration } = integrationFixture();
+  provider.actions.push("oauth"); provider.requiredUiFeatures.push("oauth");
+  provider.oauthDefinition = { secretFieldKeys: ["token"] };
+  configuration.secretPresent.token = false;
+  let saved = structuredClone(configuration);
+  let flowCounter = 0;
+  let currentFlow = "";
+  const calls: { route: string; method: string; body: any }[] = [];
+  const client = new ApiClient({ baseUrl: "https://solar.example", token: "owner-one", transport: async (url, init) => {
+    const route = new URL(url).pathname;
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    calls.push({ route, method: init.method, body });
+    let result: unknown = [];
+    if (route.endsWith("integration-providers")) result = { providers: [provider], revision: "1" };
+    else if (route === "/api/v2/integrations") result = [saved.instance];
+    else if (route.endsWith("/configuration")) {
+      if (init.method === "PUT") saved = { ...saved, instance: { ...saved.instance, revision: saved.instance.revision + 1 }, values: body.values, secretPresent: { token: true } };
+      result = saved;
+    } else if (route.endsWith("/versions")) result = [provider];
+    else if (route.endsWith("/oauth/start")) {
+      currentFlow = `11111111-1111-4111-8111-${String(++flowCounter).padStart(12, "0")}`;
+      result = { flowId: currentFlow, returnNonce: "this-flow-nonce", returnUri: "deyesolar://integration-oauth", authorizationUrl: "https://identity.example/authorize", expiresAt: "2099-01-01T00:00:00Z" };
+    } else if (route.includes("/oauth/")) result = { flowId: currentFlow, status: route.endsWith("/cancel") ? "cancelled" : "ready", expiresAt: "2099-01-01T00:00:00Z", values: { region: "authorized-account" }, secretPresent: { token: true } };
+    return { status: 200, ok: true, text: async () => JSON.stringify(result) };
+  } });
+  const globals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean; __integrationFocus?: unknown;
+    __integrationOAuthBrowser?: { open(): Promise<{ type: string; url: string }>; dismiss(): void } };
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  globals.__integrationOAuthBrowser = { open: async () => ({ type: "success", url: `deyesolar://integration-oauth?flowId=${currentFlow}&returnNonce=this-flow-nonce` }), dismiss() {} };
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const IntegrationSettings = await component();
+    await act(async () => { renderer = create(React.createElement(IntegrationSettings, { api: new IntegrationApi(client) })); });
+    const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
+    await act(async () => { button("Configure My equipment").props.onPress(); });
+    assert.equal(renderer!.root.findAllByType("button").some(item => item.props.accessibilityLabel === "API key: replace"), false);
+    await act(async () => { button("Authorize provider").props.onPress(); });
+    assert.equal(renderer!.root.findByProps({ label: "Region *" }).props.value, "authorized-account");
+    assert.ok(renderer!.root.findAllByType("Text").some(item => String(item.props.children).includes("Authorization is ready in this draft")));
+    assert.equal(saved.secretPresent.token, false);
+    assert.equal(calls.some(call => call.method === "PUT"), false);
+    const firstFlow = currentFlow;
+    await act(async () => { renderer!.root.findByProps({ label: "Region *" }).props.onChangeText("edited-after-authorization"); });
+    assert.equal(calls.filter(call => call.route.endsWith(`/${firstFlow}/cancel`)).length, 1);
+    await act(async () => { button("Save integration settings").props.onPress(); });
+    assert.equal(calls.some(call => call.method === "PUT"), false);
+    assert.match(renderer!.root.findAllByType("ErrorBanner").map(item => item.props.message).join(" "), /API key is required/);
+    await act(async () => { button("Authorize provider").props.onPress(); });
+    await act(async () => { button("Save integration settings").props.onPress(); });
+    const write = calls.find(call => call.method === "PUT")!;
+    assert.equal(write.body.oauthFlowId, currentFlow);
+    assert.deepEqual(write.body.secretOperations, { token: { operation: "keep" } });
+    assert.equal(saved.secretPresent.token, true);
+    assert.equal(calls.filter(call => call.route.endsWith(`/${currentFlow}/cancel`)).length, 0);
+    assert.equal(button("Save integration settings").props.disabled, false);
+    assert.equal(renderer!.root.findAllByType("TextField").some(item => item.props.secureTextEntry), false);
+    assert.equal(configuration.values.region, "eu");
+    assert.equal(configuration.secretPresent.token, false);
+  } finally {
+    if (renderer) await act(async () => renderer!.unmount());
+    delete globals.__integrationFocus; delete globals.__integrationOAuthBrowser; delete globals.IS_REACT_ACT_ENVIRONMENT;
+  }
+});
+
+test("explicit OAuth cancel and a same-client account switch release busy state and fence late callbacks", async () => {
+  const { provider, configuration } = integrationFixture();
+  provider.actions.push("oauth"); provider.requiredUiFeatures.push("oauth"); provider.oauthDefinition = { secretFieldKeys: ["token"] };
+  configuration.secretPresent.token = false;
+  const calls: { route: string; token?: string }[] = [];
+  const client = new ApiClient({ baseUrl: "https://solar.example", token: "owner-one", transport: async (url, init) => {
+    const route = new URL(url).pathname;
+    calls.push({ route, token: init.headers.Authorization });
+    const result = route.endsWith("integration-providers") ? { providers: [provider], revision: "1" }
+      : route === "/api/v2/integrations" ? init.headers.Authorization === "Bearer owner-one" ? [configuration.instance] : []
+      : route.endsWith("/configuration") ? configuration : route.endsWith("/versions") ? [provider]
+      : route.endsWith("/oauth/start") ? { flowId: "flow-one", returnNonce: "nonce", authorizationUrl: "https://identity.example/authorize", returnUri: "deyesolar://integration-oauth", expiresAt: "2099-01-01T00:00:00Z" } : [];
+    return { status: 200, ok: true, text: async () => JSON.stringify(result) };
+  } });
+  let finish!: (result: { type: string; url: string }) => void;
+  let dismissals = 0;
+  const globals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean; __integrationFocus?: unknown;
+    __integrationOAuthBrowser?: { open(): Promise<{ type: string; url: string }>; dismiss(): void } };
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  globals.__integrationOAuthBrowser = { open: () => new Promise(resolve => { finish = resolve; }), dismiss() { ++dismissals; } };
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const IntegrationSettings = await component();
+    await act(async () => { renderer = create(React.createElement(IntegrationSettings, { api: new IntegrationApi(client) })); });
+    const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label);
+    await act(async () => { button("Configure My equipment")!.props.onPress(); });
+    await act(async () => { button("Authorize provider")!.props.onPress(); });
+    assert.ok(button("Cancel authorization"));
+    await act(async () => { button("Cancel authorization")!.props.onPress(); });
+    assert.equal(button("Cancel authorization"), undefined);
+    assert.equal(button("Save integration settings")!.props.disabled, false);
+    assert.equal(calls.filter(call => call.route.endsWith("/cancel")).length, 1);
+    await act(async () => { finish({ type: "success", url: "deyesolar://integration-oauth?flowId=flow-one&returnNonce=nonce" }); });
+    assert.equal(renderer!.root.findByProps({ label: "Region *" }).props.value, "eu");
+    await act(async () => { button("Authorize provider")!.props.onPress(); });
+    assert.ok(button("Cancel authorization"));
+    await act(async () => { client.setToken("owner-two"); });
+    assert.equal(button("Cancel authorization"), undefined);
+    assert.equal(button("Save integration settings"), undefined);
+    assert.equal(button("Configure My equipment"), undefined);
+    assert.equal(button("Refresh integration catalog")!.props.disabled, false);
+    await act(async () => { finish({ type: "success", url: "deyesolar://integration-oauth?flowId=flow-one&returnNonce=nonce" }); });
+    assert.equal(dismissals, 2);
+    assert.equal(calls.filter(call => call.route.endsWith("/cancel")).length, 1);
+    assert.equal(calls.some(call => /\/oauth\/flow-one$/.test(call.route)), false);
+    assert.equal(button("Save integration settings"), undefined);
+  } finally {
+    if (renderer) await act(async () => renderer!.unmount());
+    delete globals.__integrationFocus; delete globals.__integrationOAuthBrowser; delete globals.IS_REACT_ACT_ENVIRONMENT;
+  }
+});
 
 test("a newly cataloged provider uses the real generic form; probes never save and explicit selection follows saving", async () => {
   const { provider, configuration } = integrationFixture();

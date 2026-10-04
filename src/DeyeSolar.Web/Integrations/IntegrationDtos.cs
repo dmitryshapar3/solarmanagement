@@ -13,7 +13,7 @@ public sealed record IntegrationPackageChange(IntegrationVersionGuard Guard, str
 public sealed record IntegrationSecretOperation(string Operation, string? Value = null);
 public sealed record IntegrationConfigurationChange(long ExpectedRevision, string PackageVersion,
     string PackageDigest, string DescriptorDigest, Dictionary<string, JsonElement> Values,
-    Dictionary<string, IntegrationSecretOperation> SecretOperations);
+    Dictionary<string, IntegrationSecretOperation> SecretOperations, Guid? OAuthFlowId = null);
 public sealed record IntegrationBindingDto(Guid Id, Guid InstanceId, string Kind, string Name,
     string RemoteId, string Channel, bool IsDefault);
 public sealed record IntegrationDiscoveryDevice(string SelectionToken, string Name, string Kind,

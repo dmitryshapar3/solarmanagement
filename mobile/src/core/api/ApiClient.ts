@@ -71,6 +71,8 @@ export class ApiClient {
     return () => { this.sessionObservers.delete(observer); };
   }
 
+  get sessionEpoch(): number { return this.revision; }
+
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
       throw new Error("API requests must use a relative server path.");

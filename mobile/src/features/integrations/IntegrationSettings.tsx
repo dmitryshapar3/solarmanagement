@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
-import { AppButton, Card, EmptyState, ErrorBanner, SectionTitle, StatusPill, SwitchRow, TextField } from "../../core/components";
+import { AppButton, Card, EmptyState, ErrorBanner, SectionTitle, StatusPill, TextField } from "../../core/components";
 import { ApiError } from "../../core/api/ApiClient";
 import type {
   IntegrationApi, IntegrationDeviceBinding, IntegrationDiscovery, IntegrationInstance,
@@ -9,9 +9,11 @@ import type {
 } from "../../core/api/IntegrationApi";
 import { colors, spacing, typography } from "../../core/theme";
 import {
-  createIntegrationDraft, integrationChange, integrationDraftChanged, isSecretField,
-  supportsField, unsupportedProvider, type IntegrationDraft
+  applyIntegrationOAuth, createIntegrationDraft, integrationChange, integrationDraftChanged,
+  unsupportedProvider, type IntegrationDraft
 } from "./integrationDraft";
+import { IntegrationFields } from "./IntegrationFields";
+import { authorizeIntegration } from "./integrationOAuth";
 
 export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }: {
   api: IntegrationApi;
@@ -33,10 +35,29 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [oauthNotice, setOAuthNotice] = useState<string | null>(null);
+  const [sessionRevision, setSessionRevision] = useState(0);
   const operation = useRef<AbortController | null>(null);
   const activeApi = useRef(api);
   const mounted = useRef(true);
+  const savedOAuthFlow = useRef<string | null>(null);
   activeApi.current = api;
+
+  useEffect(() => api.onSessionChange(() => {
+    operation.current?.abort();
+    setSessionRevision(current => current + 1);
+  }), [api]);
+
+  useEffect(() => {
+    const flowId = draft?.oauth?.flowId;
+    if (!flowId) return;
+    const instanceId = draft.configuration.instance.id;
+    const epoch = api.sessionEpoch;
+    return () => {
+      if (savedOAuthFlow.current === flowId) { savedOAuthFlow.current = null; return; }
+      if (api.sessionEpoch === epoch) void api.cancelOAuth(instanceId, flowId).catch(() => {});
+    };
+  }, [api, draft?.oauth?.flowId]);
 
   useEffect(() => {
     operation.current?.abort();
@@ -57,8 +78,9 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     setVersionError(null);
     setDiscovery(null);
     setTestResult(null);
+    setOAuthNotice(null);
     return () => { mounted.current = false; operation.current?.abort(); };
-  }, [api]);
+  }, [api, sessionRevision]);
 
   const refreshCatalog = useCallback(async (signal?: AbortSignal) => {
     if (isDemo) { setLoading(false); return; }
@@ -80,7 +102,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     } finally {
       if (!signal?.aborted && mounted.current && activeApi.current === api) setLoading(false);
     }
-  }, [api, isDemo]);
+  }, [api, isDemo, sessionRevision]);
 
   useFocusEffect(useCallback(() => {
     const controller = new AbortController();
@@ -121,6 +143,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     setBindings([]);
     setDiscovery(null);
     setTestResult(null);
+    setOAuthNotice(null);
     setVersions([]);
     setTargetVersion(configuration.instance.packageVersion);
     setVersionError(null);
@@ -133,13 +156,15 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   }
 
   function patchValue(key: string, value: string) {
-    setDraft(current => current && { ...current, values: { ...current.values, [key]: value } });
+    setDraft(current => current && { ...current, oauth: undefined, values: { ...current.values, [key]: value } });
+    setOAuthNotice(null);
     setDiscovery(null);
     setTestResult(null);
   }
 
   function patchSecret(key: string, value: SecretOperation) {
-    setDraft(current => current && { ...current, secrets: { ...current.secrets, [key]: value } });
+    setDraft(current => current && { ...current, oauth: undefined, secrets: { ...current.secrets, [key]: value } });
+    setOAuthNotice(null);
     setDiscovery(null);
     setTestResult(null);
   }
@@ -149,6 +174,49 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const packageAvailable = !draft || samePackage(draft.provider, draft.configuration.instance);
   const formDisabled = Boolean(busy || unsupported || !packageAvailable);
   const changed = draft ? integrationDraftChanged(draft) : false;
+
+  function renderAction(action: string) {
+    if (!draft) return null;
+    if (action === "oauth") return <AppButton key={action} label="Authorize provider" variant="secondary" disabled={formDisabled}
+      loading={busy === "oauth"} onPress={() => void run("oauth", async signal => {
+        const startingDraft = { ...draft, oauth: undefined };
+        const change = integrationChange(startingDraft, { allowMissingOAuthSecrets: true });
+        setDraft(startingDraft);
+        setOAuthNotice(null);
+        setDiscovery(null);
+        setTestResult(null);
+        const result = await authorizeIntegration(api, startingDraft.configuration.instance.id, change, signal);
+        if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+        const authorized = result ? applyIntegrationOAuth(startingDraft, result) : startingDraft;
+        setDraft(current => current === startingDraft ? authorized : current);
+        setOAuthNotice(result ? "Authorization is ready in this draft. Save settings to retain it." : "Authorization was canceled. Settings were not saved.");
+      })} />;
+    if (action === "test") return <AppButton key={action} label="Test draft connection" variant="secondary" disabled={formDisabled}
+      loading={busy === "test"} onPress={() => void run("test", async signal => {
+        const result = await api.test(draft.configuration.instance.id, integrationChange(draft), signal);
+        if (!signal.aborted && mounted.current && activeApi.current === api) setTestResult(result);
+      })} />;
+    if (action === "discover") return <View key={action} style={styles.form}>
+      <AppButton label="Discover draft devices" variant="secondary" disabled={formDisabled}
+        loading={busy === "discover"} onPress={() => void run("discover", async signal => {
+          const result = await api.discover(draft.configuration.instance.id, integrationChange(draft), signal);
+          if (!signal.aborted && mounted.current && activeApi.current === api) setDiscovery(result);
+        })} />
+      {discovery && !discovery.devices.length ? <Text style={styles.detail}>Discovery returned no devices.</Text> : null}
+      {discovery?.devices.map(device => <View key={device.selectionToken} style={styles.form}>
+        <Text style={styles.title}>{device.name}</Text>
+        <Text style={styles.detail}>{device.kind} · {device.remoteId}{device.channel ? ` · ${device.channel}` : ""}</Text>
+        <AppButton label={`Use ${device.name}`} variant="secondary"
+          disabled={formDisabled || changed || !Number.isFinite(Date.parse(discovery.expiresAt)) || Date.parse(discovery.expiresAt) <= Date.now()}
+          onPress={() => void run("select", async signal => {
+            await api.selectDevice(draft.configuration.instance.id, integrationChange(draft), device.selectionToken, signal);
+            await open(draft.configuration.instance, signal);
+            if (!signal.aborted) await onSelectionChanged?.();
+          })} />
+      </View>)}
+    </View>;
+    return null;
+  }
 
   return <>
     <SectionTitle title="Integrations" />
@@ -220,73 +288,26 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
             })} />
         </View> : null}
         <ErrorBanner message={unsupported || (!packageAvailable ? "This integration version is no longer available. Your draft is preserved; refresh the catalog before continuing." : null)} />
-        {draft.provider.fields.map(field => {
-          if (!supportsField(field)) return <Text key={field.key} style={styles.detail}>{field.label}: this field needs a newer app. Its saved value is preserved.</Text>;
-          if (isSecretField(field)) {
-            const secret = draft.secrets[field.key] ?? { operation: "keep" };
-            return <View key={field.key} style={styles.form}>
-              <Text style={styles.title}>{field.label}{field.required ? " *" : ""}</Text>
-              <Text style={styles.detail}>{draft.configuration.secretPresent[field.key] ? "A value is saved. It is never shown." : "No value is saved."}</Text>
-              <View style={styles.row}>
-                {(["keep", "replace", "clear"] as const).map(action => <AppButton key={action}
-                  label={action === "keep" ? "Keep saved" : action === "replace" ? "Replace" : "Clear"}
-                  accessibilityLabel={`${field.label}: ${action}`} compact
-                  variant={secret.operation === action ? "primary" : "secondary"} disabled={formDisabled}
-                  onPress={() => patchSecret(field.key, action === "replace" ? { operation: action, value: "" } : { operation: action })} />)}
-              </View>
-              {secret.operation === "replace" ? <TextField label={`New ${field.label}`} secureTextEntry value={secret.value ?? ""}
-                editable={!formDisabled} onChangeText={value => patchSecret(field.key, { operation: "replace", value })} /> : null}
-            </View>;
-          }
-          const value = draft.values[field.key] ?? "";
-          if (field.kind === "boolean") return <SwitchRow key={field.key} title={field.label} disabled={formDisabled}
-            value={value === "true"} onValueChange={next => patchValue(field.key, String(next))} />;
-          if (field.kind === "select") return <View key={field.key} style={styles.form}>
-            <Text style={styles.title}>{field.label}{field.required ? " *" : ""}</Text>
-            {!field.required ? <AppButton label="No selection" variant={value === "" ? "primary" : "secondary"}
-              disabled={formDisabled} onPress={() => patchValue(field.key, "")} /> : null}
-            {(field.options ?? []).map(option => <AppButton key={option.value} label={option.label}
-              variant={value === option.value ? "primary" : "secondary"} disabled={formDisabled}
-              onPress={() => patchValue(field.key, option.value)} />)}
-          </View>;
-          return <TextField key={field.key} label={`${field.label}${field.required ? " *" : ""}`} value={value}
-            keyboardType={field.kind === "number" || field.kind === "integer" ? "numbers-and-punctuation" : "default"}
-            editable={!formDisabled} onChangeText={next => patchValue(field.key, next)} />;
-        })}
+        <IntegrationFields draft={draft} disabled={formDisabled} onValue={patchValue} onSecret={patchSecret} renderAction={renderAction} />
         <AppButton label="Save integration settings" disabled={formDisabled} loading={busy === "save"}
           onPress={() => void run("save", async signal => {
             const saved = await api.saveConfiguration(draft.configuration.instance.id, integrationChange(draft), signal);
             if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+            savedOAuthFlow.current = draft.oauth?.flowId ?? null;
             setDraft(createIntegrationDraft(draft.provider, saved));
+            setOAuthNotice(null);
             setDiscovery(null);
             setTestResult(null);
             setInstances(current => current.map(instance => instance.id === saved.instance.id ? saved.instance : instance));
             await onSelectionChanged?.();
           })} />
-        {draft.provider.actions.includes("test") ? <AppButton label="Test draft connection" variant="secondary" disabled={formDisabled}
-          loading={busy === "test"} onPress={() => void run("test", async signal => {
-            const result = await api.test(draft.configuration.instance.id, integrationChange(draft), signal);
-            if (!signal.aborted && mounted.current && activeApi.current === api) setTestResult(result);
-          })} /> : null}
         {testResult ? <Text style={styles.detail}>{testResult.message}</Text> : null}
-        {draft.provider.actions.includes("discover") ? <AppButton label="Discover draft devices" variant="secondary" disabled={formDisabled}
-          loading={busy === "discover"} onPress={() => void run("discover", async signal => {
-            const result = await api.discover(draft.configuration.instance.id, integrationChange(draft), signal);
-            if (!signal.aborted && mounted.current && activeApi.current === api) setDiscovery(result);
-          })} /> : null}
-        <Text style={styles.detail}>Testing and discovery do not save settings or switch devices. Save settings before selecting a discovered device.</Text>
-        {discovery && !discovery.devices.length ? <Text style={styles.detail}>Discovery returned no devices.</Text> : null}
-        {discovery?.devices.map(device => <View key={device.selectionToken} style={styles.form}>
-          <Text style={styles.title}>{device.name}</Text>
-          <Text style={styles.detail}>{device.kind} · {device.remoteId}{device.channel ? ` · ${device.channel}` : ""}</Text>
-          <AppButton label={`Use ${device.name}`} variant="secondary"
-            disabled={formDisabled || changed || !Number.isFinite(Date.parse(discovery.expiresAt)) || Date.parse(discovery.expiresAt) <= Date.now()}
-            onPress={() => void run("select", async signal => {
-              await api.selectDevice(draft.configuration.instance.id, integrationChange(draft), device.selectionToken, signal);
-              await open(draft.configuration.instance, signal);
-              if (!signal.aborted) await onSelectionChanged?.();
-            })} />
-        </View>)}
+        {oauthNotice ? <Text style={styles.detail}>{oauthNotice}</Text> : null}
+        {busy === "oauth" ? <AppButton label="Cancel authorization" variant="secondary" onPress={() => {
+          operation.current?.abort();
+          setOAuthNotice("Authorization was canceled. Settings were not saved.");
+        }} /> : null}
+        <Text style={styles.detail}>Authorization, testing and discovery do not save settings or switch devices. Save settings before selecting a discovered device.</Text>
         {bindings.map(device => <Text key={device.id} style={styles.detail}>
           {device.name}{device.isDefault ? " · Selected" : ""}
         </Text>)}

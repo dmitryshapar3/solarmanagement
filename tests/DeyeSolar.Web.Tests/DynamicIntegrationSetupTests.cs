@@ -39,6 +39,290 @@ namespace DeyeSolar.Web.Tests;
 public class DynamicIntegrationSetupTests
 {
     [SqlServerFact]
+    public Task ARevokedWebCookieStampCannotReadAFreshReadyAuthorization() => AssertRevokedWebStampAsync("status");
+    [SqlServerFact]
+    public Task ARevokedWebCookieStampCannotUseAFreshReadyAuthorization() => AssertRevokedWebStampAsync("test");
+    [SqlServerFact]
+    public Task ARevokedWebCookieStampCannotSaveAFreshReadyAuthorization() => AssertRevokedWebStampAsync("save");
+    [SqlServerFact]
+    public Task ARevokedWebCookieStampCannotCancelAFreshReadyAuthorization() => AssertRevokedWebStampAsync("cancel");
+
+    private async Task AssertRevokedWebStampAsync(string operation)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            (await db.Users.SingleAsync(user => user.Id == "owner-a")).SecurityStamp = "fresh-web-stamp";
+            await db.SaveChangesAsync();
+        }
+        ClaimsPrincipal Stamped(string stamp) => new(new ClaimsIdentity([.. fixture.Actor("site-a").Claims,
+            new Claim("AspNet.Identity.SecurityStamp", stamp)], "stamped-cookie-fixture"));
+        var fresh = Stamped("fresh-web-stamp");
+        var revoked = Stamped("revoked-web-stamp");
+        var catalog = new OAuthCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var instance = await service.CreateAsync(new("oauth.fixture", "A"), fresh, default);
+        var draft = new IntegrationConfigurationChange(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest,
+            new() { ["accountLabel"] = IntegrationJson.Element("Draft account") }, new());
+        var started = await service.StartAuthorizationAsync(instance.Id, new(draft), fresh, default);
+        await fixture.OAuth(catalog).CallbackAsync(fixture.Executor.OAuthBegin!.State, "approved", null, fresh, default);
+        var status = await service.AuthorizationStatusAsync(instance.Id, started.FlowId, fresh, default);
+        Assert.Equal("ready", status.Status);
+        var ready = draft with { Values = new(status.Values), OAuthFlowId = started.FlowId };
+        await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        var calls = fixture.Executor.Calls;
+        if (operation == "status")
+        {
+            var denied = await service.AuthorizationStatusAsync(instance.Id, started.FlowId, revoked, default);
+            Assert.Equal("failed", denied.Status);
+            Assert.Empty(denied.Values);
+            Assert.Empty(denied.SecretPresent);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<IntegrationRequestException>(async () =>
+            {
+                if (operation == "test") await service.TestAsync(instance.Id, ready, revoked, default);
+                else if (operation == "save") await service.SaveAsync(instance.Id, ready, revoked, default);
+                else await service.CancelAuthorizationAsync(instance.Id, started.FlowId, revoked, default);
+            });
+        }
+        Assert.Equal(calls, fixture.Executor.Calls);
+        Assert.Equal(before, await fixture.StateAsync());
+        await using var persisted = fixture.Factory("site-a").CreateDbContext();
+        var flow = await persisted.IntegrationOAuthFlows.SingleAsync(flow => flow.Id == started.FlowId);
+        Assert.Equal("ready", flow.Status);
+        Assert.NotEmpty(flow.Ciphertext);
+        Assert.Equal("ready", (await service.AuthorizationStatusAsync(instance.Id, started.FlowId, fresh, default)).Status);
+    }
+    [SqlServerFact]
+    public async Task WebOAuthKeepsTokensServerSideAndAppliesTheReadyDraftOnlyOnExplicitSave()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var catalog = new OAuthCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var instance = await service.CreateAsync(new("oauth.fixture", "OAuth connection"), fixture.Actor("site-a"), default);
+        var neighbour = await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        await using var services = fixture.ComponentServices(catalog);
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        Guid flowId = default;
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            await renderer.ClickAsync(root, "Authorize provider account");
+            Assert.Contains("Open provider authorization", renderer.Text(root));
+            Assert.Equal("S256", fixture.Executor.OAuthBegin!.CodeChallengeMethod);
+            Assert.DoesNotContain("oauth-web-secret", renderer.Attributes(root));
+            Assert.Equal(before, await fixture.StateAsync());
+            await fixture.OAuth(catalog).CallbackAsync(fixture.Executor.OAuthBegin.State, "local-fixture-code", null, fixture.Actor("site-a"), default);
+            await renderer.ClickAsync(root, "Check authorization");
+            Assert.Contains("Authorization status: ready", renderer.Text(root));
+            Assert.Equal("Authorized account", renderer.FieldValue("accountLabel"));
+            Assert.DoesNotContain("oauth-web-secret", renderer.Attributes(root));
+            Assert.DoesNotContain("oauth-web-secret", renderer.Text(root));
+            flowId = renderer.Draft().OAuthFlowId!.Value;
+            await renderer.ClickAsync(root, "Test connection");
+            await renderer.ClickAsync(root, "Find devices");
+            Assert.Equal(before, await fixture.StateAsync());
+            Assert.Equal("oauth-web-secret", fixture.Executor.LastDraft!.Secrets["apiKey"]);
+            await renderer.ClickAsync(root, "Save settings");
+            Assert.Contains("Settings saved", renderer.Text(root));
+            Assert.Null(renderer.Draft().OAuthFlowId);
+        });
+        var saved = await service.ReadAsync(instance.Id, default);
+        Assert.Equal(instance.Revision + 1, saved.Instance.Revision);
+        Assert.Equal("Authorized account", saved.Values["accountLabel"].GetString());
+        Assert.Equal("oauth-web-secret", await fixture.SavedSecretAsync("site-a", instance.Id));
+        await using var db = fixture.Factory("site-a").CreateDbContext();
+        var flow = await db.IntegrationOAuthFlows.SingleAsync(f => f.Id == flowId);
+        Assert.Equal("consumed", flow.Status);
+        Assert.Equal("", flow.Ciphertext);
+        Assert.Empty(await service.DevicesAsync(instance.Id, default));
+        Assert.Equal(neighbour, (await fixture.Service("site-b").ReadAsync(neighbour.Id, default)).Instance);
+        Assert.Equal("saved-B", await fixture.SavedSecretAsync("site-b", neighbour.Id));
+    }
+
+    [SqlServerFact]
+    public async Task WebOAuthDraftEditInvalidatesTheResultAndExplicitCancellationPreservesSavedSettings()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var catalog = new OAuthCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var instance = await service.CreateAsync(new("oauth.fixture", "A"), fixture.Actor("site-a"), default);
+        await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        await using var services = fixture.ComponentServices(catalog);
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            await renderer.ClickAsync(root, "Authorize provider account");
+            await fixture.OAuth(catalog).CallbackAsync(fixture.Executor.OAuthBegin!.State, "fixture-code", null, fixture.Actor("site-a"), default);
+            await renderer.ClickAsync(root, "Check authorization");
+            Assert.NotNull(renderer.Draft().OAuthFlowId);
+            renderer.SetText("accountLabel", "Edited after authorization");
+            Assert.Null(renderer.Draft().OAuthFlowId);
+            Assert.Contains("The draft changed", renderer.Text(root));
+            var calls = fixture.Executor.Calls;
+            await renderer.ClickAsync(root, "Test connection");
+            Assert.Equal(calls, fixture.Executor.Calls);
+            Assert.Contains("Enter API key", renderer.Text(root));
+            await renderer.ClickAsync(root, "Authorize provider account");
+            Assert.Equal("Edited after authorization", renderer.FieldValue("accountLabel"));
+            await renderer.ClickAsync(root, "Cancel authorization");
+            Assert.Contains("Authorization cancelled", renderer.Text(root));
+            Assert.Null(renderer.Draft().OAuthFlowId);
+            Assert.DoesNotContain("oauth-web-secret", renderer.Attributes(root));
+        });
+        Assert.Equal(before, await fixture.StateAsync());
+        Assert.False((await service.ReadAsync(instance.Id, default)).SecretPresent.ContainsKey("apiKey"));
+        await using var db = fixture.Factory("site-a").CreateDbContext();
+        var flows = await db.IntegrationOAuthFlows.Where(f => f.InstanceId == instance.Id).ToArrayAsync();
+        Assert.Equal(2, flows.Length);
+        Assert.All(flows, flow => { Assert.Equal("cancelled", flow.Status); Assert.Equal("", flow.Ciphertext); });
+    }
+    [SqlServerFact]
+    public async Task WizardRendersPlainInstructionsNavigatesAndRetainsHiddenDraftValuesWithoutSavingDuringDiscovery()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var catalog = new WizardCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var created = await service.CreateAsync(new("wizard.fixture", "Wizard connection"), fixture.Actor("site-a"), default);
+        var saved = (await service.SaveAsync(created.Id, WizardChange(created, "basic", null, "saved-wizard-key"), fixture.Actor("site-a"), default)).Instance;
+        await fixture.CreateSavedAsync("site-b", "Neighbour");
+        var before = await fixture.StateAsync();
+        await using var services = fixture.ComponentServices(catalog);
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            Assert.Contains("Step 1 of 2 · Credentials", renderer.Text(root));
+            Assert.Contains("<script>Never execute this instruction</script>", renderer.Text(root));
+            Assert.DoesNotContain("<script>", renderer.Markup(root));
+            Assert.DoesNotContain("Advanced threshold", renderer.Text(root));
+            renderer.SetText("mode", "advanced");
+            await renderer.ClickAsync(root, "Next step");
+            Assert.Contains("Step 2 of 2 · Devices", renderer.Text(root));
+            Assert.Contains("Advanced threshold", renderer.Text(root));
+            await renderer.ClickAsync(root, "Save settings");
+            Assert.Contains("Enter Advanced threshold", renderer.Text(root));
+            renderer.SetText("limit", "7");
+            await renderer.ClickAsync(root, "Previous step");
+            renderer.SetText("mode", "basic");
+            await renderer.ClickAsync(root, "Next step");
+            Assert.DoesNotContain("Advanced threshold", renderer.Text(root));
+            Assert.Equal("7", renderer.FieldValue("limit"));
+            await renderer.ClickAsync(root, "Find devices");
+            Assert.Contains("Socket", renderer.Text(root));
+            Assert.Equal(before, await fixture.StateAsync());
+            await renderer.ClickAsync(root, "Save settings");
+            Assert.Contains("Settings saved", renderer.Text(root));
+        });
+        var view = await service.ReadAsync(saved.Id, default);
+        Assert.Equal("basic", view.Values["mode"].GetString());
+        Assert.Equal(7, view.Values["limit"].GetInt32());
+        Assert.Equal("saved-wizard-key", await fixture.SavedSecretAsync("site-a", saved.Id));
+        Assert.Equal("saved-Neighbour", await fixture.SavedSecretAsync("site-b", (await fixture.Service("site-b").ListAsync(default)).Single().Id));
+        Assert.Empty(await service.DevicesAsync(saved.Id, default));
+    }
+
+    [SqlServerFact]
+    public async Task ConditionalRequiredFieldsAreAuthoritativeAndHiddenOmittedValuesAreRetainedAndStillTypeChecked()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var service = fixture.Service("site-a", catalog: new WizardCatalog());
+        var instance = await service.CreateAsync(new("wizard.fixture", "A"), fixture.Actor("site-a"), default);
+        var inactive = await service.SaveAsync(instance.Id, WizardChange(instance, "basic", null, "conditional-key"), fixture.Actor("site-a"), default);
+        await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        var badHidden = WizardChange(inactive.Instance, "basic", null, null);
+        badHidden.Values["limit"] = IntegrationJson.Element("seven");
+        await Assert.ThrowsAsync<IntegrationRequestException>(() => service.SaveAsync(instance.Id, badHidden, fixture.Actor("site-a"), default));
+        await Assert.ThrowsAsync<IntegrationRequestException>(() => service.TestAsync(instance.Id,
+            WizardChange(inactive.Instance, "advanced", null, null), fixture.Actor("site-a"), default));
+        Assert.Equal(before, await fixture.StateAsync());
+        var active = await service.SaveAsync(instance.Id, WizardChange(inactive.Instance, "advanced", 8, null), fixture.Actor("site-a"), default);
+        var hide = WizardChange(active.Instance, "basic", null, null);
+        hide.SecretOperations["apiKey"] = new("clear");
+        var hidden = await service.SaveAsync(instance.Id, hide, fixture.Actor("site-a"), default);
+        Assert.Equal(8, hidden.Values["limit"].GetInt32());
+        Assert.False(hidden.SecretPresent.ContainsKey("apiKey"));
+        var unchanged = await fixture.StateAsync();
+        await Assert.ThrowsAsync<IntegrationRequestException>(() => service.SaveAsync(instance.Id,
+            WizardChange(hidden.Instance, "advanced", 8, null), fixture.Actor("site-a"), default));
+        Assert.Equal(unchanged, await fixture.StateAsync());
+        Assert.Equal("saved-B", await fixture.SavedSecretAsync("site-b", (await fixture.Service("site-b").ListAsync(default)).Single().Id));
+    }
+
+    private static IntegrationConfigurationChange WizardChange(IntegrationInstanceDto instance, string mode, int? limit, string? secret)
+    {
+        var values = new Dictionary<string, JsonElement> { ["mode"] = IntegrationJson.Element(mode) };
+        if (limit is not null) values["limit"] = IntegrationJson.Element(limit.Value);
+        return new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, values,
+            secret is null ? new() : new() { ["apiKey"] = new("replace", secret) });
+    }
+
+    [SqlServerFact]
+    public async Task WebWizardPreservesExplicitNullInsteadOfApplyingADefaultOrActivatingAConditionalGroup()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var catalog = new NullWizardCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var instance = await service.CreateAsync(new("null.fixture", "A"), fixture.Actor("site-a"), default);
+        var saved = await service.SaveAsync(instance.Id, new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest,
+            new() { ["enabled"] = IntegrationJson.Element<bool?>(null), ["threshold"] = IntegrationJson.Element<int?>(null) }, new()), fixture.Actor("site-a"), default);
+        await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        await using var services = fixture.ComponentServices(catalog);
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            Assert.DoesNotContain("Defaulted advanced group", renderer.Text(root));
+            Assert.DoesNotContain("Conditional threshold", renderer.Text(root));
+            Assert.Equal(JsonValueKind.Null, renderer.Draft().Values["enabled"].ValueKind);
+            Assert.Equal(JsonValueKind.Null, renderer.Draft().Values["threshold"].ValueKind);
+            await renderer.ClickAsync(root, "Test connection");
+            Assert.Equal(JsonValueKind.Null, fixture.Executor.LastDraft!.Values.GetProperty("enabled").ValueKind);
+            await renderer.ClickAsync(root, "Save settings");
+        });
+        Assert.Equal(before, await fixture.StateAsync());
+        Assert.Equal(saved.Instance.Revision, (await service.ReadAsync(instance.Id, default)).Instance.Revision);
+    }
+
+    [SqlServerFact]
+    public async Task RequiredBooleanHasAnUnsetStateAndFalseCanBeChosenDirectlyWithoutActivatingItsConditionalGroup()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var catalog = new RequiredBooleanCatalog();
+        var service = fixture.Service("site-a", catalog: catalog);
+        var instance = await service.CreateAsync(new("boolean.fixture", "A"), fixture.Actor("site-a"), default);
+        await fixture.CreateSavedAsync("site-b", "B");
+        var before = await fixture.StateAsync();
+        await using var services = fixture.ComponentServices(catalog);
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            await renderer.ClickAsync(root, "Next step");
+            Assert.Contains("Enter Enabled flag", renderer.Text(root));
+            Assert.Contains("Step 1 of 2", renderer.Text(root));
+            Assert.Equal(before, await fixture.StateAsync());
+            await renderer.SelectFieldAsync(root, "enabled", "false");
+            Assert.Equal(JsonValueKind.False, renderer.Draft().Values["enabled"].ValueKind);
+            await renderer.ClickAsync(root, "Next step");
+            Assert.Contains("Step 2 of 2", renderer.Text(root));
+            Assert.DoesNotContain("Conditional threshold", renderer.Text(root));
+            await renderer.ClickAsync(root, "Save settings");
+        });
+        var saved = await service.ReadAsync(instance.Id, default);
+        Assert.Equal(JsonValueKind.False, saved.Values["enabled"].ValueKind);
+        Assert.False(saved.Values.ContainsKey("threshold"));
+        Assert.Equal("saved-B", await fixture.SavedSecretAsync("site-b", (await fixture.Service("site-b").ListAsync(default)).Single().Id));
+    }
+    [SqlServerFact]
     public async Task GenericWebFormRendersUnknownManufacturerAndProbePreservesSavedConfiguration()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -654,7 +938,7 @@ public class DynamicIntegrationSetupTests
             services.AddSingleton(current);
             services.AddSingleton(catalog);
             services.AddSingleton(_changes);
-            services.AddSingleton(Service("site-a"));
+            services.AddSingleton(Service("site-a", catalog: catalog));
             return services.BuildServiceProvider();
         }
         public async Task<WebApplication> StartHttpAsync()
@@ -671,6 +955,10 @@ public class DynamicIntegrationSetupTests
             builder.Services.AddSingleton(Secrets);
             builder.Services.AddSingleton(_changes);
             builder.Services.AddSingleton(_gate);
+            builder.Services.AddSingleton(options);
+            builder.Services.AddSingleton(new IntegrationOAuthOptions());
+            builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
+            builder.Services.AddSingleton<IntegrationOAuthService>();
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
             builder.Services.AddScoped<CurrentInstallation>();
             builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>>(provider => Factory(provider.GetRequiredService<CurrentInstallation>().Id ?? "site-a"));
@@ -718,13 +1006,15 @@ public class DynamicIntegrationSetupTests
         public Factory Factory(string installation) => new(options, installation);
         public ClaimsPrincipal Actor(string installation) => new(new ClaimsIdentity([
             new Claim(ClaimTypes.NameIdentifier, installation == "site-a" ? "owner-a" : "owner-b"), new Claim(InstallationIds.ClaimType, installation)], "synthetic-test"));
-        public IntegrationSetupService Service(string installation, IntegrationRuntimeOptions? setupLimits = null)
+        public IntegrationSetupService Service(string installation, IntegrationRuntimeOptions? setupLimits = null, IIntegrationProviderCatalog? catalog = null)
         {
             var current = new CurrentInstallation(); current.BindOnce(installation);
             var factory = Factory(installation);
-            return new(factory, new Catalog(), Executor, Secrets, _protection, TimeProvider.System, new(factory), current, _changes, _gate,
-                setupLimits is null ? null : Options.Create(setupLimits));
+            return new(factory, catalog ?? new Catalog(), Executor, Secrets, _protection, TimeProvider.System, new(factory), current, _changes, _gate,
+                setupLimits is null ? null : Options.Create(setupLimits), OAuth(catalog ?? new Catalog()));
         }
+        public IntegrationOAuthService OAuth(IIntegrationProviderCatalog catalog) => new(options, catalog, Executor, Secrets, new(), TimeProvider.System,
+            new MobileSessionStore(), _gate, Options.Create(new IntegrationRuntimeOptions()));
         public IntegrationConfigurationChange Change(IntegrationInstanceDto instance, string? key) => new(instance.Revision,
             instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, new() { ["region"] = IntegrationJson.Element("eu"), ["extra"] = IntegrationJson.Element(7) },
             key is null ? new() : new() { ["apiKey"] = new("replace", key) });
@@ -814,6 +1104,49 @@ public class DynamicIntegrationSetupTests
             ["text", "secret", "select", "integer"], [new("region", "select", "Region", true, Options: [new("eu", "Europe")]),
                 new("apiKey", "secret", "API key", true, Secret: true), new("extra", "integer", "Extra setting", true, Minimum: 1, Maximum: 10)], ["test", "discover"]);
     }
+    private sealed class WizardCatalog : IIntegrationProviderCatalog
+    {
+        private static IntegrationProviderDescriptor Descriptor => new("wizard.fixture", "1.0", "wizard-package", "wizard-ui", "Wizard manufacturer", 1, 1,
+            ["select", "secret", "integer", "wizard", "groups", "instructions", "conditional-fields", "device-selector"],
+            [new("mode", "select", "Mode", true, Options: [new("basic", "Basic"), new("advanced", "Advanced")]),
+                new("apiKey", "secret", "API key", true, Secret: true, ActiveWhen: new("mode", "eq", IntegrationJson.Element("advanced"))),
+                new("limit", "integer", "Advanced threshold", true, Minimum: 1, Maximum: 10)], ["test", "discover"],
+            new(1, [new("credentials", "Credentials", "<script>Never execute this instruction</script>",
+                    [new("account", "Account settings", "Choose the account mode.", ["mode", "apiKey"], ["test"])]),
+                new("devices", "Devices", "Choose devices explicitly.",
+                    [new("advanced", "Advanced settings", null, ["limit"], [], new("mode", "eq", IntegrationJson.Element("advanced"))),
+                        new("inventory", "Device selection", "Discovery does not save settings.", [], ["discover"])])]));
+        public Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationProviderDescriptor>>([Descriptor]);
+        public Task<IntegrationProviderDescriptor> GetAsync(string providerId, string? version, CancellationToken ct) => Task.FromResult(Descriptor);
+    }
+    private sealed class OAuthCatalog : IIntegrationProviderCatalog
+    {
+        private static IntegrationProviderDescriptor Descriptor => new("oauth.fixture", "1.0", "oauth-package", "oauth-ui", "OAuth fixture provider", 1, 1,
+            ["text", "secret", "oauth"], [new("accountLabel", "text", "Account label", true, IntegrationJson.Element("Draft account")),
+                new("apiKey", "secret", "API key", true, Secret: true)], ["test", "discover", "oauth"], OAuthDefinition: new(["apiKey"]));
+        public Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationProviderDescriptor>>([Descriptor]);
+        public Task<IntegrationProviderDescriptor> GetAsync(string providerId, string? version, CancellationToken ct) => Task.FromResult(Descriptor);
+    }
+    private sealed class NullWizardCatalog : IIntegrationProviderCatalog
+    {
+        private static IntegrationProviderDescriptor Descriptor => new("null.fixture", "1.0", "null-package", "null-ui", "Nullable fixture provider", 1, 1,
+            ["boolean", "integer", "wizard", "groups", "conditional-fields"],
+            [new("enabled", "boolean", "Advanced enabled", false, IntegrationJson.Element(true)), new("threshold", "integer", "Conditional threshold", true)], ["test"],
+            new(1, [new("settings", "Settings", null, [new("controls", "Controls", null, ["enabled"], ["test"]),
+                new("advanced", "Defaulted advanced group", null, ["threshold"], [], new("enabled", "eq", IntegrationJson.Element(true)))])]));
+        public Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationProviderDescriptor>>([Descriptor]);
+        public Task<IntegrationProviderDescriptor> GetAsync(string providerId, string? version, CancellationToken ct) => Task.FromResult(Descriptor);
+    }
+    private sealed class RequiredBooleanCatalog : IIntegrationProviderCatalog
+    {
+        private static IntegrationProviderDescriptor Descriptor => new("boolean.fixture", "1.0", "boolean-package", "boolean-ui", "Boolean fixture", 1, 1,
+            ["boolean", "integer", "wizard", "groups", "conditional-fields"],
+            [new("enabled", "boolean", "Enabled flag", true), new("threshold", "integer", "Conditional threshold", true)], ["test"],
+            new(1, [new("controls", "Controls", null, [new("controls", "Controls", null, ["enabled"], [])]),
+                new("settings", "Settings", null, [new("advanced", "Advanced settings", null, ["threshold"], ["test"], new("enabled", "eq", IntegrationJson.Element(true)))])]));
+        public Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationProviderDescriptor>>([Descriptor]);
+        public Task<IntegrationProviderDescriptor> GetAsync(string providerId, string? version, CancellationToken ct) => Task.FromResult(Descriptor);
+    }
     private sealed class DeniedPackageManager : IIntegrationPackageManager
     {
         public Task<IntegrationInstalledPackage> InstallAsync(IntegrationPackageInstallRequest request, CancellationToken ct) => throw new InvalidOperationException("An installation owner must never invoke package installation.");
@@ -861,6 +1194,56 @@ public class DynamicIntegrationSetupTests
         {
             _component!.GetType().GetMethod("SetSecretValue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [key, value]);
             Repaint();
+        }
+        public void SetText(string key, string value)
+        {
+            _component!.GetType().GetMethod("SetText", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [key, value]);
+            Repaint();
+        }
+        public string FieldValue(string key) => (string)_component!.GetType().GetMethod("TextValue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [key])!;
+        public IntegrationConfigurationChange Draft() => (IntegrationConfigurationChange)_component!.GetType().GetMethod("Draft", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [])!;
+        public async Task SelectFieldAsync(int root, string key, string value)
+        {
+            var callback = FindFieldCallback(root, key) ?? throw new InvalidOperationException("The field is not rendered: " + key);
+            await callback.InvokeAsync(value);
+        }
+        private EventCallback<string>? FindFieldCallback(int root, string key)
+        {
+            var frames = GetCurrentRenderTreeFrames(root);
+            for (var index = 0; index < frames.Count; index++)
+            {
+                var frame = frames.Array[index];
+                if (frame.FrameType != RenderTreeFrameType.Component) continue;
+                if (frame.ComponentType == typeof(IntegrationFieldInput))
+                {
+                    var parameters = frames.Array.Skip(index + 1).Take(frame.ComponentSubtreeLength - 1).ToArray();
+                    if (parameters.Any(parameter => parameter.FrameType == RenderTreeFrameType.Attribute
+                        && parameter.AttributeName == "Field" && parameter.AttributeValue is IntegrationFieldDescriptor field && field.Key == key))
+                        return (EventCallback<string>)parameters.Single(parameter => parameter.FrameType == RenderTreeFrameType.Attribute && parameter.AttributeName == "ValueChanged").AttributeValue;
+                }
+                if (FindFieldCallback(frame.ComponentId, key) is { } nested) return nested;
+            }
+            return null;
+        }
+        public string Attributes(int root)
+        {
+            var frames = GetCurrentRenderTreeFrames(root);
+            return string.Concat(frames.Array.Take(frames.Count).Select(frame => frame.FrameType switch
+            {
+                RenderTreeFrameType.Attribute => frame.AttributeValue?.ToString(),
+                RenderTreeFrameType.Component => Attributes(frame.ComponentId),
+                _ => ""
+            }));
+        }
+        public string Markup(int root)
+        {
+            var frames = GetCurrentRenderTreeFrames(root);
+            return string.Concat(frames.Array.Take(frames.Count).Select(frame => frame.FrameType switch
+            {
+                RenderTreeFrameType.Markup => frame.MarkupContent,
+                RenderTreeFrameType.Component => Markup(frame.ComponentId),
+                _ => ""
+            }));
         }
         public string CredentialValue(string key) => (string)_component!.GetType()
             .GetMethod("SecretValue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [key])!;
@@ -920,8 +1303,18 @@ public class DynamicIntegrationSetupTests
         public Func<CancellationToken, Task<IntegrationTestResult>>? Check { get; set; }
         public Func<CancellationToken, Task<IReadOnlyList<IntegrationDiscoveredDevice>>>? Discovery { get; set; }
         public IReadOnlyList<IntegrationDiscoveredDevice> Devices { get; set; } = [new("OpaqueCase", "0", "socket", "Socket", "verified-account")];
+        public IntegrationDraftConfiguration? LastDraft { get; private set; }
+        public IntegrationOAuthBeginRequest? OAuthBegin { get; private set; }
+        public Task<IntegrationOAuthBeginResult> BeginAuthorizationAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, IntegrationOAuthBeginRequest request, CancellationToken ct)
+        {
+            OAuthBegin = request;
+            return Task.FromResult(new IntegrationOAuthBeginResult("https://provider.example/authorize?state=" + request.State + "&code_challenge=" + request.CodeChallenge));
+        }
+        public Task<IntegrationOAuthCompleteResult> CompleteAuthorizationAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, IntegrationOAuthCompleteRequest request, CancellationToken ct)
+            => Task.FromResult(new IntegrationOAuthCompleteResult(true, IntegrationJson.Element(new { accountLabel = "Authorized account" }),
+                new Dictionary<string, string> { ["apiKey"] = "oauth-web-secret" }, "verified-account"));
         public Task<IntegrationTestResult> TestAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, CancellationToken ct)
-        { Calls++; TestStarted?.TrySetResult(); return Check?.Invoke(ct) ?? Task.FromResult(new IntegrationTestResult(true, "ok", TestMessage, "verified-account")); }
+        { Calls++; LastDraft = draft; TestStarted?.TrySetResult(); return Check?.Invoke(ct) ?? Task.FromResult(new IntegrationTestResult(true, "ok", TestMessage, "verified-account")); }
         public Task<IReadOnlyList<IntegrationDiscoveredDevice>> DiscoverAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, IntegrationDiscoveryQuery query, CancellationToken ct)
         { Calls++; return Discovery?.Invoke(ct) ?? Task.FromResult(Devices); }
     }

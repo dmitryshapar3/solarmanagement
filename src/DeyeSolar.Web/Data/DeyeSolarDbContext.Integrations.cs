@@ -10,6 +10,7 @@ public partial class DeyeSolarDbContext
     public DbSet<IntegrationDeviceBindingEntity> IntegrationDeviceBindings => Set<IntegrationDeviceBindingEntity>();
     public DbSet<IntegrationCommandEntity> IntegrationCommands => Set<IntegrationCommandEntity>();
     public DbSet<IntegrationDeviceAliasEntity> IntegrationDeviceAliases => Set<IntegrationDeviceAliasEntity>();
+    public DbSet<IntegrationOAuthFlowEntity> IntegrationOAuthFlows => Set<IntegrationOAuthFlowEntity>();
 
     private void ConfigureDynamicIntegrations(ModelBuilder modelBuilder)
     {
@@ -18,6 +19,27 @@ public partial class DeyeSolarDbContext
         ConfigureInstallation<IntegrationDeviceBindingEntity>(modelBuilder);
         ConfigureInstallation<IntegrationCommandEntity>(modelBuilder);
         ConfigureInstallation<IntegrationDeviceAliasEntity>(modelBuilder);
+        ConfigureInstallation<IntegrationOAuthFlowEntity>(modelBuilder);
+        modelBuilder.Entity<IntegrationOAuthFlowEntity>(e =>
+        {
+            e.ToTable("IntegrationOAuthFlows");
+            e.HasKey(x => x.Id);
+            e.HasQueryFilter(x => InstallationId != null && x.InstallationId == InstallationId);
+            e.Property(x => x.UserId).HasMaxLength(450);
+            e.Property(x => x.SecurityStamp).HasMaxLength(256);
+            e.Property(x => x.StateHash).HasMaxLength(64).UseCollation("Latin1_General_100_BIN2");
+            e.Property(x => x.Client).HasMaxLength(16);
+            e.Property(x => x.Status).HasMaxLength(32).IsConcurrencyToken();
+            e.Property(x => x.Code).HasMaxLength(64);
+            e.Property(x => x.PackageVersion).HasMaxLength(64);
+            e.Property(x => x.PackageDigest).HasMaxLength(128);
+            e.Property(x => x.DescriptorDigest).HasMaxLength(128);
+            e.HasIndex(x => x.StateHash).IsUnique();
+            e.HasIndex(x => new { x.InstallationId, x.InstanceId, x.UserId, x.ExpiresAt });
+            e.HasOne<IntegrationInstanceEntity>().WithMany().HasForeignKey(x => new { x.InstallationId, x.InstanceId })
+                .HasPrincipalKey(x => new { x.InstallationId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Microsoft.AspNetCore.Identity.IdentityUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<IntegrationDeviceAliasEntity>(e =>
         {
             e.ToTable("IntegrationDeviceAliases");

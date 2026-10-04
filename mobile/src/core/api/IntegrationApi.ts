@@ -1,6 +1,12 @@
 import type { ApiClient } from "./ApiClient";
 
 export type IntegrationValue = string | number | boolean | null;
+export type IntegrationUiCondition = { field: string; operator: string; value?: IntegrationValue };
+export type IntegrationUiGroup = {
+  id: string; title: string; instructions?: string | null; fieldKeys: string[]; actions: string[];
+  activeWhen?: IntegrationUiCondition | null;
+};
+export type IntegrationUiStep = { id: string; title: string; instructions?: string | null; groups: IntegrationUiGroup[] };
 export type IntegrationField = {
   key: string;
   kind: string;
@@ -11,6 +17,7 @@ export type IntegrationField = {
   minimum?: number | null;
   maximum?: number | null;
   options?: { value: string; label: string }[] | null;
+  activeWhen?: IntegrationUiCondition | null;
 };
 export type IntegrationProvider = {
   providerId: string;
@@ -23,6 +30,8 @@ export type IntegrationProvider = {
   requiredUiFeatures: string[];
   fields: IntegrationField[];
   actions: string[];
+  uiLayout?: { version: number; steps: IntegrationUiStep[] } | null;
+  oauthDefinition?: { secretFieldKeys: string[] } | null;
 };
 export type IntegrationCatalog = { providers: IntegrationProvider[]; revision: string };
 export type IntegrationInstance = {
@@ -51,6 +60,14 @@ export type SecretOperation = { operation: "keep" | "replace" | "clear"; value?:
 export type IntegrationConfigurationChange = IntegrationVersion & {
   values: Record<string, IntegrationValue>;
   secretOperations: Record<string, SecretOperation>;
+  oauthFlowId?: string | null;
+};
+export type IntegrationOAuthStart = {
+  flowId: string; authorizationUrl: string; expiresAt: string; returnUri: string; returnNonce: string;
+};
+export type IntegrationOAuthStatus = {
+  flowId: string; status: string; expiresAt: string; values: Record<string, IntegrationValue>;
+  secretPresent: Record<string, boolean>; code?: string | null;
 };
 export type IntegrationTest = { success: boolean; code: string; message: string };
 export type DiscoveredIntegrationDevice = {
@@ -86,7 +103,23 @@ const setupTimeoutMs = 330000;
 
 /** Uses the existing authenticated transport, including session cancellation and endpoint binding. */
 export class IntegrationApi {
-  constructor(private readonly client: Pick<ApiClient, "request">) {}
+  constructor(private readonly client: Pick<ApiClient, "request"> & Partial<Pick<ApiClient, "sessionEpoch" | "onSessionChange">>) {}
+
+  get sessionEpoch(): number { return this.client.sessionEpoch ?? 0; }
+
+  onSessionChange(observer: () => void): () => void { return this.client.onSessionChange?.(observer) ?? (() => {}); }
+
+  startOAuth(id: string, draft: IntegrationConfigurationChange, signal?: AbortSignal): Promise<IntegrationOAuthStart> {
+    return this.client.request(`${instancePath(id)}/oauth/start`, { method: "POST", body: { draft, client: "mobile" }, signal, timeoutMs: setupTimeoutMs });
+  }
+
+  getOAuth(id: string, flowId: string, signal?: AbortSignal): Promise<IntegrationOAuthStatus> {
+    return this.client.request(`${instancePath(id)}/oauth/${encodeURIComponent(flowId)}`, { signal });
+  }
+
+  cancelOAuth(id: string, flowId: string): Promise<IntegrationOAuthStatus> {
+    return this.client.request(`${instancePath(id)}/oauth/${encodeURIComponent(flowId)}/cancel`, { method: "POST" });
+  }
 
   getCatalog(signal?: AbortSignal): Promise<IntegrationCatalog> {
     return this.client.request("/api/v2/integration-providers", { signal });

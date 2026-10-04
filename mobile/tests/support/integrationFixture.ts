@@ -9,7 +9,7 @@ export function integrationFixture(): { provider: IntegrationProvider; configura
       { key: "token", kind: "secret", label: "API key", required: true, secret: true, options: [] },
       { key: "interval", kind: "integer", label: "Interval", required: true, secret: false, minimum: 5, maximum: 60, options: [], defaultValue: 10 },
       { key: "mode", kind: "select", label: "Mode", required: true, secret: false, options: [{ value: "cloud", label: "Cloud" }] },
-      { key: "readOnly", kind: "boolean", label: "Read only", required: true, secret: false, options: [] }
+      { key: "readOnly", kind: "boolean", label: "Read only", required: true, secret: false, options: [], defaultValue: false }
     ], actions: ["test", "discover"]
   };
   const configuration: IntegrationConfiguration = {

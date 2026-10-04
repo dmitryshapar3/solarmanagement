@@ -97,6 +97,90 @@ public sealed class PackageAndRuntimeTests
         await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Store.GetProvidersAsync(default));
     }
     [Fact]
+    public async Task SignedLayoutInstallsDynamicallyAndMalformedReferencesCannotChangeTrustedCatalog()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var flat = await fixture.InstallAsync();
+        var descriptor = DescriptorTests.Wizard() with { PackageVersion = "2.0.0" };
+        var installed = await fixture.Store.InstallAsync(await fixture.CreateArchiveAsync("2.0.0", descriptorOverride: descriptor), default);
+        var described = await fixture.Store.GetAsync("test.provider", "2.0.0", default);
+        Assert.Equal(1, described.UiLayout!.Version);
+        Assert.Equal("apiKey", Assert.Single(described.OAuthDefinition!.SecretFieldKeys));
+        Assert.NotEqual((await fixture.Store.GetAsync("test.provider", "1.0.0", default)).DescriptorDigest, described.DescriptorDigest);
+        var malformed = descriptor with { PackageVersion = "3.0.0", UiLayout = new(1, [new("bad", "Bad", null, [new("bad", "Bad", null, ["foreign"], [])])]) };
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await fixture.Store.InstallAsync(await fixture.CreateArchiveAsync("3.0.0", descriptorOverride: malformed), default));
+        Assert.Equal(new[] { installed.Identity, flat.Identity }, (await fixture.Store.GetVersionsAsync("test.provider", default)).Select(value => new ProviderPackageIdentity(value.ProviderId, value.PackageVersion, value.PackageDigest)));
+    }
+    [Fact]
+    public async Task OAuthUsesIsolatedWorkersAndOnlyDeclaredOutputsWithoutChangingActiveAccounts()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Options.ApprovedOrigins.Add("https://oauth.example.test");
+        var flat = await fixture.InstallAsync();
+        var package = await fixture.Store.InstallAsync(await fixture.CreateArchiveAsync("2.0.0", descriptorOverride: DescriptorTests.Wizard() with { PackageVersion = "2.0.0" }, origins: ["https://oauth.example.test"]), default);
+        await using var runtime = fixture.Runtime();
+        var active = fixture.Session(flat.Identity, "two");
+        Assert.Equal(1m, (await ReadAsync(runtime, active)).BatterySoc.Value);
+        var verifier = new string('v', 64);
+        var begin = new IntegrationOAuthBeginRequest("https://host.example.test/api/v2/integrations/oauth/callback", new string('s', 43), IntegrationOAuthProtocol.Challenge(verifier));
+        var authorization = await runtime.BeginAuthorizationAsync(package.Identity, Fixture.Draft("one"), begin, default);
+        IntegrationOAuthProtocol.ValidateAuthorizationUrl(authorization.AuthorizationUrl, begin, ["https://oauth.example.test"]);
+        var complete = new IntegrationOAuthCompleteRequest("fixture-code:" + begin.CodeChallenge, begin.RedirectUri, verifier);
+        var result = await runtime.CompleteAuthorizationAsync(package.Identity, Fixture.Draft("one"), complete, default);
+        Assert.True(result.Success);
+        Assert.Equal("one", result.AccountIdentity);
+        Assert.Equal("one", result.PublicValues.GetProperty("account").GetString());
+        Assert.Equal("fixture-oauth-token:one", Assert.Single(result.SecretValues).Value);
+        Assert.False(result.PublicValues.TryGetProperty("apiKey", out _));
+        var denied = await runtime.CompleteAuthorizationAsync(package.Identity, Fixture.Draft("one"), complete with { CodeVerifier = new string('x', 64) }, default);
+        Assert.False(denied.Success);
+        Assert.Empty(denied.SecretValues);
+        Assert.Empty(denied.PublicValues.EnumerateObject());
+        foreach (var values in new[] { IntegrationJson.Element(new { account = "one", oauthExtraSecret = true }), IntegrationJson.Element(new { account = "one", oauthPublicSecret = true }) })
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.CompleteAuthorizationAsync(package.Identity, new(values, new Dictionary<string, string>()), complete, default));
+        await Assert.ThrowsAsync<InvalidDataException>(() => runtime.BeginAuthorizationAsync(package.Identity,
+            new(IntegrationJson.Element(new { account = "one", oauthForeignOrigin = true }), new Dictionary<string, string>()), begin, default));
+        await Assert.ThrowsAsync<NotSupportedException>(() => runtime.BeginAuthorizationAsync(flat.Identity, Fixture.Draft("one"), begin, default));
+        var unchanged = await ReadAsync(runtime, active);
+        Assert.Equal(2m, unchanged.BatterySoc.Value);
+        Assert.Equal(2200m, unchanged.LoadPower.Value);
+    }
+    [Fact]
+    public async Task OperatorOriginApprovalIsAdditiveDurableAndRequiredBeforeInstallingNewProviderNetworkPermission()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var policy = new OriginPolicyStore();
+        var store = new IntegrationPackageStore(Options.Create(fixture.Options), policy);
+        var neighbor = await store.InstallAsync(new(fixture.Archive, (await fixture.InstallAsync()).Identity.PackageDigest), default);
+        var request = await fixture.CreateArchiveAsync("2.0.0", origins: ["https://oauth.example.test"]);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.InstallAsync(request, default));
+        Assert.Empty(policy.Origins);
+        Assert.Single(await store.GetProvidersAsync(default));
+        await store.ApproveOriginAsync("https://OAUTH.example.test:443/", default);
+        await store.ApproveOriginAsync("https://oauth.example.test", default);
+        Assert.Equal(new[] { "https://oauth.example.test" }, policy.Origins);
+        Assert.Equal(1, policy.Saves);
+        var installed = await store.InstallAsync(request, default);
+        var restarted = new IntegrationPackageStore(Options.Create(fixture.Options), policy);
+        Assert.Equal(installed.Identity, (await restarted.ResolveAsync(installed.Identity, default)).Identity);
+        Assert.Equal(neighbor.Identity, (await restarted.ResolveAsync(neighbor.Identity, default)).Identity);
+        policy.FailSave = true;
+        await Assert.ThrowsAsync<IOException>(() => restarted.ApproveOriginAsync("https://second.example.test", default));
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await restarted.InstallAsync(await fixture.CreateArchiveAsync("3.0.0", origins: ["https://second.example.test"]), default));
+        Assert.Equal(new[] { "https://oauth.example.test" }, policy.Origins);
+        Assert.Equal(2, (await restarted.GetVersionsAsync("test.provider", default)).Count);
+    }
+    [Fact]
+    public async Task CorruptOrExcessivePersistedOriginPolicyDoesNotGrantNetworkPermissions()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        foreach (var values in new[] { new[] { "https://*.example.test" }, new[] { "https://oauth.example.test", "https://oauth.example.test" }, Enumerable.Range(0, 129).Select(index => "https://host" + index + ".example.test").ToArray() })
+        {
+            var store = new IntegrationPackageStore(Options.Create(fixture.Options), new OriginPolicyStore { Origins = values });
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.InstallAsync(new(fixture.Archive, new string('0', 64)), default));
+        }
+    }
+    [Fact]
     public async Task ActiveAndEphemeralSessionsKeepIndependentAccountsAndDoNotInheritHostSecrets()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -328,6 +412,21 @@ public sealed class PackageAndRuntimeTests
         Assert.True((process.ExitCode == 0) == expectedSuccess, await errors);
         return await output;
     }
+    private sealed class OriginPolicyStore : IIntegrationOriginPolicyStore
+    {
+        public IReadOnlyList<string> Origins = [];
+        public bool FailSave;
+        public int Saves;
+        public Task<IReadOnlyList<string>> LoadAsync(CancellationToken ct) { ct.ThrowIfCancellationRequested(); return Task.FromResult(Origins); }
+        public Task SaveAsync(IReadOnlyList<string> origins, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (FailSave) throw new IOException("Injected policy persistence failure.");
+            Origins = origins.ToArray();
+            Saves++;
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class Fixture : IAsyncDisposable
     {
@@ -359,7 +458,8 @@ public sealed class PackageAndRuntimeTests
         public IntegrationWorkerRuntime Runtime() => new(Store, Microsoft.Extensions.Options.Options.Create(Options));
         public IntegrationSession Session(ProviderPackageIdentity package, string account) => new("installation-one", Guid.NewGuid(), package, 1, 1, Draft(account));
         public static IntegrationDraftConfiguration Draft(string account) => new(IntegrationJson.Element(new { account }), new Dictionary<string, string>());
-        public async Task<IntegrationPackageInstallRequest> CreateArchiveAsync(string version, bool invalidateSignature = false, bool unsafePath = false)
+        public async Task<IntegrationPackageInstallRequest> CreateArchiveAsync(string version, bool invalidateSignature = false, bool unsafePath = false,
+            IntegrationProviderDescriptor? descriptorOverride = null, IReadOnlyList<string>? origins = null)
         {
             var payload = Path.Combine(AppContext.BaseDirectory, "worker");
             var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
@@ -371,7 +471,7 @@ public sealed class PackageAndRuntimeTests
             var descriptor = new IntegrationProviderDescriptor("test.provider", version, "", "", "Unknown test provider", 1, 1, ["text"],
                 [new("account", "text", "Account", true)], ["test", "discover"]);
             var manifest = new IntegrationPackageManifest("test.provider", version, "test-publisher", 1, "portable",
-                "SolarManagement.IntegrationTestWorker.dll", files, [], descriptor);
+                "SolarManagement.IntegrationTestWorker.dll", files, origins ?? [], descriptorOverride ?? descriptor);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(manifest, IntegrationJson.Options);
             var signature = _key.SignData(bytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             if (invalidateSignature) signature[0] ^= 1;

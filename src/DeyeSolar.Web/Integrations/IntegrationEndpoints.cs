@@ -25,6 +25,12 @@ public static class IntegrationEndpoints
             options => options.SetApplicationName("SolarManagement.Integrations.v1"))));
         services.AddSingleton<IntegrationChangeNotifier>();
         services.AddSingleton<IntegrationSetupGate>();
+        services.AddSingleton(provider => new IntegrationOAuthOptions
+        {
+            PublicBaseUrl = provider.GetRequiredService<DeyeSolar.Web.Auth.AuthProviderOptions>().PublicBaseUrl
+        });
+        services.AddSingleton<IntegrationOAuthService>();
+        services.AddSingleton<IIntegrationOriginPolicyStore, IntegrationOriginPolicyFileStore>();
         services.AddSingleton<LegacyIntegrationBootstrap>();
         services.AddScoped<IntegrationSetupService>();
         services.AddScoped<IIntegrationRegistry, IntegrationRegistry>();
@@ -33,6 +39,22 @@ public static class IntegrationEndpoints
 
     public static void MapDynamicIntegrations(this WebApplication app)
     {
+        app.MapGet("/integrations/oauth/callback", async Task<IResult> (HttpContext context, IntegrationOAuthService oauth, CancellationToken ct) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["Referrer-Policy"] = "no-referrer";
+            context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+            try
+            {
+                if (new[] { "state", "code", "error" }.Any(key => context.Request.Query[key].Count > 1))
+                    return Results.BadRequest("The authorization callback is invalid.");
+                var destination = await oauth.CallbackAsync(context.Request.Query["state"], context.Request.Query["code"],
+                    context.Request.Query["error"], context.User, ct);
+                return destination is null ? Results.Text("Authorization returned. Close this tab and check authorization in integration settings. Save the draft to apply it.")
+                    : Results.Redirect(destination);
+            }
+            catch (IntegrationRequestException) { return Results.BadRequest("The authorization is unavailable. Return to integration settings and start again."); }
+        }).AllowAnonymous();
         var api = app.MapGroup("/api/v2").RequireAuthorization(ApiAuthorization.AuthenticatedUser);
         api.MapGet("/integration-providers", async Task<IResult> (IIntegrationProviderCatalog catalog, HttpContext context, CancellationToken ct) =>
         {
@@ -51,6 +73,15 @@ public static class IntegrationEndpoints
         api.MapPost("/integrations", (CreateIntegrationRequest request, IntegrationSetupService service, HttpContext context, IAntiforgery antiforgery, CancellationToken ct)
             => WriteAsync(context, antiforgery, () => service.CreateAsync(request, context.User, ct)));
         api.MapGet("/integrations/{id:guid}/configuration", (Guid id, IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.ReadAsync(id, ct)));
+        api.MapPost("/integrations/{id:guid}/oauth/start", (Guid id, IntegrationOAuthStartRequest request, IntegrationSetupService service,
+            HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () =>
+                service.StartAuthorizationAsync(id, request, context.User, ct,
+                    context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                        ? context.Request.Headers.Authorization.ToString()[7..].Trim() : null)));
+        api.MapGet("/integrations/{id:guid}/oauth/{flowId:guid}", (Guid id, Guid flowId, IntegrationSetupService service,
+            HttpContext context, CancellationToken ct) => ReadAsync(() => service.AuthorizationStatusAsync(id, flowId, context.User, ct)));
+        api.MapPost("/integrations/{id:guid}/oauth/{flowId:guid}/cancel", (Guid id, Guid flowId, IntegrationSetupService service,
+            HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.CancelAuthorizationAsync(id, flowId, context.User, ct)));
         api.MapPost("/integrations/{id:guid}/package", (Guid id, IntegrationPackageChange request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SwitchPackageAsync(id, request, context.User, ct)));
         api.MapPut("/integrations/{id:guid}/configuration", (Guid id, IntegrationConfigurationChange request, IntegrationSetupService service,
@@ -97,6 +128,19 @@ public static class IntegrationEndpoints
                 if (await legacy.RunAsync(runtime.Resolve<IDbContextFactory<DeyeSolarDbContext>>(), runtime.Resolve<IConfiguration>(), ct))
                     await runtime.RefreshSettingsAsync(ct);
                 return installed;
+            });
+        });
+        api.MapPost("/integration-packages/approved-origins", async Task<IResult> (IntegrationOriginApprovalRequest request,
+            IIntegrationPackageManager manager, HttpContext context, IAntiforgery antiforgery, UserManager<IdentityUser> users, CancellationToken ct) =>
+        {
+            if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new IntegrationApiError("antiforgery", "A valid request verification token is required."));
+            var user = await users.GetUserAsync(context.User);
+            if (user is null || !await users.IsInRoleAsync(user, "PlatformOperator"))
+                return Results.Json(new IntegrationApiError("forbidden", "Only a platform operator can approve provider network origins."), statusCode: 403);
+            return await ReadAsync(async () =>
+            {
+                await manager.ApproveOriginAsync(request.Origin, ct);
+                return new { approved = true };
             });
         });
     }

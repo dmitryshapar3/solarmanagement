@@ -58,6 +58,10 @@ public static class IntegrationWorkerHost
                     {
                         if (provider is null || !operations.Contains(method, StringComparer.Ordinal))
                             throw new InvalidOperationException("The worker operation is unavailable.");
+                        if (method == "oauth.begin") IntegrationOAuthProtocol.ValidateBegin(parameters.Deserialize<IntegrationOAuthBeginRequest>(IntegrationJson.Options)
+                            ?? throw new InvalidDataException("OAuth request is missing."));
+                        if (method == "oauth.complete") IntegrationOAuthProtocol.ValidateComplete(parameters.Deserialize<IntegrationOAuthCompleteRequest>(IntegrationJson.Options)
+                            ?? throw new InvalidDataException("OAuth request is missing."));
                         result = await provider.InvokeAsync(method, parameters, token);
                     }
                     await RespondAsync(new { jsonrpc = "2.0", id, result });

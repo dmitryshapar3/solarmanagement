@@ -41,6 +41,7 @@ if (privatePath.StartsWith(input.TrimEnd(Path.DirectorySeparatorChar) + Path.Dir
     throw new InvalidDataException("Publisher private key must remain outside the published payload.");
 var template = JsonSerializer.Deserialize<IntegrationPackageManifest>(await File.ReadAllTextAsync(args[1]), IntegrationJson.Options)
     ?? throw new InvalidDataException("Package template is invalid.");
+IntegrationDescriptorValidator.Validate(template.Descriptor);
 var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
 foreach (var path in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal))
 {

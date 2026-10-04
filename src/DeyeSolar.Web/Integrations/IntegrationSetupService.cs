@@ -30,9 +30,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     IIntegrationProviderCatalog catalog, IIntegrationSetupExecutor executor, IntegrationSecretStore secrets,
     IDataProtectionProvider protection, TimeProvider clock, InstallationMembershipService memberships,
     CurrentInstallation current, IntegrationChangeNotifier changes, IntegrationSetupGate gate,
-    IOptions<IntegrationRuntimeOptions>? runtimeOptions = null)
+    IOptions<IntegrationRuntimeOptions>? runtimeOptions = null, IntegrationOAuthService? oauth = null)
 {
-    private static readonly HashSet<string> SupportedFields = new(["text", "secret", "integer", "number", "boolean", "select"], StringComparer.Ordinal);
     private int SetupTimeoutSeconds => runtimeOptions?.Value.MaximumNegotiatedRequestTimeoutSeconds ?? 300;
 
     private async Task EnsureManagerAsync(ClaimsPrincipal actor, CancellationToken ct)
@@ -50,10 +49,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         => Guard(instance, change.ExpectedRevision, change.PackageVersion, change.PackageDigest, change.DescriptorDigest);
     private static void ValidateDescriptor(IntegrationProviderDescriptor descriptor)
     {
-        if (descriptor.UiContractVersion != 1 || descriptor.RequiredUiFeatures.Any(f => !SupportedFields.Contains(f))
-            || descriptor.Fields.Count > 100 || descriptor.Fields.Select(f => f.Key).Distinct(StringComparer.Ordinal).Count() != descriptor.Fields.Count
-            || descriptor.Fields.Any(f => !SupportedFields.Contains(f.Kind) || string.IsNullOrWhiteSpace(f.Key) || f.Key.Length > 64))
-            throw new IntegrationRequestException("unsupported_ui", "This provider requires a newer settings interface.", 409);
+        try { IntegrationDescriptorValidator.Validate(descriptor); }
+        catch (InvalidDataException) { throw new IntegrationRequestException("unsupported_ui", "This provider requires a newer or corrected settings interface.", 409); }
     }
     private async Task<IntegrationProviderDescriptor> DescriptorAsync(IntegrationInstanceEntity instance, CancellationToken ct)
     {
@@ -136,7 +133,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         return new(instance.ToDto(), ReadValues(config), saved.Keys.ToDictionary(key => key, _ => true, StringComparer.Ordinal));
     }
     private IntegrationDraftConfiguration Resolve(IntegrationInstanceEntity instance, IntegrationConfigurationEntity saved,
-        IntegrationProviderDescriptor descriptor, IntegrationConfigurationChange draft)
+        IntegrationProviderDescriptor descriptor, IntegrationConfigurationChange draft, bool allowMissingOAuthSecrets = false)
     {
         Guard(instance, draft);
         if (draft.Values is null || draft.SecretOperations is null || draft.Values.Count > 100 || draft.SecretOperations.Count > 100)
@@ -146,6 +143,10 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             || draft.SecretOperations.Keys.Any(k => !fields.TryGetValue(k, out var f) || !f.Secret && f.Kind != "secret"))
             throw new IntegrationRequestException("validation", "The configuration contains an unknown field.");
         var resolvedSecrets = Open(instance, saved);
+        var values = new Dictionary<string, JsonElement>(draft.Values, StringComparer.Ordinal);
+        var conditionValues = ReadValues(saved);
+        foreach (var (key, value) in values) conditionValues[key] = value;
+        var effectiveValues = IntegrationUiConditions.EffectiveValues(descriptor, IntegrationJson.Element(conditionValues));
         foreach (var (key, operation) in draft.SecretOperations)
         {
             if (operation is null) throw new IntegrationRequestException("validation", "Choose a credential operation.");
@@ -159,30 +160,28 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         }
         foreach (var field in descriptor.Fields)
         {
+            var active = IntegrationUiConditions.IsFieldActive(descriptor, field, effectiveValues);
+            var required = field.Required && active;
             if (field.Secret || field.Kind == "secret")
             {
-                if (field.Required && (!resolvedSecrets.TryGetValue(field.Key, out var value) || string.IsNullOrWhiteSpace(value)))
+                var pendingOAuth = allowMissingOAuthSecrets && descriptor.OAuthDefinition?.SecretFieldKeys.Contains(field.Key, StringComparer.Ordinal) == true;
+                if (required && !pendingOAuth && (!resolvedSecrets.TryGetValue(field.Key, out var value) || string.IsNullOrWhiteSpace(value)))
                     throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
                 continue;
             }
-            if (!draft.Values.TryGetValue(field.Key, out var json) || json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            if (!active && !values.ContainsKey(field.Key) && conditionValues.TryGetValue(field.Key, out var retained))
+                values[field.Key] = retained;
+            if (!values.TryGetValue(field.Key, out var json) || json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             {
-                if (field.Required) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
+                if (required) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
                 continue;
             }
-            var valid = field.Kind switch
-            {
-                "text" => json.ValueKind == JsonValueKind.String && json.GetString()!.Length <= 2048 && (!field.Required || !string.IsNullOrWhiteSpace(json.GetString())),
-                "select" => json.ValueKind == JsonValueKind.String && field.Options?.Any(o => o.Value == json.GetString()) == true,
-                "boolean" => json.ValueKind is JsonValueKind.True or JsonValueKind.False,
-                "integer" or "number" => json.ValueKind == JsonValueKind.Number && json.TryGetDecimal(out var number)
-                    && (field.Kind != "integer" || decimal.Truncate(number) == number) && (!field.Minimum.HasValue || number >= field.Minimum)
-                    && (!field.Maximum.HasValue || number <= field.Maximum),
-                _ => false
-            };
-            if (!valid) throw new IntegrationRequestException("validation", $"Check {field.Label}.");
+            try { IntegrationDescriptorValidator.ValidateValue(field, json); }
+            catch (InvalidDataException) { throw new IntegrationRequestException("validation", $"Check {field.Label}."); }
+            if (required && json.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(json.GetString()))
+                throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
         }
-        return new(IntegrationJson.Element(draft.Values), resolvedSecrets);
+        return new(IntegrationJson.Element(values), resolvedSecrets);
     }
     private static string Fingerprint(IntegrationDraftConfiguration value)
     {
@@ -222,7 +221,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var instance = await FindAsync(db, id, ct);
         var descriptor = await DescriptorAsync(instance, ct);
         if (!descriptor.Actions.Contains("test", StringComparer.Ordinal)) throw new IntegrationRequestException("unsupported_action", "This provider does not support connection checks.");
-        var resolved = Resolve(instance, await ConfigurationAsync(db, instance, ct), descriptor, draft);
+        var resolved = await ResolveDraftAsync(instance, await ConfigurationAsync(db, instance, ct), descriptor, draft, actor, ct);
         var result = await RunTestAsync(instance, resolved, ct);
         return result with
         {
@@ -238,10 +237,10 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var instance = await FindAsync(db, id, ct);
         var descriptor = await DescriptorAsync(instance, ct);
         var saved = await ConfigurationAsync(db, instance, ct);
-        var resolved = Resolve(instance, saved, descriptor, draft);
+        var resolved = await ResolveDraftAsync(instance, saved, descriptor, draft, actor, ct);
         var existing = new IntegrationDraftConfiguration(IntegrationJson.Element(ReadValues(saved)), Open(instance, saved));
-        if (Fingerprint(existing) == Fingerprint(resolved)) return await ReadAsync(id, ct);
-        if (await db.Set<IntegrationDeviceBindingEntity>().AnyAsync(b => b.InstanceId == id, ct))
+        if (draft.OAuthFlowId is null && Fingerprint(existing) == Fingerprint(resolved)) return await ReadAsync(id, ct);
+        if (instance.AccountIdentity is not null || await db.Set<IntegrationDeviceBindingEntity>().AnyAsync(b => b.InstanceId == id, ct))
         {
             if (instance.State == "enabled") throw new IntegrationRequestException("disable_before_edit", "Disable this integration before changing its connection settings.", 409);
             var verification = await RunTestAsync(instance, resolved, ct);
@@ -251,6 +250,9 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockSettingsMutationAsync(db, instance, ct);
         await EnsureNoActiveCommandsAsync(db, id, ct);
+        if (draft.OAuthFlowId is { } authorization)
+            await (oauth ?? throw new IntegrationRequestException("authorization_unavailable", "Authorization is unavailable.", 503))
+                .ConsumeAsync(db, instance, authorization, actor, ct);
         instance.Revision++;
         instance.Generation++;
         instance.UpdatedAt = clock.GetUtcNow();
@@ -279,7 +281,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var instance = await FindAsync(db, id, ct);
         var descriptor = await DescriptorAsync(instance, ct);
         if (!descriptor.Actions.Contains("discover", StringComparer.Ordinal)) throw new IntegrationRequestException("unsupported_action", "This provider does not support device discovery.");
-        var resolved = Resolve(instance, await ConfigurationAsync(db, instance, ct), descriptor, draft);
+        var resolved = await ResolveDraftAsync(instance, await ConfigurationAsync(db, instance, ct), descriptor, draft, actor, ct);
         using var lease = await gate.EnterAsync(ct);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(SetupTimeoutSeconds));
@@ -316,7 +318,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var instance = await FindAsync(db, id, ct);
         var descriptor = await DescriptorAsync(instance, ct);
         var config = await ConfigurationAsync(db, instance, ct);
-        var resolved = Resolve(instance, config, descriptor, request.Draft);
+        var resolved = await ResolveDraftAsync(instance, config, descriptor, request.Draft, actor, ct);
         Guard(instance, proof.Revision, proof.PackageVersion, proof.PackageDigest, proof.DescriptorDigest);
         if (proof.InstallationId != instance.InstallationId || proof.InstanceId != id || proof.ExpiresAt <= clock.GetUtcNow() || proof.Fingerprint != Fingerprint(resolved))
             throw new IntegrationRequestException("invalid_selection", "Discover devices again using this integration's current settings.", 409);

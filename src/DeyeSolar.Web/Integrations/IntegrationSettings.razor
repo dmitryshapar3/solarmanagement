@@ -58,53 +58,65 @@
                 }
                 else
                 {
-                    @foreach (var field in form.Provider.Fields)
+                    var step = Steps(form)[form.StepIndex];
+                    var publicValues = PublicValues(form);
+                    @if (form.Provider.UiLayout is not null)
                     {
-                        @if (field.Secret || field.Kind == "secret")
+                        <MudText Typo="Typo.subtitle1" Class="mt-3">Step @(form.StepIndex + 1) of @Steps(form).Count · @step.Title</MudText>
+                        @if (step.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@step.Instructions</MudText> }
+                    }
+                    @foreach (var group in step.Groups.Where(group => IntegrationUiConditions.IsActive(group.ActiveWhen, publicValues)))
+                    {
+                        @if (form.Provider.UiLayout is not null)
                         {
-                            <MudText Typo="Typo.subtitle2" Class="mt-3">@field.Label @(form.Configuration.SecretPresent.GetValueOrDefault(field.Key) ? "(saved)" : "(not set)")</MudText>
-                            <MudSelect T="string" Label="Credential action" Value="@SecretAction(field.Key)" ValueChanged="@((string value) => SetSecretAction(field.Key, value))" Disabled="_busy">
-                                <MudSelectItem T="string" Value="@("keep")">Keep saved credential</MudSelectItem>
-                                <MudSelectItem T="string" Value="@("replace")">Enter a new credential</MudSelectItem>
-                                <MudSelectItem T="string" Value="@("clear")">Clear credential</MudSelectItem>
-                            </MudSelect>
-                            @if (SecretAction(field.Key) == "replace")
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">@group.Title</MudText>
+                            @if (group.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@group.Instructions</MudText> }
+                        }
+                        @foreach (var field in form.Provider.Fields.Where(field => group.FieldKeys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, publicValues)))
+                        {
+                            <IntegrationFieldInput @key="field.Key" Field="field" Value="@TextValue(field.Key)" ValueChanged="@((string value) => SetText(field.Key, value))"
+                                SecretAction="@SecretAction(field.Key)" SecretActionChanged="@((string value) => SetSecretAction(field.Key, value))"
+                                SecretValue="@SecretValue(field.Key)" SecretValueChanged="@((string value) => SetSecretValue(field.Key, value))"
+                                SecretPresent="@(form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key))" Busy="_busy" />
+                        }
+                        <MudStack Row="true" Class="mt-3" Spacing="2">
+                            @if (group.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">Test connection</MudButton> }
+                            @if (group.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">Find devices</MudButton> }
+                            @if (group.Actions.Contains("oauth")) { <MudButton Variant="Variant.Outlined" OnClick="StartAuthorization" Disabled="_busy">Authorize provider account</MudButton> }
+                        </MudStack>
+                        @if (group.Actions.Contains("oauth") && form.Authorization is { } authorization)
+                        {
+                            @if (form.AuthorizationStale)
                             {
-                                <MudTextField T="string" Label="@field.Label" Value="@SecretValue(field.Key)" ValueChanged="@((string value) => SetSecretValue(field.Key, value))" Immediate="true" InputType="InputType.Password" Disabled="_busy" />
+                                <MudAlert Severity="Severity.Warning" Class="mt-2">The draft changed. Start authorization again before using its result.</MudAlert>
                             }
+                            else if (form.AuthorizationStatus == "pending" && SafeAuthorizationUrl(authorization.AuthorizationUrl))
+                            {
+                                <a href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">Open provider authorization</a>
+                            }
+                            <MudText Class="mt-2">Authorization status: @form.AuthorizationStatus</MudText>
+                            <MudButton OnClick="CheckAuthorization" Disabled="@(_busy || form.AuthorizationStale)">Check authorization</MudButton>
+                            <MudButton OnClick="CancelAuthorization" Disabled="_busy">Cancel authorization</MudButton>
                         }
-                        else if (field.Kind == "boolean")
+                        @if (group.Actions.Contains("discover"))
                         {
-                            <MudCheckBox T="bool" Label="@field.Label" Value="@BooleanValue(field.Key)" ValueChanged="@((bool value) => SetText(field.Key, value ? "true" : "false"))" Disabled="_busy" />
-                        }
-                        else if (field.Kind == "select")
-                        {
-                            <MudSelect T="string" Label="@field.Label" Value="@TextValue(field.Key)" ValueChanged="@((string value) => SetText(field.Key, value))" Required="@field.Required" Disabled="_busy">
-                                @if (!field.Required) { <MudSelectItem T="string" Value="@string.Empty">No selection</MudSelectItem> }
-                                @foreach (var option in field.Options ?? []) { <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem> }
-                            </MudSelect>
-                        }
-                        else
-                        {
-                            <MudTextField T="string" Label="@field.Label" Value="@TextValue(field.Key)" ValueChanged="@((string value) => SetText(field.Key, value))" Immediate="true" Required="@field.Required" Disabled="_busy"
-                                InputType="@(field.Kind is "number" or "integer" ? InputType.Number : InputType.Text)" />
+                            <MudText Typo="Typo.caption" Class="mt-2">Save before choosing a discovered device. Unsaved changes remain a draft.</MudText>
+                            @foreach (var device in form.Discovery?.Devices ?? [])
+                            {
+                                <MudPaper Class="pa-2 mt-2" Outlined="true">
+                                    <MudText>@device.Name · @device.Kind @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
+                                    <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">Use device</MudButton>
+                                </MudPaper>
+                            }
                         }
                     }
                     <MudStack Row="true" Class="mt-3" Spacing="2">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save settings</MudButton>
-                        @if (form.Provider.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">Test connection</MudButton> }
-                        @if (form.Provider.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">Find devices</MudButton> }
+                        @if (form.StepIndex > 0) { <MudButton OnClick="PreviousStep" Disabled="_busy">Previous step</MudButton> }
+                        @if (form.StepIndex + 1 < Steps(form).Count) { <MudButton OnClick="NextStep" Disabled="_busy">Next step</MudButton> }
+                        else { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save settings</MudButton> }
                     </MudStack>
-                    <MudText Typo="Typo.caption" Class="mt-2">Save before choosing a discovered device. Unsaved changes remain a draft.</MudText>
                     <MudButton Class="mt-2" Variant="Variant.Text" OnClick="ReloadSaved" Disabled="_busy">Reload saved settings (discard draft)</MudButton>
                     <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="@(_busy || (form.Configuration.Instance.Status != "enabled" && form.Dirty))">@(form.Configuration.Instance.Status == "enabled" ? "Disable integration" : "Enable integration")</MudButton>
-                    @foreach (var device in form.Discovery?.Devices ?? [])
-                    {
-                        <MudPaper Class="pa-2 mt-2" Outlined="true">
-                            <MudText>@device.Name · @device.Kind @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
-                            <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">Use device</MudButton>
-                        </MudPaper>
-                    }
                     @foreach (var binding in form.Bindings)
                     {
                         <MudText Class="mt-2">@binding.Name · @binding.Kind @(binding.IsDefault ? "· selected inverter" : "· connected")</MudText>
@@ -130,8 +142,11 @@
     private string? _notice;
     private ClaimsPrincipal _actor = new();
     private FormState? Current => _selected.HasValue ? _forms.GetValueOrDefault(_selected.Value) : null;
-    private static readonly HashSet<string> _features = new(["text", "secret", "integer", "number", "boolean", "select"], StringComparer.Ordinal);
-    private static bool Supported(IntegrationProviderDescriptor provider) => provider.UiContractVersion == 1 && provider.RequiredUiFeatures.All(_features.Contains) && provider.Fields.All(f => _features.Contains(f.Kind));
+    private static bool Supported(IntegrationProviderDescriptor provider)
+    {
+        try { IntegrationDescriptorValidator.Validate(provider); return true; }
+        catch (InvalidDataException) { return false; }
+    }
     protected override async Task OnInitializedAsync()
     {
         _actor = (await Authentication.GetAuthenticationStateAsync()).User;
@@ -185,34 +200,136 @@
         _selected = id;
     }
     private string TextValue(string key) => Current?.Values.GetValueOrDefault(key) ?? "";
-    private bool BooleanValue(string key) => TextValue(key) == "true";
-    private void SetText(string key, string value) { if (Current is { } f) { f.Values[key] = value; f.Dirty = true; } }
+    private void SetText(string key, string value) { if (Current is { } f) { f.Values[key] = value; f.EditedFields.Add(key); f.Dirty = true; InvalidateAuthorization(f); } }
     private string SecretAction(string key) => Current?.Secrets.GetValueOrDefault(key)?.Operation ?? "keep";
     private string SecretValue(string key) => Current?.Secrets.GetValueOrDefault(key)?.Value ?? "";
-    private void SetSecretAction(string key, string operation) { if (Current is { } f) { f.Secrets[key] = new(operation); f.Dirty = true; } }
-    private void SetSecretValue(string key, string value) { if (Current is { } f) { f.Secrets[key] = new("replace", value); f.Dirty = true; } }
+    private void SetSecretAction(string key, string operation) { if (Current is { } f) { f.Secrets[key] = new(operation); f.Dirty = true; InvalidateAuthorization(f); } }
+    private void SetSecretValue(string key, string value) { if (Current is { } f) { f.Secrets[key] = new("replace", value); f.Dirty = true; InvalidateAuthorization(f); } }
+    private static void InvalidateAuthorization(FormState form)
+    {
+        if (form.Authorization is null) return;
+        form.AuthorizationStale = true;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+    }
+    private static IReadOnlyList<IntegrationUiStep> Steps(FormState form) => form.Provider.UiLayout?.Steps
+        ?? [new("settings", "Connection settings", null, [new("settings", "Connection settings", null, form.Provider.Fields.Select(field => field.Key).ToArray(), form.Provider.Actions)])];
+    private static JsonElement PublicValues(FormState form)
+    {
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var field in form.Provider.Fields.Where(field => !IntegrationUiConditions.IsSecret(field)))
+        {
+            if (!form.Values.TryGetValue(field.Key, out var text)) continue;
+            if (!form.EditedFields.Contains(field.Key) && form.Configuration.Values.TryGetValue(field.Key, out var saved))
+            { values[field.Key] = saved.Clone(); continue; }
+            if (field.Kind is "number" or "integer")
+                values[field.Key] = decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number)
+                    ? IntegrationJson.Element(number) : IntegrationJson.Element<string?>(null);
+            else if (field.Kind == "boolean") values[field.Key] = text is "true" or "false" ? IntegrationJson.Element(text == "true") : IntegrationJson.Element<string?>(null);
+            else values[field.Key] = field.Kind == "select" && text.Length == 0 ? IntegrationJson.Element<string?>(null) : IntegrationJson.Element(text);
+        }
+        return IntegrationUiConditions.EffectiveValues(form.Provider, IntegrationJson.Element(values));
+    }
+    private Task PreviousStep() => Run(() => { Current!.StepIndex--; return Task.CompletedTask; });
+    private Task NextStep() => Run(() =>
+    {
+        var form = Current!;
+        var values = PublicValues(form);
+        var keys = Steps(form)[form.StepIndex].Groups.SelectMany(group => group.FieldKeys).ToHashSet(StringComparer.Ordinal);
+        foreach (var field in form.Provider.Fields.Where(field => keys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, values)))
+        {
+            if (IntegrationUiConditions.IsSecret(field))
+            {
+                var operation = form.Secrets.GetValueOrDefault(field.Key);
+                var present = operation?.Operation == "replace" ? !string.IsNullOrWhiteSpace(operation.Value)
+                    : operation?.Operation != "clear" && (form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key));
+                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter or authorize {field.Label}.");
+            }
+            else
+            {
+                var present = values.TryGetProperty(field.Key, out var value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                    && (value.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(value.GetString()));
+                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
+                if (present)
+                    try { IntegrationDescriptorValidator.ValidateValue(field, value); }
+                    catch (InvalidDataException) { throw new IntegrationRequestException("validation", $"Check {field.Label}."); }
+            }
+        }
+        form.StepIndex++;
+        return Task.CompletedTask;
+    });
     private IntegrationConfigurationChange Draft()
     {
         var form = Current ?? throw new InvalidOperationException();
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var field in form.Provider.Fields.Where(f => !f.Secret && f.Kind != "secret"))
         {
-            if (!field.Required && !form.Values.ContainsKey(field.Key)) continue;
+            var required = field.Required && IntegrationUiConditions.IsFieldActive(form.Provider, field, PublicValues(form));
+            if (!required && !form.Values.ContainsKey(field.Key)) continue;
+            if (!form.EditedFields.Contains(field.Key) && form.Configuration.Values.TryGetValue(field.Key, out var saved))
+            { values[field.Key] = saved.Clone(); continue; }
             var text = form.Values.GetValueOrDefault(field.Key) ?? "";
-            if (field.Kind == "select" && text.Length == 0 && !field.Required)
+            if (field.Kind == "select" && text.Length == 0)
             { values[field.Key] = IntegrationJson.Element<string?>(null); continue; }
             if (field.Kind is "number" or "integer")
             {
-                if (text.Length == 0 && !field.Required) continue;
+                if (text.Length == 0) { values[field.Key] = IntegrationJson.Element<string?>(null); continue; }
                 if (!decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
                     throw new IntegrationRequestException("validation", $"Enter a number for {field.Label}.");
                 values[field.Key] = IntegrationJson.Element(number);
             }
-            else values[field.Key] = field.Kind == "boolean" ? IntegrationJson.Element(text == "true") : IntegrationJson.Element(text);
+            else values[field.Key] = field.Kind == "boolean"
+                ? text is "true" or "false" ? IntegrationJson.Element(text == "true") : IntegrationJson.Element<string?>(null)
+                : IntegrationJson.Element(text);
         }
         var instance = form.Configuration.Instance;
-        return new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, values, new(form.Secrets, StringComparer.Ordinal));
+        return new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, values, new(form.Secrets, StringComparer.Ordinal), form.OAuthFlowId);
     }
+    private static bool SafeAuthorizationUrl(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo);
+    private Task StartAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is { } previous)
+            await Setup.CancelAuthorizationAsync(form.Configuration.Instance.Id, previous.FlowId, _actor, _lifetime.Token);
+        form.Authorization = null;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+        form.Authorization = await Setup.StartAuthorizationAsync(form.Configuration.Instance.Id, new(Draft(), "web"), _actor, _lifetime.Token);
+        form.AuthorizationStale = false;
+        form.AuthorizationStatus = "pending";
+        _notice = "Open provider authorization in a new tab, then return here and check its result. Settings are saved only when you choose Save.";
+    });
+    private Task CheckAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is not { } authorization || form.AuthorizationStale) return;
+        var result = await Setup.AuthorizationStatusAsync(form.Configuration.Instance.Id, authorization.FlowId, _actor, _lifetime.Token);
+        form.AuthorizationStatus = result.Status;
+        if (result.Status == "ready")
+        {
+            foreach (var (key, value) in result.Values) { form.Values[key] = DisplayValue(value); form.EditedFields.Add(key); }
+            form.OAuthSecretPresent = new(result.SecretPresent, StringComparer.Ordinal);
+            foreach (var key in form.Provider.OAuthDefinition!.SecretFieldKeys) form.Secrets[key] = new("keep");
+            form.OAuthFlowId = result.FlowId;
+            form.Dirty = true;
+            form.Discovery = null;
+            _notice = "Authorization is ready in this draft. Test the connection and save explicitly to use it.";
+        }
+        else { form.OAuthFlowId = null; form.OAuthSecretPresent.Clear(); _notice = "Authorization status: " + result.Status + "."; }
+    });
+    private Task CancelAuthorization() => Run(async () =>
+    {
+        var form = Current!;
+        if (form.Authorization is not { } authorization) return;
+        await Setup.CancelAuthorizationAsync(form.Configuration.Instance.Id, authorization.FlowId, _actor, _lifetime.Token);
+        form.Authorization = null;
+        form.OAuthFlowId = null;
+        form.OAuthSecretPresent.Clear();
+        _notice = "Authorization cancelled. Saved credentials were not changed.";
+    });
+    private static string DisplayValue(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? ""
+        : value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText();
     private Task Save() => Run(async () =>
     {
         var current = Current!;
@@ -283,10 +400,16 @@
         public IntegrationProviderDescriptor Provider { get; } = provider;
         public string TargetPackageVersion { get; set; } = configuration.Instance.PackageVersion;
         public IReadOnlyList<IntegrationProviderDescriptor> Versions { get; set; } = [];
-        public Dictionary<string, string> Values { get; } = configuration.Values.ToDictionary(p => p.Key,
-            p => p.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? ""
-                : p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() ?? "" : p.Value.GetRawText(), StringComparer.Ordinal);
+        public Dictionary<string, string> Values { get; } = IntegrationUiConditions.EffectiveValues(provider, IntegrationJson.Element(configuration.Values))
+            .EnumerateObject().ToDictionary(p => p.Name, p => DisplayValue(p.Value), StringComparer.Ordinal);
         public Dictionary<string, IntegrationSecretOperation> Secrets { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> EditedFields { get; } = new(StringComparer.Ordinal);
+        public int StepIndex { get; set; }
+        public IntegrationOAuthStartDto? Authorization { get; set; }
+        public string AuthorizationStatus { get; set; } = "pending";
+        public bool AuthorizationStale { get; set; }
+        public Guid? OAuthFlowId { get; set; }
+        public Dictionary<string, bool> OAuthSecretPresent { get; set; } = new(StringComparer.Ordinal);
         public bool Dirty { get; set; }
         public IntegrationDiscoveryResponse? Discovery { get; set; }
         public IReadOnlyList<IntegrationBindingDto> Bindings { get; set; } = [];
