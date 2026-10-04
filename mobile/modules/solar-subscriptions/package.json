@@ -1,0 +1,7 @@
+{
+  "name": "solar-subscriptions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Apple StoreKit 2 subscriptions for DeyeSolar",
+  "main": "src/index.ts"
+}

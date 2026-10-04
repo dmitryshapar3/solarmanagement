@@ -85,15 +85,19 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
     }
 
     private static Task<int> UpsertAsync(DeyeSolarDbContext db, string deviceSn, DateTime observedAt,
-        int watts, DateTime polledAt, CancellationToken ct) => db.Database.ExecuteSqlInterpolatedAsync($"""
+        int watts, DateTime polledAt, CancellationToken ct)
+    {
+        var installationId = db.InstallationId ?? throw new InvalidOperationException("Private writes require an installation.");
+        return db.Database.ExecuteSqlInterpolatedAsync($"""
         IF EXISTS (SELECT 1 FROM [ExportReadings] WITH (UPDLOCK, HOLDLOCK)
-                   WHERE [DeviceSn] = {deviceSn} AND [ObservedAt] = {observedAt})
+                   WHERE [InstallationId] = {installationId} AND [DeviceSn] = {deviceSn} AND [ObservedAt] = {observedAt})
             UPDATE [ExportReadings] SET [GridPowerWatts] = {watts}, [PolledAt] = {polledAt}
-            WHERE [DeviceSn] = {deviceSn} AND [ObservedAt] = {observedAt} AND [PolledAt] <= {polledAt};
+            WHERE [InstallationId] = {installationId} AND [DeviceSn] = {deviceSn} AND [ObservedAt] = {observedAt} AND [PolledAt] <= {polledAt};
         ELSE
-            INSERT INTO [ExportReadings] ([DeviceSn], [ObservedAt], [GridPowerWatts], [PolledAt])
-            VALUES ({deviceSn}, {observedAt}, {watts}, {polledAt});
+            INSERT INTO [ExportReadings] ([InstallationId], [DeviceSn], [ObservedAt], [GridPowerWatts], [PolledAt])
+            VALUES ({installationId}, {deviceSn}, {observedAt}, {watts}, {polledAt});
         """, ct);
+    }
 
     private static void ValidateDevice(string deviceSn)
     {

@@ -66,7 +66,7 @@ public class SolarEstimateServiceTests
         var store = new Store { FailSave = scenario == "persistence" };
         var monitor = new Monitor();
         if (scenario == "unconfirmed") monitor.CurrentValue.DeyeSolarPowerIsPvDcConfirmed = false;
-        using var service = new SolarEstimateService(source, store, monitor, clock,
+        var service = new SolarEstimateService(source, store, monitor, clock,
             NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
 
         await service.UpdateAsync(default);
@@ -84,30 +84,26 @@ public class SolarEstimateServiceTests
     }
 
     [Fact]
-    public async Task BackgroundCycleFailurePublishesEnglishErrorAndCanStop()
+    public async Task ScheduledCycleFailurePublishesEnglishError()
     {
         var monitor = new Monitor();
         monitor.CurrentValue.Roof1Kwp = -1;
-        using var service = new SolarEstimateService(new Source(), new Store(), monitor, new Clock(),
+        var service = new SolarEstimateService(new Source(), new Store(), monitor, new Clock(),
             NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
-        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        service.OnUpdated += () => published.TrySetResult();
-        try
-        {
-            await service.StartAsync(default);
-            await published.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal("The estimate could not be refreshed.", service.Current.Error);
-            Assert.Equal("A reliable comparison is unavailable.", service.Current.Comparison.Reason);
-            Assert.True(service.Current.RefreshFailed);
-        }
-        finally { await service.StopAsync(default); }
+        var published = false;
+        service.OnUpdated += () => published = true;
+        await service.RunScheduledUpdateAsync(default);
+        Assert.True(published);
+        Assert.Equal("The estimate could not be refreshed.", service.Current.Error);
+        Assert.Equal("A reliable comparison is unavailable.", service.Current.Comparison.Reason);
+        Assert.True(service.Current.RefreshFailed);
     }
 
     [Fact]
     public async Task SharesTenMinuteCacheAndPreservesLastGoodResultOnApiFailure()
     {
         var clock = new Clock(); var source = new Source(); var store = new Store();
-        using var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         var timestamp = service.Current.Estimate!.Timestamp;
         Assert.NotNull(store.Cache);
@@ -128,14 +124,14 @@ public class SolarEstimateServiceTests
     public async Task RestoresPersistedObservationAfterRestartWithoutFakeZeroOnFailure()
     {
         var clock = new Clock(); var monitor = new Monitor(); var source = new Source { Fail = true }; var store = new Store();
-        using (var empty = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor()))
         {
+            var empty = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
             await empty.UpdateAsync(default);
             Assert.Null(empty.Current.Estimate);
         }
         store.Cache = new(SolarEstimateService.ConfigurationKey(monitor.CurrentValue),
             new(clock.Now.AddMinutes(-30), 800, 400, 20, 2, clock.Now.AddMinutes(-30), 0.1), clock.Now.AddMinutes(-10));
-        using var restored = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var restored = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await restored.UpdateAsync(default);
         Assert.NotNull(restored.Current.Estimate);
         Assert.True(restored.Current.RefreshFailed);
@@ -150,7 +146,7 @@ public class SolarEstimateServiceTests
         monitor.CurrentValue.ApiKey = "test-private-key";
         Assert.Equal(key, SolarEstimateService.ConfigurationKey(monitor.CurrentValue));
         store.Cache = new("different-site", new(clock.Now.AddMinutes(-20), 800, 400, 20, 2, clock.Now.AddMinutes(-20), 0.1), clock.Now);
-        using var service = new SolarEstimateService(new Source { Fail = true }, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(new Source { Fail = true }, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         Assert.Null(service.Current.Estimate);
     }
@@ -159,7 +155,7 @@ public class SolarEstimateServiceTests
     public async Task HistoryAppearingAfterSatelliteFetchEnablesComparisonWithoutNewWeatherCalls()
     {
         var clock = new Clock(); var source = new Source(); var store = new Store();
-        using var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         Assert.Equal(SolarComparisonStatus.InsufficientData, service.Current.Comparison.Status);
         var estimate = service.Current.Estimate!;
@@ -175,7 +171,7 @@ public class SolarEstimateServiceTests
     {
         var clock = new Clock(); var monitor = new Monitor(); var device = new DeyeMonitor(); var source = new Source(); var store = new Store();
         device.CurrentValue.DeviceSn = "other-device";
-        using var service = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, device);
+        var service = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, device);
         await service.UpdateAsync(default);
         var estimate = service.Current.Estimate!;
         store.Actual = new(estimate.Timestamp, estimate.CentralKw, SolarPowerBasis.PvDc);
@@ -188,7 +184,7 @@ public class SolarEstimateServiceTests
     public async Task FutureOrRegressingResponseKeepsLastGoodObservation()
     {
         var clock = new Clock(); var source = new Source(); var store = new Store();
-        using var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         var previous = service.Current.Estimate!;
         source.Result = previous.Observation with { Timestamp = clock.Now.AddHours(1) };
@@ -220,7 +216,7 @@ public class SolarEstimateServiceTests
         monitor.CurrentValue.Roof1Tilt = 25;
         monitor.CurrentValue.Roof2Tilt = 25;
         var source = new Source { Fail = true, Result = ModelForecast(clock.Now) };
-        using var service = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, monitor, clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
 
         await service.UpdateAsync(default);
         Assert.Null(service.Current.Estimate);
@@ -243,7 +239,7 @@ public class SolarEstimateServiceTests
     {
         var clock = new Clock(); var source = new Source { Result = ModelForecast(clock.Now) };
         var store = new Store { Actual = new(clock.Now.AddMinutes(-5), 3, SolarPowerBasis.PvDc) };
-        using var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         var first = service.Current.Estimate!;
         Assert.Equal(clock.Now, first.Timestamp);
@@ -263,7 +259,7 @@ public class SolarEstimateServiceTests
     {
         var clock = new Clock(); var source = new Source { Result = ModelForecast(clock.Now) };
         var store = new Store { Actual = new(clock.Now.AddMinutes(-11), 3, SolarPowerBasis.PvDc) };
-        using var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, store, new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         Assert.Null(service.Current.ComparisonEstimate);
         Assert.Equal(SolarComparisonStatus.InsufficientData, service.Current.Comparison.Status);
@@ -279,7 +275,7 @@ public class SolarEstimateServiceTests
     {
         var clock = new Clock(); var source = new Source { Result = ModelForecast(clock.Now) with
             { Forecast = [new(clock.Now.AddMinutes(-15), 500, 300, 20, 2, 30), new(clock.Now, 600, 400, 20, 2, 30)] } };
-        using var service = new SolarEstimateService(source, new Store(), new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
+        var service = new SolarEstimateService(source, new Store(), new Monitor(), clock, NullLogger<SolarEstimateService>.Instance, new DeyeMonitor());
         await service.UpdateAsync(default);
         Assert.NotNull(service.Current.Estimate);
         clock.Now = clock.Now.AddMinutes(1);

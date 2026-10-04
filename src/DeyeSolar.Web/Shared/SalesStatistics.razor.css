@@ -1,9 +1,9 @@
 .sales { min-width: 0; }
 .sales-heading, .sales-filters, .sales-date-navigation, .sales-period-caption, .sales-chart-heading, .sales-inspector, .sales-inspector-time { display: flex; align-items: center; gap: 12px; }
-.sales-heading { justify-content: space-between; margin-bottom: 18px; }
+.sales-heading { justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
 .sales-heading h1 { margin: 0 0 8px; font-size: clamp(1.35rem, 3vw, 1.7rem); font-weight: 600; }
-.sales-heading-actions { display: flex; align-items: center; gap: 10px; }
-.sales-details-link { color: var(--mud-palette-primary); font-size: .8rem; white-space: nowrap; }
+.sales-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sales-details-link { display: inline-flex; color: var(--mud-palette-text-primary); font-size: .76rem; border: 1px solid var(--mud-palette-divider); border-radius: 8px; padding: 6px 10px; text-decoration: none; }
 .sales-source { display: inline-block; font-size: .75rem; border-radius: 20px; padding: 4px 9px; color: #26c6ad; background: rgba(38, 198, 173, .1); }
 .sales-filters { justify-content: space-between; flex-wrap: wrap; }
 .sales-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--mud-palette-divider); border-radius: 9px; }
@@ -13,7 +13,20 @@ button { cursor: pointer; border-radius: 7px; border: 1px solid var(--mud-palett
 .sales-switch button.selected { color: var(--mud-palette-primary); background: rgba(66, 165, 245, .15); }
 button:disabled { opacity: .35; cursor: default; }
 button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--mud-palette-primary); outline-offset: 3px; }
-.sales-refresh { border: 0; font-size: 1.8rem; padding: 0 8px; color: var(--mud-palette-text-secondary); }
+.sales-refresh { border: 1px solid var(--mud-palette-divider); border-radius: 8px; font-size: .76rem; padding: 6px 10px; color: var(--mud-palette-text-primary); }
+.sales-detail-section { border-top: 1px solid var(--mud-palette-divider); margin-top: 24px; padding-top: 20px; }
+.sales-detail-section h2 { margin: 0 0 16px; font-size: 1.1rem; }
+.sales-detail-section p { font-size: .78rem; color: var(--mud-palette-text-secondary); line-height: 1.6; }
+.sales-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 0; }
+.sales-metadata dt { font-size: .76rem; color: var(--mud-palette-text-secondary); margin-bottom: 5px; }
+.sales-metadata dd { margin: 0; font-size: .86rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sales-table-container { overflow: auto; max-height: 420px; margin-top: 24px; border: 1px solid var(--mud-palette-divider); border-radius: 8px; }
+.sales-data-table { width: 100%; border-collapse: collapse; font-size: .78rem; font-variant-numeric: tabular-nums; }
+.sales-data-table caption { text-align: left; font-weight: 600; padding: 12px; }
+.sales-data-table th, .sales-data-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--mud-palette-divider); white-space: nowrap; }
+.sales-data-table thead { position: sticky; top: 0; background: var(--mud-palette-surface); }
+.sales-data-table tbody th { font-weight: 400; }
+@media (max-width: 600px) { .sales-metadata { grid-template-columns: minmax(0, 1fr); } }
 .sales-date-navigation { gap: 7px; }
 .sales-date-navigation > button:not(.sales-today) { font-size: 1.2rem; padding: 2px 11px; }
 .sales-today { color: var(--mud-palette-primary); }

@@ -1,0 +1,13 @@
+@page "/sales-details"
+@inherits SalesQueryPageBase
+
+<PageTitle>Sales details - DeyeSolar</PageTitle>
+<MudButton Href="@BackUrl" Variant="Variant.Outlined" Class="mb-4">Back</MudButton>
+@if (ValidSelection)
+{
+    <SalesStatistics Detailed="true" InitialRequest="Request" />
+}
+else
+{
+    <MudAlert Severity="Severity.Warning">Choose a valid sales period and dates from 2000 onwards, no later than today. A custom period can include up to 366 days.</MudAlert>
+}

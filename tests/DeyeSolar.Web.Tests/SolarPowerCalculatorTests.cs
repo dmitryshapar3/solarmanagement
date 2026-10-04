@@ -12,6 +12,29 @@ public class SolarPowerCalculatorTests
         new(Now.AddMinutes(-20), sw, ne, 20, 2, Now.AddMinutes(-20), 0.1);
 
     [Theory]
+    [InlineData(0, 5)]
+    [InlineData(5, 0)]
+    public void SinglePlaneInstallationKeepsTheEmptyPlaneAtZero(double firstCapacity, double secondCapacity)
+    {
+        var options = new SolarEstimateOptions { Roof1Kwp = firstCapacity, Roof2Kwp = secondCapacity };
+        var estimate = SolarPowerCalculator.Calculate(Observation(), options, Now);
+        var empty = estimate.Roofs.Single(roof => roof.CapacityKwp == 0);
+        Assert.Equal(0, empty.CentralKw);
+        Assert.Equal(0, empty.LowerKw);
+        Assert.Equal(0, empty.UpperKw);
+        Assert.True(double.IsFinite(estimate.CentralKw));
+        Assert.True(estimate.CentralKw > 0);
+        Assert.Equal(5, estimate.TotalKwp);
+    }
+
+    [Fact]
+    public void EmptyNegativeAndOverflowingInstallationCapacityRemainInvalid()
+    {
+        foreach (var capacities in new[] { (0d, 0d), (-1d, 5d), (5d, -1d), (double.MaxValue, double.MaxValue) })
+            Assert.Throws<ArgumentException>(() => new SolarEstimateOptions { Roof1Kwp = capacities.Item1, Roof2Kwp = capacities.Item2 }.Validate());
+    }
+
+    [Theory]
     [InlineData("weather", "Weather data is stale or could not be refreshed.")]
     [InlineData("missing", "No reliable Deye reading is available for the estimate time.")]
     [InlineData("stale", "The latest Deye reading is stale.")]
@@ -226,7 +249,7 @@ public class SolarPowerCalculatorTests
         Assert.Throws<ArgumentException>(() => SolarPowerCalculator.Calculate(Observation() with { Timestamp = Now.AddMinutes(1) }, new(), Now));
         Assert.Throws<ArgumentException>(() => SolarPowerCalculator.Calculate(Observation(double.NaN), new(), Now));
         Assert.Throws<ArgumentException>(() => SolarPowerCalculator.Calculate(Observation(-1), new(), Now));
-        Assert.Throws<ArgumentException>(() => SolarPowerCalculator.Calculate(Observation(), new() { Roof1Kwp = 0 }, Now));
+        Assert.Throws<ArgumentException>(() => SolarPowerCalculator.Calculate(Observation(), new() { Roof1Kwp = 0, Roof2Kwp = 0 }, Now));
     }
 
     [Theory]

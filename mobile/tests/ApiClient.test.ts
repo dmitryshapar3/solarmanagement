@@ -129,3 +129,23 @@ test("invalid paths and timeout bounds have no network effects; proxy HTML is no
   assert.equal(calls, 0);
   await assert.rejects(client.request("/read"), { message: "Request failed with HTTP 502." });
 });
+
+for (const [description, body] of [
+  ["proxy HTML", "<html>private upstream detail and echoed-secret</html>"],
+  ["malformed JSON", '{"private":"echoed-secret",']
+] as const) {
+  test(`successful ${description} is rejected safely instead of being returned as API data`, async t => {
+    t.mock.method(globalThis, "fetch", async () => new Response(body, { status: 200 }));
+    let unauthorized = 0;
+    const client = new ApiClient({ baseUrl: "https://solar.example", token: "current", onUnauthorized: () => unauthorized++ });
+    await assert.rejects(client.request("/read"), error => error instanceof ApiError && error.status === 200 &&
+      error.message === "The server returned an invalid API response. Check the server URL and try again.");
+    assert.equal(unauthorized, 0);
+  });
+}
+
+test("an empty 204 response completes a write without requiring a JSON body", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
+  const client = new ApiClient({ baseUrl: "https://solar.example" });
+  assert.equal(await client.request<void>("/settings", { method: "PUT", body: { interval: 5 } }), undefined);
+});

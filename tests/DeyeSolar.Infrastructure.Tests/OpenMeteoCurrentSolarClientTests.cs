@@ -178,6 +178,58 @@ public sealed class OpenMeteoCurrentSolarClientTests
     }
 
     [Fact]
+    public async Task PaidForecastUsesCustomerHostWithTrimmedEscapedServerKey()
+    {
+        const string key = "server/key?value&other=1";
+        var handler = new Handler((_, _) => Json(Weather()));
+        await Client(handler).ReadAsync(new() { ApiKey = "  " + key + "\n" }, Now, default);
+
+        Assert.All(handler.Requests, uri =>
+        {
+            Assert.Equal("https", uri.Scheme);
+            Assert.Equal("customer-api.open-meteo.com", uri.Host);
+            Assert.Equal("/v1/forecast", uri.AbsolutePath);
+            Assert.Contains("apikey=" + Uri.EscapeDataString(key), uri.Query);
+            Assert.DoesNotContain("&other=1", uri.Query);
+        });
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t\n")]
+    public async Task MissingKeyKeepsEvaluationEndpointWithoutKeyParameter(string? key)
+    {
+        var handler = new Handler((_, _) => Json(Weather()));
+        await Client(handler).ReadAsync(new() { ApiKey = key }, Now, default);
+        Assert.All(handler.Requests, uri =>
+        {
+            Assert.Equal("api.open-meteo.com", uri.Host);
+            Assert.DoesNotContain("apikey", uri.Query);
+        });
+    }
+
+    [Fact]
+    public async Task CallerCancellationDoesNotExposeUrlFromTransportException()
+    {
+        const string key = "server/key?secret";
+        using var cancellation = new CancellationTokenSource();
+        var handler = new Handler((uri, _) =>
+        {
+            cancellation.Cancel();
+            throw new OperationCanceledException("Canceled URL " + uri, cancellation.Token);
+        });
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Client(handler).ReadAsync(new() { ApiKey = key }, Now, cancellation.Token));
+
+        Assert.Equal(cancellation.Token, error.CancellationToken);
+        Assert.DoesNotContain("apikey", error.ToString());
+        Assert.DoesNotContain(key, error.ToString());
+        Assert.Null(error.InnerException);
+        Assert.InRange(handler.Requests.Count, 1, 2);
+    }
+
+    [Fact]
     public async Task LongRetryAfterBlocksLaterRefreshesWithoutLeakingCustomerApiKey()
     {
         const string key = "private/forecast?key";

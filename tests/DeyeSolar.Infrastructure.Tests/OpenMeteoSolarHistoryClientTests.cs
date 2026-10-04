@@ -295,6 +295,25 @@ public sealed class OpenMeteoSolarHistoryClientTests
     }
 
     [Fact]
+    public async Task PaidRecentHistoryPreservesForecastDateRangeAndEscapesServerKey()
+    {
+        const string key = "server/history?value&other=1";
+        var handler = new Handler((_, _) => Json(Weather()));
+        await Client(handler).ReadAsync(new() { ApiKey = "\t" + key + "  " }, Start, Start.AddHours(1), default);
+
+        Assert.All(handler.Requests, uri =>
+        {
+            Assert.Equal("https", uri.Scheme);
+            Assert.Equal("customer-api.open-meteo.com", uri.Host);
+            Assert.Equal("/v1/forecast", uri.AbsolutePath);
+            Assert.Contains("start_date=2026-09-18", uri.Query);
+            Assert.Contains("end_date=2026-09-18", uri.Query);
+            Assert.Contains("apikey=" + Uri.EscapeDataString(key), uri.Query);
+            Assert.DoesNotContain("&other=1", uri.Query);
+        });
+    }
+
+    [Fact]
     public async Task LongRetryAfterDefersNextReadWithoutLeakingPaidKey()
     {
         const string key = "private/history?key";

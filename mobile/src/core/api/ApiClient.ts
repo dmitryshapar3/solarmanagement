@@ -105,7 +105,15 @@ export class ApiClient {
       const text = await response.text();
       // A late response or 401 must never affect a replacement session.
       if (controller.signal.aborted || revision !== this.revision) throw new Error("The request was canceled.");
-      const payload = text ? safeJson(text) : undefined;
+      let payload: unknown;
+      if (text) {
+        try { payload = JSON.parse(text); }
+        catch {
+          if (response.ok) {
+            throw new ApiError(response.status, "The server returned an invalid API response. Check the server URL and try again.");
+          }
+        }
+      }
       if (response.status === 401) {
         if (options.skipUnauthorizedHandler) throw new ApiError(401, extractErrorMessage(payload, 401));
         if (token) this.onUnauthorized?.();
@@ -142,11 +150,6 @@ function buildQuery(query?: RequestOptions["query"]): string {
   });
   const text = params.toString();
   return text ? `?${text}` : "";
-}
-
-function safeJson(text: string): unknown {
-  try { return JSON.parse(text); }
-  catch { return text; }
 }
 
 function extractErrorMessage(payload: unknown, status: number): string {

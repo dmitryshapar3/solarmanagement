@@ -9,6 +9,7 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Infrastructure.DeyeCloud;
 using DeyeSolar.Web.Api;
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -63,7 +64,7 @@ public class MobileSolarApiTests
         var revoked = host.Sessions.Create("revoked-fixture-user", "revoked-fixture");
         host.Sessions.Revoke(revoked.Token);
         var state = await host.ReadStateAsync();
-        var calls = host.Factory.Calls;
+        var commands = host.Factory.DataCommands.Commands;
 
         foreach (var token in new string?[] { null, "forged-mobile-token", expired.Token, revoked.Token })
             foreach (var route in ProtectedRoutes)
@@ -72,7 +73,7 @@ public class MobileSolarApiTests
                 Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             }
 
-        Assert.Equal(calls, host.Factory.Calls);
+        Assert.Equal(commands, host.Factory.DataCommands.Commands);
         Assert.Equal(0, host.Source.Calls);
         Assert.Equal(0, host.HistoryWeather.Calls);
         Assert.Equal(0, host.Sales.Calls);
@@ -140,7 +141,7 @@ public class MobileSolarApiTests
         await using var host = await ApiHost.StartAsync();
         var token = (await host.LoginAsync()).Token;
         var before = await host.ReadStateAsync();
-        var calls = host.Factory.Calls;
+        var commands = host.Factory.DataCommands.Commands;
         foreach (var query in new[] { "", "period=0", "period=3", "period=today", "period=Today,Week",
                      "period=Today&period=Week", "period=Today&date=", "period=Today&date=2026-9-30",
                      "period=Today&date=2026-09-31", "period=Today&date=2026-09-30&date=2026-09-29",
@@ -149,7 +150,7 @@ public class MobileSolarApiTests
             using var response = await host.SendAsync("/api/solar/history?" + query, token);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
-        Assert.Equal(calls, host.Factory.Calls);
+        Assert.Equal(commands, host.Factory.DataCommands.Commands);
         Assert.Equal(0, host.HistoryWeather.Calls);
         Assert.Equal(0, host.Source.Calls);
         Assert.Equal(before, await host.ReadStateAsync());
@@ -290,6 +291,7 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
                 builder.Services.AddScoped(_ => factory.CreateDbContext());
                 builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DeyeSolarDbContext>();
+                builder.Services.AddAccountIdentities(new AuthProviderOptions());
                 builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<MobileSessionStore>();
@@ -318,16 +320,19 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
                 builder.Services.AddSingleton<SolarEstimateService>();
                 app = builder.Build();
-                app.UseAuthentication(); app.UseAuthorization();
+                app.UseRouting(); app.UseRateLimiter(); app.UseAuthentication(); app.UseAuthorization();
                 app.MapMobileApi(); app.MapExportSalesApi();
                 app.MapPost("/test/cookie-login", async (MobileLoginRequest request, SignInManager<IdentityUser> signIn) =>
                     (await signIn.PasswordSignInAsync(request.Username, request.Password, false, false)).Succeeded
                         ? Results.NoContent() : Results.Unauthorized());
                 using (var scope = app.Services.CreateScope())
                 {
-                    var result = await scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>().CreateAsync(
-                        new IdentityUser { UserName = Username }, Password);
+                    var user = new IdentityUser { UserName = Username };
+                    var result = await scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>().CreateAsync(user, Password);
                     Assert.True(result.Succeeded, string.Join(",", result.Errors.Select(error => error.Code)));
+                    var db = scope.ServiceProvider.GetRequiredService<DeyeSolarDbContext>();
+                    db.InstallationMemberships.Add(new InstallationMembership { UserId = user.Id, InstallationId = InstallationIds.Legacy });
+                    await db.SaveChangesAsync();
                 }
                 app.Services.GetRequiredService<InverterDataSnapshot>().Update(new() { Timestamp = Now.AddMinutes(-5), GridConsumption = -100 });
                 app.Services.GetRequiredService<DeviceStatusSnapshot>().Update([new("socket-neighbor", "Neighbor socket", null, true, false, 0)]);
@@ -355,8 +360,9 @@ public class MobileSolarApiTests
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public int Calls;
-        public DeyeSolarDbContext CreateDbContext() { Interlocked.Increment(ref Calls); return new(options); }
+        public SolarDataCommandCounter DataCommands { get; } = new();
+        public DeyeSolarDbContext CreateDbContext() => new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options)
+            .AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

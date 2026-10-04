@@ -10,7 +10,7 @@ public sealed record ApiError(string Message);
 
 public sealed record MobileLoginRequest(string Username, string Password);
 
-public sealed record MobileAuthResponse(string Token, DateTimeOffset ExpiresAt, string Username);
+public sealed record MobileAuthResponse(string Token, DateTimeOffset ExpiresAt, string Username, string? InstallationId = null);
 
 public sealed record MobileSessionResponse(bool Authenticated, string? Username);
 
@@ -33,7 +33,11 @@ public sealed record InverterDataDto(
     int GridConsumption,
     int LoadPower,
     DateTimeOffset Timestamp,
-    string DataSource);
+    string DataSource,
+    DateTimeOffset? SolarObservedAt = null,
+    DateTimeOffset? GridObservedAt = null,
+    string? SolarDeviceSn = null,
+    string? GridDeviceSn = null);
 
 public sealed record DeviceDto(
     string Id,
@@ -41,7 +45,9 @@ public sealed record DeviceDto(
     string? Category,
     bool Online,
     bool IsOn,
-    int? CurrentPowerW);
+    int? CurrentPowerW,
+    string? CloudName = null,
+    string? LocalName = null);
 
 public sealed record DeviceListResponse(
     IReadOnlyList<DeviceDto> Devices,
@@ -173,7 +179,11 @@ public static class MobileApiMappings
             data.GridConsumption,
             data.LoadPower,
             data.Timestamp,
-            "DeyeCloud");
+            "DeyeCloud",
+            data.SolarObservedAt,
+            data.GridObservedAt,
+            data.SolarDeviceSn,
+            data.GridDeviceSn);
 
     public static DeviceDto ToDto(this DevicePowerInfo device)
         => new(

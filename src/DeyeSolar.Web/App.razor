@@ -6,6 +6,7 @@
 
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
+          <InstallationGate>
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                 <NotAuthorized>
                     @{
@@ -14,6 +15,7 @@
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+          </InstallationGate>
         </Found>
         <NotFound>
             <PageTitle>Not found</PageTitle>

@@ -21,6 +21,8 @@
         .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; background: #42a5f5; color: #fff; font-size: 16px; cursor: pointer; margin-top: 8px; }
         .btn:hover { background: #1976d2; }
         .error { background: #5c2020; color: #ff8a80; padding: 10px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+        .public-links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; font-size: 13px; }
+        .public-links a { color: #90caf9; }
     </style>
 </head>
 <body>
@@ -35,16 +37,26 @@
 
         <form method="post">
             <div class="form-group">
-                <label>Username</label>
-                <input type="text" name="Username" value="@Model.Username" required autofocus />
+                <label for="username">Username, email or phone number</label>
+                <input id="username" type="text" name="Username" value="@Model.Username" autocomplete="username" required autofocus />
             </div>
             <div class="form-group">
-                <label>Password</label>
-                <input type="password" name="Password" required />
+                <label for="password">Password</label>
+                <input id="password" type="password" name="Password" autocomplete="current-password" required />
             </div>
             <button type="submit" class="btn">Sign In</button>
             @Html.AntiForgeryToken()
         </form>
+        @if (Model.Providers.GoogleEnabled)
+        { <p style="margin-top:24px"><a href="/auth/google" style="color:#90caf9">Continue with Google</a></p> }
+        <nav class="public-links" aria-label="Account options">
+            <a href="/register">Create account</a>
+            <a href="/verify">Sign in with an email or SMS code</a>
+        </nav>
+        <nav class="public-links" aria-label="Public information">
+            <a href="/privacy">Privacy policy</a>
+            <a href="/support">Support</a>
+        </nav>
     </div>
 </body>
 </html>

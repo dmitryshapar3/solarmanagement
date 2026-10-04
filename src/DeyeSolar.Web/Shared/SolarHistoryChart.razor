@@ -6,8 +6,10 @@
 @implements IAsyncDisposable
 
 <MudBreakpointProvider OnBreakpointChanged="OnBreakpointChanged" />
-<MudPaper Class="@(Overview ? "pa-4 history-overview-paper" : "pa-4")" Elevation="2">
-    <section class="solar-history @(Overview ? "history-overview" : null)" aria-labelledby="solar-history-title" aria-busy="@_loading.ToString().ToLowerInvariant()">
+<MudPaper Class="@(Embedded ? "history-embedded-paper" : Overview ? "pa-4 history-overview-paper" : "pa-4")" Elevation="@(Embedded ? 0 : 2)">
+    <section class="solar-history @(Overview ? "history-overview" : null)" aria-labelledby="@(Embedded ? null : "solar-history-title")" aria-label="@(Embedded ? "Hourly solar power history" : null)" aria-busy="@_loading.ToString().ToLowerInvariant()">
+        @if (!Embedded)
+        {
         <div class="history-heading">
             <div>
                 <h2 id="solar-history-title">Solar generation</h2>
@@ -31,6 +33,7 @@
                 <button type="button" class="history-refresh" disabled="@_loading" @onclick="LoadAsync" title="Refresh chart" aria-label="Refresh chart">↻</button>
             </div>
         </div>
+        }
         @if (!Overview)
         {
             <div class="history-date-navigation" role="group" aria-label="Day navigation">
@@ -131,12 +134,42 @@
                 <a class="history-source" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather by Open-Meteo</a>
             }
         }
+        @if (ShowTable && Result is { } tableResult)
+        {
+            <div class="history-table-container" tabindex="0" aria-label="Hourly generation data table">
+                <table class="history-data-table">
+                    <caption>Hourly generation data · @tableResult.TimeZoneId</caption>
+                    <thead><tr><th scope="col">Hour</th><th scope="col">Possible lower · kW</th><th scope="col">Possible upper · kW</th><th scope="col">Actual average · kW</th></tr></thead>
+                    <tbody>
+                        @foreach (var point in TablePoints)
+                        {
+                            <tr><th scope="row"><time datetime="@point.Timestamp.ToString("O")">@TimeLabel(point.Timestamp)</time></th><td>@TablePower(point.Possible?.LowerKw)</td><td>@TablePower(point.Possible?.UpperKw)</td><td>@TablePower(point.ActualKw)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="history-table-pager">
+                <button type="button" @onclick="() => _tablePage = TablePage - 1" disabled="@(TablePage == 0)" aria-label="Previous table page">Previous rows</button>
+                <span>Page @(TablePage + 1) of @TablePages · @tableResult.Points.Count hourly intervals</span>
+                <button type="button" @onclick="() => _tablePage = TablePage + 1" disabled="@(TablePage == TablePages - 1)" aria-label="Next table page">Next rows</button>
+            </div>
+            <p class="history-footnote">A dash means unavailable; measured zero remains 0.00. Each row is one hour of average power, not energy. Times include the UTC offset to distinguish repeated daylight-saving hours.</p>
+        }
     </section>
 </MudPaper>
 
 @code {
     [Parameter] public SolarHistoryResult? Data { get; set; }
     [Parameter] public bool Overview { get; set; }
+    [Parameter] public bool Embedded { get; set; }
+    [Parameter] public bool ShowTable { get; set; }
+    public Task RefreshDataAsync() => _loading ? Task.CompletedTask : LoadAsync();
+    private int _tablePage;
+    private (DateTimeOffset Start, DateTimeOffset End)? _tableWindow;
+    private int TablePages => Math.Max(1, (int)Math.Ceiling((Result?.Points.Count ?? 0) / 24d));
+    private int TablePage => Math.Clamp(_tablePage, 0, TablePages - 1);
+    private IEnumerable<SolarHistoryPoint> TablePoints => Result?.Points.Skip(TablePage * 24).Take(24) ?? [];
+    private static string TablePower(double? value) => value.HasValue && double.IsFinite(value.Value) ? value.Value.ToString("N2", English) : "—";
     private SolarHistoryResult? _data;
     private SolarHistoryResult? Result => Data ?? _data;
     private SolarHistoryPeriod _period = SolarHistoryPeriod.Today;
@@ -193,8 +226,16 @@
     }
     private void OnBreakpointChanged(Breakpoint breakpoint) => _compact = breakpoint is Breakpoint.Xs or Breakpoint.Sm;
 
-    private void UpdateScale() => MaxPower = Math.Max(1, Math.Ceiling((Result?.Points
-        .Select(p => Math.Max(p.Possible?.UpperKw ?? 0, p.ActualKw ?? 0)).DefaultIfEmpty(0).Max() ?? 0) / 2) * 2);
+    private void UpdateScale()
+    {
+        MaxPower = Math.Max(1, Math.Ceiling((Result?.Points
+            .Select(p => Math.Max(p.Possible?.UpperKw ?? 0, p.ActualKw ?? 0)).DefaultIfEmpty(0).Max() ?? 0) / 2) * 2);
+        if (Result is { } result && _tableWindow != (result.Start, result.End))
+        {
+            _tableWindow = (result.Start, result.End);
+            _tablePage = 0;
+        }
+    }
 
     private string RangeBandPath()
     {

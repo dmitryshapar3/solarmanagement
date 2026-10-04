@@ -66,12 +66,8 @@ public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarH
             // The row at the exclusive end describes the last included hour, even at midnight.
             ["end_date"] = end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
-        var hasKey = !string.IsNullOrWhiteSpace(options.ApiKey);
-        if (hasKey) parameters["apikey"] = options.ApiKey!;
-        var host = hasKey ? "customer-api.open-meteo.com" : "api.open-meteo.com";
-        var uri = new Uri($"https://{host}/v1/forecast?" + string.Join("&", parameters.Select(pair =>
-            Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value))));
-        using var document = await _transport.GetJsonAsync(uri, ct);
+        // Recent history uses the Forecast API's date range, preserving the existing source.
+        using var document = await _transport.GetJsonAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
         var root = document.RootElement;
         if (!HasUnit(root, "time", "unixtime") || !HasUnit(root, GtiVariable, "W/m²"))
             throw new InvalidDataException("Open-Meteo history returned missing or unexpected radiation units.");

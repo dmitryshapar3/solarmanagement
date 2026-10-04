@@ -17,6 +17,9 @@ import {
   ShellySettings,
   SocketStateResponse
 } from "./types";
+import type { Device, IntegrationKind, IntegrationTestRequest, IntegrationTestResult } from "./types";
+import type { AuthOptions, VerificationChannel, VerificationPurpose, VerificationResponse } from "./types";
+import type { SolarSiteSettings } from "./types";
 import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "./types";
 
 type DeyeDeviceSelectionRequest = {
@@ -26,6 +29,42 @@ type DeyeDeviceSelectionRequest = {
 
 export class DeyeSolarApi {
   constructor(private readonly client: ApiClient) {}
+
+  getAuthOptions(signal?: AbortSignal): Promise<AuthOptions> {
+    return this.client.request("/api/auth/options", { signal, skipUnauthorizedHandler: true });
+  }
+
+  startVerification(channel: VerificationChannel, destination: string, purpose: VerificationPurpose, signal?: AbortSignal): Promise<VerificationResponse> {
+    return this.client.request("/api/auth/verification/start", {
+      method: "POST", body: { channel, destination, purpose }, signal, skipUnauthorizedHandler: true
+    });
+  }
+
+  register(verificationId: string, code: string, password: string, signal?: AbortSignal): Promise<AuthResponse> {
+    return this.client.request("/api/auth/register", {
+      method: "POST", body: { verificationId, code, password }, signal, skipUnauthorizedHandler: true
+    });
+  }
+
+  loginWithVerification(verificationId: string, code: string, signal?: AbortSignal): Promise<AuthResponse> {
+    return this.client.request("/api/auth/verification/login", {
+      method: "POST", body: { verificationId, code }, signal, skipUnauthorizedHandler: true
+    });
+  }
+
+  exchangeGoogleCode(code: string, codeVerifier: string, signal?: AbortSignal): Promise<AuthResponse> {
+    return this.client.request("/api/auth/google/exchange", {
+      method: "POST", body: { code, codeVerifier }, signal, skipUnauthorizedHandler: true
+    });
+  }
+
+  linkIdentity(verificationId: string, code: string): Promise<void> {
+    return this.client.request("/api/auth/identities/link", { method: "POST", body: { verificationId, code } });
+  }
+
+  startGoogleLink(codeChallenge: string, state: string): Promise<{ authorizationUrl: string; expiresAt: string }> {
+    return this.client.request("/api/auth/google/link/start", { method: "POST", body: { codeChallenge, state } });
+  }
 
   async login(username: string, password: string, signal?: AbortSignal): Promise<AuthResponse> {
     try {
@@ -84,6 +123,18 @@ export class DeyeSolarApi {
     });
   }
 
+  renameDevice(entityId: string, name: string | null): Promise<Device> {
+    return this.client.request<Device>(`/api/devices/${encodeURIComponent(entityId)}/name`, {
+      method: "PATCH", body: { name }
+    });
+  }
+
+  testIntegration(kind: IntegrationKind, body: IntegrationTestRequest = {}): Promise<IntegrationTestResult> {
+    return this.client.request<IntegrationTestResult>(`/api/settings/test/${kind}`, {
+      method: "POST", body, timeoutMs: 25000
+    });
+  }
+
   getRules(): Promise<Rule[]> {
     return this.client.request<Rule[]>("/api/rules");
   }
@@ -133,6 +184,14 @@ export class DeyeSolarApi {
 
   getSettings(): Promise<Settings> {
     return this.client.request<Settings>("/api/settings");
+  }
+
+  getSiteSettings(): Promise<SolarSiteSettings> {
+    return this.client.request("/api/settings/site");
+  }
+
+  saveSiteSettings(settings: SolarSiteSettings): Promise<void> {
+    return this.client.request("/api/settings/site", { method: "PUT", body: settings });
   }
 
   saveDeyeCloud(settings: DeyeCloudSettings): Promise<void> {

@@ -316,11 +316,13 @@ public sealed class OpenMeteoSolarClientTests
     {
         const string apiKey = "value/with?reserved&characters";
         var handler = new RoutingHandler((uri, _) => Json(IsWeather(uri) ? ValidWeather() : ValidSatellite()));
-        await Client(handler).ReadAsync(new() { ApiKey = apiKey }, Now, CancellationToken.None);
+        await Client(handler).ReadAsync(new() { ApiKey = "  " + apiKey + "\n" }, Now, CancellationToken.None);
         Assert.All(handler.Requests, uri =>
         {
+            Assert.Equal("https", uri.Scheme);
             Assert.Equal(IsWeather(uri) ? "customer-api.open-meteo.com" : "customer-satellite-api.open-meteo.com", uri.Host);
             Assert.Contains("apikey=" + Uri.EscapeDataString(apiKey), uri.Query);
+            Assert.DoesNotContain("&characters", uri.Query);
         });
     }
 

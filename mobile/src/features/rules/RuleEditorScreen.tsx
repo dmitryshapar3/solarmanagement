@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Save } from "lucide-react-native";
 import {
@@ -132,7 +132,9 @@ export function RuleEditorScreen({ route, navigation }: Props) {
       {devices.length || unknownSelection ? (
         <View style={styles.deviceList}>
           {unknownSelection ? (
-            <Pressable style={[styles.deviceChoice, styles.deviceChoiceSelected]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={rule.entityId}
+              accessibilityState={{ selected: true, disabled: true }} disabled
+              style={[styles.deviceChoice, styles.deviceChoiceSelected]}>
               <View style={styles.deviceCopy}>
                 <Text style={styles.deviceName} numberOfLines={1}>{rule.entityId}</Text>
                 <Text style={styles.deviceCategory}>Unknown device</Text>
@@ -143,7 +145,11 @@ export function RuleEditorScreen({ route, navigation }: Props) {
           {devices.map((device) => (
             <Pressable
               key={device.id}
-              onPress={() => setField("entityId", device.id)}
+              accessibilityRole="button"
+              accessibilityLabel={device.name}
+              accessibilityHint={`${device.category ?? device.id}, ${!device.online ? "Offline" : device.isOn ? "ON" : "OFF"}`}
+              accessibilityState={{ selected: rule.entityId === device.id }}
+              onPress={() => { Keyboard.dismiss(); setField("entityId", device.id); }}
               style={[styles.deviceChoice, rule.entityId === device.id && styles.deviceChoiceSelected]}
             >
               <View style={styles.deviceCopy}>

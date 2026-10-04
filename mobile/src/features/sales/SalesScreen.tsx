@@ -1,24 +1,37 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { RefreshCcw } from "lucide-react-native";
+import { ReactNode, useCallback, useMemo, useState } from "react";
+import { Text, View } from "react-native";
+import { CompositeNavigationProp, NavigationProp, useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AppButton, Card, ErrorBanner, Header, LoadingState, Screen, SegmentedControl, StatusPill } from "../../core/components";
+import { TileHeader } from "../../core/TileHeader";
 import { useAuth } from "../../application/AuthContext";
+import { RootStackParamList, RootTabsParamList } from "../../application/navigationTypes";
+import { ExportSalesResult } from "../../core/api/types";
 import { EnergyChart } from "../energy/EnergyChart";
 import { amount, dateCaption, momentCaption, movePeriod, periodAnchor, salesPointValues, tickCaption, zonedDate } from "../energy/chartPolicy";
 import { energyStyles as styles, PeriodNavigation } from "../energy/EnergyControls";
 import { useFocusedResource } from "../energy/useFocusedResource";
 
-type SalesPeriod = "Day" | "Month" | "Year";
+export type SalesPeriod = "Day" | "Month" | "Year";
 type Metric = "energy" | "value";
 
 export function SalesScreen() {
   return <Screen><Header title="Sales" subtitle="Measured grid export and estimated energy value" /><SalesPanel /></Screen>;
 }
 
-export function SalesPanel({ compact = false, onDetails }: { compact?: boolean; onDetails?: () => void }) {
+export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", initialDate, showDetails = true, chartFirst = false, renderDetails }: {
+  compact?: boolean;
+  onDetails?: (period: SalesPeriod, date: string) => void;
+  initialPeriod?: SalesPeriod;
+  initialDate?: string;
+  showDetails?: boolean;
+  chartFirst?: boolean;
+  renderDetails?: (data: ExportSalesResult, period: SalesPeriod) => ReactNode;
+}) {
   const { api } = useAuth();
-  const [period, setPeriod] = useState<SalesPeriod>("Day");
-  const [date, setDate] = useState<string>();
+  const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
+  const [period, setPeriod] = useState<SalesPeriod>(initialPeriod);
+  const [date, setDate] = useState<string | undefined>(initialDate);
   const [metric, setMetric] = useState<Metric>("energy");
   const resource = useFocusedResource(`sales:${period}:${date ?? "today"}`,
     useCallback((signal: AbortSignal) => api.getSales(period, date ?? zonedDate(new Date()), signal), [api, period, date]));
@@ -32,8 +45,14 @@ export function SalesPanel({ compact = false, onDetails }: { compact?: boolean; 
       description: `${momentCaption(bucket.start, data.timeZoneId)} – ${momentCaption(bucket.end, data.timeZoneId)}\nCompleted: ${amount(completed, unit)}${current ? `\nCurrent hour · in progress: ${amount(provisional, unit)}${current.observedThrough ? ` · measured through ${momentCaption(current.observedThrough, data.timeZoneId)}` : " · awaiting readings"}` : ""}${bucket.observedHours < bucket.expectedHours || bucket.valuedHours < bucket.observedHours ? "\nPartial interval" : ""}` };
   }) ?? [], [data, metric, period, unit]);
   const hasElapsed = (data?.expectedHours ?? 0) > 0;
-  return <Card style={styles.card}>
-    <View style={styles.heading}><Text style={styles.title}>Electricity sales</Text>{compact ? <Pressable accessibilityRole="button" onPress={onDetails}><Text style={styles.link}>View details</Text></Pressable> : <AppButton label="Refresh" icon={RefreshCcw} compact variant="ghost" loading={resource.loading} onPress={() => void resource.refresh()} />}</View>
+  const chart = <>
+    <SegmentedControl options={[{ label: "Energy", value: "energy" }, { label: "Value", value: "value" }]} value={metric} onChange={setMetric} />
+    {resource.loading && !data ? <LoadingState label="Loading sales..." /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="sales" unit={unit} />}
+    {!compact ? <Text style={styles.muted}>Tap the chart or use Previous / Next interval to inspect exact values. Energy and Value use the same selected reporting window.</Text> : null}
+  </>;
+  return <><Card style={styles.card}>
+    <TileHeader title="Electricity sales" loading={resource.loading} onRefresh={() => void resource.refresh()}
+      onDetails={showDetails ? () => onDetails ? onDetails(period, selected) : navigation.navigate("SalesDetails", { period, date: selected }) : undefined} />
     <StatusPill label="Deye estimate" tone="info" />
     {!compact ? <>
       <SegmentedControl options={[{ label: "Day", value: "Day" }, { label: "Month", value: "Month" }, { label: "Year", value: "Year" }]} value={period} onChange={setPeriod} />
@@ -42,6 +61,7 @@ export function SalesPanel({ compact = false, onDetails }: { compact?: boolean; 
     </> : <Text style={styles.muted}>{dateCaption(selected)}</Text>}
     <ErrorBanner message={resource.error} />
     {resource.error ? <AppButton label="Retry" compact variant="ghost" loading={resource.loading} onPress={() => void resource.refresh()} /> : null}
+    {chartFirst ? chart : null}
     <View style={styles.metrics}>
       <View style={styles.metric}><Text style={styles.muted}>{compact && selected === today && selected === zonedDate(new Date(), data?.timeZoneId) ? "Exported today" : "Exported to grid"}</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(hasElapsed ? data?.exportKwh : null, "kWh")}</Text></View>
       <View style={styles.metric}><Text style={styles.muted}>Energy value</Text><Text style={[styles.metricValue, styles.amberValue]}>{amount(hasElapsed ? data?.energyValuePln : null, "PLN")}</Text></View>
@@ -52,9 +72,9 @@ export function SalesPanel({ compact = false, onDetails }: { compact?: boolean; 
     {data?.dataError ? <Text style={styles.warning}>{data.dataError}</Text> : null}
     {data?.priceError ? <Text style={styles.warning}>{data.priceError}</Text> : null}
     {data?.isPartial ? <Text style={styles.warning}>Partial data · totals for available hours</Text> : null}
+    {!compact && data ? <Text style={styles.muted}>Completed-hour coverage: {data.observedHours} of {data.expectedHours} observed · {data.valuedHours} valued.</Text> : null}
     {data && !hasElapsed && !data.currentHour && !data.dataError ? <Text style={styles.muted}>{movePeriod(selected, period, 1) <= data.contractStartDate ? `This period is before the contract start date: ${dateCaption(data.contractStartDate)}.` : "There are no completed hours in this period yet."}</Text> : null}
-    <SegmentedControl options={[{ label: "Energy", value: "energy" }, { label: "Value", value: "value" }]} value={metric} onChange={setMetric} />
-    {resource.loading && !data ? <LoadingState label="Loading sales..." /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="sales" unit={unit} />}
+    {!chartFirst ? chart : null}
     {data?.currentHour ? <View style={styles.provisional}>
       <Text style={[styles.muted, styles.primaryValue]}>Current hour · in progress</Text>
       <Text style={styles.muted}>{amount(data.currentHour.exportKwh, "kWh")} · {amount(data.currentHour.energyValuePln, "PLN")}</Text>
@@ -67,5 +87,5 @@ export function SalesPanel({ compact = false, onDetails }: { compact?: boolean; 
       <Text style={styles.muted}>Energy value uses RCE prices under the contract terms. Estimated monthly deposit credit includes the 1.23 multiplier. It is not a bank payout or deposit balance.</Text>
       <Text style={styles.muted}>Final settlement uses the OSD billing meter. Missing readings and prices are not zero. Settlement time zone: {data.timeZoneId}.</Text>
     </View> : null}
-  </Card>;
+  </Card>{data ? renderDetails?.(data, period) : null}</>;
 }

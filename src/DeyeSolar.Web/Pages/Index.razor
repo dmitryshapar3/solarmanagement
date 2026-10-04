@@ -1,7 +1,12 @@
 @page "/"
 @using System.Globalization
 @using DeyeSolar.Web.Services
+@using DeyeSolar.Domain.Options
+@using Microsoft.Extensions.Options
 @inject InverterDataSnapshot Snapshot
+@inject TimeProvider Clock
+@inject IOptionsMonitor<DeyeCloudOptions> DeyeOptions
+@inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
 @inject IInverterRefreshService InverterRefresh
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
@@ -17,38 +22,48 @@
             <section aria-labelledby="energy-status-title" aria-busy="@_refreshing.ToString().ToLowerInvariant()" data-testid="energy-status">
                 <div class="energy-status-heading">
                     <div>
-                        <h2 id="energy-status-title">Energy status</h2>
+                        <h2 id="energy-status-title">Current generation</h2>
                         <span class="energy-status-source">DeyeCloud</span>
                         @if (_data is { } reading)
                         {
                             <span class="energy-status-updated" title="Poll time; the Deye measurement may be older.">Last Deye poll <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
                         }
                     </div>
+                    <div class="energy-status-actions">
                     <button type="button" class="energy-status-refresh" @onclick="RefreshInverterAsync" disabled="@_refreshing"
                             aria-label="Refresh inverter data" title="Fetch the latest Deye readings">
                         <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
                         @(_refreshing ? "Refreshing…" : "Refresh")
                     </button>
+                    <a class="energy-status-refresh" href="/inverter-details?returnTo=%2F" aria-label="Current generation details">Details</a>
+                    </div>
                 </div>
                 <div class="energy-status-metrics">
-                    <div class="energy-status-metric energy-status-battery" data-testid="battery-soc">
-                        <span class="energy-status-label">Battery SOC</span>
-                        <strong>@(_data?.BatterySoc.ToString(CultureInfo.InvariantCulture) ?? "—")<small>%</small></strong>
-                        @if (_data is not null)
+                    <div class="energy-status-metric energy-status-primary" data-testid="solar-generation">
+                        <span class="energy-status-label">Solar generation · Deye</span>
+                        <strong>@SolarPower<small>kW</small></strong>
+                        @if (HasSolarReading && _data?.SolarObservedAt is { } observedAt)
                         {
-                            <div class="energy-status-charge" role="progressbar" aria-label="Battery charge" aria-valuenow="@_data.BatterySoc" aria-valuemin="0" aria-valuemax="100">
-                                <span class="@SocClass(_data.BatterySoc)" style="@($"width: {Math.Clamp(_data.BatterySoc, 0, 100)}%")"></span>
-                            </div>
+                            <span class="energy-status-direction">Measured <time datetime="@observedAt.ToString("O")">@TimeHelper.ToUserTime(observedAt.UtcDateTime, _tz).ToString("d MMM HH:mm:ss", CultureInfo.GetCultureInfo("en-GB"))</time></span>
+                        }
+                        else
+                        {
+                            <span class="energy-status-direction">PV measurement unavailable</span>
                         }
                     </div>
-                    <div class="energy-status-metric" data-testid="solar-generation">
-                        <span class="energy-status-label">Solar generation</span>
-                        <strong>@Power(_data?.SolarProduction)<small>W</small></strong>
+                    <div class="energy-status-metric" data-testid="load-power">
+                        <span class="energy-status-label">Load</span>
+                        <strong>@Power(_data?.LoadPower)<small>W</small></strong>
                     </div>
                     <div class="energy-status-metric" data-testid="grid-power">
                         <span class="energy-status-label">Grid</span>
                         <strong>@Power(_data?.GridConsumption)<small>W</small></strong>
                         <span class="energy-status-direction @GridClass">@GridDirection</span>
+                    </div>
+                    <div class="energy-status-metric" data-testid="battery-power">
+                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPower)</span>
+                        <strong>@Power(_data?.BatteryPower)<small>W</small></strong>
+                        <span class="energy-status-direction">@(_data is null ? "Awaiting reading" : "Reported Deye power")</span>
                     </div>
                 </div>
                 @if (_data is null)
@@ -66,10 +81,10 @@
     <MudItem xs="12">
         <section class="dashboard-charts" aria-label="Generation and electricity sales" data-testid="dashboard-charts">
             <div class="dashboard-chart-column" data-testid="dashboard-generation">
-                <SolarHistoryChart Overview="true" />
+                <SolarEstimateCard Overview="true" Actual="_data" OnRefreshInverter="RefreshInverterAsync" Refreshing="_refreshing" ReturnTo="/" />
             </div>
             <div class="dashboard-chart-column" data-testid="dashboard-sales">
-                <SalesStatistics Overview="true" />
+                <SalesStatistics Overview="true" ReturnTo="/" />
             </div>
         </section>
     </MudItem>
@@ -176,6 +191,10 @@
     private string? _refreshError;
     private readonly CancellationTokenSource _lifetime = new();
     private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.InvariantCulture) : "—";
+    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading
+        && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == DeyeOptions.CurrentValue.DeviceSn
+        && observed <= Clock.GetUtcNow() && (Clock.GetUtcNow() - observed).TotalMinutes <= EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes;
+    private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.GetCultureInfo("en-GB")) : "—";
     private string GridDirection => _data is null ? "Awaiting reading" : _data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle";
     private string GridClass => _data?.GridConsumption < 0 ? "energy-status-positive" : _data?.GridConsumption > 0 ? "energy-status-active" : "";
     private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
@@ -190,6 +209,21 @@
         if (_disposed) return;
         Snapshot.OnDataUpdated += OnDataUpdated;
         _data = Snapshot.Current;
+        _ = UpdateClockAsync();
+    }
+
+    private async Task UpdateClockAsync()
+    {
+        var token = _lifetime.Token;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(() => { if (!_disposed) StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (_disposed) { }
+        catch (InvalidOperationException) when (_disposed) { }
     }
 
     private void OnDataUpdated()

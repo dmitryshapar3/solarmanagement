@@ -75,7 +75,12 @@ export function HistoryScreen() {
   return (
     <Screen scroll={false} style={styles.screen}>
       <FlatList
+        style={styles.list}
         data={items}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews
         keyExtractor={(item) => `${mode}-${item.id}`}
         renderItem={({ item }) =>
           mode === "readings"
@@ -204,6 +209,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: 112,
     gap: spacing.md
+  },
+  list: {
+    flex: 1
   },
   controls: {
     gap: spacing.lg,

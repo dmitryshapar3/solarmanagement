@@ -134,9 +134,13 @@ public class ExportReadingStoreTests
         {
             var migrator = db.GetService<IMigrator>();
             await migrator.MigrateAsync("20260918120000_AddSolarObservationTimestamp");
-            db.Readings.Add(new Reading { Timestamp = Start.UtcDateTime, GridConsumption = -4300, SolarObservedAt = Start.UtcDateTime, SolarDeviceSn = "selected" });
-            db.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "untouched", Value = "preserved" });
-            await db.SaveChangesAsync();
+            // Seed the historical schema without referencing columns introduced by the current tenant model.
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO Readings (Timestamp, BatterySoc, BatteryTemperature, BatteryVoltage, BatteryPower, BatteryCurrent,
+                    SolarProduction, GridConsumption, LoadPower, DataSource, SolarObservedAt, SolarDeviceSn)
+                VALUES ({Start.UtcDateTime}, 0, 0, 0, 0, 0, 0, -4300, 0, '', {Start.UtcDateTime}, 'selected');
+                INSERT INTO AppSettings (Section, [Key], Value) VALUES ('Neighbor', 'untouched', 'preserved');
+                """);
             await migrator.MigrateAsync();
         }
         await using var check = database.Factory.CreateDbContext();
@@ -176,7 +180,7 @@ public class ExportReadingStoreTests
 
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options);
+        public DeyeSolarDbContext CreateDbContext() => new(options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

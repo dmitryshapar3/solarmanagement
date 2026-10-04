@@ -36,6 +36,18 @@ public sealed class SolarHistoryService(ISolarHistoryRadiationSource weather, IS
         ct.ThrowIfCancellationRequested();
         var now = clock.GetUtcNow();
         var config = options.CurrentValue;
+        if (config.Roof1Kwp == 0 && config.Roof2Kwp == 0)
+        {
+            var unconfiguredToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, TimeZoneInfo.FindSystemTimeZoneById(config.TimeZoneId)).DateTime);
+            var unconfiguredDate = endDate ?? unconfiguredToday;
+            var (unconfiguredStart, unconfiguredEnd) = SolarHistoryAggregation.Range(period, now, config.TimeZoneId, unconfiguredDate);
+            var emptyPoints = new List<SolarHistoryPoint>();
+            for (var time = unconfiguredStart; time < unconfiguredEnd; time = time.AddHours(1)) emptyPoints.Add(new(time, null, null));
+            return new(unconfiguredStart, unconfiguredEnd, config.TimeZoneId, emptyPoints,
+                WeatherError: Tenancy.TenantRuntimeOptions.ConfigureSiteMessage,
+                ActualError: "Configure the selected inverter and confirm its PV power type in Settings.")
+                { SelectedDate = unconfiguredDate, Today = unconfiguredToday };
+        }
         config.Validate();
         var key = SolarEstimateService.ConfigurationKey(config);
         var device = deyeOptions.CurrentValue.DeviceSn;

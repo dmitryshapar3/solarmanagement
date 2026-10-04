@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { CirclePower, RefreshCcw, Zap } from "lucide-react-native";
 import {
@@ -10,7 +10,8 @@ import {
   Header,
   LoadingState,
   Screen,
-  StatusPill
+  StatusPill,
+  TextField
 } from "../../core/components";
 import { Device } from "../../core/api/types";
 import { formatTime, formatWatts } from "../../core/format";
@@ -90,6 +91,18 @@ export function DevicesScreen() {
     }
   }
 
+  async function renameDevice(device: Device, name: string | null) {
+    setError(null);
+    try {
+      const result = await api.renameDevice(device.id, name);
+      requestSeq.current++;
+      setDevices(current => current.map(item => item.id === device.id ? result : item));
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Unable to save the device name.");
+      throw ex;
+    }
+  }
+
   if (loading) {
     return (
       <Screen scroll={false}>
@@ -128,6 +141,7 @@ export function DevicesScreen() {
               busyState={busyDevice?.id === device.id ? busyDevice.isOn : null}
               onTurnOn={() => void setDeviceState(device, true)}
               onTurnOff={() => void setDeviceState(device, false)}
+              onRename={name => renameDevice(device, name)}
             />
           ))}
         </View>
@@ -142,25 +156,52 @@ function DeviceCard({
   device,
   busyState,
   onTurnOn,
-  onTurnOff
+  onTurnOff,
+  onRename
 }: {
   device: Device;
   busyState: boolean | null;
   onTurnOn: () => void;
   onTurnOff: () => void;
+  onRename: (name: string | null) => Promise<void>;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  async function saveName(value: string | null) {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    Keyboard.dismiss();
+    setSaving(true);
+    try { await onRename(value); setEditing(false); }
+    catch { /* The screen displays the server error and preserves the draft. */ }
+    finally { savingRef.current = false; setSaving(false); }
+  }
   return (
     <Card style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.titleGroup}>
           <Text style={styles.name} numberOfLines={1}>{device.name}</Text>
           <Text style={styles.category}>{device.category ?? "Socket"}</Text>
+          <Text style={styles.category}>{device.id}</Text>
         </View>
         <StatusPill
           label={!device.online ? "Offline" : device.isOn ? "ON" : "OFF"}
           tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"}
         />
       </View>
+
+      {editing ? <View style={styles.nameForm}>
+        <TextField label="Name in Solar" value={name} onChangeText={value => setName(value.slice(0, 80))} editable={!saving} />
+        <Text style={styles.category}>Shelly name: {device.cloudName ?? device.name}. This changes the display name in Solar; device IDs and rules stay connected.</Text>
+        <View style={styles.actions}>
+          <AppButton label="Save name" compact onPress={() => void saveName(name.trim() || null)} loading={saving} disabled={saving} />
+          <AppButton label="Use Shelly name" compact variant="secondary" onPress={() => void saveName(null)} disabled={saving} />
+          <AppButton label="Cancel" compact variant="ghost" onPress={() => setEditing(false)} disabled={saving} />
+        </View>
+      </View> : <AppButton label="Edit name" compact variant="ghost"
+        onPress={() => { setName(device.localName ?? device.name); setEditing(true); }} />}
 
       <View style={styles.powerRow}>
         <Zap color={colors.amber} size={18} />
@@ -228,6 +269,10 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
+  },
+  nameForm: {
     gap: spacing.md
   }
 });

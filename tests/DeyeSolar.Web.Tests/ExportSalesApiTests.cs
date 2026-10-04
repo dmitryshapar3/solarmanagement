@@ -209,10 +209,10 @@ public class ExportSalesApiTests
 
         foreach (var identity in new string?[] { null, "forged-synthetic-reader" })
         {
-            var contextsBefore = host.Factory.ContextsCreated;
+            var commandsBefore = host.Factory.DataCommands.Commands;
             using var response = await host.GetAsync("period=Day&date=2026-09-28&deviceSn=neighbor", identity);
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-            Assert.Equal(contextsBefore, host.Factory.ContextsCreated);
+            Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
             Assert.DoesNotContain("exportKwh", await response.Content.ReadAsStringAsync());
             await host.AssertStateUnchangedAsync(before);
         }
@@ -234,10 +234,10 @@ public class ExportSalesApiTests
         ];
         foreach (var query in invalidQueries)
         {
-            var contextsBefore = host.Factory.ContextsCreated;
+            var commandsBefore = host.Factory.DataCommands.Commands;
             using var response = await host.GetAsync(query, AuthorizedIdentity);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Equal(contextsBefore, host.Factory.ContextsCreated);
+            Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
             Assert.DoesNotContain("exportKwh", await response.Content.ReadAsStringAsync());
             await host.AssertStateUnchangedAsync(before);
         }
@@ -266,6 +266,7 @@ public class ExportSalesApiTests
             try
             {
                 await owner.Database.EnsureCreatedAsync();
+            await LegacyTestInstallation.EnsureAsync(owner);
                 await SeedAsync(owner, latestCurrentMinute);
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
                 {
@@ -280,6 +281,9 @@ public class ExportSalesApiTests
                 builder.Services.AddSingleton<MobileSessionStore>();
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
+                builder.Services.AddScoped(_ => factory.CreateDbContext());
+                builder.Services.AddIdentityCore<IdentityUser>().AddEntityFrameworkStores<DeyeSolarDbContext>();
+                builder.Services.AddScoped<InstallationMembershipService>();
                 var clock = new FixedClock();
                 builder.Services.AddSingleton<TimeProvider>(clock);
                 builder.Services.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptions<SolarSalesOptions>(new()));
@@ -417,12 +421,10 @@ public class ExportSalesApiTests
 
     private sealed class CountingFactory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
-        private int _contextsCreated;
-        public int ContextsCreated => Volatile.Read(ref _contextsCreated);
+        public SolarDataCommandCounter DataCommands { get; } = new();
         public DeyeSolarDbContext CreateDbContext()
         {
-            Interlocked.Increment(ref _contextsCreated);
-            return new(options);
+            return new(new DbContextOptionsBuilder<DeyeSolarDbContext>(options).AddInterceptors(DataCommands).Options, InstallationIds.Legacy);
         }
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         {
@@ -477,7 +479,8 @@ public class ExportSalesApiTests
             if (identity.Count != 1 || identity[0] != AuthorizedIdentity)
                 return Task.FromResult(AuthenticateResult.Fail("Unknown synthetic test identity."));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.NameIdentifier, "synthetic-reader"), new Claim(ClaimTypes.Name, "synthetic-reader")],
+                [new Claim(ClaimTypes.NameIdentifier, "synthetic-reader"), new Claim(ClaimTypes.Name, "synthetic-reader"),
+                    new Claim(InstallationIds.ClaimType, InstallationIds.Legacy)],
                 AuthenticationScheme));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, AuthenticationScheme)));
         }

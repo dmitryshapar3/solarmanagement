@@ -263,6 +263,7 @@ public class ExportPriceStoreTests
             var database = new Database(factory);
             await using var db = factory.CreateDbContext();
             await db.Database.MigrateAsync();
+            await LegacyTestInstallation.EnsureAsync(db);
             return database;
         }
 
@@ -276,7 +277,7 @@ public class ExportPriceStoreTests
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
         public DbContextOptions<DeyeSolarDbContext> Options { get; } = options;
-        public DeyeSolarDbContext CreateDbContext() => new(Options);
+        public DeyeSolarDbContext CreateDbContext() => new(Options, InstallationIds.Legacy);
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }

@@ -10,6 +10,12 @@ public class InverterDataSnapshot
 
     public event Action? OnDataUpdated;
 
+    public void Clear()
+    {
+        _current = null;
+        OnDataUpdated?.Invoke();
+    }
+
     public void Update(InverterData data)
     {
         _current = data;
