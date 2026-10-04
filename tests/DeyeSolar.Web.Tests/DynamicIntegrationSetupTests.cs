@@ -930,6 +930,7 @@ public class DynamicIntegrationSetupTests
         {
             var services = new ServiceCollection();
             services.AddLogging();
+        services.AddComponentLocalization();
             services.AddMudServices();
             services.AddSingleton<IJSRuntime, NoJs>();
             services.AddSingleton<NavigationManager, ComponentNavigation>();

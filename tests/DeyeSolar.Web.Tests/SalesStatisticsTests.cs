@@ -63,8 +63,8 @@ public class SalesStatisticsTests
         var previousUiCulture = CultureInfo.CurrentUICulture;
         try
         {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ru-RU");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
             var html = await RenderAsync(data);
 
             // Decode the full HTML so translated accessibility text and SVG tooltips are checked too.
@@ -703,7 +703,7 @@ public class SalesStatisticsTests
     }
 
     [Fact]
-    public async Task CoordinatesAndEnglishAmountsUseDecimalPointsRegardlessOfServerCulture()
+    public async Task CoordinatesRemainInvariantAndAmountsFollowPolishCulture()
     {
         var previous = CultureInfo.CurrentCulture;
         try
@@ -712,7 +712,7 @@ public class SalesStatisticsTests
             var html = await RenderAsync(Result());
             var bar = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-bar\"[^>]*>")).Value;
             Assert.DoesNotMatch("(?:x|y|width|height)=\"[^\"]*,", bar);
-            Assert.Contains("1.20", html);
+            Assert.Contains("1,20", html);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
@@ -939,6 +939,7 @@ public class SalesStatisticsTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddComponentLocalization();
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddSingleton<TimeProvider>(clock ?? new FixedClock());

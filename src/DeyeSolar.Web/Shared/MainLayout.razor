@@ -6,9 +6,9 @@
                        OnClick="@ToggleDrawer" />
         <MudText Typo="Typo.h5" Class="ml-3">DeyeSolar</MudText>
         <MudSpacer />
-        <MudText Typo="Typo.body2" Class="mr-4 d-none d-sm-block">Solar Energy Management</MudText>
+        <MudText Typo="Typo.body2" Class="mr-4 d-none d-sm-block">@T["Solar Energy Management"]</MudText>
         <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Inherit"
-                       Href="/logout" title="Sign out" />
+                       Href="/logout" title="@T["Sign out"]" />
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">

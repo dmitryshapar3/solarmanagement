@@ -18,9 +18,9 @@
     <section class="solar-card" aria-labelledby="solar-card-title">
         <div class="solar-heading">
             <MudIcon Icon="@Icons.Material.Filled.WbSunny" Color="Color.Warning" Size="Size.Small" />
-            <h2 id="solar-card-title">@(Overview ? "Possible generation" : "Latest solar snapshot")</h2>
+            <h2 id="solar-card-title">@(Overview ? T["Possible generation"] : T["Latest solar snapshot"])</h2>
             <details class="solar-info @(HasWarning ? "solar-info-warning" : "")">
-                <summary aria-label="Data sources and timestamps" title="Data sources and timestamps">
+                <summary aria-label="@T["Data sources and timestamps"]" title="@T["Data sources and timestamps"]">
                     <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" />
                 </summary>
                 <div class="solar-info-panel">
@@ -28,7 +28,7 @@
                     <p>@EstimateInfo</p>
                     @if (IsWeatherModel && SourceTimestamp is { } sourceAt)
                     {
-                        <p>Weather retrieved at @FormatTime(sourceAt).</p>
+                        <p>@T["Weather retrieved at"] @FormatTime(sourceAt).</p>
                     }
                     @if (EstimateNotice is { } estimateNotice)
                     {
@@ -37,7 +37,7 @@
                     <p>@ActualInfo</p>
                     @if (!PvDcConfirmed)
                     {
-                        <p class="solar-info-notice">The inverter power type is unconfirmed. Values are not compared.</p>
+                        <p class="solar-info-notice">@T["The inverter power type is unconfirmed. Values are not compared."]</p>
                     }
                     <div class="solar-attribution">
                         <a href="@(IsWeatherModel ? "https://open-meteo.com/en/docs" : "https://open-meteo.com/en/docs/satellite-radiation-api")"
@@ -48,16 +48,16 @@
             </details>
         </div>
         <div class="solar-actions">
-            <button type="button" @onclick="RefreshSourcesAsync" disabled="@(_refreshing || Refreshing)" aria-label="Refresh possible generation">@(_refreshing || Refreshing ? "Refreshing…" : "Refresh")</button>
+            <button type="button" @onclick="RefreshSourcesAsync" disabled="@(_refreshing || Refreshing)" aria-label="@T["Refresh possible generation"]">@(_refreshing || Refreshing ? T["Refreshing…"] : T["Refresh"])</button>
             @if (!Detailed)
             {
-                <a href="@DetailsUrl" aria-label="Possible generation details">Details</a>
+                <a href="@DetailsUrl" aria-label="@T["Possible generation details"]">@T["Details"]</a>
             }
         </div>
-        @if (_refreshError is not null) { <p class="solar-notice" role="alert">@_refreshError</p> }
+        @if (_refreshError is not null) { <p class="solar-notice" role="alert">@T.Translate(_refreshError)</p> }
         <div class="solar-readings">
             <div class="solar-reading solar-reading-actual">
-                <span class="solar-label" id="solar-actual-label">Latest inverter generation</span>
+                <span class="solar-label" id="solar-actual-label">@T["Latest inverter generation"]</span>
                 <output class="solar-value" aria-labelledby="solar-actual-label" data-testid="solar-actual">
                     @if (HasUsableActual && CurrentActual is { } actual)
                     {
@@ -65,12 +65,12 @@
                     }
                     else
                     {
-                        <span class="solar-unavailable" aria-label="The inverter reading is unavailable">—</span>
+                        <span class="solar-unavailable" aria-label="@T["The inverter reading is unavailable"]">—</span>
                     }
                 </output>
             </div>
             <div class="solar-reading solar-reading-possible">
-                <span class="solar-label" id="solar-possible-label">Possible</span>
+                <span class="solar-label" id="solar-possible-label">@T["Possible"]</span>
                 <output class="solar-value" aria-labelledby="solar-possible-label" data-testid="solar-possible">
                     @if (HasUsableEstimate && Estimate is { } estimate)
                     {
@@ -78,7 +78,7 @@
                     }
                     else
                     {
-                        <span class="solar-unavailable" aria-label="Estimate unavailable">—</span>
+                        <span class="solar-unavailable" aria-label="@T["Estimate unavailable"]">—</span>
                     }
                 </output>
             </div>
@@ -88,57 +88,57 @@
         @if (EstimateNotice is { } notice) { <p class="solar-notice" role="status">@notice</p> }
         @if (Overview)
         {
-            <p class="solar-timestamps">The chart shows hourly average power. The latest inverter reading is separate; missing hours remain gaps.</p>
+            <p class="solar-timestamps">@T["The chart shows hourly average power. The latest inverter reading is separate; missing hours remain gaps."]</p>
             <SolarHistoryChart @ref="_history" Data="HistoryData" Overview="true" Embedded="true" />
         }
         @if (Detailed)
         {
             <section class="solar-detail-section" aria-labelledby="solar-calculation-title">
-                <h2 id="solar-calculation-title">Weather calculation</h2>
+                <h2 id="solar-calculation-title">@T["Weather calculation"]</h2>
                 @if (Estimate is { } detailedEstimate)
                 {
                     <dl class="solar-metadata">
-                        <div><dt>Central estimate</dt><dd>@Number(detailedEstimate.CentralKw) kW</dd></div>
-                        <div><dt>Calculated range</dt><dd>@Number(detailedEstimate.LowerKw) – @Number(detailedEstimate.UpperKw) kW</dd></div>
-                        <div><dt>Power basis</dt><dd>@BasisLabel(detailedEstimate.Basis)</dd></div>
-                        <div><dt>Installed solar capacity</dt><dd>@Number(detailedEstimate.TotalKwp) kWp</dd></div>
-                        <div><dt>Estimate time</dt><dd><time datetime="@detailedEstimate.Timestamp.ToString("O")">@FormatTime(detailedEstimate.Timestamp)</time></dd></div>
-                        <div><dt>Calculated at</dt><dd><time datetime="@detailedEstimate.CalculatedAt.ToString("O")">@FormatTime(detailedEstimate.CalculatedAt)</time></dd></div>
-                        <div><dt>@(IsWeatherModel ? "Model radiation time" : "Radiation observation")</dt><dd>@FormatTime(detailedEstimate.Observation.Timestamp)</dd></div>
-                        <div><dt>@(IsWeatherModel ? "Model weather time" : "Weather observation")</dt><dd>@(detailedEstimate.Observation.WeatherTimestamp is { } weatherAt ? FormatTime(weatherAt) : "Unavailable")</dd></div>
-                        <div><dt>Weather retrieved</dt><dd>@(detailedEstimate.Observation.RetrievedAt is { } retrievedAt ? FormatTime(retrievedAt) : "Unavailable")</dd></div>
+                        <div><dt>@T["Central estimate"]</dt><dd>@Number(detailedEstimate.CentralKw) kW</dd></div>
+                        <div><dt>@T["Calculated range"]</dt><dd>@Number(detailedEstimate.LowerKw) – @Number(detailedEstimate.UpperKw) kW</dd></div>
+                        <div><dt>@T["Power basis"]</dt><dd>@BasisLabel(detailedEstimate.Basis)</dd></div>
+                        <div><dt>@T["Installed solar capacity"]</dt><dd>@Number(detailedEstimate.TotalKwp) kWp</dd></div>
+                        <div><dt>@T["Estimate time"]</dt><dd><time datetime="@detailedEstimate.Timestamp.ToString("O")">@FormatTime(detailedEstimate.Timestamp)</time></dd></div>
+                        <div><dt>@T["Calculated at"]</dt><dd><time datetime="@detailedEstimate.CalculatedAt.ToString("O")">@FormatTime(detailedEstimate.CalculatedAt)</time></dd></div>
+                        <div><dt>@(IsWeatherModel ? T["Model radiation time"] : T["Radiation observation"])</dt><dd>@FormatTime(detailedEstimate.Observation.Timestamp)</dd></div>
+                        <div><dt>@(IsWeatherModel ? T["Model weather time"] : T["Weather observation"])</dt><dd>@(detailedEstimate.Observation.WeatherTimestamp is { } weatherAt ? FormatTime(weatherAt) : T["Unavailable"])</dd></div>
+                        <div><dt>@T["Weather retrieved"]</dt><dd>@(detailedEstimate.Observation.RetrievedAt is { } retrievedAt ? FormatTime(retrievedAt) : T["Unavailable"])</dd></div>
                     </dl>
-                    @if (detailedEstimate.WeatherMissing) { <p class="solar-notice">Some weather inputs are missing; the calculated uncertainty range includes weather assumptions.</p> }
-                    <p class="solar-timestamps">The range is an engineering estimate, not a statistical confidence interval. Refresh reloads the latest server results; timestamps identify the weather data used.</p>
+                    @if (detailedEstimate.WeatherMissing) { <p class="solar-notice">@T["Some weather inputs are missing; the calculated uncertainty range includes weather assumptions."]</p> }
+                    <p class="solar-timestamps">@T["The range is an engineering estimate, not a statistical confidence interval. Refresh reloads the latest server results; timestamps identify the weather data used."]</p>
                 }
-                else { <p class="solar-timestamps">No weather estimate is available.</p> }
+                else { <p class="solar-timestamps">@T["No weather estimate is available."]</p> }
             </section>
             <section class="solar-detail-section" aria-labelledby="solar-comparison-title">
-                <h2 id="solar-comparison-title">Time-aligned comparison</h2>
+                <h2 id="solar-comparison-title">@T["Time-aligned comparison"]</h2>
                 <p class="solar-timestamps">@ComparisonLabel</p>
                 @if (CurrentState.Comparison.Actual is { } historical)
                 {
                     <dl class="solar-metadata">
-                        <div><dt>Historical inverter power</dt><dd>@Number(historical.PowerKw) kW</dd></div>
-                        <div><dt>Inverter measurement time</dt><dd><time datetime="@historical.Timestamp.ToString("O")">@FormatTime(historical.Timestamp)</time></dd></div>
-                        <div><dt>Inverter power basis</dt><dd>@BasisLabel(historical.Basis)</dd></div>
+                        <div><dt>@T["Historical inverter power"]</dt><dd>@Number(historical.PowerKw) kW</dd></div>
+                        <div><dt>@T["Inverter measurement time"]</dt><dd><time datetime="@historical.Timestamp.ToString("O")">@FormatTime(historical.Timestamp)</time></dd></div>
+                        <div><dt>@T["Inverter power basis"]</dt><dd>@BasisLabel(historical.Basis)</dd></div>
                         @if (ComparisonEstimate is { } comparisonEstimate)
                         {
-                            <div><dt>Estimate for comparison</dt><dd>@Number(comparisonEstimate.CentralKw) kW</dd></div>
-                            <div><dt>Comparison range</dt><dd>@Number(comparisonEstimate.LowerKw) – @Number(comparisonEstimate.UpperKw) kW</dd></div>
-                            <div><dt>Comparison estimate time</dt><dd><time datetime="@comparisonEstimate.Timestamp.ToString("O")">@FormatTime(comparisonEstimate.Timestamp)</time></dd></div>
+                            <div><dt>@T["Estimate for comparison"]</dt><dd>@Number(comparisonEstimate.CentralKw) kW</dd></div>
+                            <div><dt>@T["Comparison range"]</dt><dd>@Number(comparisonEstimate.LowerKw) – @Number(comparisonEstimate.UpperKw) kW</dd></div>
+                            <div><dt>@T["Comparison estimate time"]</dt><dd><time datetime="@comparisonEstimate.Timestamp.ToString("O")">@FormatTime(comparisonEstimate.Timestamp)</time></dd></div>
                         }
                         @if (HasVerifiedComparison)
                         {
-                            <div><dt>Inverter minus estimate</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationKw) kW</dd></div>
-                            <div><dt>Deviation</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationPercent) %</dd></div>
+                            <div><dt>@T["Inverter minus estimate"]</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationKw) kW</dd></div>
+                            <div><dt>@T["Deviation"]</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationPercent) %</dd></div>
                         }
                     </dl>
                 }
-                @if (!HasVerifiedComparison) { <p class="solar-notice">@(CurrentState.Comparison.Reason ?? "A verified comparison is not available.")</p> }
-                <p class="solar-timestamps">This historical reading can differ from the latest inverter snapshot. The server checks age, measurement type and timestamp alignment. A percentage may be unavailable at night or at very low power.</p>
+                @if (!HasVerifiedComparison) { <p class="solar-notice">@T.Translate(CurrentState.Comparison.Reason ?? T["A verified comparison is not available."])</p> }
+                <p class="solar-timestamps">@T["This historical reading can differ from the latest inverter snapshot. The server checks age, measurement type and timestamp alignment. A percentage may be unavailable at night or at very low power."]</p>
             </section>
-            <div class="solar-attribution"><a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener noreferrer">Open-Meteo weather</a> · <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></div>
+            <div class="solar-attribution"><a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener noreferrer">@T["Open-Meteo weather"]</a> · <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></div>
         }
     </section>
 </MudPaper>
@@ -159,7 +159,7 @@
     private string? _refreshError;
     private string DetailsUrl => "/solar-details?returnTo=" + Uri.EscapeDataString(EnergyDetailsNavigation.ReturnPath(ReturnTo));
 
-    private static readonly CultureInfo DisplayCulture = CultureInfo.GetCultureInfo("en-GB");
+    private static CultureInfo DisplayCulture => CultureInfo.CurrentCulture;
     private readonly CancellationTokenSource _stop = new();
     private DateTimeOffset _clock = DateTimeOffset.UtcNow;
     private Task? _clockTask;
@@ -173,8 +173,8 @@
     private SolarPowerEstimate? ComparisonEstimate => CurrentState.ComparisonEstimate ?? (Estimate?.Observation.Kind == SolarRadiationKind.Satellite ? Estimate : null);
     private bool HasVerifiedComparison => PvDcConfirmed && !CurrentState.RefreshFailed && CurrentState.Error is null
         && CurrentState.Comparison.Status != SolarComparisonStatus.InsufficientData && ComparisonEstimate is not null;
-    private string ComparisonLabel => !HasVerifiedComparison ? "Comparison unavailable" : CurrentState.Comparison.Status switch
-        { SolarComparisonStatus.WithinRange => "Within estimate range", SolarComparisonStatus.BelowEstimate => "Below estimate range", _ => "Above estimate range" };
+    private string ComparisonLabel => !HasVerifiedComparison ? T["Comparison unavailable"] : CurrentState.Comparison.Status switch
+        { SolarComparisonStatus.WithinRange => T["Within estimate range"], SolarComparisonStatus.BelowEstimate => T["Below estimate range"], _ => T["Above estimate range"] };
     private bool PvDcConfirmed => CurrentOptions.DeyeSolarPowerIsPvDcConfirmed
         && !string.IsNullOrWhiteSpace(CurrentOptions.DeyeConfirmedDeviceSn)
         && CurrentOptions.DeyeConfirmedDeviceSn == InverterOptions.CurrentValue.DeviceKey;
@@ -189,24 +189,24 @@
         && estimate.Timestamp <= ClockNow && !EvaluationStopped
         && SourceTimestamp is { } sourceAt && sourceAt <= ClockNow && (ClockNow - sourceAt).TotalMinutes <= MaximumAgeMinutes;
     private string? ActualDeviceIssue => string.IsNullOrWhiteSpace(CurrentActual?.SolarDeviceSn)
-        || string.IsNullOrWhiteSpace(InverterOptions.CurrentValue.DeviceKey) ? "The inverter reading's device is unverified"
-        : CurrentActual.SolarDeviceSn != InverterOptions.CurrentValue.DeviceKey ? "The reading belongs to another inverter" : null;
+        || string.IsNullOrWhiteSpace(InverterOptions.CurrentValue.DeviceKey) ? T["The inverter reading's device is unverified"]
+        : CurrentActual.SolarDeviceSn != InverterOptions.CurrentValue.DeviceKey ? T["The reading belongs to another inverter"] : null;
     private bool HasUsableActual => ActualDeviceIssue is null && CurrentActual is { SolarObservedAt: { } observedAt, SolarProduction: >= 0 }
         && observedAt <= ClockNow && (ClockNow - observedAt).TotalMinutes <= ActualMaximumAgeMinutes;
-    private string? EstimateNotice => EvaluationStopped ? "The calculation has stopped updating. The estimate is unavailable."
-        : !HasUsableEstimate ? "The estimate is unavailable. Waiting for fresh data."
-        : CurrentState.RefreshFailed ? "Weather refresh failed. The latest available data is used."
-        : SourceTimestamp is { } sourceAt && (ClockNow - sourceAt).TotalMinutes > StaleAfterMinutes ? "Weather data is stale. The estimate is approximate."
+    private string? EstimateNotice => EvaluationStopped ? T["The calculation has stopped updating. The estimate is unavailable."]
+        : !HasUsableEstimate ? T["The estimate is unavailable. Waiting for fresh data."]
+        : CurrentState.RefreshFailed ? T["Weather refresh failed. The latest available data is used."]
+        : SourceTimestamp is { } sourceAt && (ClockNow - sourceAt).TotalMinutes > StaleAfterMinutes ? T["Weather data is stale. The estimate is approximate."]
         : null;
     private bool HasWarning => EstimateNotice is not null || !HasUsableActual || !PvDcConfirmed;
     private string EstimateInfo => Estimate is { } estimate
-        ? $"{(IsWeatherModel ? "Weather estimate" : "Satellite estimate")} · {(estimate.Basis == SolarPowerBasis.Ac ? "AC" : "PV DC")}. At {FormatTime(estimate.Timestamp)}."
-        : "No weather estimate has been received yet.";
-    private string ActualInfo => CurrentActual is not { SolarProduction: >= 0 } actual ? "The inverter reading is unavailable."
+        ? T.Format("{0} · {1}. At {2}.", (IsWeatherModel ? T["Weather estimate"] : T["Satellite estimate"]), (estimate.Basis == SolarPowerBasis.Ac ? "AC" : "PV DC"), FormatTime(estimate.Timestamp))
+        : T["No weather estimate has been received yet."];
+    private string ActualInfo => CurrentActual is not { SolarProduction: >= 0 } actual ? T["The inverter reading is unavailable."]
         : ActualDeviceIssue is { } deviceIssue ? deviceIssue + "."
-        : actual.SolarObservedAt is not { } observedAt ? "The inverter measurement time is unverified."
-        : observedAt > ClockNow ? "The inverter measurement time is invalid."
-        : $"{((ClockNow - observedAt).TotalMinutes > ActualMaximumAgeMinutes ? "The inverter reading is stale" : PvDcConfirmed ? "Inverter · PV DC" : "Inverter")}. Measured at {FormatTime(observedAt)}.";
+        : actual.SolarObservedAt is not { } observedAt ? T["The inverter measurement time is unverified."]
+        : observedAt > ClockNow ? T["The inverter measurement time is invalid."]
+        : T.Format("{0}. Measured at {1}.", ((ClockNow - observedAt).TotalMinutes > ActualMaximumAgeMinutes ? T["The inverter reading is stale"] : PvDcConfirmed ? T["Inverter · PV DC"] : T["Inverter"]), FormatTime(observedAt));
 
     protected override void OnInitialized()
     {
@@ -230,7 +230,7 @@
             await RefreshAsync();
         }
         catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed) _refreshError = "Could not refresh inverter readings. Showing the last available results; please try again."; }
+        catch (Exception) { if (!_disposed) _refreshError = T["Could not refresh inverter readings. Showing the last available results; please try again."]; }
         finally { if (!_disposed) _refreshing = false; }
     }
 
@@ -262,7 +262,7 @@
 
     private static string Number(double value) => value.ToString("F2", DisplayCulture);
     private static string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
-    private static string BasisLabel(SolarPowerBasis basis) => basis switch { SolarPowerBasis.PvDc => "PV DC generation", SolarPowerBasis.Ac => "Inverter AC power", _ => "Grid export" };
+    private string BasisLabel(SolarPowerBasis basis) => basis switch { SolarPowerBasis.PvDc => T["PV DC generation"], SolarPowerBasis.Ac => T["Inverter AC power"], _ => T["Grid export"] };
     private string FormatTime(DateTimeOffset timestamp) => TimeZoneInfo.ConvertTime(timestamp,
         TimeZoneInfo.FindSystemTimeZoneById(CurrentOptions.TimeZoneId)).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", DisplayCulture);
 

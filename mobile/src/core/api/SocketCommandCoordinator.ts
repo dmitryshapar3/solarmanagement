@@ -1,3 +1,4 @@
+import { translate as t } from "../i18n";
 import type { IntegrationApi, SocketCommandReceipt } from "./IntegrationApi";
 
 type CommandApi = Pick<IntegrationApi, "sendDeviceCommand" | "getDeviceCommand" | "getUnresolvedCommands" | "releaseDeviceCommand">;
@@ -47,7 +48,7 @@ export class SocketCommandCoordinator {
   async send(deviceId: string, isOn: boolean): Promise<SocketCommandState> {
     const existing = this.receipts.get(deviceId);
     if (this.running.has(deviceId) || existing && commandUnresolved(existing)) {
-      throw new Error("A previous command is unconfirmed. Check its result before sending another command.");
+      throw new Error(t("A previous command is unconfirmed. Check its result before sending another command."));
     }
     const generation = this.generation;
     this.running.add(deviceId);
@@ -56,18 +57,18 @@ export class SocketCommandCoordinator {
     try {
       const recovered = (await this.api.getUnresolvedCommands(deviceId)).map(receipt => validateReceipt(receipt, deviceId))
         .filter(commandUnresolved).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-      if (generation !== this.generation) throw new Error("The command session changed.");
+      if (generation !== this.generation) throw new Error(t("The command session changed."));
       if (recovered.length) {
         this.receipts.set(deviceId, recovered[0]!);
-        throw new Error("A previous command is unconfirmed. Check its result before sending another command.");
+        throw new Error(t("A previous command is unconfirmed. Check its result before sending another command."));
       }
       const commandId = await this.createId();
-      if (generation !== this.generation) throw new Error("The command session changed.");
+      if (generation !== this.generation) throw new Error(t("The command session changed."));
       pending = { commandId, deviceId, isOn, status: "pending", rejection: null, createdAt: new Date().toISOString(), completedAt: null };
       this.receipts.set(deviceId, pending);
       this.notify();
       const receipt = validateReceipt(await this.api.sendDeviceCommand(deviceId, commandId, isOn), deviceId, commandId, isOn);
-      if (generation !== this.generation) throw new Error("The command session changed.");
+      if (generation !== this.generation) throw new Error(t("The command session changed."));
       this.receipts.set(deviceId, receipt);
       return { ...receipt };
     } catch (exception) {
@@ -82,9 +83,9 @@ export class SocketCommandCoordinator {
 
   async check(deviceId: string, release = false): Promise<SocketCommandState> {
     const previous = this.receipts.get(deviceId);
-    if (!previous) throw new Error("No command is awaiting a result for this device.");
-    if (release && previous.status !== "uncertain") throw new Error("This command is still pending. Check its result before allowing another command.");
-    if (this.running.has(deviceId)) throw new Error("A command check is already in progress.");
+    if (!previous) throw new Error(t("No command is awaiting a result for this device."));
+    if (release && previous.status !== "uncertain") throw new Error(t("This command is still pending. Check its result before allowing another command."));
+    if (this.running.has(deviceId)) throw new Error(t("A command check is already in progress."));
     const generation = this.generation;
     this.running.add(deviceId);
     this.notify();
@@ -92,7 +93,7 @@ export class SocketCommandCoordinator {
       const response = release ? await this.api.releaseDeviceCommand(deviceId, previous.commandId)
         : await this.api.getDeviceCommand(deviceId, previous.commandId);
       const result = validateReceipt(response, deviceId, previous.commandId, previous.isOn);
-      if (generation !== this.generation) throw new Error("The command session changed.");
+      if (generation !== this.generation) throw new Error(t("The command session changed."));
       this.receipts.set(deviceId, result);
       return { ...result };
     } catch (exception) {
@@ -121,7 +122,7 @@ function validateReceipt(value: SocketCommandReceipt, deviceId: string, commandI
     || commandId !== undefined && value.commandId.toLowerCase() !== commandId.toLowerCase()
     || isOn !== undefined && value.isOn !== isOn || typeof value.status !== "string"
     || !["requested", "pending", "acknowledged", "uncertain", "uncertain_closed", "rejected"].includes(value.status.toLowerCase())) {
-    throw new Error("The command response did not identify this operation.");
+    throw new Error(t("The command response did not identify this operation."));
   }
   return { ...value, status: value.status.toLowerCase() === "requested" ? "pending" : value.status.toLowerCase() };
 }

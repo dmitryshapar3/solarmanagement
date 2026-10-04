@@ -1,3 +1,5 @@
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -32,6 +34,7 @@ import { ManualOverrideCommand } from "./ManualOverrideCommand";
 import { batteryFlow } from "./powerBalance";
 
 export function DashboardScreen() {
+  const { t } = useLanguage();
   const { api, isDemo } = useAuth();
   const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
   const resource = useFocusedResource("dashboard", useCallback((signal: AbortSignal, force: boolean) =>
@@ -105,41 +108,41 @@ export function DashboardScreen() {
   const socketBusy = selectedDeviceId ? api.socketCommands.isRunning(selectedDeviceId) : false;
 
   if (resource.loading && !dashboard) {
-    return <Screen scroll={false}><LoadingState label="Loading dashboard..." /></Screen>;
+    return <Screen scroll={false}><LoadingState label={t("Loading dashboard...")} /></Screen>;
   }
 
   return (
     <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh(true)}>
-      <Header title="Dashboard" subtitle="Your energy at a glance" />
+      <Header title={t("Dashboard")} subtitle={t("Your energy at a glance")} />
       <ErrorBanner message={commandError ?? resource.error} />
       <Card style={styles.statusCard}>
         <TileHeader
-          title="Current generation"
-          subtitle={dashboard?.inverter ? `Latest reported inverter power · polled ${formatTime(dashboard.inverter.timestamp)}` : "Waiting for the first inverter reading"}
+          title={t("Current generation")}
+          subtitle={dashboard?.inverter ? t("Latest reported inverter power · polled {0}", formatTime(dashboard.inverter.timestamp)) : t("Waiting for the first inverter reading")}
           loading={resource.loading}
           onRefresh={() => void resource.refresh(true)}
           onDetails={() => navigation.navigate("InverterDetails")}
         />
         <View style={styles.statusMetrics}>
           <View style={styles.statusMetric}>
-            <Text style={styles.metaText}>Solar power</Text>
+            <Text style={styles.metaText}>{t("Solar power")}</Text>
             <Text style={[styles.statusValue, { color: colors.primary }]}>{dashboard?.inverter?.solarPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.solarProduction)}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter?.solarPowerValid === false ? "Awaiting reading" : "Latest inverter reading"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter?.solarPowerValid === false ? t("Awaiting reading") : t("Latest inverter reading")}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
-            <Text style={styles.metaText}>Load</Text>
+            <Text style={styles.metaText}>{t("Load")}</Text>
             <Text style={styles.statusValue}>{dashboard?.inverter?.loadPowerValid === false ? "—" : formatWatts(dashboard?.inverter?.loadPower)}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.loadPowerValid !== false ? "Consumption" : "Awaiting reading"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.loadPowerValid !== false ? t("Consumption") : t("Awaiting reading")}</Text>
           </View>
           <View style={styles.statusMetric}>
-            <Text style={styles.metaText}>Grid</Text>
+            <Text style={styles.metaText}>{t("Grid")}</Text>
             <Text style={styles.statusValue}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? formatWatts(Math.abs(dashboard.inverter.gridConsumption)) : "—"}</Text>
-            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? gridModeLabel(dashboard.inverter.gridConsumption) : "Awaiting reading"}</Text>
+            <Text style={styles.metaText}>{dashboard?.inverter && dashboard.inverter.gridPowerValid !== false ? gridModeLabel(dashboard.inverter.gridConsumption) : t("Awaiting reading")}</Text>
           </View>
           <View style={[styles.statusMetric, styles.statusSeparated]}>
             <Text style={styles.metaText}>{battery.label}</Text>
             <Text style={styles.statusValue}>{battery.watts === null ? "—" : formatWatts(battery.watts)}</Text>
-            <Text style={styles.metaText}>{battery.watts === null ? "Awaiting reading" : "Latest inverter reading"}</Text>
+            <Text style={styles.metaText}>{battery.watts === null ? t("Awaiting reading") : t("Latest inverter reading")}</Text>
           </View>
         </View>
       </Card>
@@ -153,7 +156,7 @@ export function DashboardScreen() {
       />
       <SalesPanel compact onDetails={(period, date) => navigation.navigate("SalesDetails", { period, date })} />
 
-      <SectionTitle title="Manual Override" />
+      <SectionTitle title={t("Manual Override")} />
       <Card style={styles.quickActions}>
         {dashboard?.manualDevices.length ? (
           <>
@@ -169,14 +172,14 @@ export function DashboardScreen() {
             </View>
             <View style={styles.actionRow}>
               <AppButton
-                label="Socket ON"
+                label={t("Socket ON")}
                 icon={CirclePower}
                 onPress={() => void setSocketState(true)}
                 loading={commandBusy === "on"}
                 disabled={!selectedDevice || commandBusy !== null || socketBusy || commandUnresolved(selectedCommand)}
               />
               <AppButton
-                label="Socket OFF"
+                label={t("Socket OFF")}
                 icon={CirclePower}
                 onPress={() => void setSocketState(false)}
                 loading={commandBusy === "off"}
@@ -185,19 +188,19 @@ export function DashboardScreen() {
               />
             </View>
             {selectedCommand ? <Text style={styles.metaText}>{socketCommandMessage(selectedCommand)}</Text> : null}
-            {commandUnresolved(selectedCommand) ? <AppButton label="Check command result" variant="secondary"
+            {commandUnresolved(selectedCommand) ? <AppButton label={t("Check command result")} variant="secondary"
               onPress={() => void checkSocketCommand()} disabled={commandBusy !== null || socketBusy} /> : null}
             {selectedCommand?.status === "uncertain" ? <>
-              <Text style={styles.metaText}>The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.</Text>
-              <AppButton label="Allow another command" variant="secondary" onPress={() => void checkSocketCommand(true)} disabled={commandBusy !== null || socketBusy} />
+              <Text style={styles.metaText}>{t("The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.")}</Text>
+              <AppButton label={t("Allow another command")} variant="secondary" onPress={() => void checkSocketCommand(true)} disabled={commandBusy !== null || socketBusy} />
             </> : null}
           </>
         ) : (
-          <EmptyState title="No sockets configured." detail="Add and enable a socket integration in Settings." />
+          <EmptyState title={t("No sockets configured.")} detail={t("Add and enable a socket integration in Settings.")} />
         )}
       </Card>
 
-      <SectionTitle title="Rules" />
+      <SectionTitle title={t("Rules")} />
       {dashboard?.rules.length ? (
         <View style={styles.list}>
           {dashboard.rules.map((rule) => (
@@ -205,10 +208,10 @@ export function DashboardScreen() {
           ))}
         </View>
       ) : (
-        <EmptyState title="No rules configured." />
+        <EmptyState title={t("No rules configured.")} />
       )}
 
-      <SectionTitle title="Smart Sockets" trailing={<Text style={styles.metaText}>{formatDateTime(dashboard?.deviceLastUpdated)}</Text>} />
+      <SectionTitle title={t("Smart Sockets")} trailing={<Text style={styles.metaText}>{formatDateTime(dashboard?.deviceLastUpdated)}</Text>} />
       {dashboard?.devices.length ? (
         <View style={styles.list}>
           {dashboard.devices.map((device) => (
@@ -216,50 +219,56 @@ export function DashboardScreen() {
           ))}
         </View>
       ) : (
-        <EmptyState title="No devices found." />
+        <EmptyState title={t("No devices found.")} />
       )}
     </Screen>
   );
 }
 
 function DeviceChoice({ device, selected, onPress }: { device: Device; selected: boolean; onPress: () => void }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   return (
     <Pressable onPress={onPress} style={[styles.deviceChoice, selected && styles.deviceChoiceSelected]}>
       <View style={styles.deviceChoiceTitle}>
         <PlugZap color={device.online ? colors.primary : colors.subtle} size={16} />
-        <Text style={styles.deviceChoiceName} numberOfLines={1}>{device.name}</Text>
+        <Text style={styles.deviceChoiceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
       </View>
-      <StatusPill label={!device.online ? "Offline" : device.isOn ? "ON" : "OFF"} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
+      <StatusPill label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
     </Pressable>
   );
 }
 
 function RuleLine({ rule }: { rule: Rule }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   return (
     <Card style={styles.rowCard}>
       <View style={styles.rowCopy}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{rule.name}</Text>
-        <Text style={styles.rowSubtitle}>{`SOC >= ${rule.socTurnOnThreshold}% | every ${rule.intervalSeconds}s`}</Text>
-        <Text style={styles.rowSubtitle}>{`Switched ${formatDateTime(rule.currentStateChangedAt)} | Checked ${formatDateTime(rule.lastEvaluated)}`}</Text>
+        <Text style={styles.rowTitle} numberOfLines={1}>{demoDisplayName(rule.name)}</Text>
+        <Text style={styles.rowSubtitle}>{t("SOC >= {0}% | every {1}s", rule.socTurnOnThreshold, rule.intervalSeconds)}</Text>
+        <Text style={styles.rowSubtitle}>{t("Switched {0} | Checked {1}", formatDateTime(rule.currentStateChangedAt), formatDateTime(rule.lastEvaluated))}</Text>
       </View>
       <View style={styles.rowStatus}>
-        <StatusPill label={rule.currentState ? "ON" : "OFF"} tone={rule.currentState ? "success" : "neutral"} />
-        {!rule.enabled ? <StatusPill label="Disabled" /> : null}
+        <StatusPill label={rule.currentState ? t("ON") : t("OFF")} tone={rule.currentState ? "success" : "neutral"} />
+        {!rule.enabled ? <StatusPill label={t("Disabled")} /> : null}
       </View>
     </Card>
   );
 }
 
 function DeviceLine({ device }: { device: Device }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   return (
     <Card style={styles.rowCard}>
       <View style={styles.rowCopy}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{device.name}</Text>
-        <Text style={styles.rowSubtitle}>{device.category ?? "Socket"}</Text>
+        <Text style={styles.rowTitle} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
+        <Text style={styles.rowSubtitle}>{t(device.category ?? "Socket")}</Text>
       </View>
       <View style={styles.rowStatus}>
         <Text style={styles.powerText}>{formatWatts(device.currentPowerW)}</Text>
-        <StatusPill label={!device.online ? "Offline" : device.isOn ? "ON" : "OFF"} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
+        <StatusPill label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
       </View>
     </Card>
   );

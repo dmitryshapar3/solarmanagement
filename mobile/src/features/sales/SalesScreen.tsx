@@ -1,3 +1,4 @@
+import { useLanguage } from "../../application/LanguageContext";
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useNavigation } from "@react-navigation/native";
@@ -16,7 +17,8 @@ export type SalesPeriod = "Day" | "Month" | "Year";
 type Metric = "energy" | "value";
 
 export function SalesScreen() {
-  return <Screen><Header title="Sales" subtitle="Measured grid export and estimated energy value" /><SalesPanel /></Screen>;
+  const { t } = useLanguage();
+  return <Screen><Header title={t("Sales")} subtitle={t("Measured grid export and estimated energy value")} /><SalesPanel /></Screen>;
 }
 
 export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", initialDate, showDetails = true, chartFirst = false, renderDetails }: {
@@ -28,6 +30,7 @@ export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", 
   chartFirst?: boolean;
   renderDetails?: (data: ExportSalesResult, period: SalesPeriod) => ReactNode;
 }) {
+  const { t } = useLanguage();
   const { api } = useAuth();
   const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
   const [period, setPeriod] = useState<SalesPeriod>(initialPeriod);
@@ -42,50 +45,50 @@ export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", 
   const points = useMemo(() => data?.buckets.map((bucket) => {
     const { current, completed, provisional } = salesPointValues(bucket, data.currentHour, metric);
     return { timestamp: bucket.start, label: tickCaption(bucket.start, data.timeZoneId, period), completed, provisional,
-      description: `${momentCaption(bucket.start, data.timeZoneId)} – ${momentCaption(bucket.end, data.timeZoneId)}\nCompleted: ${amount(completed, unit)}${current ? `\nCurrent hour · in progress: ${amount(provisional, unit)}${current.observedThrough ? ` · measured through ${momentCaption(current.observedThrough, data.timeZoneId)}` : " · awaiting readings"}` : ""}${bucket.observedHours < bucket.expectedHours || bucket.valuedHours < bucket.observedHours ? "\nPartial interval" : ""}` };
-  }) ?? [], [data, metric, period, unit]);
+      description: t("{0} – {1}\nCompleted: {2}{3}{4}", momentCaption(bucket.start, data.timeZoneId), momentCaption(bucket.end, data.timeZoneId), amount(completed, unit), current ? t("\nCurrent hour · in progress: {0}{1}", amount(provisional, unit), current.observedThrough ? t(" · measured through {0}", momentCaption(current.observedThrough, data.timeZoneId)) : t(" · awaiting readings")) : "", bucket.observedHours < bucket.expectedHours || bucket.valuedHours < bucket.observedHours ? t("\nPartial interval") : "") };
+  }) ?? [], [data, metric, period, unit, t]);
   const hasElapsed = (data?.expectedHours ?? 0) > 0;
   const chart = <>
-    <SegmentedControl options={[{ label: "Energy", value: "energy" }, { label: "Value", value: "value" }]} value={metric} onChange={setMetric} />
-    {resource.loading && !data ? <LoadingState label="Loading sales..." /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="sales" unit={unit} />}
-    {!compact ? <Text style={styles.muted}>Tap the chart or use Previous / Next interval to inspect exact values. Energy and Value use the same selected reporting window.</Text> : null}
+    <SegmentedControl options={[{ label: t("Energy"), value: "energy" }, { label: t("Value"), value: "value" }]} value={metric} onChange={setMetric} />
+    {resource.loading && !data ? <LoadingState label={t("Loading sales...")} /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="sales" unit={unit} />}
+    {!compact ? <Text style={styles.muted}>{t("Tap the chart or use Previous / Next interval to inspect exact values. Energy and Value use the same selected reporting window.")}</Text> : null}
   </>;
   return <><Card style={styles.card}>
-    <TileHeader title="Electricity sales" loading={resource.loading} onRefresh={() => void resource.refresh()}
+    <TileHeader title={t("Electricity sales")} loading={resource.loading} onRefresh={() => void resource.refresh()}
       onDetails={showDetails ? () => onDetails ? onDetails(period, selected) : navigation.navigate("SalesDetails", { period, date: selected }) : undefined} />
-    <StatusPill label="inverter estimate" tone="info" />
+    <StatusPill label={t("inverter estimate")} tone="info" />
     {!compact ? <>
-      <SegmentedControl options={[{ label: "Day", value: "Day" }, { label: "Month", value: "Month" }, { label: "Year", value: "Year" }]} value={period} onChange={setPeriod} />
+      <SegmentedControl options={[{ label: t("Day"), value: "Day" }, { label: t("Month"), value: "Month" }, { label: t("Year"), value: "Year" }]} value={period} onChange={setPeriod} />
       <PeriodNavigation caption={dateCaption(selected, period)} previous={periodAnchor(selected, period) > "2000-01-01"} next={periodAnchor(selected, period) < periodAnchor(today, period)}
         onPrevious={() => setDate(movePeriod(selected, period, -1))} onNext={() => setDate(movePeriod(selected, period, 1))} onToday={() => { setDate(undefined); setPeriod("Day"); }} />
     </> : <Text style={styles.muted}>{dateCaption(selected)}</Text>}
     <ErrorBanner message={resource.error} />
-    {resource.error ? <AppButton label="Retry" compact variant="ghost" loading={resource.loading} onPress={() => void resource.refresh()} /> : null}
+    {resource.error ? <AppButton label={t("Retry")} compact variant="ghost" loading={resource.loading} onPress={() => void resource.refresh()} /> : null}
     {chartFirst ? chart : null}
     <View style={styles.metrics}>
-      <View style={styles.metric}><Text style={styles.muted}>{compact && selected === today && selected === zonedDate(new Date(), data?.timeZoneId) ? "Exported today" : "Exported to grid"}</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(hasElapsed ? data?.exportKwh : null, "kWh")}</Text></View>
-      <View style={styles.metric}><Text style={styles.muted}>Energy value</Text><Text style={[styles.metricValue, styles.amberValue]}>{amount(hasElapsed ? data?.energyValuePln : null, "PLN")}</Text></View>
+      <View style={styles.metric}><Text style={styles.muted}>{compact && selected === today && selected === zonedDate(new Date(), data?.timeZoneId) ? t("Exported today") : t("Exported to grid")}</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(hasElapsed ? data?.exportKwh : null, "kWh")}</Text></View>
+      <View style={styles.metric}><Text style={styles.muted}>{t("Energy value")}</Text><Text style={[styles.metricValue, styles.amberValue]}>{amount(hasElapsed ? data?.energyValuePln : null, "PLN")}</Text></View>
     </View>
-    {!compact ? <View style={styles.metric}><Text style={styles.muted}>Estimated deposit</Text><Text style={styles.metricValue}>{amount(hasElapsed ? data?.estimatedDepositPln : null, "PLN")}</Text></View> : null}
-    <Text style={styles.muted}>Totals cover completed hours. Current hour is provisional.</Text>
-    {data?.updatedAt ? <Text style={styles.muted}>Updated {momentCaption(data.updatedAt, data.timeZoneId)} · refreshes every 5 minutes</Text> : null}
-    {data?.dataError ? <Text style={styles.warning}>{data.dataError}</Text> : null}
-    {data?.priceError ? <Text style={styles.warning}>{data.priceError}</Text> : null}
-    {data?.isPartial ? <Text style={styles.warning}>Partial data · totals for available hours</Text> : null}
-    {!compact && data ? <Text style={styles.muted}>Completed-hour coverage: {data.observedHours} of {data.expectedHours} observed · {data.valuedHours} valued.</Text> : null}
-    {data && !hasElapsed && !data.currentHour && !data.dataError ? <Text style={styles.muted}>{movePeriod(selected, period, 1) <= data.contractStartDate ? `This period is before the contract start date: ${dateCaption(data.contractStartDate)}.` : "There are no completed hours in this period yet."}</Text> : null}
+    {!compact ? <View style={styles.metric}><Text style={styles.muted}>{t("Estimated deposit")}</Text><Text style={styles.metricValue}>{amount(hasElapsed ? data?.estimatedDepositPln : null, "PLN")}</Text></View> : null}
+    <Text style={styles.muted}>{t("Totals cover completed hours. Current hour is provisional.")}</Text>
+    {data?.updatedAt ? <Text style={styles.muted}>{t("Updated {0} · refreshes every 5 minutes", momentCaption(data.updatedAt, data.timeZoneId))}</Text> : null}
+    {data?.dataError ? <Text style={styles.warning}>{t(data.dataError)}</Text> : null}
+    {data?.priceError ? <Text style={styles.warning}>{t(data.priceError)}</Text> : null}
+    {data?.isPartial ? <Text style={styles.warning}>{t("Partial data · totals for available hours")}</Text> : null}
+    {!compact && data ? <Text style={styles.muted}>{t("Completed-hour coverage: {0} of {1} observed · {2} valued.", data.observedHours, data.expectedHours, data.valuedHours)}</Text> : null}
+    {data && !hasElapsed && !data.currentHour && !data.dataError ? <Text style={styles.muted}>{movePeriod(selected, period, 1) <= data.contractStartDate ? t("This period is before the contract start date: {0}.", dateCaption(data.contractStartDate)) : t("There are no completed hours in this period yet.")}</Text> : null}
     {!chartFirst ? chart : null}
     {data?.currentHour ? <View style={styles.provisional}>
-      <Text style={[styles.muted, styles.primaryValue]}>Current hour · in progress</Text>
+      <Text style={[styles.muted, styles.primaryValue]}>{t("Current hour · in progress")}</Text>
       <Text style={styles.muted}>{amount(data.currentHour.exportKwh, "kWh")} · {amount(data.currentHour.energyValuePln, "PLN")}</Text>
-      <Text style={styles.muted}>{data.currentHour.observedThrough ? `Measured through ${momentCaption(data.currentHour.observedThrough, data.timeZoneId)}` : "Awaiting current-hour readings."}</Text>
-      {data.currentHour.exportKwh !== null && data.currentHour.energyValuePln === null ? <Text style={styles.warning}>Awaiting current-hour prices.</Text> : null}
-      <Text style={styles.muted}>Measured intervals only; no projection to the end of the hour.</Text>
+      <Text style={styles.muted}>{data.currentHour.observedThrough ? t("Measured through {0}", momentCaption(data.currentHour.observedThrough, data.timeZoneId)) : t("Awaiting current-hour readings.")}</Text>
+      {data.currentHour.exportKwh !== null && data.currentHour.energyValuePln === null ? <Text style={styles.warning}>{t("Awaiting current-hour prices.")}</Text> : null}
+      <Text style={styles.muted}>{t("Measured intervals only; no projection to the end of the hour.")}</Text>
     </View> : null}
     {!compact && data ? <View style={styles.divider}>
-      <Text style={styles.muted}>TAURON contract from {dateCaption(data.contractStartDate)}. After hourly netting of imports and exports: {amount(hasElapsed ? data.creditedExportKwh : null, "kWh")}.</Text>
-      <Text style={styles.muted}>Energy value uses RCE prices under the contract terms. Estimated monthly deposit credit includes the 1.23 multiplier. It is not a bank payout or deposit balance.</Text>
-      <Text style={styles.muted}>Final settlement uses the OSD billing meter. Missing readings and prices are not zero. Settlement time zone: {data.timeZoneId}.</Text>
+      <Text style={styles.muted}>{t("TAURON contract from {0}. After hourly netting of imports and exports: {1}.", dateCaption(data.contractStartDate), amount(hasElapsed ? data.creditedExportKwh : null, "kWh"))}</Text>
+      <Text style={styles.muted}>{t("Energy value uses RCE prices under the contract terms. Estimated monthly deposit credit includes the 1.23 multiplier. It is not a bank payout or deposit balance.")}</Text>
+      <Text style={styles.muted}>{t("Final settlement uses the OSD billing meter. Missing readings and prices are not zero. Settlement time zone: {0}.", data.timeZoneId)}</Text>
     </View> : null}
   </Card>{data ? renderDetails?.(data, period) : null}</>;
 }

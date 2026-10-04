@@ -16,10 +16,12 @@ async function components() {
       builder.onResolve({ filter: /(?:^|\/)(GenerationScreen|SalesScreen|TileHeader)$/ }, args => args.path.endsWith("GenerationScreen") && !args.importer.endsWith("DashboardScreen.tsx")
         ? undefined : ({ path: "panels", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)(EnergyChart|EnergyControls)$/ }, () => ({ path: "panels", namespace: "native-test" }));
+      builder.onResolve({ filter: /(?:^|\/)i18n$/ }, () => ({ path: "i18n", namespace: "native-test" }));
+      builder.onResolve({ filter: /(?:^|\/)application\/LanguageContext$/ }, () => ({ path: "language", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)application\/AuthContext$/ }, () => ({ path: "auth", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)useFocusedResource$/ }, () => ({ path: "resource", namespace: "native-test" }));
-      builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({ loader: "js", contents: args.path === "react-native"
+      builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({ loader: "js", contents: args.path === "i18n" ? 'export const currentLocale = () => "en"; export const formattingLocale = () => "en-GB"; export const translate = (phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token,index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""));' : args.path === "language" ? 'export const useLanguage = () => ({language:"en", t:(phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token, index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""))});' : args.path === "react-native"
         ? 'export const StyleSheet = {create: value => value}; export const Text = "Text"; export const View = "View"; export const Pressable = "Pressable"; export const ScrollView = "ScrollView"; export const Linking = {};'
         : args.path === "lucide-react-native" ? 'export const RefreshCcw = () => null; export const CirclePower = () => null; export const PlugZap = () => null;'
         : args.path === "@react-navigation/native" ? 'import React from "react"; export const useFocusEffect = callback => React.useEffect(callback,[callback]); export const useNavigation = () => ({navigate(){}});'

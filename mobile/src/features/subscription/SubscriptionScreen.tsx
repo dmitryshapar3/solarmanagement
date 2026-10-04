@@ -1,3 +1,4 @@
+import { useLanguage } from "../../application/LanguageContext";
 import { ReactNode, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { CreditCard, LogOut, RefreshCcw } from "lucide-react-native";
@@ -19,6 +20,7 @@ export function SubscriptionGate({ children, ...screenProps }: SubscriptionScree
 }
 
 export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl }: SubscriptionScreenProps) {
+  const { t } = useLanguage();
   const billing = useSubscription();
   const [selectedId, setSelectedId] = useState<string>(subscriptionProductIds.monthly);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl 
     setLinkError(null);
     try {
       const url = new URL(value);
-      if (url.protocol !== "https:" || url.username || url.password) throw new Error("Invalid public URL");
+      if (url.protocol !== "https:" || url.username || url.password) throw new Error(t("Invalid public URL"));
       await Linking.openURL(url.toString());
     } catch {
       setLinkError("The link could not be opened. Please try again or contact support.");
@@ -37,55 +39,52 @@ export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl 
   }
 
   return <Screen>
-    <Header title={billing.hasAccess ? "Your subscription" : "Solar Premium"}
-      subtitle="Solar energy monitoring, generation and sales insights"
-      action={<AppButton label="Logout" icon={LogOut} onPress={() => void onLogout()} variant="secondary" compact />} />
+    <Header title={billing.hasAccess ? t("Your subscription") : "Solar Premium"}
+      subtitle={t("Solar energy monitoring, generation and sales insights")}
+      action={<AppButton label={t("Logout")} icon={LogOut} onPress={() => void onLogout()} variant="secondary" compact />} />
     <ErrorBanner message={linkError ?? billing.error} />
-    {billing.isChecking ? <Text style={styles.copy}>Checking your App Store subscription…</Text> : null}
-    {billing.notice ? <Text style={styles.copy}>{billing.notice}</Text> : null}
+    {billing.isChecking ? <Text style={styles.copy}>{t("Checking your App Store subscription…")}</Text> : null}
+    {billing.notice ? <Text style={styles.copy}>{t(billing.notice)}</Text> : null}
 
     {billing.hasAccess ? <Card>
-      <Text style={styles.heading}>Subscription active</Text>
-      <Text style={styles.copy}>Your access is verified by the App Store. Manage renewal and cancellation using your Apple Account.</Text>
+      <Text style={styles.heading}>{t("Subscription active")}</Text>
+      <Text style={styles.copy}>{t("Your access is verified by the App Store. Manage renewal and cancellation using your Apple Account.")}</Text>
     </Card> : <>
       <Card style={styles.card}>
-        <Text style={styles.heading}>Choose your plan</Text>
+        <Text style={styles.heading}>{t("Choose your plan")}</Text>
         {Object.entries(subscriptionProductIds).map(([name, id]) => {
           const option = billing.snapshot?.products.find(item => item.id === id);
           return <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: selectedId === id, disabled: !billing.canPurchase }}
             disabled={!billing.canPurchase || billing.busy !== null} onPress={() => setSelectedId(id)}
             style={[styles.plan, selectedId === id && styles.selected]}>
             <View style={styles.planCopy}>
-              <Text style={styles.planName}>{name === "monthly" ? "Monthly" : "Yearly"}</Text>
-              <Text style={styles.copy}>{option && billing.canPurchase ? subscriptionPriceLabel(option) : "Price unavailable"}</Text>
+              <Text style={styles.planName}>{name === "monthly" ? t("Monthly") : t("Yearly")}</Text>
+              <Text style={styles.copy}>{option && billing.canPurchase ? subscriptionPriceLabel(option) : t("Price unavailable")}</Text>
             </View>
-            {option && billing.canPurchase && isEligibleFor14DayTrial(option) ? <Text style={styles.trial}>14 days free</Text> : null}
+            {option && billing.canPurchase && isEligibleFor14DayTrial(option) ? <Text style={styles.trial}>{t("14 days free")}</Text> : null}
           </Pressable>;
         })}
         {!billing.canPurchase && !billing.isChecking ? <Text style={styles.copy}>
-          {billing.snapshot?.catalogError ?? "Subscriptions are currently unavailable for this Apple Account. You can still restore purchases, view policies or contact support."}
+          {t(billing.snapshot?.catalogError ?? "Subscriptions are currently unavailable for this Apple Account. You can still restore purchases, view policies or contact support.")}
         </Text> : null}
-        {product && billing.canPurchase ? <Text style={styles.copy}>
-          {hasTrial ? `14 days free, then ${subscriptionPriceLabel(product)}.` : `${subscriptionPriceLabel(product)}.`}
-          {" "}Your subscription renews automatically until canceled.
-        </Text> : null}
-        <AppButton label={hasTrial && billing.canPurchase ? "Start 14-day free trial" : "Subscribe"} icon={CreditCard}
+        {product && billing.canPurchase ? <Text style={styles.copy}>{t("{0}  Your subscription renews automatically until canceled.", hasTrial ? t("14 days free, then {0}.", subscriptionPriceLabel(product)) : `${subscriptionPriceLabel(product)}.`)}</Text> : null}
+        <AppButton label={hasTrial && billing.canPurchase ? t("Start 14-day free trial") : t("Subscribe")} icon={CreditCard}
           disabled={!billing.canPurchase || !product || billing.busy !== null} loading={billing.busy === "purchase"}
           onPress={() => void billing.purchase(selectedId)} />
       </Card>
-      <Text style={styles.copy}>Payment is charged to your Apple Account when the App Store confirms the purchase. If an eligible free trial is shown, payment starts when the trial ends. Cancel in App Store account settings at least 24 hours before the current period ends to avoid renewal. Any introductory offer and final price are confirmed by the App Store before purchase.</Text>
+      <Text style={styles.copy}>{t("Payment is charged to your Apple Account when the App Store confirms the purchase. If an eligible free trial is shown, payment starts when the trial ends. Cancel in App Store account settings at least 24 hours before the current period ends to avoid renewal. Any introductory offer and final price are confirmed by the App Store before purchase.")}</Text>
     </>}
 
-    <AppButton label="Restore purchases" icon={RefreshCcw} variant="secondary" disabled={billing.busy !== null}
+    <AppButton label={t("Restore purchases")} icon={RefreshCcw} variant="secondary" disabled={billing.busy !== null}
       loading={billing.busy === "restore"} onPress={() => void billing.restore()} />
-    <AppButton label="Manage subscription" variant="ghost" disabled={billing.busy !== null}
+    <AppButton label={t("Manage subscription")} variant="ghost" disabled={billing.busy !== null}
       loading={billing.busy === "manage"} onPress={() => void billing.manage()} />
-    <AppButton label="Check again" variant="ghost" disabled={billing.busy !== null || billing.isChecking}
+    <AppButton label={t("Check again")} variant="ghost" disabled={billing.busy !== null || billing.isChecking}
       onPress={() => void billing.refresh()} />
     <View style={styles.legal}>
-      <AppButton label="Privacy policy" variant="ghost" onPress={() => void openLink(privacyUrl)} />
-      <AppButton label="Terms of use" variant="ghost" onPress={() => void openLink(termsUrl)} />
-      <AppButton label="Support" variant="ghost" onPress={() => void openLink(supportUrl)} />
+      <AppButton label={t("Privacy policy")} variant="ghost" onPress={() => void openLink(privacyUrl)} />
+      <AppButton label={t("Terms of use")} variant="ghost" onPress={() => void openLink(termsUrl)} />
+      <AppButton label={t("Support")} variant="ghost" onPress={() => void openLink(supportUrl)} />
     </View>
   </Screen>;
 }

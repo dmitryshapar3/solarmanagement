@@ -1,3 +1,4 @@
+import { useLanguage } from "../../application/LanguageContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetch as expoFetch } from "expo/fetch";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
@@ -12,6 +13,7 @@ import type { AuthOptions, VerificationChannel, VerificationResponse } from "../
 import { googleSignIn } from "./googleSignIn";
 
 export function LoginScreen() {
+  const { t } = useLanguage();
   const { apiBaseUrl, authError, login, finishSignIn, enterDemo } = useAuth();
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
   const [username, setUsername] = useState("");
@@ -70,10 +72,10 @@ export function LoginScreen() {
     try {
       if (mode === "password") await login({ baseUrl, username, password });
       else {
-        if (!verification) throw new Error("Request a verification code first.");
-        if (Date.now() >= Date.parse(verification.expiresAt)) throw new Error("The code has expired. Request a new code.");
-        if (!code.trim()) throw new Error("Enter the verification code.");
-        if (mode === "register" && password.length < 12) throw new Error("Choose a password with at least 12 characters.");
+        if (!verification) throw new Error(t("Request a verification code first."));
+        if (Date.now() >= Date.parse(verification.expiresAt)) throw new Error(t("The code has expired. Request a new code."));
+        if (!code.trim()) throw new Error(t("Enter the verification code."));
+        if (mode === "register" && password.length < 12) throw new Error(t("Choose a password with at least 12 characters."));
         await finishSignIn(baseUrl, (api, signal) => mode === "register"
           ? api.register(verification.verificationId, code.trim(), password, signal)
           : api.loginWithVerification(verification.verificationId, code.trim(), signal));
@@ -147,52 +149,52 @@ export function LoginScreen() {
           <Server color={colors.primary} size={28} strokeWidth={2.2} />
         </View>
         <Text style={styles.title}>DeyeSolar</Text>
-        <Text style={styles.subtitle}>Solar Energy Management</Text>
+        <Text style={styles.subtitle}>{t("Solar Energy Management")}</Text>
       </View>
 
       <Card style={styles.form}>
-        <TextField label="API URL" value={baseUrl} onChangeText={setBaseUrl} placeholder="https://solar.dshapar.com" />
+        <TextField label={t("API URL")} value={baseUrl} onChangeText={setBaseUrl} placeholder="https://solar.dshapar.com" />
         {baseUrl.trim().toLowerCase().startsWith("http:") && (
-          <Text style={styles.warning}>HTTP is unencrypted. Use it only for a trusted local development server.</Text>
+          <Text style={styles.warning}>{t("HTTP is unencrypted. Use it only for a trusted local development server.")}</Text>
         )}
         <View style={styles.links}>
-          <AppButton label="Password" compact variant={mode === "password" ? "primary" : "ghost"} disabled={Boolean(pending)} onPress={() => changeMode("password")} />
-          <AppButton label="Sign in with code" compact variant={mode === "code" ? "primary" : "ghost"} disabled={Boolean(pending) || !(options?.emailEnabled || options?.phoneEnabled)} onPress={() => changeMode("code")} />
-          <AppButton label="Create account" compact variant={mode === "register" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.registrationEnabled || !(options.emailEnabled || options.phoneEnabled)} onPress={() => changeMode("register")} />
+          <AppButton label={t("Password")} compact variant={mode === "password" ? "primary" : "ghost"} disabled={Boolean(pending)} onPress={() => changeMode("password")} />
+          <AppButton label={t("Sign in with code")} compact variant={mode === "code" ? "primary" : "ghost"} disabled={Boolean(pending) || !(options?.emailEnabled || options?.phoneEnabled)} onPress={() => changeMode("code")} />
+          <AppButton label={t("Create account")} compact variant={mode === "register" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.registrationEnabled || !(options.emailEnabled || options.phoneEnabled)} onPress={() => changeMode("register")} />
         </View>
-        {mode === "password" ? <TextField label="Username, email or phone" value={username} onChangeText={setUsername} placeholder="Email or username" /> : <>
+        {mode === "password" ? <TextField label={t("Username, email or phone")} value={username} onChangeText={setUsername} placeholder={t("Email or username")} /> : <>
           <View style={styles.links}>
-            <AppButton label="Email" compact variant={channel === "email" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.emailEnabled || Boolean(verification)} onPress={() => { setChannel("email"); setDestination(""); }} />
-            <AppButton label="Phone" compact variant={channel === "phone" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.phoneEnabled || Boolean(verification)} onPress={() => { setChannel("phone"); setDestination(""); }} />
+            <AppButton label={t("Email")} compact variant={channel === "email" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.emailEnabled || Boolean(verification)} onPress={() => { setChannel("email"); setDestination(""); }} />
+            <AppButton label={t("Phone")} compact variant={channel === "phone" ? "primary" : "ghost"} disabled={Boolean(pending) || !options?.phoneEnabled || Boolean(verification)} onPress={() => { setChannel("phone"); setDestination(""); }} />
           </View>
-          <TextField label={channel === "email" ? "Email address" : "Phone number"} value={destination} onChangeText={setDestination}
+          <TextField label={channel === "email" ? t("Email address") : t("Phone number")} value={destination} onChangeText={setDestination}
             keyboardType={channel === "email" ? "email-address" : "phone-pad"} placeholder={channel === "email" ? "you@example.com" : "+48123456789"} editable={!verification && !pending} />
           {verification ? <>
-            <Text style={styles.warning}>If this address or number is eligible, a code has been sent. Enter it below.</Text>
-            <TextField label="Verification code" value={code} onChangeText={value => setCode(value.replace(/[^0-9]/g, "").slice(0, 8))} keyboardType="number-pad" />
-            <AppButton label={now < resendAt ? `Resend in ${Math.ceil((resendAt - now) / 1000)}s` : "Resend code"} variant="ghost" onPress={() => void sendCode()} disabled={Boolean(pending) || now < resendAt} />
-            <AppButton label="Change email or phone" variant="ghost" onPress={() => { setVerification(null); setCode(""); }} disabled={Boolean(pending)} />
-          </> : <AppButton label="Send verification code" variant="secondary" onPress={() => void sendCode()} loading={pending === "send"} disabled={Boolean(pending)} />}
+            <Text style={styles.warning}>{t("If this address or number is eligible, a code has been sent. Enter it below.")}</Text>
+            <TextField label={t("Verification code")} value={code} onChangeText={value => setCode(value.replace(/[^0-9]/g, "").slice(0, 8))} keyboardType="number-pad" />
+            <AppButton label={now < resendAt ? t("Resend in {0}s", Math.ceil((resendAt - now) / 1000)) : t("Resend code")} variant="ghost" onPress={() => void sendCode()} disabled={Boolean(pending) || now < resendAt} />
+            <AppButton label={t("Change email or phone")} variant="ghost" onPress={() => { setVerification(null); setCode(""); }} disabled={Boolean(pending)} />
+          </> : <AppButton label={t("Send verification code")} variant="secondary" onPress={() => void sendCode()} loading={pending === "send"} disabled={Boolean(pending)} />}
         </>}
         {mode !== "code" && <TextField
-          label="Password"
+          label={t("Password")}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholder={mode === "register" ? "At least 12 characters" : "Password"}
+          placeholder={mode === "register" ? t("At least 12 characters") : t("Password")}
           returnKeyType="go"
           onSubmitEditing={handleLogin}
         />}
         <ErrorBanner message={error ?? authError} />
-        <AppButton label={mode === "register" ? "Create account" : "Sign in"} icon={LogIn} onPress={handleLogin} loading={pending === "login"} disabled={Boolean(pending) || (mode !== "password" && !verification)} />
-        <AppButton label="Continue with Google" variant="secondary" onPress={() => void handleGoogle()} loading={pending === "google"} disabled={Boolean(pending) || !options?.googleEnabled} />
-        {options?.googleEnabled ? <Text style={styles.warning}>To connect Google to an existing account, sign in first and link it in Settings.</Text> : <Text style={styles.warning}>Google sign-in and registration are available when enabled by your Solar server.</Text>}
-        <AppButton label="Try demo" onPress={handleDemo} variant="secondary" loading={pending === "demo"} disabled={Boolean(pending)} />
-        <Text style={styles.warning}>Explore sample data. Demo changes stay in this session and never affect real devices.</Text>
+        <AppButton label={mode === "register" ? t("Create account") : t("Sign in")} icon={LogIn} onPress={handleLogin} loading={pending === "login"} disabled={Boolean(pending) || (mode !== "password" && !verification)} />
+        <AppButton label={t("Continue with Google")} variant="secondary" onPress={() => void handleGoogle()} loading={pending === "google"} disabled={Boolean(pending) || !options?.googleEnabled} />
+        {options?.googleEnabled ? <Text style={styles.warning}>{t("To connect Google to an existing account, sign in first and link it in Settings.")}</Text> : <Text style={styles.warning}>{t("Google sign-in and registration are available when enabled by your Solar server.")}</Text>}
+        <AppButton label={t("Try demo")} onPress={handleDemo} variant="secondary" loading={pending === "demo"} disabled={Boolean(pending)} />
+        <Text style={styles.warning}>{t("Explore sample data. Demo changes stay in this session and never affect real devices.")}</Text>
       </Card>
       <View style={styles.links}>
-        <AppButton label="Privacy policy" variant="ghost" compact onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
-        <AppButton label="Support" variant="ghost" compact onPress={() => void openLink(PUBLIC_SUPPORT_URL)} />
+        <AppButton label={t("Privacy policy")} variant="ghost" compact onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
+        <AppButton label={t("Support")} variant="ghost" compact onPress={() => void openLink(PUBLIC_SUPPORT_URL)} />
       </View>
     </Screen>
   );

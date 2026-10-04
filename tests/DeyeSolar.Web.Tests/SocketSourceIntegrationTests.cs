@@ -201,6 +201,8 @@ public class SocketSourceIntegrationTests
             if (defaultSelection)
             {
                 source.IsDefault = false;
+                // Release the unique default-inverter slot before promoting another binding.
+                await db.SaveChangesAsync();
                 (await db.IntegrationDeviceBindings.SingleAsync(binding => binding.Id == f.Secondary)).IsDefault = true;
             }
             else (await db.IntegrationInstances.SingleAsync(instance => instance.Id == source.InstanceId)).Generation++;

@@ -6,53 +6,53 @@
 
 @if (!_loaded)
 {
-    <MudText>Loading installation settings…</MudText>
+    <MudText>@T["Loading installation settings…"]</MudText>
 }
 else
 {
 <MudPaper Class="pa-4" Elevation="2">
-    <MudText Typo="Typo.h6" Class="mb-2">Solar installation and sales</MudText>
-    <MudText Typo="Typo.body2" Class="mb-3">Set the location and panel layout used for weather estimates. Power readings still come from the inverter.</MudText>
-    <MudText Typo="Typo.body2">Selected saved inverter: @(string.IsNullOrEmpty(_selectedDeviceSn) ? "None selected" : _selectedDeviceSn)</MudText>
+    <MudText Typo="Typo.h6" Class="mb-2">@T["Solar installation and sales"]</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">@T["Set the location and panel layout used for weather estimates. Power readings still come from the inverter."]</MudText>
+    <MudText Typo="Typo.body2">@T["Selected saved inverter:"] @(string.IsNullOrEmpty(_selectedDeviceSn) ? T["None selected"] : _selectedDeviceSn)</MudText>
     <MudCheckBox T="bool" @bind-Value="_solar.DeyeSolarPowerIsPvDcConfirmed" Disabled="@(string.IsNullOrEmpty(_selectedDeviceSn))"
-        Label="I confirm that this inverter's solar power reading represents PV DC input." />
-    <MudText Typo="Typo.caption" Class="mb-3">Confirm only after checking the inverter's documentation or readings. Measured generation comparisons require this confirmation. Save and select the primary inverter in Device integrations, then reload before confirming its PV readings.</MudText>
+        Label="@T["I confirm that this inverter's solar power reading represents PV DC input."]" />
+    <MudText Typo="Typo.caption" Class="mb-3">@T["Confirm only after checking the inverter's documentation or readings. Measured generation comparisons require this confirmation. Save and select the primary inverter in Device integrations, then reload before confirming its PV readings."]</MudText>
     <MudGrid>
         <MudItem xs="12" md="6">
-            <MudTextField @bind-Value="_solar.LocationLabel" Label="Location label" MaxLength="120" Immediate="true" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Latitude" Label="Latitude" Min="-90" Max="90" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Longitude" Label="Longitude" Min="-180" Max="180" />
-            <MudAutocomplete T="string" @bind-Value="_solar.TimeZoneId" Label="Solar time zone" SearchFunc="SearchTimezones" />
+            <MudTextField @bind-Value="_solar.LocationLabel" Label="@T["Location label"]" MaxLength="120" Immediate="true" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Latitude"))" T="double" Immediate="true" @bind-Value="_solar.Latitude" Label="@T["Latitude"]" Min="-90" Max="90" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Longitude"))" T="double" Immediate="true" @bind-Value="_solar.Longitude" Label="@T["Longitude"]" Min="-180" Max="180" />
+            <MudAutocomplete T="string" @bind-Value="_solar.TimeZoneId" Label="@T["Solar time zone"]" SearchFunc="SearchTimezones" />
         </MudItem>
         <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle1" Class="mt-2">Panel group 1</MudText>
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Kwp" Label="Installed capacity · kWp" Min="0" Max="10000" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Tilt" Label="Tilt · degrees" Min="0" Max="90" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof1Azimuth" Label="Compass bearing · degrees" Min="0" Max="359.999" />
+            <MudText Typo="Typo.subtitle1" Class="mt-2">@T["Panel group 1"]</MudText>
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof1Kwp"))" T="double" Immediate="true" @bind-Value="_solar.Roof1Kwp" Label="@T["Installed capacity · kWp"]" Min="0" Max="10000" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof1Tilt"))" T="double" Immediate="true" @bind-Value="_solar.Roof1Tilt" Label="@T["Tilt · degrees"]" Min="0" Max="90" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof1Azimuth"))" T="double" Immediate="true" @bind-Value="_solar.Roof1Azimuth" Label="@T["Compass bearing · degrees"]" Min="0" Max="359.999" />
         </MudItem>
         <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle1" Class="mt-2">Panel group 2</MudText>
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Kwp" Label="Installed capacity · kWp" Min="0" Max="10000" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Tilt" Label="Tilt · degrees" Min="0" Max="90" />
-            <MudNumericField T="double" Immediate="true" @bind-Value="_solar.Roof2Azimuth" Label="Compass bearing · degrees" Min="0" Max="359.999" />
-            <MudText Typo="Typo.caption">Use zero capacity for an unused group. Total capacity must be greater than zero. Bearings: north 0°, east 90°, south 180°, west 270°.</MudText>
+            <MudText Typo="Typo.subtitle1" Class="mt-2">@T["Panel group 2"]</MudText>
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof2Kwp"))" T="double" Immediate="true" @bind-Value="_solar.Roof2Kwp" Label="@T["Installed capacity · kWp"]" Min="0" Max="10000" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof2Tilt"))" T="double" Immediate="true" @bind-Value="_solar.Roof2Tilt" Label="@T["Tilt · degrees"]" Min="0" Max="90" />
+            <MudNumericField Converter="@(T.InputConverter<double>(this, "SiteSettingsEditor:_solar.Roof2Azimuth"))" T="double" Immediate="true" @bind-Value="_solar.Roof2Azimuth" Label="@T["Compass bearing · degrees"]" Min="0" Max="359.999" />
+            <MudText Typo="Typo.caption">@T["Use zero capacity for an unused group. Total capacity must be greater than zero. Bearings: north 0°, east 90°, south 180°, west 270°."]</MudText>
         </MudItem>
         <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle1" Class="mt-2">Electricity sales</MudText>
-            <MudTextField @bind-Value="_contractStart" Label="Contract start date · YYYY-MM-DD" MaxLength="10" Immediate="true" />
-            <MudAutocomplete T="string" @bind-Value="_sales.TimeZoneId" Label="Settlement time zone" SearchFunc="SearchTimezones" />
-            <MudCheckBox T="bool" @bind-Value="_sales.PayNegativePrices" Label="Apply negative prices when the contract requires them" />
-            <MudText Typo="Typo.caption">Energy value and deposit credit are estimates. Final settlement uses the supplier's billing meter.</MudText>
+            <MudText Typo="Typo.subtitle1" Class="mt-2">@T["Electricity sales"]</MudText>
+            <MudTextField @bind-Value="_contractStart" Label="@T["Contract start date · YYYY-MM-DD"]" MaxLength="10" Immediate="true" />
+            <MudAutocomplete T="string" @bind-Value="_sales.TimeZoneId" Label="@T["Settlement time zone"]" SearchFunc="SearchTimezones" />
+            <MudCheckBox T="bool" @bind-Value="_sales.PayNegativePrices" Label="@T["Apply negative prices when the contract requires them"]" />
+            <MudText Typo="Typo.caption">@T["Energy value and deposit credit are estimates. Final settlement uses the supplier's billing meter."]</MudText>
         </MudItem>
     </MudGrid>
     <MudStack Row="true" Spacing="2" Class="mt-3" Style="flex-wrap:wrap">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save installation</MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="TestAsync" Disabled="_busy">Test weather connection</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">@T["Save installation"]</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="TestAsync" Disabled="_busy">@T["Test weather connection"]</MudButton>
     </MudStack>
-    <MudText Typo="Typo.caption" Class="mt-2">The weather test uses the entered coordinates without saving. Customer API keys remain on the server.</MudText>
+    <MudText Typo="Typo.caption" Class="mt-2">@T["The weather test uses the entered coordinates without saving. Customer API keys remain on the server."]</MudText>
 </MudPaper>
 }
-@if (_message is not null) { <MudAlert Severity="@(_success ? Severity.Success : Severity.Warning)" Class="mt-2">@_message</MudAlert> }
+@if (_message is not null) { <MudAlert Severity="@(_success ? Severity.Success : Severity.Warning)" Class="mt-2">@T.Translate(_message)</MudAlert> }
 
 @code {
     private SolarEstimateOptions _solar = new();
@@ -78,7 +78,7 @@ else
             _contractStart = settings.SolarSales.ContractStartDate;
             _loaded = true;
         }
-        catch (Exception) { _message = "Could not load installation settings. Please reload and try again."; }
+        catch (Exception) { _message = T["Could not load installation settings. Please reload and try again."]; }
     }
     private SiteSettingsDto Draft() => new(new(_solar.Latitude, _solar.Longitude, _solar.LocationLabel, _solar.TimeZoneId,
         _solar.Roof1Kwp, _solar.Roof2Kwp, _solar.Roof1Tilt, _solar.Roof2Tilt, _solar.Roof1Azimuth, _solar.Roof2Azimuth,
@@ -91,9 +91,9 @@ else
         var draft = Draft();
         if (!SiteSettingsService.TryValidate(draft, out var error)) { _message = error; return; }
         _busy = true;
-        try { await SiteSettings.SaveAsync(draft); _success = true; _message = "Installation settings saved."; }
+        try { await SiteSettings.SaveAsync(draft); _success = true; _message = T["Installation settings saved."]; }
         catch (ArgumentException exception) { _message = exception.Message; }
-        catch (Exception) { _message = "Could not save installation settings. Please try again."; }
+        catch (Exception) { _message = T["Could not save installation settings. Please try again."]; }
         finally { _busy = false; }
     }
     private async Task TestAsync()
@@ -105,7 +105,7 @@ else
             var result = await IntegrationTests.TestAsync("openmeteo", new(SolarEstimate: new(_solar.Latitude, _solar.Longitude)), CancellationToken.None);
             _success = result.Success; _message = result.Message;
         }
-        catch (Exception) { _message = "The weather connection could not be verified. Please try again."; }
+        catch (Exception) { _message = T["The weather connection could not be verified. Please try again."]; }
         finally { _busy = false; }
     }
     private static Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)

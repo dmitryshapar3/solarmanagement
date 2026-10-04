@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
 import type { DeyeCloudSettings, DisplaySettings, PollingSettings, Rule, RuleRequest, ShellySettings, SolarSiteSettings } from "../../core/api/types";
 import {
@@ -11,12 +12,12 @@ export class DemoApiClient extends ApiClient {
   private nextRuleId = 3;
 
   constructor(private readonly clock: () => Date = () => new Date()) {
-    super({ baseUrl: DEMO_API_BASE_URL, transport: async () => { throw new Error("Demo transport is disabled."); } });
+    super({ baseUrl: DEMO_API_BASE_URL, transport: async () => { throw new Error(t("Demo transport is disabled.")); } });
     this.state = createDemoState(clock());
   }
 
   override setBaseUrl(_baseUrl: string): void {
-    throw new Error("Leave demo mode before connecting to a server.");
+    throw new Error(t("Leave demo mode before connecting to a server."));
   }
 
   override setToken(_token?: string | null): void {
@@ -25,7 +26,7 @@ export class DemoApiClient extends ApiClient {
 
   override async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (options.signal?.aborted) {
-      const error = new Error("The request was canceled.");
+      const error = new Error(t("The request was canceled."));
       error.name = "AbortError";
       throw error;
     }
@@ -39,10 +40,10 @@ export class DemoApiClient extends ApiClient {
     const route = `${method} ${path}`;
     const now = this.clock();
     const timeZone = this.state.settings.display.timeZoneId;
-    if (route === "POST /api/auth/login") throw new ApiError(400, "Demo mode does not require a username or password.");
+    if (route === "POST /api/auth/login") throw new ApiError(400, t("Demo mode does not require a username or password."));
     if (route === "GET /api/auth/session") return { authenticated: this.active, username: this.active ? DEMO_USERNAME : null };
     if (route === "POST /api/auth/logout") { this.active = false; return; }
-    if (!this.active) throw new ApiError(401, "The demo session has ended.");
+    if (!this.active) throw new ApiError(401, t("The demo session has ended."));
 
     if (route === "GET /api/dashboard" || route === "POST /api/dashboard/refresh") return {
       inverter: demoInverter(now, timeZone), devicesLoaded: true, deviceLastUpdated: now.toISOString(),
@@ -51,12 +52,12 @@ export class DemoApiClient extends ApiClient {
     if (route === "GET /api/solar/estimate") return demoEstimate(now, timeZone);
     if (route === "GET /api/solar/history") {
       const period = options.query?.period ?? "Today";
-      if (period !== "Today" && period !== "Week" && period !== "Month") throw new ApiError(400, "Select a valid generation period.");
+      if (period !== "Today" && period !== "Week" && period !== "Month") throw new ApiError(400, t("Select a valid generation period."));
       return demoSolarHistory(period, optionalDate(options.query?.date), now, timeZone);
     }
     if (route === "GET /api/sales") {
       const period = options.query?.period ?? "Day";
-      if (period !== "Day" && period !== "Month" && period !== "Year" && period !== "Custom") throw new ApiError(400, "Select a valid sales period.");
+      if (period !== "Day" && period !== "Month" && period !== "Year" && period !== "Custom") throw new ApiError(400, t("Select a valid sales period."));
       const date = optionalDate(options.query?.date) ?? localDate(now, timeZone);
       return demoSales(period, date, now, timeZone);
     }
@@ -65,10 +66,10 @@ export class DemoApiClient extends ApiClient {
     if (method === "PATCH" && deviceNameRoute) {
       const id = decodeURIComponent(deviceNameRoute[1]!);
       const device = this.state.devices.find(item => item.id === id);
-      if (!device) throw new ApiError(404, "Demo device not found.");
+      if (!device) throw new ApiError(404, t("Demo device not found."));
       const { name } = objectBody(options.body);
       if (name !== null && (typeof name !== "string" || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name)))
-        throw new ApiError(400, "Enter a name up to 80 characters without control characters.");
+        throw new ApiError(400, t("Enter a name up to 80 characters without control characters."));
       device.cloudName ??= device.name;
       device.localName = typeof name === "string" && name.trim() ? name.trim() : null;
       device.name = device.localName ?? device.cloudName;
@@ -77,8 +78,8 @@ export class DemoApiClient extends ApiClient {
     if (route === "POST /api/devices/state") {
       const body = objectBody(options.body);
       const device = this.state.devices.find(item => item.id === body.entityId);
-      if (!device) throw new ApiError(404, "Demo device not found.");
-      if (typeof body.isOn !== "boolean") throw new ApiError(400, "Choose an on/off state.");
+      if (!device) throw new ApiError(404, t("Demo device not found."));
+      if (typeof body.isOn !== "boolean") throw new ApiError(400, t("Choose an on/off state."));
       device.isOn = body.isOn;
       device.currentPowerW = body.isOn ? device.id.endsWith("lamp") ? 45 : 850 : 0;
       for (const rule of this.state.rules.filter(item => item.entityId === device.id)) {
@@ -108,7 +109,7 @@ export class DemoApiClient extends ApiClient {
       const id = Number(ruleRoute[1]);
       const index = this.state.rules.findIndex(rule => rule.id === id);
       const rule = this.state.rules[index];
-      if (!rule) throw new ApiError(404, "Demo rule not found.");
+      if (!rule) throw new ApiError(404, t("Demo rule not found."));
       if (method === "GET" && !ruleRoute[2]) return rule;
       if (method === "PUT" && !ruleRoute[2]) {
         this.state.rules[index] = { ...rule, ...this.ruleRequest(options.body) };
@@ -116,7 +117,7 @@ export class DemoApiClient extends ApiClient {
       }
       if (method === "PATCH" && ruleRoute[2]) {
         const { enabled } = objectBody(options.body);
-        if (typeof enabled !== "boolean") throw new ApiError(400, "Choose an enabled state.");
+        if (typeof enabled !== "boolean") throw new ApiError(400, t("Choose an enabled state."));
         rule.enabled = enabled;
         return rule;
       }
@@ -139,13 +140,13 @@ export class DemoApiClient extends ApiClient {
       const estimate = objectBody(body.solarEstimate);
       const sales = objectBody(body.solarSales);
       for (const key of ["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"])
-        if (typeof estimate[key] !== "number" || !Number.isFinite(estimate[key])) throw new ApiError(400, "Enter valid solar site numbers.");
+        if (typeof estimate[key] !== "number" || !Number.isFinite(estimate[key])) throw new ApiError(400, t("Enter valid solar site numbers."));
       if (typeof estimate.locationLabel !== "string" || typeof estimate.timeZoneId !== "string"
         || typeof sales.contractStartDate !== "string" || typeof sales.timeZoneId !== "string" || typeof sales.payNegativePrices !== "boolean")
-        throw new ApiError(400, "Enter valid site and sales settings.");
+        throw new ApiError(400, t("Enter valid site and sales settings."));
       if (estimate.deyeSolarPowerIsPvDcConfirmed === true && (!this.state.settings.deyeCloud.deviceSn
         || estimate.deyeSolarPowerConfirmedDeviceSn !== this.state.settings.deyeCloud.deviceSn))
-        throw new ApiError(400, "Confirm the currently saved selected inverter's PV source.");
+        throw new ApiError(400, t("Confirm the currently saved selected inverter's PV source."));
       this.state.site = JSON.parse(JSON.stringify({ ...body, selectedDeviceSn: this.state.settings.deyeCloud.deviceSn,
         solarEstimate: { ...estimate, deyeSolarPowerConfirmedDeviceSn: estimate.deyeSolarPowerIsPvDcConfirmed === true
           ? this.state.settings.deyeCloud.deviceSn : "" } })) as SolarSiteSettings;
@@ -153,12 +154,12 @@ export class DemoApiClient extends ApiClient {
     }
     if (method === "POST" && /^\/api\/settings\/test\/(deye|shelly|openmeteo|pse)$/.test(path)) return {
       kind: path.split("/").at(-1), success: true, code: "ok", checkedAt: now.toISOString(),
-      message: "Demo connection check simulated. No external services contacted and no settings saved."
+      message: t("Demo connection check simulated. No external services contacted and no settings saved.")
     };
     if (route === "PUT /api/settings/deye") {
       const value = objectBody(options.body) as unknown as DeyeCloudSettings;
       requireStrings(value, ["baseUrl", "appId", "appSecret", "email", "password", "deviceSn"]);
-      requireNumber(value.stationId, 0, Number.MAX_SAFE_INTEGER, "station ID");
+      requireNumber(value.stationId, 0, Number.MAX_SAFE_INTEGER, t("station ID"));
       this.state.settings.deyeCloud = { ...value };
       return;
     }
@@ -168,27 +169,27 @@ export class DemoApiClient extends ApiClient {
     if (route === "POST /api/settings/deye/selected-device") {
       const body = objectBody(options.body);
       const inverter = this.state.inverters.find(device => device.stationId === body.stationId && device.serialNumber === body.serialNumber);
-      if (!inverter) throw new ApiError(404, "Demo inverter not found.");
+      if (!inverter) throw new ApiError(404, t("Demo inverter not found."));
       this.state.settings.deyeCloud = { ...this.state.settings.deyeCloud, stationId: inverter.stationId, deviceSn: inverter.serialNumber };
       return this.state.settings.deyeCloud;
     }
     if (route === "PUT /api/settings/shelly") {
       const value = objectBody(options.body) as unknown as ShellySettings;
       requireStrings(value, ["serverUri", "authKey", "deviceId"]);
-      requireNumber(value.requestIntervalMilliseconds, 100, 60000, "request interval");
+      requireNumber(value.requestIntervalMilliseconds, 100, 60000, t("request interval"));
       this.state.settings.shelly = { ...value };
       return;
     }
     if (route === "POST /api/settings/socket/selected-device") {
       const { entityId } = objectBody(options.body);
       const device = this.state.devices.find(item => item.id === entityId);
-      if (!device) throw new ApiError(404, "Demo socket not found.");
+      if (!device) throw new ApiError(404, t("Demo socket not found."));
       this.state.settings.shelly.deviceId = device.id.replace(/^shelly:/, "");
       return this.state.settings;
     }
     if (route === "PUT /api/settings/polling") {
       const value = objectBody(options.body) as unknown as PollingSettings;
-      requireNumber(value.intervalSeconds, 5, 300, "polling interval");
+      requireNumber(value.intervalSeconds, 5, 300, t("polling interval"));
       this.state.settings.polling = { intervalSeconds: value.intervalSeconds };
       return;
     }
@@ -196,30 +197,30 @@ export class DemoApiClient extends ApiClient {
       const value = objectBody(options.body) as unknown as DisplaySettings;
       requireStrings(value, ["timeZoneId"]);
       try { new Intl.DateTimeFormat("en-GB", { timeZone: value.timeZoneId }); }
-      catch { throw new ApiError(400, "Enter a valid timezone."); }
+      catch { throw new ApiError(400, t("Enter a valid timezone.")); }
       this.state.settings.display = { timeZoneId: value.timeZoneId };
       return;
     }
-    throw new ApiError(404, "This operation is not available in the offline demo.");
+    throw new ApiError(404, t("This operation is not available in the offline demo."));
   }
 
   private ruleRequest(body: unknown): RuleRequest {
     const value = objectBody(body) as unknown as RuleRequest;
     requireStrings(value, ["name", "entityId"]);
-    if (!value.name.trim() || !this.state.devices.some(device => device.id === value.entityId)) throw new ApiError(400, "Enter a rule name and choose a demo device.");
+    if (!value.name.trim() || !this.state.devices.some(device => device.id === value.entityId)) throw new ApiError(400, t("Enter a rule name and choose a demo device."));
     for (const key of ["enabled", "useSeparateSocTurnOffThreshold", "useSolarProductionThreshold"] as const) {
-      if (typeof value[key] !== "boolean") throw new ApiError(400, "Enter valid rule options.");
+      if (typeof value[key] !== "boolean") throw new ApiError(400, t("Enter valid rule options."));
     }
-    requireNumber(value.socTurnOnThreshold, 0, 100, "SOC threshold");
-    requireNumber(value.socTurnOffThreshold, 0, 100, "SOC threshold");
-    requireNumber(value.minAverageSolarProductionWatts, 0, 30000, "solar threshold");
+    requireNumber(value.socTurnOnThreshold, 0, 100, t("SOC threshold"));
+    requireNumber(value.socTurnOffThreshold, 0, 100, t("SOC threshold"));
+    requireNumber(value.minAverageSolarProductionWatts, 0, 30000, t("solar threshold"));
     requireNumber(value.cooldownMinutes, 1, 240, "cooldown");
-    requireNumber(value.intervalSeconds, 10, 3600, "rule interval");
+    requireNumber(value.intervalSeconds, 10, 3600, t("rule interval"));
     for (const time of [value.activeFrom, value.activeTo]) {
-      if (time !== null && (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) throw new ApiError(400, "Use HH:mm for the time window.");
+      if (time !== null && (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) throw new ApiError(400, t("Use HH:mm for the time window."));
     }
-    if (Boolean(value.activeFrom) !== Boolean(value.activeTo)) throw new ApiError(400, "Set both time-window values or leave both empty.");
-    if (value.useSeparateSocTurnOffThreshold && value.socTurnOffThreshold > value.socTurnOnThreshold) throw new ApiError(400, "Turn OFF SOC cannot exceed turn ON SOC.");
+    if (Boolean(value.activeFrom) !== Boolean(value.activeTo)) throw new ApiError(400, t("Set both time-window values or leave both empty."));
+    if (value.useSeparateSocTurnOffThreshold && value.socTurnOffThreshold > value.socTurnOnThreshold) throw new ApiError(400, t("Turn OFF SOC cannot exceed turn ON SOC."));
     // Store only known configuration fields, not caller-provided state or IDs.
     return {
       name: value.name.trim(), entityId: value.entityId, enabled: value.enabled,
@@ -232,16 +233,16 @@ export class DemoApiClient extends ApiClient {
 }
 
 function objectBody(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ApiError(400, "Enter valid demo settings.");
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ApiError(400, t("Enter valid demo settings."));
   return value as Record<string, unknown>;
 }
 
 function requireStrings(value: object, keys: string[]): void {
-  for (const key of keys) if (typeof (value as Record<string, unknown>)[key] !== "string") throw new ApiError(400, "Enter valid demo values.");
+  for (const key of keys) if (typeof (value as Record<string, unknown>)[key] !== "string") throw new ApiError(400, t("Enter valid demo values."));
 }
 
 function requireNumber(value: unknown, min: number, max: number, name: string): void {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) throw new ApiError(400, `Enter a valid ${name}.`);
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) throw new ApiError(400, t("Enter a valid {0}.", name));
 }
 
 function historyHours(value: unknown): number {
@@ -251,9 +252,9 @@ function historyHours(value: unknown): number {
 
 function optionalDate(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new ApiError(400, "Select a valid date.");
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new ApiError(400, t("Select a valid date."));
   const date = new Date(`${value}T12:00:00Z`);
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ApiError(400, "Select a valid date.");
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ApiError(400, t("Select a valid date."));
   return value;
 }
 

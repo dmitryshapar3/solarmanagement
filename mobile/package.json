@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "export:ios": "expo export --platform ios --output-dir dist/ios"
+    "export:ios": "expo export --platform ios --output-dir dist/ios",
+    "i18n:check": "node ../scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

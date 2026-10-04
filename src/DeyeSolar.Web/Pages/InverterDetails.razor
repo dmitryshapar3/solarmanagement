@@ -8,16 +8,16 @@
 @inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @implements IDisposable
 
-<PageTitle>Inverter details - DeyeSolar</PageTitle>
+<PageTitle>@T["Inverter details - DeyeSolar"]</PageTitle>
 <MudPaper Class="pa-4" Elevation="2">
     <div class="inverter-details-heading">
-        <h1>Inverter details</h1>
+        <h1>@T["Inverter details"]</h1>
         <div class="inverter-details-actions">
-            <a href="@EnergyDetailsNavigation.ReturnPath(ReturnTo)">Back</a>
-            <button type="button" @onclick="RefreshAsync" disabled="@_refreshing" aria-label="Refresh inverter details">@(_refreshing ? "Refreshing…" : "Refresh")</button>
+            <a href="@EnergyDetailsNavigation.ReturnPath(ReturnTo)">@T["Back"]</a>
+            <button type="button" @onclick="RefreshAsync" disabled="@_refreshing" aria-label="@T["Refresh inverter details"]">@(_refreshing ? T["Refreshing…"] : T["Refresh"])</button>
         </div>
     </div>
-    @if (_error is not null) { <p class="inverter-details-error" role="alert">@_error</p> }
+    @if (_error is not null) { <p class="inverter-details-error" role="alert">@T.Translate(_error)</p> }
     <InverterReadings Data="_reading" TimeZoneId="@_timeZone" Now="Clock.GetUtcNow()"
                       AlignmentToleranceSeconds="EstimateOptions.CurrentValue.AlignmentToleranceSeconds"
                       MaximumAgeMinutes="EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes"
@@ -65,7 +65,7 @@
         _error = null;
         try { await InverterRefresh.RefreshAsync(_lifetime.Token); if (!_disposed) _reading = Snapshot.Current; }
         catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed) _error = "Could not refresh inverter readings. Showing the last available reading; please try again."; }
+        catch (Exception) { if (!_disposed) _error = T["Could not refresh inverter readings. Showing the last available reading; please try again."]; }
         finally { if (!_disposed) _refreshing = false; }
     }
     public void Dispose()

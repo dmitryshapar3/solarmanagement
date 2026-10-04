@@ -143,6 +143,7 @@ public class SocketCommandControlsTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddComponentLocalization();
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddSingleton<NavigationManager, Navigation>();

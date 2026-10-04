@@ -1,13 +1,19 @@
+import { formattingLocale, translate as t } from "./i18n";
+
+export function formatNumber(value: number, decimals = 0): string {
+  return value.toLocaleString(formattingLocale(), { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
 export function formatWatts(value?: number | null): string {
   if (value === null || value === undefined) {
     return "-";
   }
 
   if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toFixed(1)} kW`;
+    return `${formatNumber(value / 1000, 1)} kW`;
   }
 
-  return `${value} W`;
+  return `${formatNumber(value)} W`;
 }
 
 export function formatSignedWatts(value?: number | null): string {
@@ -20,7 +26,7 @@ export function formatSignedWatts(value?: number | null): string {
 }
 
 export function formatPercent(value?: number | null): string {
-  return value === null || value === undefined ? "-" : `${value}%`;
+  return value === null || value === undefined ? "-" : `${formatNumber(value)}%`;
 }
 
 let displayTimeZone: string | undefined;
@@ -63,7 +69,7 @@ export function formatDateTime(value?: string | null): string {
     return "-";
   }
 
-  return formatInDisplayTimeZone(date, (options) => date.toLocaleString(undefined, options), {
+  return formatInDisplayTimeZone(date, (options) => date.toLocaleString(formattingLocale(), options), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -82,7 +88,7 @@ export function formatTime(value?: string | null): string {
     return "-";
   }
 
-  return formatInDisplayTimeZone(date, (options) => date.toLocaleTimeString(undefined, options), {
+  return formatInDisplayTimeZone(date, (options) => date.toLocaleTimeString(formattingLocale(), options), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
@@ -91,24 +97,24 @@ export function formatTime(value?: string | null): string {
 
 export function batteryModeLabel(power: number): string {
   if (power < 0) {
-    return "Charging";
+    return t("Charging");
   }
 
   if (power > 0) {
-    return "Discharging";
+    return t("Discharging");
   }
 
-  return "Idle";
+  return t("Idle");
 }
 
 export function gridModeLabel(power: number): string {
   if (power < 0) {
-    return "Exporting";
+    return t("Exporting");
   }
 
   if (power > 0) {
-    return "Importing";
+    return t("Importing");
   }
 
-  return "Idle";
+  return t("Idle");
 }

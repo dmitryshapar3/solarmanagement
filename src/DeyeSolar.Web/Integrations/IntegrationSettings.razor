@@ -10,20 +10,20 @@
 @implements IDisposable
 
 <MudPaper Class="pa-4 mb-4">
-    <MudText Typo="Typo.h6">Device integrations</MudText>
-    <MudText Typo="Typo.body2" Class="mb-3">Connect an account, verify access, save its settings and choose devices. Connection checks never switch a device.</MudText>
-    <MudButton Variant="Variant.Outlined" OnClick="RefreshCatalog" Disabled="_busy">Refresh providers</MudButton>
-    @if (!string.IsNullOrWhiteSpace(_notice)) { <MudAlert Severity="Severity.Info" Class="mt-2">@_notice</MudAlert> }
-    @if (!string.IsNullOrWhiteSpace(_error)) { <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert> }
+    <MudText Typo="Typo.h6">@T["Device integrations"]</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">@T["Connect an account, verify access, save its settings and choose devices. Connection checks never switch a device."]</MudText>
+    <MudButton Variant="Variant.Outlined" OnClick="RefreshCatalog" Disabled="_busy">@T["Refresh providers"]</MudButton>
+    @if (!string.IsNullOrWhiteSpace(_notice)) { <MudAlert Severity="Severity.Info" Class="mt-2">@T.Translate(_notice)</MudAlert> }
+    @if (!string.IsNullOrWhiteSpace(_error)) { <MudAlert Severity="Severity.Error" Class="mt-2">@T.Translate(_error)</MudAlert> }
     <MudGrid Class="mt-2">
         <MudItem xs="12" md="5">
-            <MudSelect T="string" Label="Inverter manufacturer" Value="@_newInverterProvider" ValueChanged="@((string value) => ChooseProvider(value, "inverter"))" Disabled="_busy">
+            <MudSelect T="string" Label="@T["Inverter manufacturer"]" Value="@_newInverterProvider" ValueChanged="@((string value) => ChooseProvider(value, "inverter"))" Disabled="_busy">
                 @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "inverter")))
                 {
                     <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
                 }
             </MudSelect>
-            <MudSelect T="string" Label="Socket manufacturer" Value="@_newSocketProvider" ValueChanged="@((string value) => ChooseProvider(value, "socket"))" Disabled="_busy">
+            <MudSelect T="string" Label="@T["Socket manufacturer"]" Value="@_newSocketProvider" ValueChanged="@((string value) => ChooseProvider(value, "socket"))" Disabled="_busy">
                 @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "socket")))
                 {
                     <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
@@ -31,44 +31,44 @@
             </MudSelect>
             @if (_providers.Any(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
             {
-                <MudSelect T="string" Label="Other provider" Value="@_newProvider" ValueChanged="@((string value) => ChooseProvider(value, "other"))" Disabled="_busy">
+                <MudSelect T="string" Label="@T["Other provider"]" Value="@_newProvider" ValueChanged="@((string value) => ChooseProvider(value, "other"))" Disabled="_busy">
                     @foreach (var provider in _providers.Where(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
                     { <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem> }
                 </MudSelect>
             }
-            <MudTextField T="string" Label="Integration name" @bind-Value="_newName" Immediate="true" Disabled="_busy" />
-            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newProvider))">Add integration</MudButton>
+            <MudTextField T="string" Label="@T["Integration name"]" @bind-Value="_newName" Immediate="true" Disabled="_busy" />
+            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newProvider))">@T["Add integration"]</MudButton>
             <MudStack Class="mt-4" Spacing="2">
-                <MudText Typo="Typo.body2">Add another socket integration to connect devices from a different manufacturer.</MudText>
+                <MudText Typo="Typo.body2">@T["Add another socket integration to connect devices from a different manufacturer."]</MudText>
                 @foreach (var instance in _instances)
                 {
-                    <MudButton Variant="@(instance.Id == _selected ? Variant.Filled : Variant.Outlined)" OnClick="@(() => Select(instance.Id))" Disabled="_busy">@instance.Name · @instance.Status</MudButton>
+                    <MudButton Variant="@(instance.Id == _selected ? Variant.Filled : Variant.Outlined)" OnClick="@(() => Select(instance.Id))" Disabled="_busy">@instance.Name · @T.Translate(instance.Status)</MudButton>
                     @if (instance.Status == "enabled")
                     {
-                        <MudButton Variant="Variant.Text" OnClick="@(() => DisableInstance(instance))" Disabled="_busy">Disable @instance.Name</MudButton>
+                        <MudButton Variant="Variant.Text" OnClick="@(() => DisableInstance(instance))" Disabled="_busy">@T["Disable"] @instance.Name</MudButton>
                     }
                 }
             </MudStack>
-            @if (_providers.Count == 0 && !_catalogUnavailable) { <MudText Class="mt-3">No provider packages are installed. Ask the platform operator to install a supported provider.</MudText> }
+            @if (_providers.Count == 0 && !_catalogUnavailable) { <MudText Class="mt-3">@T["No provider packages are installed. Ask the platform operator to install a supported provider."]</MudText> }
         </MudItem>
         <MudItem xs="12" md="7">
             @if (Current is { } form)
             {
                 <MudText Typo="Typo.h6">@form.Configuration.Instance.Name</MudText>
-                <MudSelect T="string" Label="Installed provider version" Value="@form.TargetPackageVersion"
+                <MudSelect T="string" Label="@T["Installed provider version"]" Value="@form.TargetPackageVersion"
                     ValueChanged="@((string version) => form.TargetPackageVersion = version)" Disabled="_busy">
                     @foreach (var version in form.Versions)
                     {
                         <MudSelectItem T="string" Value="@version.PackageVersion" Disabled="@(!Supported(version))">@version.PackageVersion</MudSelectItem>
                     }
                 </MudSelect>
-                <MudText Typo="Typo.caption">Switching verifies saved settings. A successful switch discards the current draft.</MudText>
+                <MudText Typo="Typo.caption">@T["Switching verifies saved settings. A successful switch discards the current draft."]</MudText>
                 <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SwitchVersion"
-                    Disabled="@(_busy || form.TargetPackageVersion == form.Configuration.Instance.PackageVersion || !form.Versions.Any(version => version.PackageVersion == form.TargetPackageVersion && Supported(version)))">Use selected version (discard draft)</MudButton>
+                    Disabled="@(_busy || form.TargetPackageVersion == form.Configuration.Instance.PackageVersion || !form.Versions.Any(version => version.PackageVersion == form.TargetPackageVersion && Supported(version)))">@T["Use selected version (discard draft)"]</MudButton>
                 @if (!Supported(form.Provider))
                 {
-                    <MudAlert Severity="Severity.Warning">This provider requires a newer settings interface.</MudAlert>
-                    @if (form.Configuration.Instance.Status == "enabled") { <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="_busy">Disable integration</MudButton> }
+                    <MudAlert Severity="Severity.Warning">@T["This provider requires a newer settings interface."]</MudAlert>
+                    @if (form.Configuration.Instance.Status == "enabled") { <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="_busy">@T["Disable integration"]</MudButton> }
                 }
                 else
                 {
@@ -76,15 +76,15 @@
                     var publicValues = PublicValues(form);
                     @if (form.Provider.UiLayout is not null)
                     {
-                        <MudText Typo="Typo.subtitle1" Class="mt-3">Step @(form.StepIndex + 1) of @Steps(form).Count · @step.Title</MudText>
-                        @if (step.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@step.Instructions</MudText> }
+                        <MudText Typo="Typo.subtitle1" Class="mt-3">@T.Format("Step {0} of {1}", form.StepIndex + 1, Steps(form).Count) · @T.Translate(step.Title)</MudText>
+                        @if (step.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@T.Translate(step.Instructions)</MudText> }
                     }
                     @foreach (var group in step.Groups.Where(group => IntegrationUiConditions.IsActive(group.ActiveWhen, publicValues)))
                     {
                         @if (form.Provider.UiLayout is not null)
                         {
-                            <MudText Typo="Typo.subtitle2" Class="mt-3">@group.Title</MudText>
-                            @if (group.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@group.Instructions</MudText> }
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">@T.Translate(group.Title)</MudText>
+                            @if (group.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@T.Translate(group.Instructions)</MudText> }
                         }
                         @foreach (var field in form.Provider.Fields.Where(field => group.FieldKeys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, publicValues)))
                         {
@@ -94,61 +94,61 @@
                                 SecretPresent="@(form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key))" Busy="_busy" />
                         }
                         <MudStack Row="true" Class="mt-3" Spacing="2">
-                            @if (group.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">Test connection</MudButton> }
-                            @if (group.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">Find devices</MudButton> }
-                            @if (group.Actions.Contains("oauth")) { <MudButton Variant="Variant.Outlined" OnClick="StartAuthorization" Disabled="_busy">Authorize provider account</MudButton> }
+                            @if (group.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">@T["Test connection"]</MudButton> }
+                            @if (group.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">@T["Find devices"]</MudButton> }
+                            @if (group.Actions.Contains("oauth")) { <MudButton Variant="Variant.Outlined" OnClick="StartAuthorization" Disabled="_busy">@T["Authorize provider account"]</MudButton> }
                         </MudStack>
                         @if (group.Actions.Contains("oauth") && form.Authorization is { } authorization)
                         {
                             @if (form.AuthorizationStale)
                             {
-                                <MudAlert Severity="Severity.Warning" Class="mt-2">The draft changed. Start authorization again before using its result.</MudAlert>
+                                <MudAlert Severity="Severity.Warning" Class="mt-2">@T["The draft changed. Start authorization again before using its result."]</MudAlert>
                             }
                             else if (form.AuthorizationStatus == "pending" && SafeAuthorizationUrl(authorization.AuthorizationUrl))
                             {
-                                <a href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">Open provider authorization</a>
+                                <a href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">@T["Open provider authorization"]</a>
                             }
-                            <MudText Class="mt-2">Authorization status: @form.AuthorizationStatus</MudText>
-                            <MudButton OnClick="CheckAuthorization" Disabled="@(_busy || form.AuthorizationStale)">Check authorization</MudButton>
-                            <MudButton OnClick="CancelAuthorization" Disabled="_busy">Cancel authorization</MudButton>
+                            <MudText Class="mt-2">@T["Authorization status:"] @T.Translate(form.AuthorizationStatus)</MudText>
+                            <MudButton OnClick="CheckAuthorization" Disabled="@(_busy || form.AuthorizationStale)">@T["Check authorization"]</MudButton>
+                            <MudButton OnClick="CancelAuthorization" Disabled="_busy">@T["Cancel authorization"]</MudButton>
                         }
                         @if (group.Actions.Contains("discover"))
                         {
-                            <MudText Typo="Typo.caption" Class="mt-2">Save before choosing a discovered device. Unsaved changes remain a draft.</MudText>
+                            <MudText Typo="Typo.caption" Class="mt-2">@T["Save before choosing a discovered device. Unsaved changes remain a draft."]</MudText>
                             @foreach (var device in form.Discovery?.Devices ?? [])
                             {
                                 <MudPaper Class="pa-2 mt-2" Outlined="true">
-                                    <MudText>@device.Name · @device.Kind @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
-                                    <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">Use device</MudButton>
+                                    <MudText>@device.Name · @T.Translate(device.Kind) @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
+                                    <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">@T["Use device"]</MudButton>
                                 </MudPaper>
                             }
                         }
                     }
                     <MudStack Row="true" Class="mt-3" Spacing="2">
-                        @if (form.StepIndex > 0) { <MudButton OnClick="PreviousStep" Disabled="_busy">Previous step</MudButton> }
-                        @if (form.StepIndex + 1 < Steps(form).Count) { <MudButton OnClick="NextStep" Disabled="_busy">Next step</MudButton> }
-                        else { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">Save settings</MudButton> }
+                        @if (form.StepIndex > 0) { <MudButton OnClick="PreviousStep" Disabled="_busy">@T["Previous step"]</MudButton> }
+                        @if (form.StepIndex + 1 < Steps(form).Count) { <MudButton OnClick="NextStep" Disabled="_busy">@T["Next step"]</MudButton> }
+                        else { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">@T["Save settings"]</MudButton> }
                     </MudStack>
-                    <MudButton Class="mt-2" Variant="Variant.Text" OnClick="ReloadSaved" Disabled="_busy">Reload saved settings (discard draft)</MudButton>
-                    <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="@(_busy || (form.Configuration.Instance.Status != "enabled" && form.Dirty))">@(form.Configuration.Instance.Status == "enabled" ? "Disable integration" : "Enable integration")</MudButton>
+                    <MudButton Class="mt-2" Variant="Variant.Text" OnClick="ReloadSaved" Disabled="_busy">@T["Reload saved settings (discard draft)"]</MudButton>
+                    <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="@(_busy || (form.Configuration.Instance.Status != "enabled" && form.Dirty))">@(form.Configuration.Instance.Status == "enabled" ? T["Disable integration"] : T["Enable integration"])</MudButton>
                     @foreach (var binding in form.Bindings)
                     {
-                        <MudText Class="mt-2">@binding.Name · @binding.Kind @(binding.IsDefault ? "· selected inverter" : "· connected")</MudText>
+                        <MudText Class="mt-2">@binding.Name · @T.Translate(binding.Kind) @(binding.IsDefault ? T["· selected inverter"] : T["· connected"])</MudText>
                         @if (binding.Kind == "socket")
                         {
-                            <MudSelect T="Guid?" Label="Linked inverter" Value="@SourceDraft(binding)" ValueChanged="@((Guid? value) => _sourceDrafts[binding.Id] = value)" Disabled="_busy">
-                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Installation default inverter</MudSelectItem>
+                            <MudSelect T="Guid?" Label="@T["Linked inverter"]" Value="@SourceDraft(binding)" ValueChanged="@((Guid? value) => _sourceDrafts[binding.Id] = value)" Disabled="_busy">
+                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">@T["Installation default inverter"]</MudSelectItem>
                                 @if (binding.SourceInverterId is { } old && !_sourceInverters.Any(source => source.Id == old))
-                                { <MudSelectItem T="Guid?" Value="@((Guid?)old)">Unavailable inverter · @old</MudSelectItem> }
+                                { <MudSelectItem T="Guid?" Value="@((Guid?)old)">@T.Format("Unavailable inverter · {0}", old)</MudSelectItem> }
                                 @foreach (var source in _sourceInverters)
                                 { <MudSelectItem T="Guid?" Value="@((Guid?)source.Id)">@source.Name</MudSelectItem> }
                             </MudSelect>
-                            <MudSelect T="int" Label="Circuit type" Value="@PhaseDraft(binding)" ValueChanged="@((int value) => _phaseDrafts[binding.Id] = value)" Disabled="_busy">
-                                <MudSelectItem T="int" Value="1">Single-phase</MudSelectItem>
-                                <MudSelectItem T="int" Value="3">Three-phase</MudSelectItem>
+                            <MudSelect T="int" Label="@T["Circuit type"]" Value="@PhaseDraft(binding)" ValueChanged="@((int value) => _phaseDrafts[binding.Id] = value)" Disabled="_busy">
+                                <MudSelectItem T="int" Value="1">@T["Single-phase"]</MudSelectItem>
+                                <MudSelectItem T="int" Value="3">@T["Three-phase"]</MudSelectItem>
                             </MudSelect>
-                            <MudText Typo="Typo.caption">Rules without an explicit source use this inverter. Circuit type describes the installed load.</MudText>
-                            <MudButton Class="mt-2" Variant="Variant.Outlined" Disabled="_busy" OnClick="@(() => SaveSocketSource(binding))">Save link for @binding.Name</MudButton>
+                            <MudText Typo="Typo.caption">@T["Rules without an explicit source use this inverter. Circuit type describes the installed load."]</MudText>
+                            <MudButton Class="mt-2" Variant="Variant.Outlined" Disabled="_busy" OnClick="@(() => SaveSocketSource(binding))">@T.Format("Save link for {0}", binding.Name)</MudButton>
                         }
                     }
                 }
@@ -197,9 +197,9 @@
             try
             {
                 await LoadCatalog();
-                if (Current?.Dirty == true) _notice = "The integration catalog changed. Your draft is preserved; save may require reloading the settings.";
+                if (Current?.Dirty == true) _notice = T["The integration catalog changed. Your draft is preserved; save may require reloading the settings."];
             }
-            catch (Exception) { _error = "The provider catalog could not be refreshed. Your draft is preserved."; }
+            catch (Exception) { _error = T["The provider catalog could not be refreshed. Your draft is preserved."]; }
             StateHasChanged();
         });
     }
@@ -234,16 +234,16 @@
         _phaseDrafts.Remove(binding.Id);
         form.Configuration = form.Configuration with { Instance = (await Setup.ReadAsync(instance.Id, _lifetime.Token)).Instance };
         await LoadCatalog();
-        _notice = "Socket inverter link saved.";
+        _notice = T["Socket inverter link saved."];
     });
-    private Task RefreshCatalog() => Run(async () => { await LoadCatalog(); _notice = "Provider catalog refreshed. Existing drafts are preserved."; });
+    private Task RefreshCatalog() => Run(async () => { await LoadCatalog(); _notice = T["Provider catalog refreshed. Existing drafts are preserved."]; });
     private Task Create() => Run(async () =>
     {
         var instance = await Setup.CreateAsync(new(_newProvider, _newName), _actor, _lifetime.Token);
         await LoadCatalog();
         await SelectCore(instance.Id);
         _newName = "";
-        _notice = "Integration added. Enter its connection settings.";
+        _notice = T["Integration added. Enter its connection settings."];
     });
     private Task Select(Guid id) => Run(async () => { await SelectCore(id); _notice = null; });
     private async Task SelectCore(Guid id)
@@ -270,8 +270,8 @@
         form.OAuthFlowId = null;
         form.OAuthSecretPresent.Clear();
     }
-    private static IReadOnlyList<IntegrationUiStep> Steps(FormState form) => form.Provider.UiLayout?.Steps
-        ?? [new("settings", "Connection settings", null, [new("settings", "Connection settings", null, form.Provider.Fields.Select(field => field.Key).ToArray(), form.Provider.Actions)])];
+    private IReadOnlyList<IntegrationUiStep> Steps(FormState form) => form.Provider.UiLayout?.Steps
+        ?? [new("settings", T["Connection settings"], null, [new("settings", T["Connection settings"], null, form.Provider.Fields.Select(field => field.Key).ToArray(), form.Provider.Actions)])];
     private static JsonElement PublicValues(FormState form)
     {
         var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -301,16 +301,16 @@
                 var operation = form.Secrets.GetValueOrDefault(field.Key);
                 var present = operation?.Operation == "replace" ? !string.IsNullOrWhiteSpace(operation.Value)
                     : operation?.Operation != "clear" && (form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key));
-                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter or authorize {field.Label}.");
+                if (field.Required && !present) throw new IntegrationRequestException("validation", T.Format("Enter or authorize {0}.", T.Translate(field.Label)));
             }
             else
             {
                 var present = values.TryGetProperty(field.Key, out var value) && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
                     && (value.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(value.GetString()));
-                if (field.Required && !present) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
+                if (field.Required && !present) throw new IntegrationRequestException("validation", T.Format("Enter {0}.", T.Translate(field.Label)));
                 if (present)
                     try { IntegrationDescriptorValidator.ValidateValue(field, value); }
-                    catch (InvalidDataException) { throw new IntegrationRequestException("validation", $"Check {field.Label}."); }
+                    catch (InvalidDataException) { throw new IntegrationRequestException("validation", T.Format("Check {0}.", T.Translate(field.Label))); }
             }
         }
         form.StepIndex++;
@@ -333,7 +333,7 @@
             {
                 if (text.Length == 0) { values[field.Key] = IntegrationJson.Element<string?>(null); continue; }
                 if (!decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
-                    throw new IntegrationRequestException("validation", $"Enter a number for {field.Label}.");
+                    throw new IntegrationRequestException("validation", T.Format("Enter a number for {0}.", T.Translate(field.Label)));
                 values[field.Key] = IntegrationJson.Element(number);
             }
             else values[field.Key] = field.Kind == "boolean"
@@ -356,7 +356,7 @@
         form.Authorization = await Setup.StartAuthorizationAsync(form.Configuration.Instance.Id, new(Draft(), "web"), _actor, _lifetime.Token);
         form.AuthorizationStale = false;
         form.AuthorizationStatus = "pending";
-        _notice = "Open provider authorization in a new tab, then return here and check its result. Settings are saved only when you choose Save.";
+        _notice = T["Open provider authorization in a new tab, then return here and check its result. Settings are saved only when you choose Save."];
     });
     private Task CheckAuthorization() => Run(async () =>
     {
@@ -372,9 +372,9 @@
             form.OAuthFlowId = result.FlowId;
             form.Dirty = true;
             form.Discovery = null;
-            _notice = "Authorization is ready in this draft. Test the connection and save explicitly to use it.";
+            _notice = T["Authorization is ready in this draft. Test the connection and save explicitly to use it."];
         }
-        else { form.OAuthFlowId = null; form.OAuthSecretPresent.Clear(); _notice = "Authorization status: " + result.Status + "."; }
+        else { form.OAuthFlowId = null; form.OAuthSecretPresent.Clear(); _notice = T.Format("Authorization status: {0}.", T.Translate(result.Status)); }
     });
     private Task CancelAuthorization() => Run(async () =>
     {
@@ -384,7 +384,7 @@
         form.Authorization = null;
         form.OAuthFlowId = null;
         form.OAuthSecretPresent.Clear();
-        _notice = "Authorization cancelled. Saved credentials were not changed.";
+        _notice = T["Authorization cancelled. Saved credentials were not changed."];
     });
     private static string DisplayValue(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? ""
         : value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.GetRawText();
@@ -393,18 +393,18 @@
         var current = Current!;
         var result = await Setup.SaveAsync(current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token);
         _forms[result.Instance.Id] = new(result, current.Provider) { Bindings = current.Bindings, Versions = current.Versions };
-        _notice = "Settings saved. Credentials remain on the server.";
+        _notice = T["Settings saved. Credentials remain on the server."];
         await LoadCatalog();
     });
     private Task Test() => Run(async () => { var result = await Setup.TestAsync(Current!.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = result.Message; });
-    private Task Discover() => Run(async () => { Current!.Discovery = await Setup.DiscoverAsync(Current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = "Choose a device explicitly after saving its connection settings."; });
+    private Task Discover() => Run(async () => { Current!.Discovery = await Setup.DiscoverAsync(Current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = T["Choose a device explicitly after saving its connection settings."]; });
     private Task ChooseDevice(string token) => Run(async () =>
     {
         var form = Current!;
         await Setup.SelectDeviceAsync(form.Configuration.Instance.Id, new(Draft(), token), _actor, _lifetime.Token);
         form.Bindings = await Setup.DevicesAsync(form.Configuration.Instance.Id, _lifetime.Token);
         form.Discovery = null;
-        _notice = "Device connected.";
+        _notice = T["Device connected."];
     });
     private Task ToggleEnabled() => Run(async () =>
     {
@@ -413,14 +413,14 @@
         await Setup.SetEnabledAsync(instance.Id, instance.Status != "enabled", new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest), _actor, _lifetime.Token);
         form.Configuration = await Setup.ReadAsync(instance.Id, _lifetime.Token);
         await LoadCatalog();
-        _notice = form.Configuration.Instance.Status == "enabled" ? "Integration enabled." : "Integration disabled.";
+        _notice = form.Configuration.Instance.Status == "enabled" ? T["Integration enabled."] : T["Integration disabled."];
     });
     private Task DisableInstance(IntegrationInstanceDto instance) => Run(async () =>
     {
         var result = await Setup.SetEnabledAsync(instance.Id, false,
             new(instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest), _actor, _lifetime.Token);
         if (_forms.TryGetValue(instance.Id, out var form)) form.Configuration = form.Configuration with { Instance = result };
-        _notice = "Integration disabled. Your draft is preserved.";
+        _notice = T["Integration disabled. Your draft is preserved."];
         await LoadCatalog();
     });
     private Task ReloadSaved() => Run(async () =>
@@ -428,7 +428,7 @@
         if (_selected is not { } id) return;
         _forms.Remove(id);
         await SelectCore(id);
-        _notice = "Saved settings loaded.";
+        _notice = T["Saved settings loaded."];
     });
     private Task SwitchVersion() => Run(async () =>
     {
@@ -439,7 +439,7 @@
         _forms.Remove(instance.Id);
         await LoadCatalog();
         await SelectCore(instance.Id);
-        _notice = "Provider version changed. Saved settings loaded and the draft discarded.";
+        _notice = T["Provider version changed. Saved settings loaded and the draft discarded."];
     });
     private async Task Run(Func<Task> action)
     {
@@ -448,7 +448,7 @@
         _error = null;
         try { await action(); }
         catch (IntegrationRequestException ex) { _error = ex.Message; }
-        catch (Exception) { _error = "Integration settings are temporarily unavailable. Please try again."; }
+        catch (Exception) { _error = T["Integration settings are temporarily unavailable. Please try again."]; }
         finally { _busy = false; }
     }
     public void Dispose() { _disposed = true; Changes.Changed -= OnChanged; _lifetime.Cancel(); }

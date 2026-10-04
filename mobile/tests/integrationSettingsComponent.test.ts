@@ -90,9 +90,10 @@ async function component() {
     plugins: [{ name: "integration-native-boundaries", setup(builder) {
       builder.onResolve({ filter: /core\/api\/ApiClient$/ }, () => ({ path: path.join(process.cwd(), "src/core/api/ApiClient.ts"), external: true }));
       builder.onResolve({ filter: /^(react-native|@react-navigation\/native|expo-web-browser)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+      builder.onResolve({ filter: /(?:^|\/)application\/LanguageContext$/ }, () => ({ path: "language", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
       builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({
-        loader: "js", contents: args.path === "react-native"
+        loader: "js", contents: args.path === "language" ? 'export const useLanguage = () => ({language:"en", t:(phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token, index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""))});' : args.path === "react-native"
           ? 'export const Keyboard = {dismiss(){}}; export const StyleSheet = {create: value => value}; export const Text = "Text"; export const View = "View";'
           : args.path === "expo-web-browser" ? 'export const openAuthSessionAsync = (...args) => globalThis.__integrationOAuthBrowser.open(...args); export const dismissAuthSession = () => globalThis.__integrationOAuthBrowser.dismiss();'
           : args.path === "@react-navigation/native"
@@ -330,7 +331,7 @@ test("a newly cataloged provider uses the real generic form; probes never save a
     assert.equal(renderer!.root.findAllByType("TextField").some(item => item.props.secureTextEntry), false);
     await act(async () => { field("Region *").props.onChangeText("us"); });
     await act(async () => {
-      renderer!.root.findAllByType("button").find(item => item.props.accessibilityLabel === "API key: replace")!.props.onPress();
+      renderer!.root.findAllByType("button").find(item => item.props.accessibilityLabel === "API key: Replace")!.props.onPress();
     });
     await act(async () => { field("New API key").props.onChangeText("draft-new-key"); });
     await act(async () => { button("Test draft connection").props.onPress(); });

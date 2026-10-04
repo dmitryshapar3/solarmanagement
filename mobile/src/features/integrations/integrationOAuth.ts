@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 import type { IntegrationApi, IntegrationConfigurationChange, IntegrationOAuthStart, IntegrationOAuthStatus } from "../../core/api/IntegrationApi";
 
 export type IntegrationOAuthBrowser = {
@@ -38,7 +39,7 @@ export async function authorizeIntegration(
   api: IntegrationApi, instanceId: string, draft: IntegrationConfigurationChange, signal: AbortSignal,
   browser: IntegrationOAuthBrowser = nativeBrowser
 ): Promise<IntegrationOAuthStatus | null> {
-  if (browserOwner) throw new Error("Another authorization window is already open.");
+  if (browserOwner) throw new Error(t("Another authorization window is already open."));
   const owner = Symbol("integration authorization");
   browserOwner = owner;
   const epoch = api.sessionEpoch;
@@ -66,7 +67,7 @@ export async function authorizeIntegration(
     if (authorization.protocol !== "https:" || authorization.username || authorization.password || start.authorizationUrl.includes("#")
       || start.returnUri !== mobileReturnUri || !start.flowId || !start.returnNonce
       || !Number.isFinite(Date.parse(start.expiresAt)) || Date.parse(start.expiresAt) <= Date.now()) {
-      throw new Error("The server returned an unsafe or expired authorization request.");
+      throw new Error(t("The server returned an unsafe or expired authorization request."));
     }
     expirationTimer = setTimeout(() => { expired = true; cancel(); }, Math.min(2147483647, Date.parse(start.expiresAt) - Date.now()));
     opened = true;
@@ -74,26 +75,26 @@ export async function authorizeIntegration(
     try { result = await abortable(browser.open(start.authorizationUrl, start.returnUri, controller.signal), controller.signal); }
     catch (error) {
       if (controller.signal.aborted) throw error;
-      throw new Error("The authorization browser could not open. Close any existing authorization window and try again.");
+      throw new Error(t("The authorization browser could not open. Close any existing authorization window and try again."));
     }
     opened = false;
     if (controller.signal.aborted || api.sessionEpoch !== epoch) throw canceled();
     if (result.type !== "success") return null;
-    if (!result.url || !validIntegrationOAuthCallback(result.url, start)) throw new Error("Authorization returned an invalid callback. No settings were changed.");
+    if (!result.url || !validIntegrationOAuthCallback(result.url, start)) throw new Error(t("Authorization returned an invalid callback. No settings were changed."));
     pollingTimer = setTimeout(() => { pollingTimedOut = true; cancel(); }, 10000);
     // Poll only the authenticated result, never repeat the provider authorization or save settings.
     for (let attempt = 0; attempt < 20; ++attempt) {
       const status = await api.getOAuth(instanceId, start.flowId, controller.signal);
       if (controller.signal.aborted || api.sessionEpoch !== epoch) throw canceled();
-      if (status.flowId !== start.flowId) throw new Error("Authorization returned a different flow.");
+      if (status.flowId !== start.flowId) throw new Error(t("Authorization returned a different flow."));
       if (status.status === "ready") { accepted = true; return status; }
-      if (status.status !== "pending" && status.status !== "exchanging") throw new Error("Authorization failed or expired. Authorize again.");
+      if (status.status !== "pending" && status.status !== "exchanging") throw new Error(t("Authorization failed or expired. Authorize again."));
       await pause(500, controller.signal);
     }
-    throw new Error("Authorization is still pending. Authorize again after the current request expires.");
+    throw new Error(t("Authorization is still pending. Authorize again after the current request expires."));
   } catch (error) {
-    if (expired) throw new Error("The authorization request expired. Authorize again.");
-    if (pollingTimedOut) throw new Error("The authorization result took too long to respond. Authorize again.");
+    if (expired) throw new Error(t("The authorization request expired. Authorize again."));
+    if (pollingTimedOut) throw new Error(t("The authorization result took too long to respond. Authorize again."));
     throw error;
   } finally {
     clearTimeout(expirationTimer);
@@ -114,7 +115,7 @@ async function pause(delay: number, signal: AbortSignal): Promise<void> {
   finally { clearTimeout(timer); }
 }
 
-function canceled(): Error { const error = new Error("Authorization was canceled."); error.name = "AbortError"; return error; }
+function canceled(): Error { const error = new Error(t("Authorization was canceled.")); error.name = "AbortError"; return error; }
 
 async function abortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   let abort: () => void = () => {};

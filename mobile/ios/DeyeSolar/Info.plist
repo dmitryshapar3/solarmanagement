@@ -6,6 +6,24 @@
     <true/>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+      <string>en</string>
+      <string>ru</string>
+      <string>uk</string>
+      <string>pl</string>
+      <string>de</string>
+      <string>fr</string>
+      <string>es</string>
+      <string>it</string>
+      <string>pt</string>
+      <string>nl</string>
+      <string>cs</string>
+      <string>tr</string>
+      <string>zh</string>
+      <string>ja</string>
+      <string>ko</string>
+    </array>
     <key>CFBundleDisplayName</key>
     <string>DeyeSolar</string>
     <key>CFBundleExecutable</key>
@@ -33,7 +51,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>8</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>LSMinimumSystemVersion</key>
@@ -48,7 +66,7 @@
       <true/>
     </dict>
     <key>NSFaceIDUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
+    <string>Allow DeyeSolar to use Face ID for secure sign-in.</string>
     <key>RCTMetroPort</key>
     <string>$(RCT_METRO_PORT)</string>
     <key>RCTNewArchEnabled</key>

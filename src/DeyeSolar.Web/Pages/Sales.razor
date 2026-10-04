@@ -1,7 +1,7 @@
 @page "/sales"
 @inherits SalesQueryPageBase
 
-<PageTitle>Sales — DeyeSolar</PageTitle>
+<PageTitle>@T["Sales — DeyeSolar"]</PageTitle>
 
 @if (ValidSelection)
 {
@@ -9,5 +9,5 @@
 }
 else
 {
-    <MudAlert Severity="Severity.Warning">Choose a valid sales period and dates from 2000 onwards, no later than today. A custom period can include up to 366 days.</MudAlert>
+    <MudAlert Severity="Severity.Warning">@T["Choose a valid sales period and dates from 2000 onwards, no later than today. A custom period can include up to 366 days."]</MudAlert>
 }

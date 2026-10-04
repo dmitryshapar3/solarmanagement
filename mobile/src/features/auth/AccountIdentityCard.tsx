@@ -1,3 +1,4 @@
+import { useLanguage } from "../../application/LanguageContext";
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { useAuth } from "../../application/AuthContext";
@@ -7,6 +8,7 @@ import { colors, spacing } from "../../core/theme";
 import { googleSignIn } from "./googleSignIn";
 
 export function AccountIdentityCard() {
+  const { t } = useLanguage();
   const { api, apiBaseUrl, username, isDemo, finishSignIn } = useAuth();
   const [options, setOptions] = useState<AuthOptions | null>(null);
   const [channel, setChannel] = useState<VerificationChannel>("email");
@@ -37,38 +39,38 @@ export function AccountIdentityCard() {
 
   if (isDemo) return null;
   return <>
-    <SectionTitle title="Account & sign-in methods" />
+    <SectionTitle title={t("Account & sign-in methods")} />
     <Card style={{ gap: spacing.lg }}>
-      <Text style={{ color: colors.text }}>Signed in as {username}</Text>
-      <Text style={{ color: colors.muted }}>Link Google, email and phone to this account to keep the same installation and devices. Each contact must be verified.</Text>
+      <Text style={{ color: colors.text }}>{t("Signed in as {0}", username)}</Text>
+      <Text style={{ color: colors.muted }}>{t("Link Google, email and phone to this account to keep the same installation and devices. Each contact must be verified.")}</Text>
       <ErrorBanner message={error} />
-      {message ? <Text style={{ color: colors.primary }}>{message}</Text> : null}
-      <AppButton label="Link Google account" variant="secondary" disabled={pending || !options?.googleEnabled}
+      {message ? <Text style={{ color: colors.primary }}>{t(message)}</Text> : null}
+      <AppButton label={t("Link Google account")} variant="secondary" disabled={pending || !options?.googleEnabled}
         onPress={() => void run(async () => {
           const response = await googleSignIn(apiBaseUrl, (challenge, state) => api.startGoogleLink(challenge, state));
           if (response && mounted.current) await finishSignIn(apiBaseUrl, (_client, signal) => api.exchangeGoogleCode(response.code, response.codeVerifier, signal));
         })} />
       {options?.emailEnabled || options?.phoneEnabled ? <>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
-          <AppButton label="Email" compact variant={channel === "email" ? "primary" : "ghost"} disabled={pending || !options.emailEnabled || Boolean(verification)} onPress={() => { setChannel("email"); setDestination(""); }} />
-          <AppButton label="Phone" compact variant={channel === "phone" ? "primary" : "ghost"} disabled={pending || !options.phoneEnabled || Boolean(verification)} onPress={() => { setChannel("phone"); setDestination(""); }} />
+          <AppButton label={t("Email")} compact variant={channel === "email" ? "primary" : "ghost"} disabled={pending || !options.emailEnabled || Boolean(verification)} onPress={() => { setChannel("email"); setDestination(""); }} />
+          <AppButton label={t("Phone")} compact variant={channel === "phone" ? "primary" : "ghost"} disabled={pending || !options.phoneEnabled || Boolean(verification)} onPress={() => { setChannel("phone"); setDestination(""); }} />
         </View>
-        <TextField label={channel === "email" ? "Email to link" : "Phone to link"} value={destination} onChangeText={setDestination}
+        <TextField label={channel === "email" ? t("Email to link") : t("Phone to link")} value={destination} onChangeText={setDestination}
           editable={!pending && !verification} keyboardType={channel === "email" ? "email-address" : "phone-pad"} placeholder={channel === "email" ? "you@example.com" : "+48123456789"} />
         {verification ? <>
-          <TextField label="Verification code" value={code} onChangeText={value => setCode(value.replace(/[^0-9]/g, "").slice(0, 8))} keyboardType="number-pad" />
-          <AppButton label="Verify and link" disabled={pending || !code.trim()} loading={pending}
+          <TextField label={t("Verification code")} value={code} onChangeText={value => setCode(value.replace(/[^0-9]/g, "").slice(0, 8))} keyboardType="number-pad" />
+          <AppButton label={t("Verify and link")} disabled={pending || !code.trim()} loading={pending}
             onPress={() => void run(async () => {
               await api.linkIdentity(verification.verificationId, code.trim());
               if (mounted.current) { setVerification(null); setCode(""); setDestination(""); setMessage("Verified contact linked to this account."); }
             })} />
-          <AppButton label="Start again" variant="ghost" disabled={pending} onPress={() => { setVerification(null); setCode(""); }} />
-        </> : <AppButton label="Send verification code" variant="secondary" disabled={pending || !destination.trim()} loading={pending}
+          <AppButton label={t("Start again")} variant="ghost" disabled={pending} onPress={() => { setVerification(null); setCode(""); }} />
+        </> : <AppButton label={t("Send verification code")} variant="secondary" disabled={pending || !destination.trim()} loading={pending}
           onPress={() => void run(async () => {
             const result = await api.startVerification(channel, destination.trim(), "link");
             if (mounted.current) setVerification(result);
           })} />}
-      </> : <Text style={{ color: colors.muted }}>Contact verification is not available on this server yet.</Text>}
+      </> : <Text style={{ color: colors.muted }}>{t("Contact verification is not available on this server yet.")}</Text>}
     </Card>
   </>;
 }

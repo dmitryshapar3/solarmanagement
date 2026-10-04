@@ -2,6 +2,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
+using DeyeSolar.Web.Localization;
 
 namespace DeyeSolar.Web.Auth;
 
@@ -12,22 +14,27 @@ public interface IIdentityVerificationDelivery
     Task<bool> CheckPhoneAsync(string destination, string code, CancellationToken ct);
 }
 
-public sealed class IdentityVerificationDelivery(IHttpClientFactory clients, AuthProviderOptions options) : IIdentityVerificationDelivery
+public sealed class IdentityVerificationDelivery(IHttpClientFactory clients, AuthProviderOptions options, IHttpContextAccessor context) : IIdentityVerificationDelivery
 {
     public const string ClientName = "IdentityVerification";
     public async Task SendEmailAsync(string destination, string code, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ResendApiKey);
+        var text = context.HttpContext?.RequestServices.GetService<UiText>();
+        const string message = "Your DeyeSolar verification code is {0}. It expires in 10 minutes. If you did not request this code, ignore this email.";
         request.Content = JsonContent.Create(new { from = options.EmailFrom, to = new[] { destination },
-            subject = "DeyeSolar verification code", text = $"Your DeyeSolar verification code is {code}. It expires in 10 minutes. If you did not request this code, ignore this email." });
+            subject = text?["DeyeSolar verification code"] ?? "DeyeSolar verification code",
+            text = text?.Format(message, code) ?? string.Format(CultureInfo.InvariantCulture, message, code) });
         using var response = await clients.CreateClient(ClientName).SendAsync(request, ct);
         if (!response.IsSuccessStatusCode) throw new VerificationDeliveryException();
     }
 
     public async Task SendPhoneAsync(string destination, CancellationToken ct)
     {
-        using var request = PhoneRequest("Verifications", new() { ["To"] = destination, ["Channel"] = "sms" });
+        var locale = UiText.Normalize(CultureInfo.CurrentUICulture.Name) ?? "en";
+        using var request = PhoneRequest("Verifications", new() { ["To"] = destination, ["Channel"] = "sms",
+            ["Locale"] = locale == "zh" ? "zh-CN" : locale });
         using var response = await clients.CreateClient(ClientName).SendAsync(request, ct);
         if (!response.IsSuccessStatusCode) throw new VerificationDeliveryException();
     }

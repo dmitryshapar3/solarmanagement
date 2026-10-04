@@ -1,0 +1,2 @@
+/* Generated from i18n/zh.json by scripts/sync-ios-localizations.mjs. */
+"NSFaceIDUsageDescription" = "允许 DeyeSolar 使用面容 ID 进行安全登录。";

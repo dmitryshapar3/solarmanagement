@@ -1,0 +1,2 @@
+/* Generated from i18n/pt.json by scripts/sync-ios-localizations.mjs. */
+"NSFaceIDUsageDescription" = "Permitir que o DeyeSolar use o Face ID para login seguro.";

@@ -13,7 +13,25 @@
       "bundleIdentifier": "com.dshapar.solar",
       "buildNumber": "8",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleLocalizations": [
+          "en",
+          "ru",
+          "uk",
+          "pl",
+          "de",
+          "fr",
+          "es",
+          "it",
+          "pt",
+          "nl",
+          "cs",
+          "tr",
+          "zh",
+          "ja",
+          "ko"
+        ],
+        "NSFaceIDUsageDescription": "Allow DeyeSolar to use Face ID for secure sign-in."
       }
     },
     "android": {
@@ -25,7 +43,12 @@
       "apiBaseUrl": "https://solar.dshapar.com"
     },
     "plugins": [
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow DeyeSolar to use Face ID for secure sign-in."
+        }
+      ],
       [
         "expo-build-properties",
         {

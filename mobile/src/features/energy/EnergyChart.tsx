@@ -1,3 +1,5 @@
+import { formattingLocale } from "../../core/i18n";
+import { useLanguage } from "../../application/LanguageContext";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg";
@@ -5,6 +7,7 @@ import { colors, spacing } from "../../core/theme";
 import { ChartPoint, chartGeometry, chartHeight, chartWidth, defaultPointIndex } from "./chartPolicy";
 
 export function EnergyChart({ points, mode, unit }: { points: ChartPoint[]; mode: "generation" | "sales"; unit: string }) {
+  const { t } = useLanguage();
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const geometry = useMemo(() => chartGeometry(points, mode), [points, mode]);
   const selected = Math.max(0, selectedTime && points.some((point) => point.timestamp === selectedTime)
@@ -15,9 +18,9 @@ export function EnergyChart({ points, mode, unit }: { points: ChartPoint[]; mode
   const accent = mode === "sales" && unit === "PLN" ? colors.amber : colors.primary;
   return (
     <View style={styles.container}>
-      {hasValues ? <Svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} accessibilityLabel={`${mode === "generation" ? "Possible range and actual generation" : "Completed and provisional sales"} chart in ${unit}`}>
+      {hasValues ? <Svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} accessibilityLabel={t("{0} chart in {1}", mode === "generation" ? t("Possible range and actual generation") : t("Completed and provisional sales"), unit)}>
         {geometry.ticks.map((tick, index) => <Line key={`line-${index}`} x1={38} x2={348} y1={tick.y} y2={tick.y} stroke={colors.border} strokeWidth={.6} />)}
-        {geometry.ticks.map((tick, index) => <SvgText key={`label-${index}`} x={32} y={tick.y + 4} fill={colors.muted} fontSize={9} textAnchor="end">{Number(tick.value.toFixed(2)).toString()}</SvgText>)}
+        {geometry.ticks.map((tick, index) => <SvgText key={`label-${index}`} x={32} y={tick.y + 4} fill={colors.muted} fontSize={9} textAnchor="end">{tick.value.toLocaleString(formattingLocale(), { maximumFractionDigits: 2 })}</SvgText>)}
         <SvgText x={38} y={10} fill={colors.muted} fontSize={9}>{unit}</SvgText>
         <Line x1={38} x2={348} y1={geometry.baseline} y2={geometry.baseline} stroke={colors.muted} strokeWidth={.7} />
         {mode === "generation" ? <>
@@ -29,12 +32,12 @@ export function EnergyChart({ points, mode, unit }: { points: ChartPoint[]; mode
         {point ? <Line x1={geometry.x(selected)} x2={geometry.x(selected)} y1={18} y2={176} stroke={colors.muted} strokeDasharray="3 4" /> : null}
         {points.map((item, index) => <Rect key={item.timestamp} x={geometry.x(index) - geometry.step / 2} y={16} width={geometry.step} height={164} fill="transparent" onPress={() => setSelectedTime(item.timestamp)} />)}
         {ticks.map((index) => <SvgText key={`time-${index}`} x={geometry.x(index)} y={198} fill={colors.muted} fontSize={9} textAnchor="middle">{points[index]?.label}</SvgText>)}
-      </Svg> : <Text style={styles.empty}>No values available for this period yet. Missing data is not zero.</Text>}
+      </Svg> : <Text style={styles.empty}>{t("No values available for this period yet. Missing data is not zero.")}</Text>}
       {point ? <View style={styles.inspector}>
         <View style={styles.navigation}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Previous interval" disabled={selected <= 0} onPress={() => setSelectedTime(points[selected - 1]!.timestamp)} style={[styles.arrow, selected <= 0 && styles.disabled]}><Text style={styles.arrowText}>‹</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("Previous interval")} disabled={selected <= 0} onPress={() => setSelectedTime(points[selected - 1]!.timestamp)} style={[styles.arrow, selected <= 0 && styles.disabled]}><Text style={styles.arrowText}>‹</Text></Pressable>
           <Text style={styles.description} accessibilityLiveRegion="polite">{point.description}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Next interval" disabled={selected >= points.length - 1} onPress={() => setSelectedTime(points[selected + 1]!.timestamp)} style={[styles.arrow, selected >= points.length - 1 && styles.disabled]}><Text style={styles.arrowText}>›</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("Next interval")} disabled={selected >= points.length - 1} onPress={() => setSelectedTime(points[selected + 1]!.timestamp)} style={[styles.arrow, selected >= points.length - 1 && styles.disabled]}><Text style={styles.arrowText}>›</Text></Pressable>
         </View>
       </View> : null}
     </View>

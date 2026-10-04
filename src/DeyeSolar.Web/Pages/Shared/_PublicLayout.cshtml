@@ -1,29 +1,30 @@
+@inject DeyeSolar.Web.Localization.UiText T
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 <!DOCTYPE html>
-<html lang="en">
+<html lang="@T.Language">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - DeyeSolar</title>
+    <title>@ViewData["Title"] @T["- DeyeSolar"]</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="stylesheet" href="/css/public.css" asp-append-version="true" />
 </head>
 <body>
     <header class="public-header">
         <a class="brand" href="/">DeyeSolar</a>
-        <nav aria-label="Public information">
-            <a href="/privacy">Privacy</a>
-            <a href="/support">Support</a>
-            <a href="/login">Sign in</a>
+        <nav aria-label="@T["Public information"]">
+            <a href="/privacy">@T["Privacy"]</a>
+            <a href="/support">@T["Support"]</a>
+            <a href="/login">@T["Sign in"]</a>
         </nav>
     </header>
     <main id="main-content" class="public-content">
         @RenderBody()
     </main>
     <footer class="public-footer">
-        <span>DeyeSolar · Solar Energy Management</span>
-        <a href="/privacy">Privacy policy</a>
-        <a href="/support">Contact support</a>
+        <span>@T["DeyeSolar · Solar Energy Management"]</span>
+        <a href="/privacy">@T["Privacy policy"]</a>
+        <a href="/support">@T["Contact support"]</a>
     </footer>
 </body>
 </html>

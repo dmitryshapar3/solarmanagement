@@ -1,3 +1,4 @@
+import { translate as t } from "../i18n";
 export type AuthResponse = {
   token: string;
   expiresAt: string;

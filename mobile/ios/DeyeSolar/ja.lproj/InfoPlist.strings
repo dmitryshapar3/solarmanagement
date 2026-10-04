@@ -1,0 +1,2 @@
+/* Generated from i18n/ja.json by scripts/sync-ios-localizations.mjs. */
+"NSFaceIDUsageDescription" = "DeyeSolarが安全なサインインにFace IDを使用することを許可します。";

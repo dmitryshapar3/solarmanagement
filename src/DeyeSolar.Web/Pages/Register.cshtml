@@ -1,34 +1,35 @@
 @page "/register"
+@inject DeyeSolar.Web.Localization.UiText T
 @model DeyeSolar.Web.Pages.RegisterModel
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
-@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = "Create account"; }
+@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = T["Create account"]; }
 <link rel="stylesheet" href="/css/auth.css" asp-append-version="true" />
-<h1>Create your account</h1>
-<p>Your account starts with an empty installation. Connect your own Deye and Shelly accounts in Settings after signing in.</p>
-@if (Model.ErrorMessage is not null) { <p class="auth-error" role="alert">@Model.ErrorMessage</p> }
-@if (Model.Notice is not null) { <p role="status">@Model.Notice</p> }
+<h1>@T["Create your account"]</h1>
+<p>@T["Your account starts with an empty installation. Connect your own Deye and Shelly accounts in Settings after signing in."]</p>
+@if (Model.ErrorMessage is not null) { <p class="auth-error" role="alert">@T.Translate(Model.ErrorMessage)</p> }
+@if (Model.Notice is not null) { <p role="status">@T.Translate(Model.Notice)</p> }
 @if (Model.Providers.RegistrationEnabled && (Model.Providers.EmailEnabled || Model.Providers.PhoneEnabled))
 {
     <form method="post" asp-page-handler="Start" class="auth-form">
-        <label for="channel">Verification method</label>
+        <label for="channel">@T["Verification method"]</label>
         <select id="channel" asp-for="Channel">
-            @if (Model.Providers.EmailEnabled) { <option value="email">Email</option> }
-            @if (Model.Providers.PhoneEnabled) { <option value="phone">Phone (SMS)</option> }
+            @if (Model.Providers.EmailEnabled) { <option value="email">@T["Email"]</option> }
+            @if (Model.Providers.PhoneEnabled) { <option value="phone">@T["Phone (SMS)"]</option> }
         </select>
-        <label for="destination">Email address or phone number with country code</label>
+        <label for="destination">@T["Email address or phone number with country code"]</label>
         <input id="destination" asp-for="Destination" required maxlength="254" autocomplete="username" />
-        <button type="submit">Send verification code</button>
+        <button type="submit">@T["Send verification code"]</button>
     </form>
     @if (!string.IsNullOrEmpty(Model.VerificationId))
     {
         <form method="post" asp-page-handler="Complete" class="auth-form">
             <input type="hidden" asp-for="VerificationId" />
-            <label for="code">Verification code</label><input id="code" name="Code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
-            <label for="password">Password (at least 12 characters)</label><input id="password" name="Password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
-            <button type="submit">Create account</button>
+            <label for="code">@T["Verification code"]</label><input id="code" name="Code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required />
+            <label for="password">@T["Password (at least 12 characters)"]</label><input id="password" name="Password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required />
+            <button type="submit">@T["Create account"]</button>
         </form>
     }
 }
-else { <p>Email and phone registration require configured verification providers.</p> }
-@if (Model.Providers.RegistrationEnabled && Model.Providers.GoogleEnabled) { <p><a class="auth-action" href="/auth/google">Continue with Google</a></p> }
-<p>Already have an account? <a href="/login">Sign in</a> or <a href="/verify">use a verification code</a>. To add another sign-in method, sign in first and open <a href="/account">Account</a>.</p>
+else { <p>@T["Email and phone registration require configured verification providers."]</p> }
+@if (Model.Providers.RegistrationEnabled && Model.Providers.GoogleEnabled) { <p><a class="auth-action" href="/auth/google">@T["Continue with Google"]</a></p> }
+<p>@T["Already have an account?"] <a href="/login">@T["Sign in"]</a> @T["or"] <a href="/verify">@T["use a verification code"]</a>@T[". To add another sign-in method, sign in first and open"] <a href="/account">@T["Account"]</a>.</p>

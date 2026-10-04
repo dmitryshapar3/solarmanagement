@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="../../i18n/*.json" Exclude="../../i18n/*-phrases.json">
+      <LogicalName>DeyeSolar.i18n.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DeyeSolar.Domain\DeyeSolar.Domain.csproj" />
     <ProjectReference Include="..\DeyeSolar.Infrastructure\DeyeSolar.Infrastructure.csproj" />
     <ProjectReference Include="..\DeyeSolar.RuleEngine\DeyeSolar.RuleEngine.csproj" />

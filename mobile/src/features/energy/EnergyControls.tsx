@@ -1,14 +1,16 @@
+import { useLanguage } from "../../application/LanguageContext";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "../../core/theme";
 
 export function PeriodNavigation({ caption, previous, next, onPrevious, onNext, onToday }: {
   caption: string; previous: boolean; next: boolean; onPrevious: () => void; onNext: () => void; onToday: () => void;
 }) {
+  const { t } = useLanguage();
   return <View style={styles.row}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Previous period" disabled={!previous} onPress={onPrevious} style={[styles.arrow, !previous && styles.disabled]}><Text style={styles.arrowText}>‹</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityLabel={t("Previous period")} disabled={!previous} onPress={onPrevious} style={[styles.arrow, !previous && styles.disabled]}><Text style={styles.arrowText}>‹</Text></Pressable>
     <Text style={styles.caption}>{caption}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel="Next period" disabled={!next} onPress={onNext} style={[styles.arrow, !next && styles.disabled]}><Text style={styles.arrowText}>›</Text></Pressable>
-    <Pressable accessibilityRole="button" onPress={onToday} style={styles.today}><Text style={styles.link}>Today</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityLabel={t("Next period")} disabled={!next} onPress={onNext} style={[styles.arrow, !next && styles.disabled]}><Text style={styles.arrowText}>›</Text></Pressable>
+    <Pressable accessibilityRole="button" onPress={onToday} style={styles.today}><Text style={styles.link}>{t("Today")}</Text></Pressable>
   </View>;
 }
 

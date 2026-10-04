@@ -1,3 +1,4 @@
+import { translate as t } from "../core/i18n";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
@@ -138,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setApiBaseUrl(nextBaseUrl);
     const ensureCurrent = () => {
       if (!mounted.current || !operations.isCurrent(signal)) {
-        const error = new Error("Sign-in was canceled.");
+        const error = new Error(t("Sign-in was canceled."));
         error.name = "AbortError";
         throw error;
       }
@@ -163,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [realApi, beginSessionChange, client, operations, storage]);
 
   const login = useCallback(async (input: LoginInput) => {
-    if (!input.username.trim() || !input.password) throw new Error("Enter your username, email or phone and password.");
+    if (!input.username.trim() || !input.password) throw new Error(t("Enter your username, email or phone and password."));
     await finishSignIn(input.baseUrl, (api, signal) => api.login(input.username.trim(), input.password, signal));
   }, [finishSignIn]);
 
@@ -173,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear any queued real-session writes before activating an in-memory demo.
       await storage.clear();
       if (!mounted.current || !operations.isCurrent(signal)) {
-        const error = new Error("Opening the demo was canceled.");
+        const error = new Error(t("Opening the demo was canceled."));
         error.name = "AbortError";
         throw error;
       }
@@ -205,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [beginSessionChange, operations, storage]);
 
   const updateApiBaseUrl = useCallback(async (baseUrl: string) => {
-    if (demoApiRef.current) throw new Error("Exit demo before changing the server address.");
+    if (demoApiRef.current) throw new Error(t("Exit demo before changing the server address."));
     const nextBaseUrl = normalizeBaseUrl(baseUrl);
     if (nextBaseUrl === apiBaseUrl) return;
     const signal = beginSessionChange();
@@ -232,6 +233,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used inside AuthProvider.");
+  if (!context) throw new Error(t("useAuth must be used inside AuthProvider."));
   return context;
 }

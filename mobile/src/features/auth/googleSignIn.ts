@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 import * as Crypto from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
 import { GOOGLE_CALLBACK, googleCallbackCode, googleStartUrl } from "./googleFlow";
@@ -16,7 +17,7 @@ export async function googleSignIn(baseUrl: string,
     const authorized = new URL(start.authorizationUrl);
     const expected = new URL(baseUrl);
     if (authorized.protocol !== "https:" || authorized.origin !== expected.origin || authorized.username || authorized.password
-      || !authorized.pathname.endsWith("/auth/google")) throw new Error("The account linking URL could not be verified.");
+      || !authorized.pathname.endsWith("/auth/google")) throw new Error(t("The account linking URL could not be verified."));
     url = authorized.toString();
   }
   const result = await WebBrowser.openAuthSessionAsync(url, GOOGLE_CALLBACK, { preferEphemeralSession: true });

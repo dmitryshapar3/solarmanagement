@@ -1,3 +1,4 @@
+import { useLanguage } from "../application/LanguageContext";
 import { ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -71,11 +72,12 @@ export function Header({
   subtitle?: string;
   action?: ReactNode;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.header}>
       <View style={styles.headerCopy}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        <Text style={styles.title}>{t(title)}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{t(subtitle)}</Text> : null}
       </View>
       {action}
     </View>
@@ -87,9 +89,10 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
 }
 
 export function SectionTitle({ title, trailing }: { title: string; trailing?: ReactNode }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.sectionTitle}>
-      <Text style={styles.sectionText}>{title}</Text>
+      <Text style={styles.sectionText}>{t(title)}</Text>
       {trailing}
     </View>
   );
@@ -103,6 +106,7 @@ export function AppButton({
   disabled,
   loading,
   compact,
+  translateLabel = true,
   accessibilityLabel
 }: {
   label: string;
@@ -112,13 +116,15 @@ export function AppButton({
   disabled?: boolean;
   loading?: boolean;
   compact?: boolean;
+  translateLabel?: boolean;
   accessibilityLabel?: string;
 }) {
+  const { t } = useLanguage();
   const palette = buttonPalette[variant];
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={translateLabel ? t(accessibilityLabel ?? label) : accessibilityLabel ?? label}
       accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       onPress={onPress}
       disabled={disabled || loading}
@@ -134,7 +140,7 @@ export function AppButton({
       ) : Icon ? (
         <Icon color={palette.foreground} size={18} strokeWidth={2.2} />
       ) : null}
-      <Text style={[styles.buttonText, { color: palette.foreground }]}>{label}</Text>
+      <Text style={[styles.buttonText, { color: palette.foreground }]}>{translateLabel ? t(label) : label}</Text>
     </Pressable>
   );
 }
@@ -143,15 +149,20 @@ export function IconButton({
   icon: Icon,
   onPress,
   color = colors.text,
-  disabled
+  disabled,
+  accessibilityLabel
 }: {
   icon: LucideIcon;
   onPress: () => void;
   color?: string;
   disabled?: boolean;
+  accessibilityLabel: string;
 }) {
+  const { t } = useLanguage();
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t(accessibilityLabel)}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [styles.iconButton, (pressed || disabled) && styles.buttonPressed]}
@@ -168,10 +179,11 @@ export function StatusPill({
   label: string;
   tone?: "success" | "warning" | "danger" | "info" | "neutral";
 }) {
+  const { t } = useLanguage();
   const palette = pillPalette[tone];
   return (
     <View style={[styles.pill, { backgroundColor: palette.background, borderColor: palette.border }]}>
-      <Text style={[styles.pillText, { color: palette.foreground }]}>{label}</Text>
+      <Text style={[styles.pillText, { color: palette.foreground }]}>{t(label)}</Text>
     </View>
   );
 }
@@ -199,13 +211,15 @@ export function TextField({
   returnKeyType?: ReturnKeyTypeOptions;
   onSubmitEditing?: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={[styles.field, !editable && styles.fieldDisabled]}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldLabel}>{t(label)}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={placeholder ? t(placeholder) : undefined}
+        accessibilityLabel={t(label)}
         placeholderTextColor={colors.subtle}
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
@@ -233,13 +247,15 @@ export function SwitchRow({
   onValueChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.switchRow}>
       <View style={styles.switchCopy}>
-        <Text style={styles.switchTitle}>{title}</Text>
-        {subtitle ? <Text style={styles.switchSubtitle}>{subtitle}</Text> : null}
+        <Text style={styles.switchTitle}>{t(title)}</Text>
+        {subtitle ? <Text style={styles.switchSubtitle}>{t(subtitle)}</Text> : null}
       </View>
       <Switch
+        accessibilityLabel={t(title)}
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
@@ -259,6 +275,7 @@ export function SegmentedControl<T extends string>({
   value: T;
   onChange: (value: T) => void;
 }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.segmented}>
       {options.map((option) => {
@@ -267,13 +284,13 @@ export function SegmentedControl<T extends string>({
           <Pressable
             key={option.value}
             accessibilityRole="button"
-            accessibilityLabel={option.label}
+            accessibilityLabel={t(option.label)}
             accessibilityState={{ selected }}
             onPress={() => onChange(option.value)}
             style={[styles.segment, selected && styles.segmentSelected]}
           >
             <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
-              {option.label}
+              {t(option.label)}
             </Text>
           </Pressable>
         );
@@ -310,44 +327,48 @@ export function MetricTile({
   icon: LucideIcon;
   color?: string;
 }) {
+  const { t } = useLanguage();
   return (
     <Card style={styles.metricTile}>
       <View style={styles.metricTop}>
         <Icon color={color} size={20} strokeWidth={2.2} />
-        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricLabel}>{t(label)}</Text>
       </View>
       <Text style={styles.metricValue}>{value}</Text>
-      {detail ? <Text style={styles.metricDetail}>{detail}</Text> : null}
+      {detail ? <Text style={styles.metricDetail}>{t(detail)}</Text> : null}
     </Card>
   );
 }
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.centerState}>
       <ActivityIndicator color={colors.primary} />
-      <Text style={styles.centerStateText}>{label}</Text>
+      <Text style={styles.centerStateText}>{t(label)}</Text>
     </View>
   );
 }
 
 export function EmptyState({ title, detail }: { title: string; detail?: string }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.centerStateCard}>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      {detail ? <Text style={styles.emptyDetail}>{detail}</Text> : null}
+      <Text style={styles.emptyTitle}>{t(title)}</Text>
+      {detail ? <Text style={styles.emptyDetail}>{t(detail)}</Text> : null}
     </View>
   );
 }
 
 export function ErrorBanner({ message }: { message?: string | null }) {
+  const { t } = useLanguage();
   if (!message) {
     return null;
   }
 
   return (
     <View style={styles.errorBanner}>
-      <Text style={styles.errorText}>{message}</Text>
+      <Text style={styles.errorText}>{t(message)}</Text>
     </View>
   );
 }
@@ -383,12 +404,14 @@ const styles = StyleSheet.create({
   header: {
     minHeight: 48,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: spacing.md
   },
   headerCopy: {
-    flex: 1
+    flex: 1,
+    minWidth: 220
   },
   title: {
     color: colors.text,

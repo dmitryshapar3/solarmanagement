@@ -15,10 +15,11 @@ async function component() {
     bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
     plugins: [{ name: "rule-platform-boundaries", setup(builder) {
       builder.onResolve({ filter: /^(react-native|lucide-react-native)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+      builder.onResolve({ filter: /(?:^|\/)application\/LanguageContext$/ }, () => ({ path: "language", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
       builder.onResolve({ filter: /(?:^|\/)application\/AuthContext$/ }, () => ({ path: "auth", namespace: "native-test" }));
       builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({
-        loader: "js", contents: args.path === "react-native"
+        loader: "js", contents: args.path === "language" ? 'export const useLanguage = () => ({language:"en", t:(phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token, index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""))});' : args.path === "react-native"
           ? 'export const Keyboard = {dismiss(){}}; export const StyleSheet = {create: value => value}; export const Text = "Text"; export const View = "View"; export const Pressable = "Pressable";'
           : args.path === "lucide-react-native" ? 'export const Save = () => null;'
           : args.path === "auth" ? 'export const useAuth = () => globalThis.__ruleSourceAuth;'
