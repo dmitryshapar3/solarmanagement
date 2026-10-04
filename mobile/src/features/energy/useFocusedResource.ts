@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 import { useCallback, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -61,5 +62,5 @@ export function useFocusedResource<T>(key: string, fetch: (signal: AbortSignal, 
   }, [run, invalidate]));
 
   const data = stored?.key === key ? stored.value : null;
-  return { data, loading, error: error ? `${data ? "Refresh failed. Previous data is retained. " : ""}${error}` : null, refresh: run, invalidate };
+  return { data, loading, error: error ? `${data ? t("Refresh failed. Previous data is retained. ") : ""}${t(error)}` : null, refresh: run, invalidate };
 }

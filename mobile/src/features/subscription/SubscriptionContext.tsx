@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { solarSubscriptions } from "../../../modules/solar-subscriptions/src";
@@ -163,6 +164,6 @@ export function SubscriptionProvider({ children, appAccountToken }: {
 
 export function useSubscription() {
   const context = useContext(SubscriptionContext);
-  if (!context) throw new Error("useSubscription must be used inside SubscriptionProvider.");
+  if (!context) throw new Error(t("useSubscription must be used inside SubscriptionProvider."));
   return context;
 }

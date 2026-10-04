@@ -98,6 +98,7 @@ public class InverterMeasurementValidityTests
     {
         var collection = new ServiceCollection();
         collection.AddLogging();
+        collection.AddComponentLocalization();
         await using var services = collection.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
         return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<InverterReadings>(

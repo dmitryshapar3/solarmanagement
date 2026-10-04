@@ -1,3 +1,6 @@
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { formattingLocale } from "../../core/i18n";
+import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { RefreshCcw } from "lucide-react-native";
@@ -22,6 +25,7 @@ type HoursValue = "1" | "6" | "24" | "168";
 type RunFilter = "ALL" | "ON" | "OFF" | "CHANGES";
 
 export function HistoryScreen() {
+  const { t } = useLanguage();
   const { api } = useAuth();
   const [mode, setMode] = useState<HistoryMode>("runs");
   const [hours, setHours] = useState<HoursValue>("6");
@@ -99,26 +103,26 @@ export function HistoryScreen() {
         ListHeaderComponent={(
           <View style={styles.controls}>
             <Header
-              title="History"
-              subtitle={mode === "readings" ? `${readings.length} readings` : `${runs.length} rule runs`}
-              action={<AppButton label="Refresh" icon={RefreshCcw} onPress={() => void load(true)} loading={refreshing} disabled={refreshing} variant="secondary" compact />}
+              title={t("History")}
+              subtitle={mode === "readings" ? t("{0} readings", readings.length) : t("{0} rule runs", runs.length)}
+              action={<AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void load(true)} loading={refreshing} disabled={refreshing} variant="secondary" compact />}
             />
             <SegmentedControl
               value={mode}
               onChange={setMode}
               options={[
-                { label: "Runs", value: "runs" },
-                { label: "Readings", value: "readings" }
+                { label: t("Runs"), value: "runs" },
+                { label: t("Readings"), value: "readings" }
               ]}
             />
             <SegmentedControl
               value={hours}
               onChange={setHours}
               options={[
-                { label: "1h", value: "1" },
-                { label: "6h", value: "6" },
-                { label: "24h", value: "24" },
-                { label: "7d", value: "168" }
+                { label: t("1h"), value: "1" },
+                { label: t("6h"), value: "6" },
+                { label: t("24h"), value: "24" },
+                { label: t("7d"), value: "168" }
               ]}
             />
             {mode === "runs" ? (
@@ -126,10 +130,10 @@ export function HistoryScreen() {
                 value={filter}
                 onChange={setFilter}
                 options={[
-                  { label: "All", value: "ALL" },
-                  { label: "ON", value: "ON" },
-                  { label: "OFF", value: "OFF" },
-                  { label: "Changes", value: "CHANGES" }
+                  { label: t("All"), value: "ALL" },
+                  { label: t("ON"), value: "ON" },
+                  { label: t("OFF"), value: "OFF" },
+                  { label: t("Changes"), value: "CHANGES" }
                 ]}
               />
             ) : null}
@@ -138,8 +142,8 @@ export function HistoryScreen() {
         )}
         ListEmptyComponent={
           loading
-            ? <LoadingState label="Loading history..." />
-            : <EmptyState title={mode === "readings" ? "No readings in range." : "No rule runs in range."} />
+            ? <LoadingState label={t("Loading history...")} />
+            : <EmptyState title={mode === "readings" ? t("No readings in range.") : t("No rule runs in range.")} />
         }
       />
     </Screen>
@@ -147,6 +151,7 @@ export function HistoryScreen() {
 }
 
 function ReadingCard({ reading }: { reading: Reading }) {
+  const { t } = useLanguage();
   return (
     <Card style={styles.card}>
       <View style={styles.topRow}>
@@ -155,44 +160,47 @@ function ReadingCard({ reading }: { reading: Reading }) {
       </View>
       <View style={styles.grid}>
         <DataPoint label="SOC" value={`${reading.batterySoc}%`} />
-        <DataPoint label="Solar" value={formatWatts(reading.solarProduction)} />
-        <DataPoint label="Battery" value={formatWatts(reading.batteryPower)} />
-        <DataPoint label="Grid" value={formatWatts(reading.gridConsumption)} />
-        <DataPoint label="Load" value={formatWatts(reading.loadPower)} />
-        <DataPoint label="Voltage" value={`${reading.batteryVoltage.toFixed(1)} V`} />
-        <DataPoint label="Temp" value={`${reading.batteryTemperature.toFixed(1)} C`} />
+        <DataPoint label={t("Solar")} value={formatWatts(reading.solarProduction)} />
+        <DataPoint label={t("Battery")} value={formatWatts(reading.batteryPower)} />
+        <DataPoint label={t("Grid")} value={formatWatts(reading.gridConsumption)} />
+        <DataPoint label={t("Load")} value={formatWatts(reading.loadPower)} />
+        <DataPoint label={t("Voltage")} value={`${reading.batteryVoltage.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} V`} />
+        <DataPoint label={t("Temp")} value={`${reading.batteryTemperature.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} C`} />
       </View>
     </Card>
   );
 }
 
 function RunCard({ run }: { run: RuleRunLog }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   return (
     <Card style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.titleGroup}>
-          <Text style={styles.name} numberOfLines={1}>{run.ruleName}</Text>
+          <Text style={styles.name} numberOfLines={1}>{demoDisplayName(run.ruleName)}</Text>
           <Text style={styles.time}>{formatDateTime(run.timestamp)}</Text>
         </View>
         <StatusPill
-          label={run.action}
+          label={run.action === "NO_CHANGE" ? t("No change") : t(run.action)}
           tone={run.action === "ON" ? "success" : run.action === "OFF" ? "danger" : "neutral"}
         />
       </View>
       <View style={styles.grid}>
         <DataPoint label="SOC" value={`${run.batterySoc}%`} />
-        <DataPoint label="Solar" value={formatWatts(run.solarProduction)} />
-        <DataPoint label="Battery" value={formatWatts(run.batteryPower)} />
+        <DataPoint label={t("Solar")} value={formatWatts(run.solarProduction)} />
+        <DataPoint label={t("Battery")} value={formatWatts(run.batteryPower)} />
       </View>
-      <Text style={styles.reason}>{run.reason}</Text>
+      <Text style={styles.reason}>{t(run.reason)}</Text>
     </Card>
   );
 }
 
 function DataPoint({ label, value }: { label: string; value: string }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.point}>
-      <Text style={styles.pointLabel}>{label}</Text>
+      <Text style={styles.pointLabel}>{t(label)}</Text>
       <Text style={styles.pointValue}>{value}</Text>
     </View>
   );

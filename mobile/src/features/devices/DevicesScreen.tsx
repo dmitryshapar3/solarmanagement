@@ -1,3 +1,5 @@
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -22,6 +24,7 @@ import { useAuth } from "../../application/AuthContext";
 const autoRefreshIntervalMs = 15000;
 
 export function DevicesScreen() {
+  const { t } = useLanguage();
   const { api, isDemo } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -128,21 +131,21 @@ export function DevicesScreen() {
   if (loading) {
     return (
       <Screen scroll={false}>
-        <LoadingState label="Loading devices..." />
+        <LoadingState label={t("Loading devices...")} />
       </Screen>
     );
   }
 
-  const countLabel = `${devices.length} socket${devices.length === 1 ? "" : "s"}`;
+  const countLabel = devices.length === 1 ? t("{0} socket", devices.length) : t("{0} sockets", devices.length);
 
   return (
     <Screen refreshing={refreshing} onRefresh={() => void load("refresh")}>
       <Header
-        title="Devices"
-        subtitle={lastUpdated ? `${countLabel} | Updated ${formatTime(lastUpdated)}` : countLabel}
+        title={t("Devices")}
+        subtitle={lastUpdated ? t("{0} | Updated {1}", countLabel, formatTime(lastUpdated)) : countLabel}
         action={(
           <AppButton
-            label="Refresh"
+            label={t("Refresh")}
             icon={RefreshCcw}
             onPress={() => void load("refresh")}
             loading={refreshing}
@@ -172,7 +175,7 @@ export function DevicesScreen() {
           ))}
         </View>
       ) : (
-        <EmptyState title="No devices found." detail="Add and enable a socket integration in Settings." />
+        <EmptyState title={t("No devices found.")} detail={t("Add and enable a socket integration in Settings.")} />
       )}
     </Screen>
   );
@@ -199,6 +202,8 @@ function DeviceCard({
   onCheckCommand: () => void;
   onReleaseCommand: () => void;
 }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -216,25 +221,25 @@ function DeviceCard({
     <Card style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.titleGroup}>
-          <Text style={styles.name} numberOfLines={1}>{device.name}</Text>
-          <Text style={styles.category}>{device.category ?? "Socket"}</Text>
+          <Text style={styles.name} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
+          <Text style={styles.category}>{t(device.category ?? "Socket")}</Text>
           <Text style={styles.category}>{device.id}</Text>
         </View>
         <StatusPill
-          label={!device.online ? "Offline" : device.isOn ? "ON" : "OFF"}
+          label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")}
           tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"}
         />
       </View>
 
       {editing ? <View style={styles.nameForm}>
-        <TextField label="Name in Solar" value={name} onChangeText={value => setName(value.slice(0, 80))} editable={!saving} />
-        <Text style={styles.category}>Provider name: {device.cloudName ?? device.name}. This changes the display name in Solar; device IDs and rules stay connected.</Text>
+        <TextField label={t("Name in Solar")} value={demoDisplayName(name)} onChangeText={value => setName(value.slice(0, 80))} editable={!saving} />
+        <Text style={styles.category}>{t("Provider name: {0}. This changes the display name in Solar; device IDs and rules stay connected.", demoDisplayName(device.cloudName ?? device.name))}</Text>
         <View style={styles.actions}>
-          <AppButton label="Save name" compact onPress={() => void saveName(name.trim() || null)} loading={saving} disabled={saving} />
-          <AppButton label="Use provider name" compact variant="secondary" onPress={() => void saveName(null)} disabled={saving} />
-          <AppButton label="Cancel" compact variant="ghost" onPress={() => setEditing(false)} disabled={saving} />
+          <AppButton label={t("Save name")} compact onPress={() => void saveName(name.trim() || null)} loading={saving} disabled={saving} />
+          <AppButton label={t("Use provider name")} compact variant="secondary" onPress={() => void saveName(null)} disabled={saving} />
+          <AppButton label={t("Cancel")} compact variant="ghost" onPress={() => setEditing(false)} disabled={saving} />
         </View>
-      </View> : <AppButton label="Edit name" compact variant="ghost"
+      </View> : <AppButton label={t("Edit name")} compact variant="ghost"
         onPress={() => { setName(device.localName ?? device.name); setEditing(true); }} />}
 
       <View style={styles.powerRow}>
@@ -244,7 +249,7 @@ function DeviceCard({
 
       <View style={styles.actions}>
         <AppButton
-          label="ON"
+          label={t("ON")}
           icon={CirclePower}
           onPress={onTurnOn}
           loading={busyState === true}
@@ -252,7 +257,7 @@ function DeviceCard({
           compact
         />
         <AppButton
-          label="OFF"
+          label={t("OFF")}
           icon={CirclePower}
           onPress={onTurnOff}
           loading={busyState === false}
@@ -262,11 +267,11 @@ function DeviceCard({
         />
       </View>
       {command ? <Text style={styles.category}>{socketCommandMessage(command)}</Text> : null}
-      {commandUnresolved(command) ? <AppButton label="Check command result" variant="secondary" onPress={onCheckCommand}
+      {commandUnresolved(command) ? <AppButton label={t("Check command result")} variant="secondary" onPress={onCheckCommand}
         disabled={commandRunning || busyState !== null} /> : null}
       {command?.status === "uncertain" ? <>
-        <Text style={styles.category}>The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.</Text>
-        <AppButton label="Allow another command" variant="secondary" onPress={onReleaseCommand} disabled={commandRunning || busyState !== null} />
+        <Text style={styles.category}>{t("The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.")}</Text>
+        <AppButton label={t("Allow another command")} variant="secondary" onPress={onReleaseCommand} disabled={commandRunning || busyState !== null} />
       </> : null}
     </Card>
   );

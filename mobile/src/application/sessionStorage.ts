@@ -1,3 +1,4 @@
+import { translate as t } from "../core/i18n";
 import { normalizeBaseUrl } from "../core/api/ApiClient";
 
 export type StoredSession = { baseUrl: string; token: string; username: string };
@@ -49,7 +50,7 @@ export class SessionStorage {
   }
 
   save(session: StoredSession): Promise<void> {
-    if (!isSession(session)) return Promise.reject(new Error("The server returned an invalid session."));
+    if (!isSession(session)) return Promise.reject(new Error(t("The server returned an invalid session.")));
     const stored = { baseUrl: session.baseUrl, token: session.token, username: session.username };
     return this.enqueue(async () => {
       this.memory = null;
@@ -63,7 +64,7 @@ export class SessionStorage {
         this.memory = stored;
       } catch {
         if (this.secure) await this.secure.removeItem(sessionKeys.secureSession).catch(() => {});
-        throw new Error("Unable to save this session securely. Please try again.");
+        throw new Error(t("Unable to save this session securely. Please try again."));
       }
     });
   }
@@ -86,7 +87,7 @@ export class SessionStorage {
       this.secure?.removeItem(sessionKeys.secureSession) ?? Promise.resolve()
     ]);
     if (outcomes.some(result => result.status === "rejected")) {
-      throw new Error("The session is signed out, but local session storage could not be cleared. Please try again.");
+      throw new Error(t("The session is signed out, but local session storage could not be cleared. Please try again."));
     }
   }
 
@@ -95,7 +96,7 @@ export class SessionStorage {
       this.preferences.removeItem(sessionKeys.legacyToken),
       this.preferences.removeItem(sessionKeys.legacyUsername)
     ]);
-    if (outcomes.some(result => result.status === "rejected")) throw new Error("Unable to clear old session storage.");
+    if (outcomes.some(result => result.status === "rejected")) throw new Error(t("Unable to clear old session storage."));
   }
 
   private enqueue<T>(action: () => Promise<T>): Promise<T> {

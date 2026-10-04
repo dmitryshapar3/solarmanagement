@@ -1,3 +1,4 @@
+import { useLanguage } from "./LanguageContext";
 import { useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
@@ -44,6 +45,7 @@ const navigationTheme = {
 };
 
 export function AppNavigator() {
+  const { t } = useLanguage();
   const { isAuthenticated, isBootstrapping, isDemo, apiBaseUrl, username, logout } = useAuth();
 
   if (isBootstrapping) {
@@ -63,10 +65,10 @@ export function AppNavigator() {
     return <View style={styles.demoContainer}>
       <SafeAreaView edges={["top"]} style={styles.demoBanner}>
         <View style={styles.demoCopy}>
-          <Text style={styles.demoTitle}>Demo · Sample data</Text>
-          <Text style={styles.demoText}>Changes stay in this session. No devices affected.</Text>
+          <Text style={styles.demoTitle}>{t("Demo · Sample data")}</Text>
+          <Text style={styles.demoText}>{t("Changes stay in this session. No devices affected.")}</Text>
         </View>
-        <AppButton label="Exit demo" onPress={() => void logout()} variant="secondary" compact />
+        <AppButton label={t("Exit demo")} onPress={() => void logout()} variant="secondary" compact />
       </SafeAreaView>
       <SafeAreaProvider style={styles.demoContainer}><SolarNavigator key="demo" /></SafeAreaProvider>
     </View>;
@@ -100,6 +102,7 @@ function SolarNavigator() {
 }
 
 function MainTabs() {
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   return (
       <Tab.Navigator
@@ -115,7 +118,9 @@ function MainTabs() {
           name="Dashboard"
           component={DashboardScreen}
           options={{
-            tabBarLabel: "Home",
+            tabBarLabel: t("Home"),
+            tabBarButtonTestID: "tab-home",
+            tabBarAccessibilityLabel: t("Home"),
             tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />
           }}
         />
@@ -123,6 +128,9 @@ function MainTabs() {
           name="Generation"
           component={GenerationScreen}
           options={{
+            tabBarLabel: t("Generation"),
+            tabBarButtonTestID: "tab-generation",
+            tabBarAccessibilityLabel: t("Generation"),
             tabBarIcon: ({ color, size }) => <SunMedium color={color} size={size} />
           }}
         />
@@ -130,6 +138,9 @@ function MainTabs() {
           name="Sales"
           component={SalesScreen}
           options={{
+            tabBarLabel: t("Sales"),
+            tabBarButtonTestID: "tab-sales",
+            tabBarAccessibilityLabel: t("Sales"),
             tabBarIcon: ({ color, size }) => <Banknote color={color} size={size} />
           }}
         />
@@ -137,6 +148,9 @@ function MainTabs() {
           name="Devices"
           component={DevicesScreen}
           options={{
+            tabBarLabel: t("Devices"),
+            tabBarButtonTestID: "tab-devices",
+            tabBarAccessibilityLabel: t("Devices"),
             tabBarIcon: ({ color, size }) => <PlugZap color={color} size={size} />
           }}
         />
@@ -144,6 +158,9 @@ function MainTabs() {
           name="More"
           component={MoreStackNavigator}
           options={{
+            tabBarLabel: t("More"),
+            tabBarButtonTestID: "tab-more",
+            tabBarAccessibilityLabel: t("More"),
             tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size} />
           }}
         />
@@ -152,6 +169,7 @@ function MainTabs() {
 }
 
 function MoreStackNavigator() {
+  const { t } = useLanguage();
   return (
     <MoreStack.Navigator
       screenOptions={{
@@ -165,7 +183,7 @@ function MoreStackNavigator() {
     >
       <MoreStack.Screen name="MoreHome" component={MoreScreen} options={{ headerShown: false }} />
       <MoreStack.Screen name="RulesList" component={RulesScreen} />
-      <MoreStack.Screen name="RuleEditor" component={RuleEditorScreen} options={{ title: "Rule" }} />
+      <MoreStack.Screen name="RuleEditor" component={RuleEditorScreen} options={{ title: t("Rule") }} />
       <MoreStack.Screen name="History" component={HistoryScreen} />
       <MoreStack.Screen name="Settings" component={SettingsScreen} />
       <MoreStack.Screen name="Subscription" component={SubscriptionRoute} />
@@ -174,6 +192,7 @@ function MoreStackNavigator() {
 }
 
 function MoreScreen({ navigation }: NativeStackScreenProps<MoreStackParamList, "MoreHome">) {
+  const { t } = useLanguage();
   const { username, isDemo, logout } = useAuth();
   const [linkError, setLinkError] = useState<string | null>(null);
   async function openLink(url: string) {
@@ -183,25 +202,26 @@ function MoreScreen({ navigation }: NativeStackScreenProps<MoreStackParamList, "
   }
   return (
     <Screen>
-      <Header title="More" subtitle={isDemo ? "Sample solar installation" : username ? `Signed in as ${username}` : "Your Solar installation"} />
+      <Header title={t("More")} subtitle={isDemo ? t("Sample solar installation") : username ? t("Signed in as {0}", username) : t("Your Solar installation")} />
       <Card>
-        <AppButton label="Automation rules" icon={SlidersHorizontal} variant="ghost" onPress={() => navigation.navigate("RulesList")} />
-        <AppButton label="Readings & run history" icon={History} variant="ghost" onPress={() => navigation.navigate("History")} />
-        <AppButton label="Settings & account" icon={Settings} variant="ghost" onPress={() => navigation.navigate("Settings")} />
-        {!isDemo && Platform.OS === "ios" && appStoreSubscriptionsEnabled && <AppButton label="Subscription" icon={CreditCard} variant="ghost" onPress={() => navigation.navigate("Subscription")} />}
+        <AppButton label={t("Automation rules")} icon={SlidersHorizontal} variant="ghost" onPress={() => navigation.navigate("RulesList")} />
+        <AppButton label={t("Readings & run history")} icon={History} variant="ghost" onPress={() => navigation.navigate("History")} />
+        <AppButton label={t("Settings & account")} icon={Settings} variant="ghost" onPress={() => navigation.navigate("Settings")} />
+        {!isDemo && Platform.OS === "ios" && appStoreSubscriptionsEnabled && <AppButton label={t("Subscription")} icon={CreditCard} variant="ghost" onPress={() => navigation.navigate("Subscription")} />}
       </Card>
       <ErrorBanner message={linkError} />
-      <AppButton label="Privacy policy" variant="ghost" onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
-      <AppButton label="Terms of use" variant="ghost" onPress={() => void openLink(PUBLIC_TERMS_URL)} />
-      <AppButton label="Support" variant="ghost" onPress={() => void openLink(PUBLIC_SUPPORT_URL)} />
-      <AppButton label={isDemo ? "Exit demo" : "Logout"} variant="secondary" onPress={() => void logout()} />
+      <AppButton label={t("Privacy policy")} variant="ghost" onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
+      <AppButton label={t("Terms of use")} variant="ghost" onPress={() => void openLink(PUBLIC_TERMS_URL)} />
+      <AppButton label={t("Support")} variant="ghost" onPress={() => void openLink(PUBLIC_SUPPORT_URL)} />
+      <AppButton label={isDemo ? t("Exit demo") : t("Logout")} variant="secondary" onPress={() => void logout()} />
     </Screen>
   );
 }
 
 function SubscriptionRoute() {
+  const { t } = useLanguage();
   const { isDemo, logout } = useAuth();
-  if (isDemo || Platform.OS !== "ios" || !appStoreSubscriptionsEnabled) return <Screen><Header title="Solar Premium" subtitle="Subscriptions are not enabled in this TestFlight build." /></Screen>;
+  if (isDemo || Platform.OS !== "ios" || !appStoreSubscriptionsEnabled) return <Screen><Header title="Solar Premium" subtitle={t("Subscriptions are not enabled in this TestFlight build.")} /></Screen>;
   return <SubscriptionScreen onLogout={logout} privacyUrl={PUBLIC_PRIVACY_URL} termsUrl={PUBLIC_TERMS_URL} supportUrl={PUBLIC_SUPPORT_URL} />;
 }
 

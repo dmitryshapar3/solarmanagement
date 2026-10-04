@@ -1,3 +1,4 @@
+import { formattingLocale, translate as t } from "../../core/i18n";
 import type { ExportSaleBucket, ExportSaleProgress } from "../../core/api/types";
 
 export type PowerRange = { lowerKw: number; upperKw: number };
@@ -23,7 +24,7 @@ export function known(value: number | null | undefined): value is number {
 }
 
 export function amount(value: number | null | undefined, unit: string, digits = 2): string {
-  return `${known(value) ? value.toLocaleString("en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "—"} ${unit}`;
+  return `${known(value) ? value.toLocaleString(formattingLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "—"} ${unit}`;
 }
 
 export function zonedDate(now: Date, timeZone = "Europe/Warsaw"): string {
@@ -32,9 +33,9 @@ export function zonedDate(now: Date, timeZone = "Europe/Warsaw"): string {
 }
 
 function calendarDate(value: string): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Invalid calendar date.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(t("Invalid calendar date."));
   const date = new Date(`${value}T12:00:00Z`);
-  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error("Invalid calendar date.");
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error(t("Invalid calendar date."));
   return date;
 }
 
@@ -62,23 +63,23 @@ export function movePeriod(value: string, period: "Day" | "Month" | "Year", dire
 }
 
 export function dateCaption(date: string, period: "Day" | "Month" | "Year" = "Day"): string {
-  return calendarDate(date).toLocaleDateString("en-GB", {
+  return calendarDate(date).toLocaleDateString(formattingLocale(), {
     timeZone: "UTC", year: "numeric", month: period === "Year" ? undefined : "long", day: period === "Day" ? "numeric" : undefined
   });
 }
 
 export function momentCaption(value: string, timeZone: string): string {
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "Time unavailable";
+  if (!Number.isFinite(date.getTime())) return t("Time unavailable");
   try {
-    return date.toLocaleString("en-GB", { timeZone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "shortOffset" });
+    return date.toLocaleString(formattingLocale(), { timeZone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "shortOffset" });
   } catch {
     return date.toISOString();
   }
 }
 
 export function tickCaption(value: string, timeZone: string, period: "Day" | "Month" | "Year" = "Day"): string {
-  return new Date(value).toLocaleString("en-GB", { timeZone,
+  return new Date(value).toLocaleString(formattingLocale(), { timeZone,
     hour: period === "Day" ? "2-digit" : undefined, hour12: false,
     day: period === "Month" ? "numeric" : undefined, month: period === "Year" ? "short" : undefined });
 }

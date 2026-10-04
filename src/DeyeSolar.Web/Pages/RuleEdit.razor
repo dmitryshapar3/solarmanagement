@@ -9,24 +9,24 @@
 @inject ISnackbar Snackbar
 @implements IDisposable
 
-<PageTitle>@(_isNew ? "New Rule" : "Edit Rule") - DeyeSolar</PageTitle>
+<PageTitle>@(_isNew ? T["New Rule"] : T["Edit Rule"]) @T["- DeyeSolar"]</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">@(_isNew ? "Create Rule" : "Edit Rule")</MudText>
+<MudText Typo="Typo.h5" Class="mb-4">@(_isNew ? T["Create Rule"] : T["Edit Rule"])</MudText>
 
 <MudPaper Class="pa-4" MaxWidth="600px" Elevation="2">
     <MudForm @ref="_form">
-        <MudTextField @bind-Value="_rule.Name" Label="Rule Name" Required="true"
-                      RequiredError="Name is required" />
+        <MudTextField @bind-Value="_rule.Name" Label="@T["Rule Name"]" Required="true"
+                      RequiredError="@T["Name is required"]" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Target Device</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Target Device"]</MudText>
         <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2">
-            <MudSelect T="string" @bind-Value="_rule.EntityId" Label="Device" Required="true"
-                       RequiredError="Select a device" Variant="Variant.Outlined" Style="flex:1">
+            <MudSelect T="string" @bind-Value="_rule.EntityId" Label="@T["Device"]" Required="true"
+                       RequiredError="@T["Select a device"]" Variant="Variant.Outlined" Style="flex:1">
                 @if (_devices != null)
                 {
                     @foreach (var d in _devices)
                     {
-                        <MudSelectItem T="string" Value="@d.Id">@d.Name (@d.Category) @(d.Online ? "" : "- offline")</MudSelectItem>
+                        <MudSelectItem T="string" Value="@d.Id">@d.Name (@T.Translate(d.Category)) @(d.Online ? "" : "- " + T["Offline"])</MudSelectItem>
                     }
                 }
                 @if (!string.IsNullOrEmpty(_rule.EntityId) && (_devices == null || !_devices.Any(d => d.Id == _rule.EntityId)))
@@ -42,95 +42,95 @@
         </MudStack>
         @if (!string.IsNullOrEmpty(_loadError))
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_loadError</MudAlert>
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@T.Translate(_loadError)</MudAlert>
         }
         else if (string.IsNullOrEmpty(_rule.EntityId))
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
-                A device must be selected before the rule can be enabled.
+                @T["A device must be selected before the rule can be enabled."]
             </MudAlert>
         }
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Source Inverter</MudText>
-        <MudSelect T="Guid?" @bind-Value="_rule.SourceInverterId" Label="Battery and PV source" Variant="Variant.Outlined"
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Source Inverter"]</MudText>
+        <MudSelect T="Guid?" @bind-Value="_rule.SourceInverterId" Label="@T["Battery and PV source"]" Variant="Variant.Outlined"
                    Disabled="_loadingInverters || _saving">
-            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Installation default inverter</MudSelectItem>
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">@T["Installation default inverter"]</MudSelectItem>
             @foreach (var inverter in _inverters)
             {
                 <MudSelectItem T="Guid?" Value="@((Guid?)inverter.Id.Value)" Disabled="@(!inverter.Capabilities.HasBattery)">
-                    @inverter.Name @(!inverter.Capabilities.HasBattery ? "- battery data unavailable" : "")
+                    @inverter.Name @(!inverter.Capabilities.HasBattery ? T["- battery data unavailable"] : "")
                 </MudSelectItem>
             }
             @if (_rule.SourceInverterId is { } source && !_inverters.Any(inverter => inverter.Id.Value == source))
             {
-                <MudSelectItem T="Guid?" Value="@((Guid?)source)" Disabled="true">@source - unavailable source</MudSelectItem>
+                <MudSelectItem T="Guid?" Value="@((Guid?)source)" Disabled="true">@source @T["- unavailable source"]</MudSelectItem>
             }
         </MudSelect>
-        <MudButton Variant="Variant.Outlined" OnClick="LoadInverters" Disabled="_loadingInverters || _saving" Class="mt-2">Reload inverter sources</MudButton>
+        <MudButton Variant="Variant.Outlined" OnClick="LoadInverters" Disabled="_loadingInverters || _saving" Class="mt-2">@T["Reload inverter sources"]</MudButton>
         @if (_inverterError is not null)
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_inverterError</MudAlert>
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@T.Translate(_inverterError)</MudAlert>
         }
-        <MudText Typo="Typo.caption">Battery and PV conditions use this source. The installation default follows its selected inverter.</MudText>
+        <MudText Typo="Typo.caption">@T["Battery and PV conditions use this source. The installation default follows its selected inverter."]</MudText>
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Turn ON Condition</MudText>
-        <MudNumericField T="int" Value="_rule.SocTurnOnThreshold" ValueChanged="OnSocTurnOnChanged"
-                         Label="Battery SOC at or above (%)"
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Turn ON Condition"]</MudText>
+        <MudNumericField Converter="@(T.InputConverter<int>(this, "RuleEdit:_rule.SocTurnOnThreshold"))" T="int" Value="_rule.SocTurnOnThreshold" ValueChanged="OnSocTurnOnChanged"
+                         Label="@T["Battery SOC at or above (%)"]"
                          Min="0" Max="100"
-                         Error="@IsSocTurnOnInvalid" ErrorText="SOC turn ON must be between 0 and 100%"
-                         HelperText="Turn on when battery charge reaches this level" />
+                         Error="@IsSocTurnOnInvalid" ErrorText="@T["SOC turn ON must be between 0 and 100%"]"
+                         HelperText="@T["Turn on when battery charge reaches this level"]" />
         <MudCheckBox T="bool" Value="_rule.UseSeparateSocTurnOffThreshold" ValueChanged="OnUseSeparateSocTurnOffChanged"
-                     Label="Set separate turn OFF SOC"
+                     Label="@T["Set separate turn OFF SOC"]"
                      Color="Color.Primary" Class="mt-2" />
-        <MudNumericField @bind-Value="_rule.SocTurnOffThreshold" Label="Battery SOC at or below (%)"
+        <MudNumericField Converter="@(T.InputConverter<int>(this, "RuleEdit:_rule.SocTurnOffThreshold"))" @bind-Value="_rule.SocTurnOffThreshold" Label="@T["Battery SOC at or below (%)"]"
                          Min="0" Max="100" Class="mt-2"
                          Disabled="@(!_rule.UseSeparateSocTurnOffThreshold)"
                          Error="@IsSocTurnOffInvalid" ErrorText="@SocTurnOffErrorText"
-                         HelperText="@(_rule.UseSeparateSocTurnOffThreshold ? "Turn off when battery charge drops to this level" : "Uses the turn-on SOC when disabled")" />
+                         HelperText="@(_rule.UseSeparateSocTurnOffThreshold ? T["Turn off when battery charge drops to this level"] : T["Uses the turn-on SOC when disabled"])" />
         <MudCheckBox T="bool" Value="_rule.UseSolarProductionThreshold" ValueChanged="OnUseSolarProductionThresholdChanged"
-                     Label="Require average PV production"
+                     Label="@T["Require average PV production"]"
                      Color="Color.Primary" Class="mt-2" />
-        <MudNumericField @bind-Value="_rule.MinAverageSolarProductionWatts" Label="Average PV last hour at least (W)"
+        <MudNumericField Converter="@(T.InputConverter<int>(this, "RuleEdit:_rule.MinAverageSolarProductionWatts"))" @bind-Value="_rule.MinAverageSolarProductionWatts" Label="@T["Average PV last hour at least (W)"]"
                          Min="1" Max="30000" Class="mt-2"
                          Disabled="@(!_rule.UseSolarProductionThreshold)"
-                         Error="@IsSolarProductionThresholdInvalid" ErrorText="Average PV threshold must be between 1 and 30000 W"
-                         HelperText="Checked only while battery SOC is below 95%; bypassed at 95% or above" />
+                         Error="@IsSolarProductionThresholdInvalid" ErrorText="@T["Average PV threshold must be between 1 and 30000 W"]"
+                         HelperText="@T["Checked only while battery SOC is below 95%; bypassed at 95% or above"]" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Anti-flapping</MudText>
-        <MudNumericField @bind-Value="_rule.CooldownMinutes" Label="Cooldown after OFF (min)"
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Anti-flapping"]</MudText>
+        <MudNumericField Converter="@(T.InputConverter<int>(this, "RuleEdit:_rule.CooldownMinutes"))" @bind-Value="_rule.CooldownMinutes" Label="@T["Cooldown after OFF (min)"]"
                          Min="1" Max="240"
-                         Error="@IsCooldownInvalid" ErrorText="Cooldown must be between 1 and 240 minutes"
-                         HelperText="Keep OFF at least this long before re-evaluating turn-on" />
+                         Error="@IsCooldownInvalid" ErrorText="@T["Cooldown must be between 1 and 240 minutes"]"
+                         HelperText="@T["Keep OFF at least this long before re-evaluating turn-on"]" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Evaluation</MudText>
-        <MudNumericField @bind-Value="_rule.IntervalSeconds" Label="Evaluate every (sec)"
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Evaluation"]</MudText>
+        <MudNumericField Converter="@(T.InputConverter<int>(this, "RuleEdit:_rule.IntervalSeconds"))" @bind-Value="_rule.IntervalSeconds" Label="@T["Evaluate every (sec)"]"
                          Min="10" Max="3600"
-                         Error="@IsIntervalInvalid" ErrorText="Evaluation interval must be between 10 and 3600 seconds"
-                         HelperText="How often this rule runs" />
+                         Error="@IsIntervalInvalid" ErrorText="@T["Evaluation interval must be between 10 and 3600 seconds"]"
+                         HelperText="@T["How often this rule runs"]" />
 
-        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Time Window (optional)</MudText>
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@T["Time Window (optional)"]</MudText>
         <MudGrid>
             <MudItem xs="6">
-                <MudTimePicker @bind-Time="_activeFrom" Label="Active From"
-                               Error="@IsTimeWindowInvalid" ErrorText="Set both times or leave both empty" />
+                <MudTimePicker Converter="@(T.InputConverter<TimeSpan?>(this, "RuleEdit:_activeFrom", "HH:mm"))" @bind-Time="_activeFrom" Label="@T["Active From"]"
+                               Error="@IsTimeWindowInvalid" ErrorText="@T["Set both times or leave both empty"]" />
             </MudItem>
             <MudItem xs="6">
-                <MudTimePicker @bind-Time="_activeTo" Label="Active To"
-                               Error="@IsTimeWindowInvalid" ErrorText="Set both times or leave both empty" />
+                <MudTimePicker Converter="@(T.InputConverter<TimeSpan?>(this, "RuleEdit:_activeTo", "HH:mm"))" @bind-Time="_activeTo" Label="@T["Active To"]"
+                               Error="@IsTimeWindowInvalid" ErrorText="@T["Set both times or leave both empty"]" />
             </MudItem>
         </MudGrid>
 
-        <MudSwitch @bind-Value="_rule.Enabled" Label="Enabled" Color="Color.Primary" Class="mt-3"
+        <MudSwitch @bind-Value="_rule.Enabled" Label="@T["Enabled"]" Color="Color.Primary" Class="mt-3"
                    Disabled="@string.IsNullOrEmpty(_rule.EntityId)" />
 
         @if (!string.IsNullOrEmpty(_validationError))
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_validationError</MudAlert>
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@T.Translate(_validationError)</MudAlert>
         }
 
         <MudStack Row="true" Class="mt-4" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_saving || _loadingInverters">Save</MudButton>
-            <MudButton Variant="Variant.Outlined" Href="/rules">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_saving || _loadingInverters">@T["Save"]</MudButton>
+            <MudButton Variant="Variant.Outlined" Href="/rules">@T["Cancel"]</MudButton>
         </MudStack>
     </MudForm>
 </MudPaper>
@@ -179,9 +179,9 @@
         get
         {
             if (_rule.SocTurnOffThreshold is < 0 or > 100)
-                return "SOC turn OFF must be between 0 and 100%";
+                return T["SOC turn OFF must be between 0 and 100%"];
             if (_rule.SocTurnOffThreshold > _rule.SocTurnOnThreshold)
-                return "SOC turn OFF cannot be higher than SOC turn ON";
+                return T["SOC turn OFF cannot be higher than SOC turn ON"];
             return string.Empty;
         }
     }
@@ -216,7 +216,7 @@
             _inverterError = null;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed) _inverterError = "Inverter sources are unavailable. Reload them before enabling this rule."; }
+        catch (Exception) { if (!_disposed) _inverterError = T["Inverter sources are unavailable. Reload them before enabling this rule."]; }
         finally { if (!_disposed) _loadingInverters = false; }
     }
 
@@ -242,12 +242,12 @@
                 DeviceSnapshot.Update(_devices);
 
             if (_devices.Count == 0)
-                _loadError = "No devices found. Check the socket backend in Settings.";
+                _loadError = T["No devices found. Check the socket backend in Settings."];
         }
         catch (Exception ex)
         {
             _devices = [];
-            _loadError = $"Failed to load devices: {ex.Message}";
+            _loadError = T.Format("Failed to load devices: {0}", ex.Message);
         }
         finally
         {
@@ -312,7 +312,7 @@
 
             Nav.NavigateTo("/rules");
         }
-        catch (Exception) { if (!_disposed) _validationError = "The rule could not be saved. Check its device and source, then try again."; }
+        catch (Exception) { if (!_disposed) _validationError = T["The rule could not be saved. Check its device and source, then try again."]; }
         finally { if (!_disposed) _saving = false; }
     }
 
@@ -323,13 +323,13 @@
             var source = _rule.SourceInverterId ?? (Guid.TryParse(InverterOptions.CurrentValue.DeviceKey, out var id) ? id : (Guid?)null);
             if (_inverterError is not null || source is null || !_inverters.Any(inverter => inverter.Id.Value == source && inverter.Capabilities.HasBattery))
             {
-                _validationError = "Select an available inverter with battery data before enabling this rule.";
+                _validationError = T["Select an available inverter with battery data before enabling this rule."];
                 return false;
             }
         }
         if (IsSocTurnOnInvalid)
         {
-            _validationError = "SOC turn ON must be between 0 and 100%.";
+            _validationError = T["SOC turn ON must be between 0 and 100%."];
             return false;
         }
 
@@ -341,25 +341,25 @@
 
         if (IsSolarProductionThresholdInvalid)
         {
-            _validationError = "Average PV threshold must be between 1 and 30000 W.";
+            _validationError = T["Average PV threshold must be between 1 and 30000 W."];
             return false;
         }
 
         if (IsCooldownInvalid)
         {
-            _validationError = "Cooldown must be between 1 and 240 minutes.";
+            _validationError = T["Cooldown must be between 1 and 240 minutes."];
             return false;
         }
 
         if (IsIntervalInvalid)
         {
-            _validationError = "Evaluation interval must be between 10 and 3600 seconds.";
+            _validationError = T["Evaluation interval must be between 10 and 3600 seconds."];
             return false;
         }
 
         if (IsTimeWindowInvalid)
         {
-            _validationError = "Set both time-window values or leave both empty.";
+            _validationError = T["Set both time-window values or leave both empty."];
             return false;
         }
 

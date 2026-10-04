@@ -1,3 +1,5 @@
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -16,7 +18,7 @@ import {
   SwitchRow
 } from "../../core/components";
 import { Rule } from "../../core/api/types";
-import { formatDateTime, formatWatts } from "../../core/format";
+import { formatDateTime, formatNumber, formatWatts } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 import { RulesStackParamList } from "../../application/navigationTypes";
@@ -24,6 +26,7 @@ import { RulesStackParamList } from "../../application/navigationTypes";
 type Props = NativeStackScreenProps<RulesStackParamList, "RulesList">;
 
 export function RulesScreen({ navigation }: Props) {
+  const { t } = useLanguage();
   const { api } = useAuth();
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,10 +67,10 @@ export function RulesScreen({ navigation }: Props) {
   }
 
   function confirmDelete(rule: Rule) {
-    Alert.alert("Delete rule", rule.name, [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("Delete rule"), rule.name, [
+      { text: t("Cancel"), style: "cancel" },
       {
-        text: "Delete",
+        text: t("Delete"),
         style: "destructive",
         onPress: () => void deleteRule(rule)
       }
@@ -87,7 +90,7 @@ export function RulesScreen({ navigation }: Props) {
   if (loading) {
     return (
       <Screen scroll={false}>
-        <LoadingState label="Loading rules..." />
+        <LoadingState label={t("Loading rules...")} />
       </Screen>
     );
   }
@@ -95,9 +98,9 @@ export function RulesScreen({ navigation }: Props) {
   return (
     <Screen refreshing={refreshing} onRefresh={() => void load(true)}>
       <Header
-        title="Rules"
-        subtitle={`${rules.length} configured`}
-        action={<AppButton label="Add" icon={Plus} onPress={() => navigation.navigate("RuleEditor")} compact />}
+        title={t("Rules")}
+        subtitle={t("{0} configured", rules.length)}
+        action={<AppButton label={t("Add")} icon={Plus} onPress={() => navigation.navigate("RuleEditor")} compact />}
       />
       <ErrorBanner message={error} />
 
@@ -114,10 +117,10 @@ export function RulesScreen({ navigation }: Props) {
           ))}
         </View>
       ) : (
-        <EmptyState title="No rules configured." />
+        <EmptyState title={t("No rules configured.")} />
       )}
 
-      <AppButton label="Refresh" icon={RefreshCcw} onPress={() => void load(true)} variant="secondary" />
+      <AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void load(true)} variant="secondary" />
     </Screen>
   );
 }
@@ -133,39 +136,41 @@ function RuleCard({
   onDelete: () => void;
   onToggle: (enabled: boolean) => void;
 }) {
+  const demoDisplayName = useDemoDisplayName();
+  const { t } = useLanguage();
   return (
     <Card style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.titleGroup}>
-          <Text style={styles.name} numberOfLines={1}>{rule.name}</Text>
-          <Text style={styles.entity} numberOfLines={1}>{rule.entityId || "No device"}</Text>
+          <Text style={styles.name} numberOfLines={1}>{demoDisplayName(rule.name)}</Text>
+          <Text style={styles.entity} numberOfLines={1}>{rule.entityId || t("No device")}</Text>
         </View>
         <View style={styles.iconActions}>
-          <IconButton icon={Edit3} onPress={onEdit} color={colors.blue} />
-          <IconButton icon={Trash2} onPress={onDelete} color={colors.red} />
+          <IconButton accessibilityLabel={t("Edit rule {0}", rule.name)} icon={Edit3} onPress={onEdit} color={colors.blue} />
+          <IconButton accessibilityLabel={t("Delete rule {0}", rule.name)} icon={Trash2} onPress={onDelete} color={colors.red} />
         </View>
       </View>
 
       <View style={styles.chips}>
-        <StatusPill label={rule.currentState ? "ON" : "OFF"} tone={rule.currentState ? "success" : "neutral"} />
-        {rule.useSolarProductionThreshold ? <StatusPill label={`PV >= ${formatWatts(rule.minAverageSolarProductionWatts)} (SOC < 95%)`} tone="warning" /> : null}
+        <StatusPill label={rule.currentState ? t("ON") : t("OFF")} tone={rule.currentState ? "success" : "neutral"} />
+        {rule.useSolarProductionThreshold ? <StatusPill label={t("PV >= {0} (SOC < 95%)", formatWatts(rule.minAverageSolarProductionWatts))} tone="warning" /> : null}
         {rule.activeFrom && rule.activeTo ? <StatusPill label={`${rule.activeFrom} - ${rule.activeTo}`} tone="info" /> : null}
       </View>
 
       <View style={styles.details}>
-        <Detail label="Turn ON" value={`SOC >= ${rule.socTurnOnThreshold}%`} />
-        <Detail label="Turn OFF" value={`SOC <= ${rule.socTurnOffThreshold}%`} />
-        <Detail label="Cooldown" value={`${rule.cooldownMinutes} min`} />
-        <Detail label="Interval" value={`${rule.intervalSeconds}s`} />
+        <Detail label={t("Turn ON")} value={`SOC >= ${formatNumber(rule.socTurnOnThreshold)}%`} />
+        <Detail label={t("Turn OFF")} value={`SOC <= ${formatNumber(rule.socTurnOffThreshold)}%`} />
+        <Detail label={t("Cooldown")} value={`${formatNumber(rule.cooldownMinutes)} min`} />
+        <Detail label={t("Interval")} value={`${formatNumber(rule.intervalSeconds)}s`} />
       </View>
 
-      <Text style={styles.timestamp}>Changed {formatDateTime(rule.currentStateChangedAt)}</Text>
+      <Text style={styles.timestamp}>{t("Changed {0}", formatDateTime(rule.currentStateChangedAt))}</Text>
       <SwitchRow
-        title="Enabled"
+        title={t("Enabled")}
         value={rule.enabled}
         onValueChange={onToggle}
         disabled={!rule.entityId}
-        subtitle={rule.entityId ? undefined : "Select a device before enabling"}
+        subtitle={rule.entityId ? undefined : t("Select a device before enabling")}
       />
 
     </Card>
@@ -173,9 +178,10 @@ function RuleCard({
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
+  const { t } = useLanguage();
   return (
     <View style={styles.detail}>
-      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailLabel}>{t(label)}</Text>
       <Text style={styles.detailValue}>{value}</Text>
     </View>
   );

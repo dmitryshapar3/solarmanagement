@@ -7,22 +7,22 @@
 
 <MudBreakpointProvider OnBreakpointChanged="OnBreakpointChanged" />
 <MudPaper Class="@(Embedded ? "history-embedded-paper" : Overview ? "pa-4 history-overview-paper" : "pa-4")" Elevation="@(Embedded ? 0 : 2)">
-    <section class="solar-history @(Overview ? "history-overview" : null)" aria-labelledby="@(Embedded ? null : "solar-history-title")" aria-label="@(Embedded ? "Hourly solar power history" : null)" aria-busy="@_loading.ToString().ToLowerInvariant()">
+    <section class="solar-history @(Overview ? "history-overview" : null)" aria-labelledby="@(Embedded ? null : "solar-history-title")" aria-label="@(Embedded ? T["Hourly solar power history"] : null)" aria-busy="@_loading.ToString().ToLowerInvariant()">
         @if (!Embedded)
         {
         <div class="history-heading">
             <div>
-                <h2 id="solar-history-title">Solar generation</h2>
-                <p class="history-subtitle">@(Overview ? OverviewDateCaption + " · hourly average power · kW" : "Hourly average power · kW")</p>
+                <h2 id="solar-history-title">@T["Solar generation"]</h2>
+                <p class="history-subtitle">@(Overview ? T.Format("{0} · hourly average power · kW", OverviewDateCaption) : T["Hourly average power · kW"])</p>
             </div>
             <div class="history-controls">
                 @if (Overview)
                 {
-                    <a class="history-details-link" href="/generation">View details</a>
+                    <a class="history-details-link" href="/generation">@T["View details"]</a>
                 }
                 else
                 {
-                    <div class="history-periods" role="group" aria-label="Chart period">
+                    <div class="history-periods" role="group" aria-label="@T["Chart period"]">
                         @foreach (var period in Enum.GetValues<SolarHistoryPeriod>())
                         {
                             <button type="button" class="@(_period == period ? "selected" : null)" aria-pressed="@((_period == period).ToString().ToLowerInvariant())"
@@ -30,47 +30,47 @@
                         }
                     </div>
                 }
-                <button type="button" class="history-refresh" disabled="@_loading" @onclick="LoadAsync" title="Refresh chart" aria-label="Refresh chart">↻</button>
+                <button type="button" class="history-refresh" disabled="@_loading" @onclick="LoadAsync" title="@T["Refresh chart"]" aria-label="@T["Refresh chart"]">↻</button>
             </div>
         </div>
         }
         @if (!Overview)
         {
-            <div class="history-date-navigation" role="group" aria-label="Day navigation">
-                <button type="button" @onclick="() => ChangeDay(-1)" disabled="@(!CanPreviousDay)" aria-label="Previous day" title="Previous day">‹</button>
+            <div class="history-date-navigation" role="group" aria-label="@T["Day navigation"]">
+                <button type="button" @onclick="() => ChangeDay(-1)" disabled="@(!CanPreviousDay)" aria-label="@T["Previous day"]" title="@T["Previous day"]">‹</button>
                 <span class="history-date" aria-live="polite" data-testid="history-date">@DateCaption</span>
-                <button type="button" @onclick="() => ChangeDay(1)" disabled="@(!CanNextDay)" aria-label="Next day" title="Next day">›</button>
+                <button type="button" @onclick="() => ChangeDay(1)" disabled="@(!CanNextDay)" aria-label="@T["Next day"]" title="@T["Next day"]">›</button>
                 @if (SelectedDate.HasValue && Today.HasValue && SelectedDate < Today)
                 {
-                    <button type="button" class="history-today" @onclick="GoToToday">Today</button>
+                    <button type="button" class="history-today" @onclick="GoToToday">@T["Today"]</button>
                 }
             </div>
         }
         <div class="history-legend">
-            <span><i class="possible-key"></i>Possible · range</span>
-            <span><i class="actual-key"></i>Actual</span>
-            @if (_loading) { <span class="history-loading" role="status">Loading…</span> }
+            <span><i class="possible-key"></i>@T["Possible · range"]</span>
+            <span><i class="actual-key"></i>@T["Actual"]</span>
+            @if (_loading) { <span class="history-loading" role="status">@T["Loading…"]</span> }
         </div>
         @if (_error is not null)
         {
-            <p class="history-message" role="alert">@_error</p>
+            <p class="history-message" role="alert">@T.Translate(_error)</p>
         }
         else if (Result is { } result)
         {
-            @if (result.WeatherError is not null) { <p class="history-message" role="status">@result.WeatherError</p> }
-            @if (result.ActualError is not null) { <p class="history-message" role="status">@result.ActualError</p> }
+            @if (result.WeatherError is not null) { <p class="history-message" role="status">@T.Translate(result.WeatherError)</p> }
+            @if (result.ActualError is not null) { <p class="history-message" role="status">@T.Translate(result.ActualError)</p> }
             @if (result.Points.Count == 0)
             {
-                <div class="history-empty">@(SelectedDate == Today ? "The chart will appear after the first completed hour of the day." : "No data is available for this day yet.")</div>
+                <div class="history-empty">@(SelectedDate == Today ? T["The chart will appear after the first completed hour of the day."] : T["No data is available for this day yet."])</div>
             }
             else if (!result.Points.Any(p => p.Possible is not null || p.ActualKw.HasValue))
             {
-                <div class="history-empty">No data is available for this period yet.</div>
+                <div class="history-empty">@T["No data is available for this period yet."]</div>
             }
             else
             {
                 <div class="history-plot">
-                    <svg viewBox="@($"0 0 {ChartWidth} 280")" role="img" aria-label="Hourly possible solar power range and actual power">
+                    <svg viewBox="@($"0 0 {ChartWidth} 280")" role="img" aria-label="@T["Hourly possible solar power range and actual power"]">
                         @for (var tick = 0; tick <= 4; tick++)
                         {
                             var y = 232 - tick * 51;
@@ -106,40 +106,40 @@
                 {
                     <div class="history-inspector" aria-live="polite">
                         <div class="history-inspector-time">
-                            <button type="button" @onclick="() => MoveSelection(-1)" disabled="@(SelectedIndex == 0)" aria-label="Previous hour">‹</button>
+                            <button type="button" @onclick="() => MoveSelection(-1)" disabled="@(SelectedIndex == 0)" aria-label="@T["Previous hour"]">‹</button>
                             <time datetime="@selectedPoint.Timestamp.ToString("O")">@TimeLabel(selectedPoint.Timestamp)</time>
-                            <button type="button" @onclick="() => MoveSelection(1)" disabled="@(SelectedIndex == result.Points.Count - 1)" aria-label="Next hour">›</button>
+                            <button type="button" @onclick="() => MoveSelection(1)" disabled="@(SelectedIndex == result.Points.Count - 1)" aria-label="@T["Next hour"]">›</button>
                         </div>
-                        <span class="possible-value">Possible <strong>@RangePower(selectedPoint.Possible)</strong></span>
-                        <span class="actual-value">Actual <strong>@Power(selectedPoint.ActualKw)</strong></span>
+                        <span class="possible-value">@T["Possible"] <strong>@RangePower(selectedPoint.Possible)</strong></span>
+                        <span class="actual-value">@T["Actual"] <strong>@Power(selectedPoint.ActualKw)</strong></span>
                     </div>
                 }
                 @if (result.Points.Any(p => !p.ActualKw.HasValue) && result.ActualError is null)
                 {
-                    <p class="history-footnote">Gaps indicate insufficient saved readings for the hour.</p>
+                    <p class="history-footnote">@T["Gaps indicate insufficient saved readings for the hour."]</p>
                 }
             }
             @if (!Overview)
             {
                 <details class="history-about">
-                    <summary>About this chart</summary>
-                    <p>Possible power is calculated from past weather and the current panel configuration. It is a model estimate, not a forecast saved at the time. Missing temperature or wind uses assumptions of 20 °C and 1 m/s. Actual power is averaged from Deye readings; inverter limits may reduce generation.</p>
-                    <p>The orange band shows an approximate range allowing for weather, panel configuration, temperature and losses. It is an engineering estimate, not a statistical confidence interval.</p>
-                    <p>Completed hours are shown in @result.TimeZoneId. Hours with less than 90% measurement coverage remain empty. Readings are retained for 31 days; previously deleted readings are unavailable.</p>
-                    <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather data by Open-Meteo.com</a>
+                    <summary>@T["About this chart"]</summary>
+                    <p>@T["Possible power is calculated from past weather and the current panel configuration. It is a model estimate, not a forecast saved at the time. Missing temperature or wind uses assumptions of 20 °C and 1 m/s. Actual power is averaged from Deye readings; inverter limits may reduce generation."]</p>
+                    <p>@T["The orange band shows an approximate range allowing for weather, panel configuration, temperature and losses. It is an engineering estimate, not a statistical confidence interval."]</p>
+                    <p>@T["Completed hours are shown in"] @result.TimeZoneId@T[". Hours with less than 90% measurement coverage remain empty. Readings are retained for 31 days; previously deleted readings are unavailable."]</p>
+                    <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">@T["Weather data by Open-Meteo.com"]</a>
                 </details>
             }
             else
             {
-                <a class="history-source" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather by Open-Meteo</a>
+                <a class="history-source" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">@T["Weather by Open-Meteo"]</a>
             }
         }
         @if (ShowTable && Result is { } tableResult)
         {
-            <div class="history-table-container" tabindex="0" aria-label="Hourly generation data table">
+            <div class="history-table-container" tabindex="0" aria-label="@T["Hourly generation data table"]">
                 <table class="history-data-table">
-                    <caption>Hourly generation data · @tableResult.TimeZoneId</caption>
-                    <thead><tr><th scope="col">Hour</th><th scope="col">Possible lower · kW</th><th scope="col">Possible upper · kW</th><th scope="col">Actual average · kW</th></tr></thead>
+                    <caption>@T["Hourly generation data ·"] @tableResult.TimeZoneId</caption>
+                    <thead><tr><th scope="col">@T["Hour"]</th><th scope="col">@T["Possible lower · kW"]</th><th scope="col">@T["Possible upper · kW"]</th><th scope="col">@T["Actual average · kW"]</th></tr></thead>
                     <tbody>
                         @foreach (var point in TablePoints)
                         {
@@ -149,11 +149,11 @@
                 </table>
             </div>
             <div class="history-table-pager">
-                <button type="button" @onclick="() => _tablePage = TablePage - 1" disabled="@(TablePage == 0)" aria-label="Previous table page">Previous rows</button>
-                <span>Page @(TablePage + 1) of @TablePages · @tableResult.Points.Count hourly intervals</span>
-                <button type="button" @onclick="() => _tablePage = TablePage + 1" disabled="@(TablePage == TablePages - 1)" aria-label="Next table page">Next rows</button>
+                <button type="button" @onclick="() => _tablePage = TablePage - 1" disabled="@(TablePage == 0)" aria-label="@T["Previous table page"]">@T["Previous rows"]</button>
+                <span>@T.Format("Page {0} of {1} · {2} hourly intervals", TablePage + 1, TablePages, tableResult.Points.Count)</span>
+                <button type="button" @onclick="() => _tablePage = TablePage + 1" disabled="@(TablePage == TablePages - 1)" aria-label="@T["Next table page"]">@T["Next rows"]</button>
             </div>
-            <p class="history-footnote">A dash means unavailable; measured zero remains 0.00. Each row is one hour of average power, not energy. Times include the UTC offset to distinguish repeated daylight-saving hours.</p>
+            <p class="history-footnote">@T["A dash means unavailable; measured zero remains 0.00. Each row is one hour of average power, not energy. Times include the UTC offset to distinguish repeated daylight-saving hours."]</p>
         }
     </section>
 </MudPaper>
@@ -184,14 +184,14 @@
     private CancellationTokenSource? _request;
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _refreshLoop;
-    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-GB");
+    private static CultureInfo English => CultureInfo.CurrentCulture;
     private DateOnly? Today => Data is { } data ? data.Today == default ? null : data.Today
         : _timeZone is null ? null : DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(), _timeZone).DateTime);
     private DateOnly? SelectedDate => Result is { SelectedDate: var date } && date != default ? date : _endDate ?? Today;
     private bool CanPreviousDay => SelectedDate.HasValue && Today.HasValue && SelectedDate > Today.Value.AddDays(-29);
     private bool CanNextDay => SelectedDate.HasValue && Today.HasValue && SelectedDate < Today;
     private string OverviewDateCaption => SelectedDate is { } date && Today is { } today && date != today
-        ? date.ToString("d MMM yyyy", English) : "Today";
+        ? date.ToString("d MMM yyyy", English) : T["Today"];
     private string DateCaption => SelectedDate is not { } date ? "—" : _period == SolarHistoryPeriod.Today
         ? date.ToString("d MMMM yyyy", English)
         : date.AddDays(_period == SolarHistoryPeriod.Week ? -6 : -29).ToString("d MMM yyyy", English)
@@ -209,11 +209,11 @@
     private static string Number(double value, string format = "0.0") => value.ToString(format, English);
     private static string Power(double? value) => value.HasValue ? Number(value.Value) + " kW" : "—";
     private static string RangePower(SolarHistoryPowerRange? range) => range is null ? "—" : Number(range.LowerKw) + "–" + Number(range.UpperKw) + " kW";
-    private static string PeriodLabel(SolarHistoryPeriod period) => period switch { SolarHistoryPeriod.Today => "Day", SolarHistoryPeriod.Week => "7 days", _ => "30 days" };
+    private string PeriodLabel(SolarHistoryPeriod period) => period switch { SolarHistoryPeriod.Today => T["Day"], SolarHistoryPeriod.Week => T["7 days"], _ => T["30 days"] };
     private DateTimeOffset Local(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, TimeZoneInfo.FindSystemTimeZoneById(Result!.TimeZoneId));
     private string AxisLabel(int index) => Local(Result!.Points[index].Timestamp).ToString(_period == SolarHistoryPeriod.Today ? "HH:mm" : "d MMM", English);
     private string TimeLabel(DateTimeOffset time) => Local(time).ToString("d MMM · HH:mm", English) + "–" + Local(time.AddHours(1)).ToString("HH:mm", English) + " (UTC" + Local(time).ToString("zzz") + ")";
-    private string PointLabel(int pointIndex) => TimeLabel(Result!.Points[pointIndex].Timestamp) + ": possible " + RangePower(Result.Points[pointIndex].Possible) + ", actual " + Power(Result.Points[pointIndex].ActualKw);
+    private string PointLabel(int pointIndex) => T.Format("{0}: possible {1}, actual {2}", TimeLabel(Result!.Points[pointIndex].Timestamp), RangePower(Result.Points[pointIndex].Possible), Power(Result.Points[pointIndex].ActualKw));
 
     protected override void OnParametersSet()
     {
@@ -342,7 +342,7 @@
             }
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed && !request.IsCancellationRequested) _error = "The chart could not be loaded. Select Refresh to try again."; }
+        catch (Exception) { if (!_disposed && !request.IsCancellationRequested) _error = T["The chart could not be loaded. Select Refresh to try again."]; }
         finally
         {
             if (ReferenceEquals(_request, request))

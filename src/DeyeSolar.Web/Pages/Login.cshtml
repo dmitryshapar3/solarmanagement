@@ -1,13 +1,14 @@
 @page
+@inject DeyeSolar.Web.Localization.UiText T
 @model DeyeSolar.Web.Pages.LoginModel
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="@T.Language">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login - DeyeSolar</title>
+    <title>@T["Login - DeyeSolar"]</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Roboto', sans-serif; background: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -28,34 +29,34 @@
 <body>
     <div class="login-card">
         <h1>DeyeSolar</h1>
-        <p>Solar Energy Management</p>
+        <p>@T["Solar Energy Management"]</p>
 
         @if (!string.IsNullOrEmpty(Model.ErrorMessage))
         {
-            <div class="error">@Model.ErrorMessage</div>
+            <div class="error">@T.Translate(Model.ErrorMessage)</div>
         }
 
         <form method="post">
             <div class="form-group">
-                <label for="username">Username, email or phone number</label>
+                <label for="username">@T["Username, email or phone number"]</label>
                 <input id="username" type="text" name="Username" value="@Model.Username" autocomplete="username" required autofocus />
             </div>
             <div class="form-group">
-                <label for="password">Password</label>
+                <label for="password">@T["Password"]</label>
                 <input id="password" type="password" name="Password" autocomplete="current-password" required />
             </div>
-            <button type="submit" class="btn">Sign In</button>
+            <button type="submit" class="btn">@T["Sign In"]</button>
             @Html.AntiForgeryToken()
         </form>
         @if (Model.Providers.GoogleEnabled)
-        { <p style="margin-top:24px"><a href="/auth/google" style="color:#90caf9">Continue with Google</a></p> }
-        <nav class="public-links" aria-label="Account options">
-            <a href="/register">Create account</a>
-            <a href="/verify">Sign in with an email or SMS code</a>
+        { <p style="margin-top:24px"><a href="/auth/google" style="color:#90caf9">@T["Continue with Google"]</a></p> }
+        <nav class="public-links" aria-label="@T["Account options"]">
+            <a href="/register">@T["Create account"]</a>
+            <a href="/verify">@T["Sign in with an email or SMS code"]</a>
         </nav>
-        <nav class="public-links" aria-label="Public information">
-            <a href="/privacy">Privacy policy</a>
-            <a href="/support">Support</a>
+        <nav class="public-links" aria-label="@T["Public information"]">
+            <a href="/privacy">@T["Privacy policy"]</a>
+            <a href="/support">@T["Support"]</a>
         </nav>
     </div>
 </body>

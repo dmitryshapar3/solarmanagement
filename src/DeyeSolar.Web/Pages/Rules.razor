@@ -4,13 +4,13 @@
 @inject NavigationManager Nav
 @using DeyeSolar.Web.Shared
 
-<PageTitle>Rules - DeyeSolar</PageTitle>
+<PageTitle>@T["Rules - DeyeSolar"]</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Trigger Rules</MudText>
+<MudText Typo="Typo.h5" Class="mb-4">@T["Trigger Rules"]</MudText>
 
 <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/rules/edit"
            StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
-    Add Rule
+    @T["Add Rule"]
 </MudButton>
 
 @if (_rules == null)
@@ -19,31 +19,31 @@
 }
 else if (_rules.Count == 0)
 {
-    <MudAlert Severity="Severity.Info">No rules configured. Create one to get started.</MudAlert>
+    <MudAlert Severity="Severity.Info">@T["No rules configured. Create one to get started."]</MudAlert>
 }
 else
 {
     <MudTable Items="_rules" Hover="true" Dense="true" Elevation="2">
         <HeaderContent>
-            <MudTh>Name</MudTh>
-            <MudTh>Device</MudTh>
-            <MudTh>Turn ON</MudTh>
-            <MudTh>PV Avg</MudTh>
-            <MudTh>Turn OFF</MudTh>
-            <MudTh>Cooldown</MudTh>
-            <MudTh>Interval</MudTh>
-            <MudTh>Time Window</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Changed</MudTh>
-            <MudTh>Enabled</MudTh>
-            <MudTh>Actions</MudTh>
+            <MudTh>@T["Name"]</MudTh>
+            <MudTh>@T["Device"]</MudTh>
+            <MudTh>@T["Turn ON"]</MudTh>
+            <MudTh>@T["PV Avg"]</MudTh>
+            <MudTh>@T["Turn OFF"]</MudTh>
+            <MudTh>@T["Cooldown"]</MudTh>
+            <MudTh>@T["Interval"]</MudTh>
+            <MudTh>@T["Time Window"]</MudTh>
+            <MudTh>@T["State"]</MudTh>
+            <MudTh>@T["Changed"]</MudTh>
+            <MudTh>@T["Enabled"]</MudTh>
+            <MudTh>@T["Actions"]</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd>@context.Name</MudTd>
             <MudTd>
                 @if (string.IsNullOrEmpty(context.EntityId))
                 {
-                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Not set</MudChip>
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">@T["Not set"]</MudChip>
                 }
                 else
                 {
@@ -51,25 +51,25 @@ else
                 }
             </MudTd>
             <MudTd>
-                <span>SOC &ge; @context.SocTurnOnThreshold%</span>
+                <span>@T["SOC ≥"] @context.SocTurnOnThreshold%</span>
             </MudTd>
             <MudTd>@FormatSolarProductionThreshold(context)</MudTd>
             <MudTd>
                 <span>@FormatTurnOffThreshold(context)</span>
             </MudTd>
-            <MudTd>@(context.CooldownMinutes) min</MudTd>
-            <MudTd>@(context.IntervalSeconds)s</MudTd>
+            <MudTd>@(context.CooldownMinutes) @T["min"]</MudTd>
+            <MudTd>@(context.IntervalSeconds)@T["s"]</MudTd>
             <MudTd>@FormatTimeWindow(context)</MudTd>
             <MudTd>
                 <MudChip T="string" Color="@(context.CurrentState ? Color.Success : Color.Default)" Size="Size.Small">
-                    @(context.CurrentState ? "ON" : "OFF")
+                    @(context.CurrentState ? T["ON"] : T["OFF"])
                 </MudChip>
             </MudTd>
             <MudTd>
                 @if (context.CurrentStateChangedAt.HasValue)
                 {
                     <MudText Typo="Typo.body2">
-                        @TimeHelper.ToUserTime(context.CurrentStateChangedAt.Value, _tz).ToString("MM/dd HH:mm:ss")
+                        @TimeHelper.ToUserTime(context.CurrentStateChangedAt.Value, _tz).ToString("g", System.Globalization.CultureInfo.CurrentCulture)
                     </MudText>
                 }
                 else
@@ -110,20 +110,20 @@ else
         return $"{rule.ActiveFrom.Value:HH:mm} - {rule.ActiveTo.Value:HH:mm}";
     }
 
-    private static string FormatTurnOffThreshold(TriggerRule rule)
+    private string FormatTurnOffThreshold(TriggerRule rule)
     {
         var threshold = rule.UseSeparateSocTurnOffThreshold
             ? rule.SocTurnOffThreshold
             : rule.SocTurnOnThreshold;
 
         return rule.UseSeparateSocTurnOffThreshold
-            ? $"SOC <= {threshold}%"
-            : $"SOC <= {threshold}% (same)";
+            ? T.Format("SOC <= {0}%", threshold)
+            : T.Format("SOC <= {0}% (same)", threshold);
     }
 
-    private static string FormatSolarProductionThreshold(TriggerRule rule)
+    private string FormatSolarProductionThreshold(TriggerRule rule)
         => rule.UseSolarProductionThreshold
-            ? $">= {rule.MinAverageSolarProductionWatts} W (SOC < 95%)"
+            ? T.Format(">= {0} W (SOC < 95%)", rule.MinAverageSolarProductionWatts)
             : "-";
 
     private async Task ToggleEnabled(TriggerRule rule, bool enabled)

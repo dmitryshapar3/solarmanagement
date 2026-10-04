@@ -9,19 +9,19 @@
     <MudPaper Class="pa-4 sales-paper" Elevation="2">
         <div class="sales-heading">
             <div>
-                @if (Overview) { <h2 id="sales-title">Electricity sales</h2> }
-                else { <h1 id="sales-title">@(Detailed ? "Sales details" : "Electricity sales")</h1> }
-                <span class="sales-source" title="Deye readings estimated under the contract terms. The supplier settles using the OSD billing meter.">Deye estimate</span>
+                @if (Overview) { <h2 id="sales-title">@T["Electricity sales"]</h2> }
+                else { <h1 id="sales-title">@(Detailed ? T["Sales details"] : T["Electricity sales"])</h1> }
+                <span class="sales-source" title="@T["Deye readings estimated under the contract terms. The supplier settles using the OSD billing meter."]">@T["Deye estimate"]</span>
             </div>
             <div class="sales-heading-actions">
-                <button class="sales-refresh" type="button" @onclick="RefreshAsync" disabled="@_loading" aria-label="Refresh sales" title="Refresh">Refresh</button>
-                @if (!Detailed) { <a href="@DetailsUrl" class="sales-details-link" aria-label="Electricity sales details">Details</a> }
+                <button class="sales-refresh" type="button" @onclick="RefreshAsync" disabled="@_loading" aria-label="@T["Refresh sales"]" title="@T["Refresh"]">@T["Refresh"]</button>
+                @if (!Detailed) { <a href="@DetailsUrl" class="sales-details-link" aria-label="@T["Electricity sales details"]">@T["Details"]</a> }
             </div>
         </div>
         @if (!Overview)
         {
             <div class="sales-filters">
-                <div class="sales-switch" role="group" aria-label="Sales period">
+                <div class="sales-switch" role="group" aria-label="@T["Sales period"]">
                     @foreach (var period in Enum.GetValues<ExportSalesPeriod>())
                     {
                         <button type="button" class="@(_selection.Period == period ? "selected" : null)" aria-pressed="@((_selection.Period == period).ToString().ToLowerInvariant())"
@@ -31,31 +31,31 @@
                 <div class="sales-date-navigation">
                     @if (_selection.Period != ExportSalesPeriod.Custom)
                     {
-                        <button type="button" @onclick="() => MovePeriod(-1)" disabled="@(!CanPrevious)" aria-label="Previous period">‹</button>
+                        <button type="button" @onclick="() => MovePeriod(-1)" disabled="@(!CanPrevious)" aria-label="@T["Previous period"]">‹</button>
                         @if (_selection.Period == ExportSalesPeriod.Day)
                         {
-                            <label><span class="sr-only">Date</span><input type="date" aria-label="Date" value="@Iso(_selection.Date)" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeDate" /></label>
+                            <label><span class="sr-only">@T["Date"]</span><input type="date" aria-label="@T["Date"]" value="@Iso(_selection.Date)" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeDate" /></label>
                         }
                         else if (_selection.Period == ExportSalesPeriod.Month)
                         {
-                            <label><span class="sr-only">Month</span><input type="month" aria-label="Month" value="@_selection.Date.ToString("yyyy-MM", CultureInfo.InvariantCulture)" min="2000-01" max="@Today.ToString("yyyy-MM", CultureInfo.InvariantCulture)" @onchange="ChangeDate" /></label>
+                            <label><span class="sr-only">@T["Month"]</span><input type="month" aria-label="@T["Month"]" value="@_selection.Date.ToString("yyyy-MM", CultureInfo.InvariantCulture)" min="2000-01" max="@Today.ToString("yyyy-MM", CultureInfo.InvariantCulture)" @onchange="ChangeDate" /></label>
                         }
                         else
                         {
-                            <label><span class="sr-only">Year</span><input type="number" aria-label="Year" value="@_selection.Date.Year" min="2000" max="@Today.Year" @onchange="ChangeDate" /></label>
+                            <label><span class="sr-only">@T["Year"]</span><input type="number" aria-label="@T["Year"]" value="@_selection.Date.Year" min="2000" max="@Today.Year" @onchange="ChangeDate" /></label>
                         }
-                        <button type="button" @onclick="() => MovePeriod(1)" disabled="@(!CanNext)" aria-label="Next period">›</button>
+                        <button type="button" @onclick="() => MovePeriod(1)" disabled="@(!CanNext)" aria-label="@T["Next period"]">›</button>
                     }
-                    <button type="button" class="sales-today" @onclick="GoToToday">Today</button>
+                    <button type="button" class="sales-today" @onclick="GoToToday">@T["Today"]</button>
                 </div>
             </div>
             @if (_selection.Period == ExportSalesPeriod.Custom)
             {
                 <div class="sales-custom">
-                    <label>From <input type="date" aria-label="Start date" value="@_fromInput" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeFrom" /></label>
-                    <label>To <input type="date" aria-label="End date, inclusive" value="@_throughInput" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeThrough" /></label>
-                    <button type="button" @onclick="ApplyCustom" disabled="@(_validation is not null)">Apply</button>
-                    <span>Inclusive · up to 366 days</span>
+                    <label>@T["From"] <input type="date" aria-label="@T["Start date"]" value="@_fromInput" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeFrom" /></label>
+                    <label>@T["To"] <input type="date" aria-label="@T["End date, inclusive"]" value="@_throughInput" min="2000-01-01" max="@Iso(Today)" @onchange="ChangeThrough" /></label>
+                    <button type="button" @onclick="ApplyCustom" disabled="@(_validation is not null)">@T["Apply"]</button>
+                    <span>@T["Inclusive · up to 366 days"]</span>
                 </div>
             }
             @if (_validation is not null)
@@ -71,17 +71,17 @@
         {
         <div class="sales-totals">
             <div class="sales-total">
-                <span class="sales-total-label">@(Overview ? OverviewExportLabel : "Exported to grid")</span>
+                <span class="sales-total-label">@(Overview ? OverviewExportLabel : T["Exported to grid"])</span>
                 <strong data-testid="sales-export">@Number(HasElapsedHours ? Result?.ExportKwh : null)<small>kWh</small></strong>
             </div>
             <div class="sales-total">
-                <span class="sales-total-label">Energy value</span>
+                <span class="sales-total-label">@T["Energy value"]</span>
                 <strong data-testid="sales-value">@Number(HasElapsedHours ? Result?.EnergyValuePln : null)<small>PLN</small></strong>
             </div>
             @if (!Overview)
             {
                 <div class="sales-total">
-                    <span class="sales-total-label" title="Estimated monthly deposit credit with the 1.23 multiplier. This is not a payout or the current balance.">Estimated deposit <span aria-hidden="true">ⓘ</span></span>
+                    <span class="sales-total-label" title="@T["Estimated monthly deposit credit with the 1.23 multiplier. This is not a payout or the current balance."]">@T["Estimated deposit"] <span aria-hidden="true">ⓘ</span></span>
                     <strong data-testid="sales-deposit">@Number(HasElapsedHours ? Result?.EstimatedDepositPln : null)<small>PLN</small></strong>
                 </div>
             }
@@ -89,53 +89,53 @@
         }
         @if (_loading)
         {
-            <p class="sales-status" role="status">@(Result is null ? "Loading…" : "Refreshing…")</p>
+            <p class="sales-status" role="status">@(Result is null ? T["Loading…"] : T["Refreshing…"])</p>
         }
         @if (_error is not null)
         {
-            <p class="sales-message" role="alert">@_error</p>
-            <button class="sales-retry" type="button" @onclick="RefreshAsync">Retry</button>
+            <p class="sales-message" role="alert">@T.Translate(_error)</p>
+            <button class="sales-retry" type="button" @onclick="RefreshAsync">@T["Retry"]</button>
         }
         @if (Result is { } result)
         {
             <div class="sales-freshness">
-                <span>Totals cover completed hours. Current hour is provisional.</span>
+                <span>@T["Totals cover completed hours. Current hour is provisional."]</span>
                 @if (result.UpdatedAt is { } updatedAt)
                 {
-                    <span>Updated <time datetime="@updatedAt.ToString("O")">@Local(updatedAt).ToString("d MMMM HH:mm (zzz)", English)</time> · refreshes every 5 minutes</span>
+                    <span>@T["Updated"] <time datetime="@updatedAt.ToString("O")">@Local(updatedAt).ToString("d MMMM HH:mm (zzz)", English)</time> @T["· refreshes every 5 minutes"]</span>
                 }
             </div>
-            @if (result.DataError is not null) { <p class="sales-message" role="status">@result.DataError</p> }
-            @if (result.PriceError is not null) { <p class="sales-message" role="status">@result.PriceError</p> }
+            @if (result.DataError is not null) { <p class="sales-message" role="status">@T.Translate(result.DataError)</p> }
+            @if (result.PriceError is not null) { <p class="sales-message" role="status">@T.Translate(result.PriceError)</p> }
             @if (HasElapsedHours && (!Overview || result.IsPartial))
             {
                 <div class="sales-coverage">
-                    <span>@(result.IsPartial ? "Partial data · totals for available hours" : "Completed hours only")</span>
-                    @if (!Overview) { <span>Readings @result.ObservedHours of @result.ExpectedHours h · value @result.ValuedHours of @result.ExpectedHours h</span> }
+                    <span>@(result.IsPartial ? T["Partial data · totals for available hours"] : T["Completed hours only"])</span>
+                    @if (!Overview) { <span>@T["Readings"] @result.ObservedHours @T["of"] @result.ExpectedHours @T["h · value"] @result.ValuedHours @T["of"] @result.ExpectedHours @T["h"]</span> }
                 </div>
             }
             <div class="sales-chart-heading">
-                @if (Overview) { <h3>@(result.Request.Date == Today ? "Today by hour" : "By hour")</h3> }
-                else { <h2>@(result.Request.Period == ExportSalesPeriod.Day ? "Hourly" : result.Request.Period == ExportSalesPeriod.Year ? "Monthly" : "Daily")</h2> }
-                <div class="sales-switch" role="group" aria-label="Chart metric">
-                    <button type="button" class="@(_showMoney ? null : "selected")" aria-pressed="@((!_showMoney).ToString().ToLowerInvariant())" @onclick="() => _showMoney = false">Energy</button>
-                    <button type="button" class="@(_showMoney ? "selected" : null)" aria-pressed="@_showMoney.ToString().ToLowerInvariant()" @onclick="() => _showMoney = true">Value</button>
+                @if (Overview) { <h3>@(result.Request.Date == Today ? T["Today by hour"] : T["By hour"])</h3> }
+                else { <h2>@(result.Request.Period == ExportSalesPeriod.Day ? T["Hourly"] : result.Request.Period == ExportSalesPeriod.Year ? T["Monthly"] : T["Daily"])</h2> }
+                <div class="sales-switch" role="group" aria-label="@T["Chart metric"]">
+                    <button type="button" class="@(_showMoney ? null : "selected")" aria-pressed="@((!_showMoney).ToString().ToLowerInvariant())" @onclick="() => _showMoney = false">@T["Energy"]</button>
+                    <button type="button" class="@(_showMoney ? "selected" : null)" aria-pressed="@_showMoney.ToString().ToLowerInvariant()" @onclick="() => _showMoney = true">@T["Value"]</button>
                 </div>
             </div>
             @if (!HasElapsedHours && result.CurrentHour is null)
             {
-                <div class="sales-empty" role="status">@(result.DataError is not null ? "Data for this period is unavailable."
-                    : BeforeContract ? $"This period is before the contract start date — {result.ContractStartDate.ToString("d MMMM yyyy", English)}." : "There are no completed hours in this period yet.")</div>
+                <div class="sales-empty" role="status">@(result.DataError is not null ? T["Data for this period is unavailable."]
+                    : BeforeContract ? T.Format("This period is before the contract start date — {0}.", result.ContractStartDate.ToString("d MMMM yyyy", English)) : T["There are no completed hours in this period yet."])</div>
             }
             else if (!result.Buckets.Any(bucket => Value(bucket).HasValue || ProgressValue(bucket).HasValue))
             {
-                <div class="sales-empty" role="status">@(result.CurrentHour is not null ? _showMoney ? "Awaiting current-hour prices or readings." : "Awaiting current-hour readings."
-                    : _showMoney ? "Energy value is not available yet. You can view energy readings separately." : "No export readings for this period.")</div>
+                <div class="sales-empty" role="status">@(result.CurrentHour is not null ? _showMoney ? T["Awaiting current-hour prices or readings."] : T["Awaiting current-hour readings."]
+                    : _showMoney ? T["Energy value is not available yet. You can view energy readings separately."] : T["No export readings for this period."])</div>
             }
             else
             {
                 <div class="sales-plot">
-                    <svg viewBox="@($"0 0 {ChartWidth} 280")" role="img" aria-label="@(_showMoney ? "Exported energy value, PLN" : "Energy exported to grid, kWh")">
+                    <svg viewBox="@($"0 0 {ChartWidth} 280")" role="img" aria-label="@(_showMoney ? T["Exported energy value, PLN"] : T["Energy exported to grid, kWh"])">
                         @for (var tick = 0; tick <= 4; tick++)
                         {
                             var y = 232 - tick * 51;
@@ -181,29 +181,29 @@
             {
                 <div class="sales-inspector" aria-live="polite">
                     <div class="sales-inspector-time">
-                        <button type="button" @onclick="() => MoveBucket(-1)" disabled="@(SelectedIndex == 0)" aria-label="Previous interval">‹</button>
+                        <button type="button" @onclick="() => MoveBucket(-1)" disabled="@(SelectedIndex == 0)" aria-label="@T["Previous interval"]">‹</button>
                         <time datetime="@selected.Start.ToString("O")">@BucketTime(selected)</time>
-                        <button type="button" @onclick="() => MoveBucket(1)" disabled="@(SelectedIndex == result.Buckets.Count - 1)" aria-label="Next interval">›</button>
+                        <button type="button" @onclick="() => MoveBucket(1)" disabled="@(SelectedIndex == result.Buckets.Count - 1)" aria-label="@T["Next interval"]">›</button>
                     </div>
                     @if (selected.ExpectedHours > 0)
                     {
-                        <span>Completed export <strong>@Number(selected.ExportKwh) kWh</strong></span>
-                        <span>Completed value <strong>@Number(selected.EnergyValuePln) PLN</strong></span>
+                        <span>@T["Completed export"] <strong>@Number(selected.ExportKwh) kWh</strong></span>
+                        <span>@T["Completed value"] <strong>@Number(selected.EnergyValuePln) PLN</strong></span>
                     }
                     @if (selected.ObservedHours < selected.ExpectedHours || selected.ValuedHours < selected.ObservedHours)
                     {
-                        <span class="sales-incomplete">Partial interval</span>
+                        <span class="sales-incomplete">@T["Partial interval"]</span>
                     }
                     @if (ProgressFor(selected) is { } progress)
                     {
                         <div class="sales-progress-inspector" data-testid="sales-current-hour">
-                            <strong>Current hour · in progress</strong>
+                            <strong>@T["Current hour · in progress"]</strong>
                             <span>@ProgressTime(progress)</span>
-                            <span>Exported so far <strong>@Number(progress.ExportKwh) kWh</strong></span>
-                            <span>Provisional value <strong>@Number(progress.EnergyValuePln) PLN</strong></span>
-                            @if (progress.ExportKwh is null) { <span>Awaiting current-hour readings.</span> }
-                            else if (progress.EnergyValuePln is null) { <span>Awaiting current-hour prices.</span> }
-                            <span>Measured intervals only; no projection to the end of the hour.</span>
+                            <span>@T["Exported so far"] <strong>@Number(progress.ExportKwh) kWh</strong></span>
+                            <span>@T["Provisional value"] <strong>@Number(progress.EnergyValuePln) PLN</strong></span>
+                            @if (progress.ExportKwh is null) { <span>@T["Awaiting current-hour readings."]</span> }
+                            else if (progress.EnergyValuePln is null) { <span>@T["Awaiting current-hour prices."]</span> }
+                            <span>@T["Measured intervals only; no projection to the end of the hour."]</span>
                         </div>
                     }
                 </div>
@@ -212,17 +212,17 @@
             {
         <div class="sales-totals">
             <div class="sales-total">
-                <span class="sales-total-label">@(Overview ? OverviewExportLabel : "Exported to grid")</span>
+                <span class="sales-total-label">@(Overview ? OverviewExportLabel : T["Exported to grid"])</span>
                 <strong data-testid="sales-export">@Number(HasElapsedHours ? Result?.ExportKwh : null)<small>kWh</small></strong>
             </div>
             <div class="sales-total">
-                <span class="sales-total-label">Energy value</span>
+                <span class="sales-total-label">@T["Energy value"]</span>
                 <strong data-testid="sales-value">@Number(HasElapsedHours ? Result?.EnergyValuePln : null)<small>PLN</small></strong>
             </div>
             @if (!Overview)
             {
                 <div class="sales-total">
-                    <span class="sales-total-label" title="Estimated monthly deposit credit with the 1.23 multiplier. This is not a payout or the current balance.">Estimated deposit <span aria-hidden="true">ⓘ</span></span>
+                    <span class="sales-total-label" title="@T["Estimated monthly deposit credit with the 1.23 multiplier. This is not a payout or the current balance."]">@T["Estimated deposit"] <span aria-hidden="true">ⓘ</span></span>
                     <strong data-testid="sales-deposit">@Number(HasElapsedHours ? Result?.EstimatedDepositPln : null)<small>PLN</small></strong>
                 </div>
             }
@@ -231,52 +231,52 @@
             @if (!Overview)
             {
                 <details class="sales-about">
-                    <summary>How the estimate is calculated</summary>
-                    <p>Under the TAURON contract effective from @result.ContractStartDate.ToString("d MMMM yyyy", English). Exported to grid means all measured exports. After hourly netting of imports and exports: <strong>@Number(HasElapsedHours ? result.CreditedExportKwh : null) kWh</strong>. This net amount is used to calculate the energy value.</p>
-                    <p>Energy value uses RCE prices under the contract terms. The estimated monthly deposit credit includes the 1.23 multiplier; it is not a bank payout or the deposit balance.</p>
-                    <p>Energy readings come from Deye. Final supplier settlement uses the OSD billing meter. Missing readings or prices are not treated as zero. Settlement time zone: @result.TimeZoneId.</p>
+                    <summary>@T["How the estimate is calculated"]</summary>
+                    <p>@T["Under the TAURON contract effective from"] @result.ContractStartDate.ToString("d MMMM yyyy", English)@T[". Exported to grid means all measured exports. After hourly netting of imports and exports:"] <strong>@Number(HasElapsedHours ? result.CreditedExportKwh : null) kWh</strong>@T[". This net amount is used to calculate the energy value."]</p>
+                    <p>@T["Energy value uses RCE prices under the contract terms. The estimated monthly deposit credit includes the 1.23 multiplier; it is not a bank payout or the deposit balance."]</p>
+                    <p>@T["Energy readings come from Deye. Final supplier settlement uses the OSD billing meter. Missing readings or prices are not treated as zero. Settlement time zone:"] @result.TimeZoneId.</p>
                 </details>
             }
             @if (Detailed)
             {
                 <section class="sales-detail-section" aria-labelledby="sales-coverage-title">
-                    <h2 id="sales-coverage-title">Data coverage</h2>
+                    <h2 id="sales-coverage-title">@T["Data coverage"]</h2>
                     <dl class="sales-metadata">
-                        <div><dt>Expected completed hours</dt><dd>@result.ExpectedHours</dd></div>
-                        <div><dt>Hours with Deye readings</dt><dd>@result.ObservedHours</dd></div>
-                        <div><dt>Hours with calculated energy value</dt><dd>@result.ValuedHours</dd></div>
-                        <div><dt>Credited export after hourly netting</dt><dd>@Number(HasElapsedHours ? result.CreditedExportKwh : null) kWh</dd></div>
-                        <div><dt>Period starts</dt><dd><time datetime="@result.Start.ToString("O")">@Local(result.Start).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
-                        <div><dt>Period ends · exclusive</dt><dd><time datetime="@result.End.ToString("O")">@Local(result.End).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
-                        <div><dt>Settlement time zone</dt><dd>@result.TimeZoneId</dd></div>
-                        <div><dt>Last updated</dt><dd>@(result.UpdatedAt is { } updated ? Local(updated).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : "Unavailable")</dd></div>
+                        <div><dt>@T["Expected completed hours"]</dt><dd>@result.ExpectedHours</dd></div>
+                        <div><dt>@T["Hours with Deye readings"]</dt><dd>@result.ObservedHours</dd></div>
+                        <div><dt>@T["Hours with calculated energy value"]</dt><dd>@result.ValuedHours</dd></div>
+                        <div><dt>@T["Credited export after hourly netting"]</dt><dd>@Number(HasElapsedHours ? result.CreditedExportKwh : null) kWh</dd></div>
+                        <div><dt>@T["Period starts"]</dt><dd><time datetime="@result.Start.ToString("O")">@Local(result.Start).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
+                        <div><dt>@T["Period ends · exclusive"]</dt><dd><time datetime="@result.End.ToString("O")">@Local(result.End).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English)</time></dd></div>
+                        <div><dt>@T["Settlement time zone"]</dt><dd>@result.TimeZoneId</dd></div>
+                        <div><dt>@T["Last updated"]</dt><dd>@(result.UpdatedAt is { } updated ? Local(updated).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : T["Unavailable"])</dd></div>
                     </dl>
-                    <p>Totals cover the available completed hours. Missing readings or prices remain unavailable.</p>
+                    <p>@T["Totals cover the available completed hours. Missing readings or prices remain unavailable."]</p>
                 </section>
                 @if (result.CurrentHour is { } current)
                 {
                     <section class="sales-detail-section" aria-labelledby="sales-current-details-title">
-                        <h2 id="sales-current-details-title">Current hour · in progress</h2>
+                        <h2 id="sales-current-details-title">@T["Current hour · in progress"]</h2>
                         <dl class="sales-metadata">
-                            <div><dt>Measured through</dt><dd>@(current.ObservedThrough is { } through ? Local(through).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : "Awaiting readings")</dd></div>
-                            <div><dt>Observed duration</dt><dd>@((current.ObservedSeconds / 60d).ToString("N1", English)) min</dd></div>
-                            <div><dt>Provisional export</dt><dd>@Number(current.ExportKwh) kWh</dd></div>
-                            <div><dt>Provisional credited export</dt><dd>@Number(current.CreditedExportKwh) kWh</dd></div>
-                            <div><dt>Provisional value</dt><dd>@Number(current.EnergyValuePln) PLN</dd></div>
-                            <div><dt>Provisional deposit credit</dt><dd>@Number(current.EstimatedDepositPln) PLN</dd></div>
+                            <div><dt>@T["Measured through"]</dt><dd>@(current.ObservedThrough is { } through ? Local(through).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", English) : T["Awaiting readings"])</dd></div>
+                            <div><dt>@T["Observed duration"]</dt><dd>@((current.ObservedSeconds / 60d).ToString("N1", English)) @T["min"]</dd></div>
+                            <div><dt>@T["Provisional export"]</dt><dd>@Number(current.ExportKwh) kWh</dd></div>
+                            <div><dt>@T["Provisional credited export"]</dt><dd>@Number(current.CreditedExportKwh) kWh</dd></div>
+                            <div><dt>@T["Provisional value"]</dt><dd>@Number(current.EnergyValuePln) PLN</dd></div>
+                            <div><dt>@T["Provisional deposit credit"]</dt><dd>@Number(current.EstimatedDepositPln) PLN</dd></div>
                         </dl>
-                        <p>Measured intervals only; no projection to the end of the hour. This amount is separate from completed-hour totals.</p>
+                        <p>@T["Measured intervals only; no projection to the end of the hour. This amount is separate from completed-hour totals."]</p>
                     </section>
                 }
                 <section class="sales-detail-section" aria-labelledby="sales-contract-title">
-                    <h2 id="sales-contract-title">Contract calculation</h2>
-                    <p>TAURON contract from @result.ContractStartDate.ToString("d MMMM yyyy", English). Energy value uses RCE prices for credited export after hourly netting. Estimated deposit credit includes the 1.23 multiplier.</p>
-                    <p>The estimate is not a bank payout or deposit balance. Final settlement uses the OSD billing meter.</p>
+                    <h2 id="sales-contract-title">@T["Contract calculation"]</h2>
+                    <p>@T["TAURON contract from"] @result.ContractStartDate.ToString("d MMMM yyyy", English)@T[". Energy value uses RCE prices for credited export after hourly netting. Estimated deposit credit includes the 1.23 multiplier."]</p>
+                    <p>@T["The estimate is not a bank payout or deposit balance. Final settlement uses the OSD billing meter."]</p>
                 </section>
-                <div class="sales-table-container" tabindex="0" aria-label="Completed sales interval data table">
+                <div class="sales-table-container" tabindex="0" aria-label="@T["Completed sales interval data table"]">
                     <table class="sales-data-table">
-                        <caption>Completed interval breakdown · @result.TimeZoneId</caption>
-                        <thead><tr><th scope="col">Interval</th><th scope="col">Export · kWh</th><th scope="col">Credited · kWh</th><th scope="col">Value · PLN</th><th scope="col">Deposit · PLN</th><th scope="col">Observed / expected h</th><th scope="col">Valued h</th></tr></thead>
+                        <caption>@T["Completed interval breakdown ·"] @result.TimeZoneId</caption>
+                        <thead><tr><th scope="col">@T["Interval"]</th><th scope="col">@T["Export · kWh"]</th><th scope="col">@T["Credited · kWh"]</th><th scope="col">@T["Value · PLN"]</th><th scope="col">@T["Deposit · PLN"]</th><th scope="col">@T["Observed / expected h"]</th><th scope="col">@T["Valued h"]</th></tr></thead>
                         <tbody>
                             @foreach (var bucket in result.Buckets)
                             {
@@ -317,14 +317,14 @@
     private string? _validation;
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _refreshTask;
-    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-GB");
+    private static CultureInfo English => CultureInfo.CurrentCulture;
     private string TimeZoneId => Result?.TimeZoneId ?? "Europe/Warsaw";
     private DateOnly Today => Data?.Today ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId)).DateTime);
     private bool HasElapsedHours => Result?.ExpectedHours > 0;
     private bool BeforeContract => Result is { } result && PeriodBounds(result.Request).Through < result.ContractStartDate;
     private bool CanPrevious => PeriodBounds(_selection).From > new DateOnly(2000, 1, 1);
     private bool CanNext => PeriodBounds(_selection).Through < Today;
-    private string OverviewExportLabel => Result?.Request.Date is { } date && date != Today ? "Exported on " + date.ToString("d MMM", English) : "Exported today";
+    private string OverviewExportLabel => Result?.Request.Date is { } date && date != Today ? T.Format("Exported on {0}", date.ToString("d MMM", English)) : T["Exported today"];
     private string Unit => _showMoney ? "PLN" : "kWh";
     private int ChartWidth => _compact ? 480 : Overview ? 600 : 960;
     private double Step => (ChartWidth - 72d) / Math.Max(1, Result?.Buckets.Count ?? 1);
@@ -347,7 +347,7 @@
     private static string Number(decimal? value) => value.HasValue ? value.Value.ToString("N2", English) : "—";
     private static string Coordinate(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
     private static string AxisNumber(double value) => value.ToString("0.##", English);
-    private static string PeriodLabel(ExportSalesPeriod period) => period switch { ExportSalesPeriod.Day => "Day", ExportSalesPeriod.Month => "Month", ExportSalesPeriod.Year => "Year", _ => "Custom" };
+    private string PeriodLabel(ExportSalesPeriod period) => period switch { ExportSalesPeriod.Day => T["Day"], ExportSalesPeriod.Month => T["Month"], ExportSalesPeriod.Year => T["Year"], _ => T["Custom"] };
     private DateTimeOffset Local(DateTimeOffset time) => TimeZoneInfo.ConvertTime(time, TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId));
     private string AxisLabel(ExportSaleBucket bucket) => Local(bucket.Start).ToString(Result!.Request.Period == ExportSalesPeriod.Day ? "HH:mm" : Result.Request.Period == ExportSalesPeriod.Year ? "MMM" : "d MMM", English);
     private string BucketTime(ExportSaleBucket bucket) => Result!.Request.Period == ExportSalesPeriod.Day
@@ -355,11 +355,11 @@
         : Result.Request.Period == ExportSalesPeriod.Year ? Local(bucket.Start).ToString("MMMM yyyy", English) : Local(bucket.Start).ToString("dd MMMM yyyy", English);
     private string BucketDescription(ExportSaleBucket bucket) => BucketTime(bucket)
         + " · " + Local(bucket.Start).ToString("d MMMM yyyy HH:mm (zzz)", English) + " – " + Local(bucket.End).ToString("d MMMM yyyy HH:mm (zzz)", English)
-        + $": exported {Number(bucket.ExpectedHours > 0 ? bucket.ExportKwh : null)} kWh, after hourly netting {Number(bucket.ExpectedHours > 0 ? bucket.CreditedExportKwh : null)} kWh, value {Number(bucket.ExpectedHours > 0 ? bucket.EnergyValuePln : null)} PLN. Readings {bucket.ObservedHours} of {bucket.ExpectedHours} h."
-        + (ProgressFor(bucket) is { } progress ? " Completed hours only. " + ProgressDescription(progress) : "");
+        + T.Format(": exported {0} kWh, after hourly netting {1} kWh, value {2} PLN. Readings {3} of {4} h.", Number(bucket.ExpectedHours > 0 ? bucket.ExportKwh : null), Number(bucket.ExpectedHours > 0 ? bucket.CreditedExportKwh : null), Number(bucket.ExpectedHours > 0 ? bucket.EnergyValuePln : null), bucket.ObservedHours, bucket.ExpectedHours)
+        + (ProgressFor(bucket) is { } progress ? " " + T["Completed hours only."] + " " + ProgressDescription(progress) : "");
     private string ProgressTime(ExportSaleProgress progress) => progress.ObservedThrough is { } through
-        ? "Measured through " + Local(through).ToString("d MMMM HH:mm (zzz)", English) : "Awaiting current-hour readings.";
-    private string ProgressDescription(ExportSaleProgress progress) => $"Current hour · in progress. {ProgressTime(progress)} Exported so far {Number(progress.ExportKwh)} kWh, after hourly netting {Number(progress.CreditedExportKwh)} kWh, provisional value {Number(progress.EnergyValuePln)} PLN. Measured intervals only; no projection to the end of the hour.";
+        ? T.Format("Measured through {0}", Local(through).ToString("d MMMM HH:mm (zzz)", English)) : T["Awaiting current-hour readings."];
+    private string ProgressDescription(ExportSaleProgress progress) => T.Format("Current hour · in progress. {0} Exported so far {1} kWh, after hourly netting {2} kWh, provisional value {3} PLN. Measured intervals only; no projection to the end of the hour.", ProgressTime(progress), Number(progress.ExportKwh), Number(progress.CreditedExportKwh), Number(progress.EnergyValuePln));
 
     protected override void OnInitialized()
     {
@@ -469,7 +469,7 @@
             ExportSalesPeriod.Month => DateOnly.TryParseExact(text + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date),
             _ => DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date)
         };
-        if (!valid || date.Year < 2000 || date > Today) { _validation = "Choose a date from 2000 onwards and no later than today."; return; }
+        if (!valid || date.Year < 2000 || date > Today) { _validation = T["Choose a date from 2000 onwards and no later than today."]; return; }
         _selection = _selection with { Date = date };
         _followToday = false;
         _validation = null;
@@ -483,13 +483,13 @@
         if (from) _fromInput = args.Value?.ToString() ?? ""; else _throughInput = args.Value?.ToString() ?? "";
         if (!DateOnly.TryParseExact(_fromInput, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)
             || !DateOnly.TryParseExact(_throughInput, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
-        { _validation = "Enter both dates."; return; }
+        { _validation = T["Enter both dates."]; return; }
         _from = start;
         _through = end;
-        _validation = _from.Year < 2000 ? "The start date must be in 2000 or later."
-            : _through < _from ? "The end date must not be before the start date."
-            : _through > Today ? "The end date cannot be in the future."
-            : _through.DayNumber - _from.DayNumber > 365 ? "Choose no more than 366 days, inclusive." : null;
+        _validation = _from.Year < 2000 ? T["The start date must be in 2000 or later."]
+            : _through < _from ? T["The end date must not be before the start date."]
+            : _through > Today ? T["The end date cannot be in the future."]
+            : _through.DayNumber - _from.DayNumber > 365 ? T["Choose no more than 366 days, inclusive."] : null;
     }
     private async Task ApplyCustom()
     {
@@ -542,8 +542,8 @@
         catch (Exception)
         {
             if (!_disposed && version == _version) _error = preserveData && _data is not null
-                ? "Refresh failed. Showing previous data; values may be out of date. Please retry."
-                : "Sales could not be loaded. Please try again.";
+                ? T["Refresh failed. Showing previous data; values may be out of date. Please retry."]
+                : T["Sales could not be loaded. Please try again."];
         }
         finally
         {

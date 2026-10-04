@@ -1,3 +1,4 @@
+import { useLanguage } from "../application/LanguageContext";
 import { StyleSheet, Text, View } from "react-native";
 import { ArrowRight, RefreshCcw } from "lucide-react-native";
 import { AppButton } from "./components";
@@ -11,15 +12,16 @@ export function TileHeader({ title, subtitle, loading, onRefresh, onDetails, acc
   onDetails?: () => void;
   accessibilityScope?: string;
 }) {
+  const { t } = useLanguage();
   const scope = accessibilityScope ?? title;
   return <View style={styles.header}>
     <View style={styles.copy}>
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      <Text style={styles.title}>{t(title)}</Text>
+      {subtitle ? <Text style={styles.subtitle}>{t(subtitle)}</Text> : null}
     </View>
     <View style={styles.actions}>
-      <AppButton label="Refresh" accessibilityLabel={`${scope} refresh`} icon={RefreshCcw} onPress={onRefresh} loading={loading} variant="secondary" compact />
-      {onDetails ? <AppButton label="Details" accessibilityLabel={`${scope} details`} icon={ArrowRight} onPress={onDetails} variant="secondary" compact /> : null}
+      <AppButton label={t("Refresh")} accessibilityLabel={t("{0} refresh", t(scope))} icon={RefreshCcw} onPress={onRefresh} loading={loading} variant="secondary" compact />
+      {onDetails ? <AppButton label={t("Details")} accessibilityLabel={t("{0} details", t(scope))} icon={ArrowRight} onPress={onDetails} variant="secondary" compact /> : null}
     </View>
   </View>;
 }

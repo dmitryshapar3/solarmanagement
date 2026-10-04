@@ -7,42 +7,57 @@
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
-<PageTitle>Settings - DeyeSolar</PageTitle>
+<PageTitle>@T["Settings - DeyeSolar"]</PageTitle>
 
-<MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
+<MudText Typo="Typo.h5" Class="mb-4">@T["Settings"]</MudText>
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-2">@T["Language"]</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">@T["Choose the language for your account on the web and in the mobile app."]</MudText>
+    <form method="post" action="/account/language">
+        <input type="hidden" name="__RequestVerificationToken" value="@_languageToken" />
+        <label for="account-language">@T["Language"]</label>
+        <select id="account-language" name="Language" class="pa-2 ml-2" aria-label="@T["Language"]">
+            @foreach (var language in T.Languages)
+            {
+                <option value="@language.Code" selected="@(language.Code == T.Language)">@language.Name</option>
+            }
+        </select>
+        <button type="submit" class="mud-button-root mud-button mud-button-filled mud-button-filled-primary pa-2 ml-2">@T["Save language"]</button>
+    </form>
+</MudPaper>
 <IntegrationSettings />
 <MudGrid>
     <MudItem xs="12"><SiteSettingsEditor /></MudItem>
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-2">Weather (Open-Meteo)</MudText>
-            <MudText Typo="Typo.body2">Verify weather access for the server's configured solar location. Customer API keys are configured on the server.</MudText>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("openmeteo"))" Disabled="@(_testing is not null)" Class="mt-3">Test connection</MudButton>
-            @if (_testResults.TryGetValue("openmeteo", out var weatherTest)) { <MudAlert Severity="@(weatherTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@weatherTest.Message</MudAlert> }
+            <MudText Typo="Typo.h6" Class="mb-2">@T["Weather (Open-Meteo)"]</MudText>
+            <MudText Typo="Typo.body2">@T["Verify weather access for the server's configured solar location. Customer API keys are configured on the server."]</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("openmeteo"))" Disabled="@(_testing is not null)" Class="mt-3">@T["Test connection"]</MudButton>
+            @if (_testResults.TryGetValue("openmeteo", out var weatherTest)) { <MudAlert Severity="@(weatherTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@T.Translate(weatherTest.Message)</MudAlert> }
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-2">Electricity prices (PSE)</MudText>
-            <MudText Typo="Typo.body2">Verify access to the public PSE electricity price feed. No account or key is required.</MudText>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("pse"))" Disabled="@(_testing is not null)" Class="mt-3">Test connection</MudButton>
-            @if (_testResults.TryGetValue("pse", out var priceTest)) { <MudAlert Severity="@(priceTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@priceTest.Message</MudAlert> }
+            <MudText Typo="Typo.h6" Class="mb-2">@T["Electricity prices (PSE)"]</MudText>
+            <MudText Typo="Typo.body2">@T["Verify access to the public PSE electricity price feed. No account or key is required."]</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("pse"))" Disabled="@(_testing is not null)" Class="mt-3">@T["Test connection"]</MudButton>
+            @if (_testResults.TryGetValue("pse", out var priceTest)) { <MudAlert Severity="@(priceTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@T.Translate(priceTest.Message)</MudAlert> }
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Polling</MudText>
-            <MudNumericField @bind-Value="_polling.IntervalSeconds" Label="Interval (seconds)" Min="5" Max="300" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">Save</MudButton>
+            <MudText Typo="Typo.h6" Class="mb-3">@T["Polling"]</MudText>
+            <MudNumericField Converter="@(T.InputConverter<int>(this, "Settings:_polling.IntervalSeconds"))" @bind-Value="_polling.IntervalSeconds" Label="@T["Interval (seconds)"]" Min="5" Max="300" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">@T["Save"]</MudButton>
         </MudPaper>
     </MudItem>
 
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Display</MudText>
-            <MudAutocomplete T="string" @bind-Value="_display.TimeZoneId" Label="Timezone"
+            <MudText Typo="Typo.h6" Class="mb-3">@T["Display"]</MudText>
+            <MudAutocomplete T="string" @bind-Value="_display.TimeZoneId" Label="@T["Timezone"]"
                              SearchFunc="SearchTimezones" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDisplay" Class="mt-3">Save</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDisplay" Class="mt-3">@T["Save"]</MudButton>
         </MudPaper>
     </MudItem>
 </MudGrid>
@@ -56,18 +71,29 @@
     private DeyeSolar.Domain.Options.PollingOptions _polling = new();
     private DeyeSolar.Domain.Options.DisplayOptions _display = new();
     private string? _errorMessage;
+    private string _languageToken = "";
     private string? _testing;
     private readonly Dictionary<string, IntegrationTestResult> _testResults = new();
     private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones().Select(tz => tz.Id).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
+        _languageToken = T.GetAntiforgeryToken();
         _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
         _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try
+            {
+                _languageToken = await JS.InvokeAsync<string>("deyeSolarLanguageToken");
+                StateHasChanged();
+            }
+            catch { }
+        }
         if (firstRender && _display.TimeZoneId == "UTC")
         {
             try
@@ -85,20 +111,20 @@
         _testing = kind;
         _testResults.Remove(kind);
         try { _testResults[kind] = await IntegrationTests.TestAsync(kind, new IntegrationTestRequest(), CancellationToken.None); }
-        catch (Exception) { _testResults[kind] = new(kind, false, "unavailable", "The provider could not be verified. Please try again.", DateTimeOffset.UtcNow); }
+        catch (Exception) { _testResults[kind] = new(kind, false, "unavailable", T["The provider could not be verified. Please try again."], DateTimeOffset.UtcNow); }
         finally { _testing = null; }
     }
 
     private async Task SavePolling()
     {
         await SettingsService.SaveSectionAsync("Polling", _polling);
-        Snackbar.Add("Polling settings saved", Severity.Success);
+        Snackbar.Add(T["Polling settings saved"], Severity.Success);
     }
 
     private async Task SaveDisplay()
     {
         await SettingsService.SaveSectionAsync("Display", _display);
-        Snackbar.Add("Display settings saved", Severity.Success);
+        Snackbar.Add(T["Display settings saved"], Severity.Success);
     }
 
     private Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)

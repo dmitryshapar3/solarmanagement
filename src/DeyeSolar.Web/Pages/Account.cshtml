@@ -1,26 +1,27 @@
 @page "/account"
+@inject DeyeSolar.Web.Localization.UiText T
 @model DeyeSolar.Web.Pages.AccountModel
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
-@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = "Account"; }
+@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = T["Account"]; }
 <link rel="stylesheet" href="/css/auth.css" asp-append-version="true" />
-<h1>Sign-in methods for your account</h1>
-<p>Verified email: @(Model.Email ?? "Not linked")</p><p>Verified phone: @(Model.Phone ?? "Not linked")</p><p>Google: @(Model.GoogleLinked ? "Linked" : "Not linked")</p>
-<p>Linking a method keeps your existing account and installation. Identities already linked to another account cannot be merged automatically.</p>
-@if (Model.ErrorMessage is not null) { <p class="auth-error" role="alert">@Model.ErrorMessage</p> }
-@if (Model.Notice is not null) { <p role="status">@Model.Notice</p> }
-@if (Model.Providers.GoogleEnabled && !Model.GoogleLinked) { <form method="post" asp-page-handler="Google" class="auth-form"><button type="submit">Link Google</button></form> }
+<h1>@T["Sign-in methods for your account"]</h1>
+<p>@T["Verified email:"] @(Model.Email ?? T["Not linked"])</p><p>@T["Verified phone:"] @(Model.Phone ?? T["Not linked"])</p><p>@T["Google:"] @(Model.GoogleLinked ? T["Linked"] : T["Not linked"])</p>
+<p>@T["Linking a method keeps your existing account and installation. Identities already linked to another account cannot be merged automatically."]</p>
+@if (Model.ErrorMessage is not null) { <p class="auth-error" role="alert">@T.Translate(Model.ErrorMessage)</p> }
+@if (Model.Notice is not null) { <p role="status">@T.Translate(Model.Notice)</p> }
+@if (Model.Providers.GoogleEnabled && !Model.GoogleLinked) { <form method="post" asp-page-handler="Google" class="auth-form"><button type="submit">@T["Link Google"]</button></form> }
 <form method="post" asp-page-handler="Start" class="auth-form">
-    <label for="channel">Add or verify a sign-in method</label><select id="channel" asp-for="Channel">
-        @if (Model.Providers.EmailEnabled) { <option value="email">Email</option> }
-        @if (Model.Providers.PhoneEnabled) { <option value="phone">Phone (SMS)</option> }
+    <label for="channel">@T["Add or verify a sign-in method"]</label><select id="channel" asp-for="Channel">
+        @if (Model.Providers.EmailEnabled) { <option value="email">@T["Email"]</option> }
+        @if (Model.Providers.PhoneEnabled) { <option value="phone">@T["Phone (SMS)"]</option> }
     </select>
-    <label for="destination">Email address or phone number with country code</label><input id="destination" asp-for="Destination" required maxlength="254" autocomplete="username" />
-    <button type="submit" disabled="@(!Model.Providers.EmailEnabled && !Model.Providers.PhoneEnabled)">Send verification code</button>
+    <label for="destination">@T["Email address or phone number with country code"]</label><input id="destination" asp-for="Destination" required maxlength="254" autocomplete="username" />
+    <button type="submit" disabled="@(!Model.Providers.EmailEnabled && !Model.Providers.PhoneEnabled)">@T["Send verification code"]</button>
 </form>
 @if (!string.IsNullOrEmpty(Model.VerificationId))
 {
     <form method="post" asp-page-handler="Complete" class="auth-form"><input type="hidden" asp-for="VerificationId" />
-        <label for="code">Verification code</label><input id="code" name="Code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /><button type="submit">Link verified identity</button>
+        <label for="code">@T["Verification code"]</label><input id="code" name="Code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /><button type="submit">@T["Link verified identity"]</button>
     </form>
 }
-<p><a href="/">Return to your installation</a></p>
+<p><a href="/">@T["Return to your installation"]</a></p>

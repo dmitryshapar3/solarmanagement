@@ -1,7 +1,9 @@
+import { currentLocale, translate as t } from "../i18n";
+
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
-    super(message);
+    super(t(message));
     this.status = status;
   }
 }
@@ -75,11 +77,11 @@ export class ApiClient {
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
-      throw new Error("API requests must use a relative server path.");
+      throw new Error(t("API requests must use a relative server path."));
     }
     const timeoutMs = options.timeoutMs ?? 15000;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 330000) {
-      throw new Error("The request timeout must be between 1 and 330000 milliseconds.");
+      throw new Error(t("The request timeout must be between 1 and 330000 milliseconds."));
     }
     const revision = this.revision;
     const token = this.token;
@@ -91,7 +93,7 @@ export class ApiClient {
     options.signal?.addEventListener("abort", cancel, { once: true });
     if (options.signal?.aborted) controller.abort();
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", "Accept-Language": currentLocale() };
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
     let rejectAborted: () => void = () => {};
@@ -105,7 +107,7 @@ export class ApiClient {
       if (controller.signal.aborted) rejectAborted();
     });
     const send = async (): Promise<T> => {
-      if (controller.signal.aborted) throw new Error("The request was canceled.");
+      if (controller.signal.aborted) throw new Error(t("The request was canceled."));
       const response = await this.transport(url, {
         method: options.method ?? "GET",
         headers,
@@ -116,7 +118,7 @@ export class ApiClient {
       });
       const text = await response.text();
       // A late response or 401 must never affect a replacement session.
-      if (controller.signal.aborted || revision !== this.revision) throw new Error("The request was canceled.");
+      if (controller.signal.aborted || revision !== this.revision) throw new Error(t("The request was canceled."));
       let payload: unknown;
       if (text) {
         try { payload = JSON.parse(text); }
@@ -148,9 +150,9 @@ export class ApiClient {
 export function normalizeBaseUrl(value: string): string {
   let url: URL;
   try { url = new URL(value.trim()); }
-  catch { throw new Error("Enter a valid server URL, for example https://solar.dshapar.com."); }
+  catch { throw new Error(t("Enter a valid server URL, for example https://solar.dshapar.com.")); }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Use an HTTP or HTTPS server URL without credentials, a query, or a fragment.");
+    throw new Error(t("Use an HTTP or HTTPS server URL without credentials, a query, or a fragment."));
   }
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
@@ -170,5 +172,5 @@ function extractErrorMessage(payload: unknown, status: number): string {
     if (typeof message === "string" && message.trim()) return message;
   }
   // Do not expose proxy HTML, stack traces, or echoed credentials in a sign-in error.
-  return `Request failed with HTTP ${status}.`;
+  return t("Request failed with HTTP {0}.", String(status));
 }

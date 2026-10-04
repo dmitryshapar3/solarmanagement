@@ -27,7 +27,7 @@ public class SolarHistoryChartTests
     [InlineData(true, "weather-error")]
     [InlineData(true, "actual-error")]
     [InlineData(true, "empty")]
-    public async Task GenerationViewsRemainEnglishAndPreserveAvailableSeries(bool overview, string scenario)
+    public async Task EnglishGenerationViewsPreserveAvailableSeries(bool overview, string scenario)
     {
         var data = scenario switch
         {
@@ -42,8 +42,8 @@ public class SolarHistoryChartTests
         var uiCulture = CultureInfo.CurrentUICulture;
         try
         {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ru-RU");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
             var html = await RenderAsync(data, overview: overview);
 
             Assert.DoesNotMatch("[\\u0400-\\u04FF]", html);
@@ -429,8 +429,8 @@ public class SolarHistoryChartTests
             var html = await RenderAsync(RangeResult((1.3, 2.1, 2.8), (2.5, 3.3, 1.6), (4.2, 5.4, 3.1), (3.7, 4.9, 4.4), (0.8, 1.4, 1.2)));
             Assert.DoesNotContain(",", Path(html, "possible-band"));
             Assert.DoesNotContain(",", Path(html, "actual-series"));
-            Assert.Contains("0.8–1.4 kW", html);
-            Assert.Contains("actual 1.2 kW", html);
+            Assert.Contains("0,8–1,4 kW", html);
+            Assert.Contains("actual 1,2 kW", html);
             Assert.NotEmpty(Vertices(Path(html, "possible-band")));
         }
         finally { CultureInfo.CurrentCulture = previous; }
@@ -476,6 +476,7 @@ public class SolarHistoryChartTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddComponentLocalization();
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddSingleton(TimeProvider.System);
@@ -510,7 +511,8 @@ public class SolarHistoryChartTests
             await File.WriteAllTextAsync(System.IO.Path.Combine(folder, scenario + ".html"), page);
         }
         var decoded = WebUtility.HtmlDecode(html);
-        Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);
+        if (CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en")
+            Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);
         return decoded;
     }
 
@@ -518,6 +520,7 @@ public class SolarHistoryChartTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddComponentLocalization();
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddSingleton(clock ?? new FixedClock());

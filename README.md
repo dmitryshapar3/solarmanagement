@@ -11,6 +11,7 @@ The dashboard separates measured energy data, modeled solar generation and estim
 - Historical readings and generation charts, with weather-based possible-power ranges from Open-Meteo.
 - Electricity export estimates with retained observations and quarter-hour prices, coverage indicators and separate provisional current-hour progress.
 - Verified email/phone registration, Google sign-in, linked identities, isolated installations and an authenticated API for the mobile client.
+- User-selectable interface language with 15 shared offline translations on web and mobile, including localized dates and numbers.
 
 ## Project layout
 

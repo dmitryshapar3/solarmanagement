@@ -1,0 +1,2 @@
+/* Generated from i18n/ko.json by scripts/sync-ios-localizations.mjs. */
+"NSFaceIDUsageDescription" = "DeyeSolar에서 안전한 로그인을 위해 Face ID를 사용하도록 허용합니다.";

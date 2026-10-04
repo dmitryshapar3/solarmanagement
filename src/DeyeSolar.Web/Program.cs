@@ -20,8 +20,12 @@ using Microsoft.EntityFrameworkCore;
 using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Tenancy;
 using MudBlazor.Services;
+using DeyeSolar.Web.Localization;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<UiText>();
+builder.Services.AddScoped<UserLanguageService>();
 builder.Configuration.AddJsonFile("integration-bootstrap.json", optional: true, reloadOnChange: false);
 builder.Configuration.AddEnvironmentVariables();
 // Publisher and network trust is operator configuration, captured before editable SQL settings.
@@ -119,6 +123,7 @@ builder.Services.AddRazorPages(options =>
 });
 builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
+builder.Services.AddTransient<MudBlazor.MudLocalizer, DeyeSolar.Web.Localization.UiMudLocalizer>();
 
 var app = builder.Build();
 
@@ -190,11 +195,13 @@ app.UseRouting();
 app.UseRateLimiter();
 app.UseAccountIdentityOrigin();
 app.UseAuthentication();
+app.UseMiddleware<LanguageMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<InstallationBindingMiddleware>();
 app.MapMobileApi();
 app.MapDynamicIntegrations();
 app.MapAccountIdentityApi();
+app.MapUserLanguage();
 app.MapGoogleIdentity();
 app.MapExportSalesApi();
 app.MapIntegrationManagement();

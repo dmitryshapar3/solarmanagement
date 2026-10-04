@@ -1,3 +1,4 @@
+import { translate as t } from "../../core/i18n";
 export const subscriptionProductIds = {
   monthly: "com.dshapar.solar.monthly",
   yearly: "com.dshapar.solar.yearly"
@@ -77,5 +78,5 @@ export function isEligibleFor14DayTrial(product: BillingProduct): boolean {
 }
 
 export function subscriptionPriceLabel(product: BillingProduct): string {
-  return `${product.displayPrice} per ${product.periodUnit === "year" ? "year" : "month"}`;
+  return t("{0} per {1}", product.displayPrice, product.periodUnit === "year" ? t("year") : t("month"));
 }

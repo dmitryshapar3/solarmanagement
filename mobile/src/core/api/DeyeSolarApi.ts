@@ -1,4 +1,5 @@
 import { ApiClient, ApiError } from "./ApiClient";
+import { translate as t } from "../i18n";
 import { IntegrationApi } from "./IntegrationApi";
 import { SocketCommandCoordinator } from "./SocketCommandCoordinator";
 import {
@@ -30,6 +31,12 @@ type DeyeDeviceSelectionRequest = {
 };
 
 export class DeyeSolarApi {
+  getLanguage(signal?: AbortSignal): Promise<{ language: string | null }> {
+    return this.client.request("/api/account/language", { signal });
+  }
+  setLanguage(language: string): Promise<{ language: string }> {
+    return this.client.request("/api/account/language", { method: "PUT", body: { language } });
+  }
   readonly integrations: IntegrationApi;
   readonly socketCommands: SocketCommandCoordinator;
 
@@ -85,7 +92,7 @@ export class DeyeSolarApi {
       });
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) {
-        throw new ApiError(401, "Invalid username or password.");
+        throw new ApiError(401, t("Invalid username or password."));
       }
       throw ex;
     }

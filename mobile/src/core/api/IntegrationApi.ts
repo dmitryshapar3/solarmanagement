@@ -1,3 +1,4 @@
+import { translate as t } from "../i18n";
 import type { ApiClient } from "./ApiClient";
 
 export type IntegrationValue = string | number | boolean | null;

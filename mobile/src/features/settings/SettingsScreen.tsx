@@ -1,5 +1,7 @@
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Keyboard, StyleSheet, Text, View } from "react-native";
+import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { LogOut, MapPin, RefreshCcw, Save } from "lucide-react-native";
 import {
   AppButton,
@@ -36,7 +38,10 @@ const siteNumberFields = [
 type SiteNumberKey = typeof siteNumberFields[number][0];
 
 export function SettingsScreen() {
+  const demoDisplayName = useDemoDisplayName();
+  const { t, language, languages, setLanguage } = useLanguage();
   const { api, apiBaseUrl, isDemo, updateApiBaseUrl, logout } = useAuth();
+  const [languageError, setLanguageError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [pollingIntervalText, setPollingIntervalText] = useState("");
@@ -100,10 +105,24 @@ export function SettingsScreen() {
     }
   }
 
+  const languageSettings = <Card style={styles.form}>
+    <SectionTitle title={t("Language")} />
+    <Text style={styles.activeInfo}>{t("Choose your language for the app and website.")}</Text>
+    <View style={styles.languageList}>{languages.map(option => <Pressable key={option.code}
+      accessibilityRole="button" accessibilityLabel={option.name} accessibilityState={{ selected: language === option.code }}
+      style={[styles.languageChoice, language === option.code && styles.languageSelected]}
+      onPress={() => { setLanguageError(null); void setLanguage(option.code).catch(exception => setLanguageError(exception instanceof Error ? exception.message : "Unable to save your language.")); }}>
+      <Text style={styles.languageName}>{option.name}</Text>
+      {language === option.code ? <StatusPill label={t("Selected")} tone="success" /> : null}
+    </Pressable>)}</View>
+    <ErrorBanner message={languageError} />
+  </Card>;
+
   if (loading) {
     return (
-      <Screen scroll={false}>
-        <LoadingState label="Loading settings..." />
+      <Screen>
+        {languageSettings}
+        <LoadingState label={t("Loading settings...")} />
       </Screen>
     );
   }
@@ -112,12 +131,13 @@ export function SettingsScreen() {
     return (
       <Screen>
         <Header
-          title="Settings"
-          subtitle="Account and installation settings"
-          action={<AppButton label={isDemo ? "Exit demo" : "Logout"} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
+          title={t("Settings")}
+          subtitle={t("Account and installation settings")}
+          action={<AppButton label={isDemo ? t("Exit demo") : t("Logout")} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
         />
-        <ErrorBanner message={error ?? "Settings could not be loaded."} />
-        <AppButton label="Retry" icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
+        {languageSettings}
+        <ErrorBanner message={error ?? t("Settings could not be loaded.")} />
+        <AppButton label={t("Retry")} icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
       </Screen>
     );
   }
@@ -125,7 +145,7 @@ export function SettingsScreen() {
   const savePolling = async (): Promise<void> => {
     const parsed = Number.parseInt(pollingIntervalText, 10);
     if (Number.isNaN(parsed) || parsed < 5 || parsed > 300) {
-      throw new Error("Polling interval must be between 5 and 300 seconds.");
+      throw new Error(t("Polling interval must be between 5 and 300 seconds."));
     }
 
     await api.savePolling({ intervalSeconds: parsed });
@@ -159,7 +179,7 @@ export function SettingsScreen() {
   function siteNumber(key: SiteNumberKey): number {
     const text = siteNumbers[key]?.trim();
     const value = text ? Number(text.replace(",", ".")) : Number.NaN;
-    if (!Number.isFinite(value)) throw new Error("Enter valid numbers for the solar site.");
+    if (!Number.isFinite(value)) throw new Error(t("Enter valid numbers for the solar site."));
     return value;
   }
 
@@ -173,32 +193,33 @@ export function SettingsScreen() {
   }
 
   const testAction = (kind: IntegrationKind, label: string) => <View style={styles.form}>
-    <AppButton label={`Test ${label}`} variant="secondary"
+    <AppButton label={t("Test {0}", label)} variant="secondary"
       onPress={() => void runBusy(`test-${kind}`, () => testIntegration(kind))}
       loading={busy === `test-${kind}`} disabled={Boolean(busy)} />
     {testResults[kind] ? <View style={styles.form}>
-      <StatusPill label={testResults[kind]!.success ? "Connected" : "Check failed"} tone={testResults[kind]!.success ? "success" : "warning"} />
-      <Text style={styles.activeInfo}>{testResults[kind]!.message}</Text>
+      <StatusPill label={testResults[kind]!.success ? t("Connected") : t("Check failed")} tone={testResults[kind]!.success ? "success" : "warning"} />
+      <Text style={styles.activeInfo}>{t(testResults[kind]!.message)}</Text>
     </View> : null}
   </View>;
 
   return (
     <Screen refreshing={busy === "refresh"} onRefresh={() => void runBusy("refresh", load)}>
       <Header
-        title="Settings"
+        title={t("Settings")}
         subtitle={settings.display.timeZoneId}
-        action={<AppButton label={isDemo ? "Exit demo" : "Logout"} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
+        action={<AppButton label={isDemo ? t("Exit demo") : t("Logout")} icon={LogOut} onPress={() => void logout()} variant="secondary" compact />}
       />
       <ErrorBanner message={error} />
 
+      {languageSettings}
       <AccountIdentityCard />
 
-      <SectionTitle title="Mobile API" />
+      <SectionTitle title={t("Mobile API")} />
       <Card style={styles.form}>
-        {isDemo ? <Text style={styles.activeInfo}>Exit demo to connect to a server. Other settings here affect only the sample installation.</Text> : null}
-        <TextField label="Base URL" value={baseUrl} onChangeText={setBaseUrl} editable={!isDemo} />
+        {isDemo ? <Text style={styles.activeInfo}>{t("Exit demo to connect to a server. Other settings here affect only the sample installation.")}</Text> : null}
+        <TextField label={t("Base URL")} value={baseUrl} onChangeText={setBaseUrl} editable={!isDemo} />
         <AppButton
-          label="Save API URL"
+          label={t("Save API URL")}
           icon={Save}
           onPress={() => void runBusy("api-url", () => updateApiBaseUrl(baseUrl))}
           loading={busy === "api-url"}
@@ -208,53 +229,53 @@ export function SettingsScreen() {
 
       <IntegrationSettings api={api.integrations} isDemo={isDemo} onSelectionChanged={updateSiteSelection} />
 
-      <SectionTitle title="Forecast & sales integrations" />
+      <SectionTitle title={t("Forecast & sales integrations")} />
       <Card style={styles.form}>
-        <Text style={styles.activeInfo}>Check the forecast and electricity price providers using the saved server configuration.</Text>
+        <Text style={styles.activeInfo}>{t("Check the forecast and electricity price providers using the saved server configuration.")}</Text>
         {site ? <>
-          <TextField label="Solar site name" value={site.solarEstimate.locationLabel} onChangeText={locationLabel => setSite(current => current && { ...current, solarEstimate: { ...current.solarEstimate, locationLabel } })} />
-          <TextField label="Forecast timezone" value={site.solarEstimate.timeZoneId} onChangeText={timeZoneId => setSite(current => current && { ...current, solarEstimate: { ...current.solarEstimate, timeZoneId } })} />
-          {siteNumberFields.map(([key, label]) => <TextField key={key} label={label} value={siteNumbers[key] ?? ""}
+          <TextField label={t("Solar site name")} value={demoDisplayName(site.solarEstimate.locationLabel)} onChangeText={locationLabel => setSite(current => current && { ...current, solarEstimate: { ...current.solarEstimate, locationLabel } })} />
+          <TextField label={t("Forecast timezone")} value={site.solarEstimate.timeZoneId} onChangeText={timeZoneId => setSite(current => current && { ...current, solarEstimate: { ...current.solarEstimate, timeZoneId } })} />
+          {siteNumberFields.map(([key, label]) => <TextField key={key} label={t(label)} value={siteNumbers[key] ?? ""}
             onChangeText={value => setSiteNumbers(current => ({ ...current, [key]: value }))} keyboardType="numbers-and-punctuation" />)}
-          <TextField label="Sales contract start (YYYY-MM-DD)" value={site.solarSales.contractStartDate}
+          <TextField label={t("Sales contract start (YYYY-MM-DD)")} value={site.solarSales.contractStartDate}
             onChangeText={contractStartDate => setSite(current => current && { ...current, solarSales: { ...current.solarSales, contractStartDate } })} />
-          <TextField label="Sales timezone" value={site.solarSales.timeZoneId}
+          <TextField label={t("Sales timezone")} value={site.solarSales.timeZoneId}
             onChangeText={timeZoneId => setSite(current => current && { ...current, solarSales: { ...current.solarSales, timeZoneId } })} />
-          <AppButton label={site.solarSales.payNegativePrices ? "Negative sales prices: paid" : "Negative sales prices: floored at zero"}
+          <AppButton label={site.solarSales.payNegativePrices ? t("Negative sales prices: paid") : t("Negative sales prices: floored at zero")}
             variant="secondary" onPress={() => setSite(current => current && { ...current, solarSales: { ...current.solarSales, payNegativePrices: !current.solarSales.payNegativePrices } })} />
-          <Text style={styles.activeInfo}>{site.selectedDeviceSn ? `PV source: ${site.selectedDeviceSn}` : "Save/select an inverter above before confirming the PV source."}</Text>
-          <AppButton label={site.solarEstimate.deyeSolarPowerIsPvDcConfirmed ? "DC PV source: confirmed" : "Confirm inverter reading is DC PV power"}
+          <Text style={styles.activeInfo}>{site.selectedDeviceSn ? t("PV source: {0}", site.selectedDeviceSn) : t("Save/select an inverter above before confirming the PV source.")}</Text>
+          <AppButton label={site.solarEstimate.deyeSolarPowerIsPvDcConfirmed ? t("DC PV source: confirmed") : t("Confirm inverter reading is DC PV power")}
             variant="secondary" disabled={Boolean(busy) || !site.selectedDeviceSn}
             onPress={() => setSite(current => current && { ...current, solarEstimate: { ...current.solarEstimate,
               deyeSolarPowerIsPvDcConfirmed: !current.solarEstimate.deyeSolarPowerIsPvDcConfirmed,
               deyeSolarPowerConfirmedDeviceSn: current.solarEstimate.deyeSolarPowerIsPvDcConfirmed ? "" : current.selectedDeviceSn ?? "" } })} />
-          <Text style={styles.activeInfo}>Confirm only if the selected inverter reports DC solar-panel power. This enables comparison with the modeled PV generation.</Text>
-          <AppButton label="Save solar site & sales" icon={Save} onPress={() => void runBusy("site", saveSite)} loading={busy === "site"} disabled={Boolean(busy)} />
-        </> : <Text style={styles.activeInfo}>Site setup will be available after the server supports account installations.</Text>}
+          <Text style={styles.activeInfo}>{t("Confirm only if the selected inverter reports DC solar-panel power. This enables comparison with the modeled PV generation.")}</Text>
+          <AppButton label={t("Save solar site & sales")} icon={Save} onPress={() => void runBusy("site", saveSite)} loading={busy === "site"} disabled={Boolean(busy)} />
+        </> : <Text style={styles.activeInfo}>{t("Site setup will be available after the server supports account installations.")}</Text>}
         {testAction("openmeteo", "Open-Meteo")}
         {testAction("pse", "PSE")}
       </Card>
 
-      <SectionTitle title="Polling" />
+      <SectionTitle title={t("Polling")} />
       <Card style={styles.form}>
         <TextField
-          label="Interval seconds (5-300)"
+          label={t("Interval seconds (5-300)")}
           value={pollingIntervalText}
           keyboardType="number-pad"
           onChangeText={setPollingIntervalText}
         />
         <AppButton
-          label="Save Polling"
+          label={t("Save Polling")}
           icon={Save}
           onPress={() => void runBusy("save-polling", savePolling)}
           loading={busy === "save-polling"}
         />
       </Card>
 
-      <SectionTitle title="Display" />
+      <SectionTitle title={t("Display")} />
       <Card style={styles.form}>
         <TextField
-          label="Timezone"
+          label={t("Timezone")}
           value={settings.display.timeZoneId}
           onChangeText={(timeZoneId) =>
             setSettings((current) => current && { ...current, display: { timeZoneId } })
@@ -262,7 +283,7 @@ export function SettingsScreen() {
         />
         {deviceTimeZone ? (
           <AppButton
-            label={`Use device timezone (${deviceTimeZone})`}
+            label={t("Use device timezone ({0})", deviceTimeZone)}
             icon={MapPin}
             variant="secondary"
             onPress={() =>
@@ -271,7 +292,7 @@ export function SettingsScreen() {
           />
         ) : null}
         <AppButton
-          label="Save Display"
+          label={t("Save Display")}
           icon={Save}
           onPress={() => void runBusy("save-display", saveDisplay)}
           loading={busy === "save-display"}
@@ -282,6 +303,10 @@ export function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  languageList: { gap: spacing.sm },
+  languageChoice: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
+  languageSelected: { borderColor: colors.primary },
+  languageName: { color: colors.text, fontSize: typography.body, flexShrink: 1 },
   form: {
     gap: spacing.lg
   },

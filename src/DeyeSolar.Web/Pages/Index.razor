@@ -14,7 +14,7 @@
 @using DeyeSolar.Web.Shared
 @implements IDisposable
 
-<PageTitle>Dashboard - DeyeSolar</PageTitle>
+<PageTitle>@T["Dashboard - DeyeSolar"]</PageTitle>
 
 <MudGrid>
     <MudItem xs="12">
@@ -22,64 +22,64 @@
             <section aria-labelledby="energy-status-title" aria-busy="@_refreshing.ToString().ToLowerInvariant()" data-testid="energy-status">
                 <div class="energy-status-heading">
                     <div>
-                        <h2 id="energy-status-title">Current generation</h2>
-                        <span class="energy-status-source">Inverter</span>
+                        <h2 id="energy-status-title">@T["Current generation"]</h2>
+                        <span class="energy-status-source">@T["Inverter"]</span>
                         @if (_data is { } reading)
                         {
-                            <span class="energy-status-updated" title="Poll time; the inverter measurement may be older.">Last inverter poll <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
+                            <span class="energy-status-updated" title="@T["Poll time; the inverter measurement may be older."]">@T["Last inverter poll"] <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
                         }
                     </div>
                     <div class="energy-status-actions">
                     <button type="button" class="energy-status-refresh" @onclick="RefreshInverterAsync" disabled="@_refreshing"
-                            aria-label="Refresh inverter data" title="Fetch the latest inverter readings">
+                            aria-label="@T["Refresh inverter data"]" title="@T["Fetch the latest inverter readings"]">
                         <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
-                        @(_refreshing ? "Refreshing…" : "Refresh")
+                        @(_refreshing ? T["Refreshing…"] : T["Refresh"])
                     </button>
-                    <a class="energy-status-refresh" href="/inverter-details?returnTo=%2F" aria-label="Current generation details">Details</a>
+                    <a class="energy-status-refresh" href="/inverter-details?returnTo=%2F" aria-label="@T["Current generation details"]">@T["Details"]</a>
                     </div>
                 </div>
                 <div class="energy-status-metrics">
                     <div class="energy-status-metric energy-status-primary" data-testid="solar-generation">
-                        <span class="energy-status-label">Solar generation · Inverter</span>
+                        <span class="energy-status-label">@T["Solar generation · Inverter"]</span>
                         <strong>@SolarPower<small>kW</small></strong>
                         @if (HasSolarReading && _data?.SolarObservedAt is { } observedAt)
                         {
-                            <span class="energy-status-direction">Measured <time datetime="@observedAt.ToString("O")">@TimeHelper.ToUserTime(observedAt.UtcDateTime, _tz).ToString("d MMM HH:mm:ss", CultureInfo.GetCultureInfo("en-GB"))</time></span>
+                            <span class="energy-status-direction">@T["Measured"] <time datetime="@observedAt.ToString("O")">@TimeHelper.ToUserTime(observedAt.UtcDateTime, _tz).ToString("d MMM HH:mm:ss", CultureInfo.CurrentCulture)</time></span>
                         }
                         else
                         {
-                            <span class="energy-status-direction">PV measurement unavailable</span>
+                            <span class="energy-status-direction">@T["PV measurement unavailable"]</span>
                         }
                     </div>
                     <div class="energy-status-metric" data-testid="load-power">
-                        <span class="energy-status-label">Load</span>
+                        <span class="energy-status-label">@T["Load"]</span>
                         <strong>@Power(_data?.LoadPowerValid == false ? null : _data?.LoadPower)<small>W</small></strong>
                     </div>
                     <div class="energy-status-metric" data-testid="grid-power">
-                        <span class="energy-status-label">Grid</span>
+                        <span class="energy-status-label">@T["Grid"]</span>
                         <strong>@Power(GridPower)<small>W</small></strong>
                         <span class="energy-status-direction @GridClass">@GridDirection</span>
                     </div>
                     <div class="energy-status-metric" data-testid="battery-power">
                         <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)</span>
                         <strong>@Power(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)<small>W</small></strong>
-                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid == false ? "Awaiting reading" : "Reported inverter power")</span>
+                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid == false ? T["Awaiting reading"] : T["Reported inverter power"])</span>
                     </div>
                 </div>
                 @if (_data is null)
                 {
-                    <p class="energy-status-message" role="status">Waiting for the first inverter reading.</p>
+                    <p class="energy-status-message" role="status">@T["Waiting for the first inverter reading."]</p>
                 }
                 @if (_refreshError is not null)
                 {
-                    <p class="energy-status-error" role="alert">@_refreshError</p>
+                    <p class="energy-status-error" role="alert">@T.Translate(_refreshError)</p>
                 }
             </section>
         </MudPaper>
     </MudItem>
 
     <MudItem xs="12">
-        <section class="dashboard-charts" aria-label="Generation and electricity sales" data-testid="dashboard-charts">
+        <section class="dashboard-charts" aria-label="@T["Generation and electricity sales"]" data-testid="dashboard-charts">
             <div class="dashboard-chart-column" data-testid="dashboard-generation">
                 <SolarEstimateCard Overview="true" Actual="_data" OnRefreshInverter="RefreshInverterAsync" Refreshing="_refreshing" ReturnTo="/" />
             </div>
@@ -95,15 +95,15 @@
         <!-- Quick Actions -->
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Quick Actions</MudText>
-                <MudText Typo="Typo.caption" Class="mb-2">Manual override (rules will correct on next cycle)</MudText>
-                <MudSelect T="string" @bind-Value="_manualDeviceId" Label="Device" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+                <MudText Typo="Typo.h6" Class="mb-3">@T["Quick Actions"]</MudText>
+                <MudText Typo="Typo.caption" Class="mb-2">@T["Manual override (rules will correct on next cycle)"]</MudText>
+                <MudSelect T="string" @bind-Value="_manualDeviceId" Label="@T["Device"]" Variant="Variant.Outlined" Dense="true" Class="mb-3">
                     @if (_devices != null)
                     {
                         @foreach (var d in _devices)
                         {
                             <MudSelectItem T="string" Value="@d.Id">
-                                @d.Name (@d.Category)
+                                @d.Name (@T.Translate(d.Category))
                             </MudSelectItem>
                         }
                     }
@@ -115,20 +115,20 @@
         <!-- Rules -->
         <MudItem xs="12">
             <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">Rules</MudText>
+                <MudText Typo="Typo.h6" Class="mb-3">@T["Rules"]</MudText>
                 @if (_rules == null || _rules.Count == 0)
                 {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No rules configured.</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@T["No rules configured."]</MudText>
                 }
                 else
                 {
                     <MudSimpleTable Dense="true" Hover="true">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>State</th>
-                                <th>Last switched</th>
-                                <th>Last checked</th>
+                                <th>@T["Name"]</th>
+                                <th>@T["State"]</th>
+                                <th>@T["Last switched"]</th>
+                                <th>@T["Last checked"]</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -139,13 +139,13 @@
                                         @rule.Name
                                         @if (!rule.Enabled)
                                         {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">disabled</MudChip>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">@T["disabled"]</MudChip>
                                         }
                                     </td>
                                     <td>
                                         <MudChip T="string" Size="Size.Small"
                                                  Color="@(rule.CurrentState ? Color.Success : Color.Default)">
-                                            @(rule.CurrentState ? "ON" : "OFF")
+                                            @(rule.CurrentState ? T["ON"] : T["OFF"])
                                         </MudChip>
                                     </td>
                                     <td>@FormatTimestamp(rule.CurrentStateChangedAt)</td>
@@ -172,13 +172,13 @@
     private bool _disposed;
     private string? _refreshError;
     private readonly CancellationTokenSource _lifetime = new();
-    private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.InvariantCulture) : "—";
+    private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.CurrentCulture) : "—";
     private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid != false
         && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == InverterOptions.CurrentValue.DeviceKey
         && observed <= Clock.GetUtcNow() && (Clock.GetUtcNow() - observed).TotalMinutes <= EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes;
-    private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.GetCultureInfo("en-GB")) : "—";
+    private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.CurrentCulture) : "—";
     private int? GridPower => _data?.GridPowerValid == false ? null : _data?.GridConsumption;
-    private string GridDirection => _data is null ? "Awaiting reading" : GridPower is null ? "Grid measurement unavailable" : GridPower < 0 ? "Exporting" : GridPower > 0 ? "Importing" : "Idle";
+    private string GridDirection => _data is null ? T["Awaiting reading"] : GridPower is null ? T["Grid measurement unavailable"] : GridPower < 0 ? T["Exporting"] : GridPower > 0 ? T["Importing"] : T["Idle"];
     private string GridClass => GridPower < 0 ? "energy-status-positive" : GridPower > 0 ? "energy-status-active" : "";
     private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
 
@@ -246,8 +246,8 @@
         catch (Exception)
         {
             if (!_disposed) _refreshError = _data is null
-                ? "Could not fetch inverter readings. Please try again."
-                : "Could not refresh inverter readings. Showing the last successful reading; please try again.";
+                ? T["Could not fetch inverter readings. Please try again."]
+                : T["Could not refresh inverter readings. Showing the last successful reading; please try again."];
         }
         finally
         {
@@ -259,7 +259,7 @@
     {
         if (!utc.HasValue) return "-";
         var local = TimeHelper.ToUserTime(utc.Value, _tz);
-        return local.ToString("MM/dd HH:mm:ss");
+        return local.ToString("g", System.Globalization.CultureInfo.CurrentCulture);
     }
 
     private async Task RefreshManualDevicesAsync()

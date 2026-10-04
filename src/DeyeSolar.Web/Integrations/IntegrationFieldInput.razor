@@ -2,35 +2,35 @@
 
 @if (IntegrationUiConditions.IsSecret(Field))
 {
-    <MudText Typo="Typo.subtitle2" Class="mt-3">@Field.Label @(SecretPresent ? "(saved or authorized)" : "(not set)")</MudText>
-    <MudSelect T="string" Label="Credential action" Value="@SecretAction" ValueChanged="SecretActionChanged" Disabled="Busy">
-        <MudSelectItem T="string" Value="@("keep")">Keep saved credential</MudSelectItem>
-        <MudSelectItem T="string" Value="@("replace")">Enter a new credential</MudSelectItem>
-        <MudSelectItem T="string" Value="@("clear")">Clear credential</MudSelectItem>
+    <MudText Typo="Typo.subtitle2" Class="mt-3">@T.Translate(Field.Label) @(SecretPresent ? T["(saved or authorized)"] : T["(not set)"])</MudText>
+    <MudSelect T="string" Label="@T["Credential action"]" Value="@SecretAction" ValueChanged="SecretActionChanged" Disabled="Busy">
+        <MudSelectItem T="string" Value="@("keep")">@T["Keep saved credential"]</MudSelectItem>
+        <MudSelectItem T="string" Value="@("replace")">@T["Enter a new credential"]</MudSelectItem>
+        <MudSelectItem T="string" Value="@("clear")">@T["Clear credential"]</MudSelectItem>
     </MudSelect>
     @if (SecretAction == "replace")
     {
-        <MudTextField T="string" Label="@Field.Label" Value="@SecretValue" ValueChanged="SecretValueChanged" Immediate="true" InputType="InputType.Password" Disabled="Busy" />
+        <MudTextField T="string" Label="@T.Translate(Field.Label)" Value="@SecretValue" ValueChanged="SecretValueChanged" Immediate="true" InputType="InputType.Password" Disabled="Busy" />
     }
 }
 else if (Field.Kind == "boolean")
 {
-    <MudSelect T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" Disabled="Busy">
-        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">No value</MudSelectItem> }
-        <MudSelectItem T="string" Value="@("true")">True</MudSelectItem>
-        <MudSelectItem T="string" Value="@("false")">False</MudSelectItem>
+    <MudSelect T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy">
+        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">@T["No value"]</MudSelectItem> }
+        <MudSelectItem T="string" Value="@("true")">@T["True"]</MudSelectItem>
+        <MudSelectItem T="string" Value="@("false")">@T["False"]</MudSelectItem>
     </MudSelect>
 }
 else if (Field.Kind == "select")
 {
-    <MudSelect T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" Disabled="Busy">
-        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">No selection</MudSelectItem> }
-        @foreach (var option in Field.Options ?? []) { <MudSelectItem T="string" Value="@option.Value">@option.Label</MudSelectItem> }
+    <MudSelect T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy">
+        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">@T["No selection"]</MudSelectItem> }
+        @foreach (var option in Field.Options ?? []) { <MudSelectItem T="string" Value="@option.Value">@T.Translate(option.Label)</MudSelectItem> }
     </MudSelect>
 }
 else
 {
-    <MudTextField T="string" Label="@Field.Label" Value="@Value" ValueChanged="ValueChanged" Immediate="true" Required="@Field.Required" Disabled="Busy"
+    <MudTextField T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Immediate="true" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy"
         InputType="@(Field.Kind is "number" or "integer" ? InputType.Number : InputType.Text)" />
 }
 

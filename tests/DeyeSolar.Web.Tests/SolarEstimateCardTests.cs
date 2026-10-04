@@ -28,7 +28,7 @@ public class SolarEstimateCardTests
     [InlineData("night")]
     [InlineData("empty")]
     [InlineData("satellite")]
-    public async Task PowerCardUsesEnglishNumbersDatesAndAccessibleTextRegardlessOfServerCulture(string scenario)
+    public async Task PowerCardUsesSelectedEnglishNumbersDatesAndAccessibleText(string scenario)
     {
         var fixture = CreateFixture();
         fixture = scenario switch
@@ -47,8 +47,8 @@ public class SolarEstimateCardTests
         var uiCulture = CultureInfo.CurrentUICulture;
         try
         {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ru-RU");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
             var html = await RenderAsync(fixture);
 
             Assert.DoesNotMatch("[\\u0400-\\u04FF]", html);
@@ -335,6 +335,7 @@ public class SolarEstimateCardTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddComponentLocalization();
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddOptions<SolarEstimateOptions>();
@@ -380,7 +381,8 @@ public class SolarEstimateCardTests
             await File.WriteAllTextAsync(Path.Combine(folder, scenario + ".html"), page);
         }
         var decoded = WebUtility.HtmlDecode(html);
-        Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);
+        if (CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en")
+            Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);
         return decoded;
     }
 
