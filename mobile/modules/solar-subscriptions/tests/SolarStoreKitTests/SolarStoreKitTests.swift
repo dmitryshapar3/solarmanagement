@@ -86,21 +86,43 @@ final class SolarStoreKitTests: XCTestCase {
 
   func test04PendingAskToBuyDoesNotGrantUntilApproved() async throws {
     session.askToBuyEnabled = true
+    let started = ProcessInfo.processInfo.systemUptime
+    func trace(_ phase: String, snapshot: [String: Any]? = nil) {
+      let elapsed = String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started)
+      if let snapshot {
+        let active = self.entitlements(snapshot)
+        let unfinished = self.pending(snapshot)
+        let verifiedCount = (active + unfinished).filter {
+          $0["verified"] as? Bool == true && !($0["signedTransaction"] as? String ?? "").isEmpty
+        }.count
+        print("AskToBuy trace \(elapsed)s \(phase) entitlements=\(active.count) pending=\(unfinished.count) verifiedRecords=\(verifiedCount)")
+      } else {
+        print("AskToBuy trace \(elapsed)s \(phase)")
+      }
+    }
     let approved = expectation(description: "Verified approval reaches the native entitlement callback")
     var approvalDelivered = false
     store.changed = { snapshot in
+      trace("changed callback", snapshot: snapshot)
       if !approvalDelivered && self.entitlements(snapshot).contains(where: { $0["productId"] as? String == self.monthly }) {
         approvalDelivered = true
         approved.fulfill()
       }
     }
+    trace("before pending purchase")
     let result = try await store.purchase(productID: monthly, appAccountToken: UUID().uuidString)
+    trace("after pending purchase", snapshot: result["snapshot"] as? [String: Any])
     XCTAssertEqual(result["outcome"] as? String, "pending")
     XCTAssertTrue(entitlements(try XCTUnwrap(result["snapshot"] as? [String: Any])).isEmpty)
     let transaction = try XCTUnwrap(session.allTransactions().first { $0.productIdentifier == monthly })
+    trace("before approval")
     try session.approveAskToBuyTransaction(identifier: transaction.identifier)
+    trace("after approval")
     await fulfillment(of: [approved], timeout: 10)
-    try assertVerified(try await waitForAccess(true, productID: monthly), productID: monthly)
+    trace("after callback wait")
+    let checked = try await waitForAccess(true, productID: monthly)
+    try assertVerified(checked, productID: monthly)
+    trace("after current entitlement check", snapshot: checked)
   }
 
   func test05UserCancellationDoesNotGrantAccess() async throws {

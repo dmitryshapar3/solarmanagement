@@ -9,6 +9,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 22 || minor < 13) { console.error("Use Node.js 22.13 or newer in the Node 22 line."); process.exit(1); }'
+ruby "$script_root/expo_core_checksum_test.rb"
 # The SDK checks its own minimum Xcode version during CocoaPods installation.
 # --deployment preserves the checked-in dependency contract instead of updating it.
 (

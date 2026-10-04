@@ -58,7 +58,9 @@ jobs:
           persist-credentials: false
 
       - name: Install locked CocoaPods version
-        run: gem install cocoapods -v 1.16.2 --no-document
+        run: |
+          gem install cocoapods -v 1.16.2 --no-document
+          gem install minitest -v 5.25.5 --no-document
 
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
