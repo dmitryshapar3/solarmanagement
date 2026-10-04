@@ -17,7 +17,7 @@ class ExpoCoreChecksumTest < Minitest::Test
   end
 
   def setup
-    @directory = Dir.mktmpdir('solar-pod-checksum-')
+    @directory = File.realpath(Dir.mktmpdir('solar-pod-checksum-'))
     @root = File.join(@directory, 'mobile')
     @sandbox = Pod::Sandbox.new(File.join(@root, 'ios', 'Pods'))
   end
