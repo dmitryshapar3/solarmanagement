@@ -5,6 +5,7 @@ using System.Text.Json;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Billing;
 using Microsoft.EntityFrameworkCore;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.SmartSockets.Contracts;
@@ -12,7 +13,7 @@ using SolarManagement.SmartSockets.Contracts;
 namespace DeyeSolar.Web.Integrations;
 
 public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegrationRuntimeExecutor executor,
-    IDbContextFactory<DeyeSolarDbContext> factory, TimeProvider clock) : ISmartSocketCatalog,
+    IDbContextFactory<DeyeSolarDbContext> factory, TimeProvider clock, BillingAccessService? billing = null) : ISmartSocketCatalog,
     ISocketCommandTracker, ISocketController, ISocketInventoryService
 {
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _commands = new();
@@ -21,18 +22,25 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
     private long _inventoryEpoch;
     private long _inventoryRequest;
     public void Invalidate() { lock (_inventorySync) { _inventoryEpoch++; _inventory = null; } }
-    public async Task<ISmartSocket> GetAsync(SocketId id, CancellationToken ct)
+    public Task<ISmartSocket> GetAsync(SocketId id, CancellationToken ct) => GetSocketAsync(id, null, ct);
+
+    public Task<ISmartSocket> GetForUserAsync(SocketId id, string userId, CancellationToken ct)
+        => GetSocketAsync(id, userId, ct);
+
+    private async Task<ISmartSocket> GetSocketAsync(SocketId id, string? userId, CancellationToken ct)
     {
+        await EnsureAccessAsync(ct, userId);
         var binding = await registry.FindBindingAsync(id.Value, ct);
         if (binding is not { Enabled: true, Kind: "socket" })
             throw new InvalidOperationException("Choose an available socket from this installation.");
         var session = await registry.GetRuntimeSessionAsync(binding.InstanceId, ct);
-        return new Socket(this, binding, session);
+        return new Socket(this, binding, session, userId);
     }
     public async Task<SocketInventorySnapshot> ReadInventoryAsync(bool forceRefresh, CancellationToken ct)
         => (await ReadCacheAsync(forceRefresh, ct)).Snapshot;
     private async Task<InventoryCache> ReadCacheAsync(bool forceRefresh, CancellationToken ct)
     {
+        await EnsureAccessAsync(ct);
         long epoch;
         long request;
         lock (_inventorySync)
@@ -57,6 +65,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
                     state.Power == SwitchState.On, state.CurrentPower?.Value));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (BillingAccessException) { throw; }
             catch
             {
                 devices.Add(new(new(binding.Id), binding.Name, capabilities, Reachability.Unknown));
@@ -64,10 +73,13 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
                 legacy.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", false, false, null));
             }
         }
+        await EnsureAccessAsync(ct);
         lock (_inventorySync)
         {
-            if (epoch != _inventoryEpoch || request != _inventoryRequest) throw new InvalidOperationException("Socket integrations changed during discovery.");
-            return _inventory = new(new(devices, issues, clock.GetUtcNow()), legacy);
+            if (epoch != _inventoryEpoch) throw new InvalidOperationException("Socket integrations changed during discovery.");
+            // Pending or cancelled readers cannot suppress a successful refresh; completed newer results win.
+            if (_inventory is { } current && current.Request > request) return current;
+            return _inventory = new(request, new(devices, issues, clock.GetUtcNow()), legacy);
         }
     }
     public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => LegacyInventoryAsync(false, ct);
@@ -82,10 +94,15 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
     }
     public Task TurnOnAsync(string entityId, CancellationToken ct) => LegacyCommandAsync(entityId, true, ct);
     public Task TurnOffAsync(string entityId, CancellationToken ct) => LegacyCommandAsync(entityId, false, ct);
-    private async Task LegacyCommandAsync(string entityId, bool desired, CancellationToken ct)
+    public Task SetPowerForUserAsync(string entityId, SwitchState desiredState, string userId, CancellationToken ct)
+        => desiredState is SwitchState.On or SwitchState.Off
+            ? LegacyCommandAsync(entityId, desiredState == SwitchState.On, ct, userId)
+            : throw new ArgumentException("Provide an explicit On or Off state.", nameof(desiredState));
+
+    private async Task LegacyCommandAsync(string entityId, bool desired, CancellationToken ct, string? userId = null)
     {
         var id = await ResolveIdAsync(entityId, ct);
-        var socket = await GetAsync(new(id), ct);
+        var socket = await GetSocketAsync(new(id), userId, ct);
         var result = await socket.SetPowerAsync(new(new(Guid.NewGuid()), desired ? SwitchState.On : SwitchState.Off), ct);
         if (result.Status != SocketCommandStatus.Acknowledged)
             throw new InvalidOperationException($"The socket command is {result.Status.ToString().ToLowerInvariant()}; it has not been confirmed.");
@@ -109,6 +126,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
     }
     public async Task<SocketCommandResult> ReadResultAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct)
     {
+        await EnsureAccessAsync(ct);
         var binding = await registry.FindBindingAsync(deviceId.Value, ct)
             ?? throw new InvalidOperationException("The socket is unknown in this installation.");
         await using var db = await factory.CreateDbContextAsync(ct);
@@ -177,6 +195,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
     }
     public async Task<IReadOnlyList<IntegrationCommandReceipt>> UnresolvedAsync(Guid deviceId, CancellationToken ct)
     {
+        await EnsureAccessAsync(ct);
         if (await registry.FindBindingAsync(deviceId, ct) is not { Kind: "socket" })
             throw new InvalidOperationException("The socket is unknown in this installation.");
         await using var db = await factory.CreateDbContextAsync(ct);
@@ -255,10 +274,12 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
     }
     private async Task<SocketState> ReadAsync(IntegrationDeviceBindingEntity binding, IntegrationSession expected, CancellationToken ct)
     {
+        await EnsureAccessAsync(ct);
         var session = await CurrentAsync(binding, expected, ct);
         var json = await executor.InvokeAsync(session, "socket.read", IntegrationJson.Element(new { remoteId = binding.RemoteId, channel = binding.Channel }), ct);
         await CurrentAsync(binding, expected, ct);
         var data = json.Deserialize<ProviderSocketTelemetry>(IntegrationJson.Options) ?? throw new InvalidDataException("Missing socket state.");
+        await EnsureAccessAsync(ct);
         if (data.RemoteId != binding.RemoteId || (data.Channel ?? "") != binding.Channel
             || data.CurrentPowerWatts < 0 || data.ObservedAt > clock.GetUtcNow())
             throw new InvalidDataException("The socket observation has invalid provenance or values.");
@@ -267,8 +288,9 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
             data.CurrentPowerWatts is { } watts ? new Watts(watts) : null, data.ObservedAt, clock.GetUtcNow());
     }
     private async Task<SocketCommandResult> SetAsync(IntegrationDeviceBindingEntity binding, IntegrationSession expected,
-        SetSocketPowerCommand request, CancellationToken ct)
+        SetSocketPowerCommand request, CancellationToken ct, string? userId)
     {
+        await EnsureAccessAsync(ct, userId);
         if (request.CommandId.Value == Guid.Empty || request.DesiredState is not (SwitchState.On or SwitchState.Off))
             throw new ArgumentException("Provide a command identity and an explicit On or Off state.");
         if (_commands.Count >= 256 && !_commands.ContainsKey(binding.Id))
@@ -283,6 +305,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
             await using var db = await factory.CreateDbContextAsync(ct);
             await using (var intent = await db.Database.BeginTransactionAsync(ct))
             {
+                await EnsureAccessAsync(ct, userId);
                 if (!await IntegrationPersistenceGuard.LockCurrentAsync(db, binding.Id, session.ConfigurationRevision, session.Generation, ct))
                     throw new InvalidOperationException("The socket connection changed before the command was recorded.");
                 await IntegrationAutomationSourceGuard.ValidateAsync(db, binding.Id, ct);
@@ -320,6 +343,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
             }
             else try
                 {
+                    await EnsureAccessAsync(ct, userId);
                     await CurrentAsync(binding, expected, ct);
                     var json = await executor.InvokeAsync(session, "socket.set", IntegrationJson.Element(new
                     {
@@ -332,6 +356,11 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
                         ?? throw new InvalidDataException("Missing command acknowledgement.");
                     ApplyResponse(command, response);
                 }
+                catch (BillingAccessException)
+                {
+                    command.Status = "rejected";
+                    command.ErrorCode = "subscription_required";
+                }
                 catch (Exception exception)
                 {
                     command.Status = "uncertain";
@@ -342,6 +371,14 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
             return Receipt(command);
         }
         finally { gate.Release(); }
+    }
+
+    private async Task EnsureAccessAsync(CancellationToken ct, string? userId = null)
+    {
+        if (billing is null) return;
+        if (userId is not null && !(await billing.ReadAsync(userId, ct)).HasAccess) throw new BillingAccessException();
+        await using var db = await factory.CreateDbContextAsync(ct);
+        await billing.EnsureInstallationAsync(db.InstallationId ?? throw new InvalidOperationException("An installation is required."), ct);
     }
     private static void ApplyResponse(IntegrationCommandEntity command, ProviderSocketCommandResult response)
     {
@@ -375,13 +412,13 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
         await transaction.CommitAsync(CancellationToken.None);
     }
     private sealed class Socket(DynamicSocketGateway owner, IntegrationDeviceBindingEntity binding,
-        IntegrationSession session) : ISmartSocket
+        IntegrationSession session, string? userId = null) : ISmartSocket
     {
         public SocketId Id => new(binding.Id);
         public SocketCapabilities Capabilities { get; } = DynamicSocketGateway.Capabilities(binding);
         public Task<SocketState> ReadAsync(CancellationToken ct) => owner.ReadAsync(binding, session, ct);
         public Task<SocketCommandResult> SetPowerAsync(SetSocketPowerCommand command, CancellationToken ct)
-            => owner.SetAsync(binding, session, command, ct);
+            => owner.SetAsync(binding, session, command, ct, userId);
     }
-    private sealed record InventoryCache(SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> Legacy);
+    private sealed record InventoryCache(long Request, SocketInventorySnapshot Snapshot, IReadOnlyList<DevicePowerInfo> Legacy);
 }

@@ -20,11 +20,10 @@ final class SolarSubscriptionStore {
         guard let self, !Task.isCancelled else { return }
         guard case .verified(let transaction) = result,
           Self.productIDs.contains(transaction.productID) else { continue }
-        // StoreKit supplies the authoritative active set, including revocations
-        // and billing grace periods. Publish access before acknowledging delivery.
+        // Publish signed records for authenticated server verification. Delivery
+        // stays unfinished until the server acknowledges this account's receipt.
         let snapshot = await self.snapshot(reloadProducts: false)
         self.changed?(snapshot)
-        await transaction.finish()
       }
     }
   }
@@ -80,20 +79,19 @@ final class SolarSubscriptionStore {
         transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
       // Do not compare expirationDate to the device clock. currentEntitlements
       // also contains verified subscriptions currently in Apple's grace period.
-      entitlements.append([
-        "productId": transaction.productID,
-        "transactionId": String(transaction.id),
-        "originalTransactionId": String(transaction.originalID),
-        "verified": true,
-        "source": "storekit-current-entitlements",
-        "expiresAt": transaction.expirationDate.map { ISO8601DateFormatter().string(from: $0) } as Any? ?? NSNull(),
-        "appAccountToken": transaction.appAccountToken?.uuidString as Any? ?? NSNull(),
-        "signedTransaction": result.jwsRepresentation
-      ])
+      entitlements.append(record(transaction, signedTransaction: result.jwsRepresentation, source: "storekit-current-entitlements"))
+    }
+    var pendingTransactions: [[String: Any]] = []
+    for await result in Transaction.unfinished {
+      guard case .verified(let transaction) = result,
+        Self.productIDs.contains(transaction.productID),
+        transaction.productType == .autoRenewable else { continue }
+      pendingTransactions.append(record(transaction, signedTransaction: result.jwsRepresentation, source: "storekit-unfinished"))
     }
     return [
       "products": displayProducts,
       "entitlements": entitlements,
+      "pendingTransactions": pendingTransactions,
       "catalogReady": catalogReady,
       "canMakePayments": AppStore.canMakePayments,
       "catalogError": catalogError as Any? ?? NSNull(),
@@ -111,11 +109,14 @@ final class SolarSubscriptionStore {
       let product = products.first(where: { $0.id == productID }) else {
       throw failure("Subscriptions are temporarily unavailable. Please try again later.")
     }
-    var options: Set<Product.PurchaseOption> = []
-    if let appAccountToken {
-      guard let token = UUID(uuidString: appAccountToken) else { throw failure("The subscription account could not be identified.") }
-      options.insert(.appAccountToken(token))
+    guard let appAccountToken, let token = UUID(uuidString: appAccountToken), token != UUID(uuidString: "00000000-0000-0000-0000-000000000000") else {
+      throw failure("The subscription account could not be identified.")
     }
+    if let subscription = product.subscription, subscription.introductoryOffer?.paymentMode == .freeTrial,
+      await subscription.isEligibleForIntroOffer {
+      throw failure("Subscriptions are temporarily unavailable. Please try again later.")
+    }
+    let options: Set<Product.PurchaseOption> = [.appAccountToken(token)]
     switch try await product.purchase(options: options) {
     case .success(let result):
       guard case .verified(let transaction) = result, transaction.productID == productID else {
@@ -123,10 +124,6 @@ final class SolarSubscriptionStore {
       }
       let updated = await snapshot()
       changed?(updated)
-      if let entitlements = updated["entitlements"] as? [[String: Any]],
-        entitlements.contains(where: { ($0["productId"] as? String) == transaction.productID }) {
-        await transaction.finish()
-      }
       return ["outcome": "purchased", "snapshot": updated]
     case .pending:
       return ["outcome": "pending", "snapshot": await snapshot(reloadProducts: false)]
@@ -135,6 +132,22 @@ final class SolarSubscriptionStore {
     @unknown default:
       throw failure("The App Store returned an unsupported purchase result. Please try again.")
     }
+  }
+
+  func finish(transactionID: String, appAccountToken: String) async throws {
+    guard let identifier = UInt64(transactionID), let token = UUID(uuidString: appAccountToken), token != UUID(uuidString: "00000000-0000-0000-0000-000000000000") else {
+      throw failure("The subscription account could not be identified.")
+    }
+    for await result in Transaction.unfinished {
+      guard case .verified(let transaction) = result, transaction.id == identifier,
+        Self.productIDs.contains(transaction.productID), transaction.productType == .autoRenewable else { continue }
+      guard transaction.appAccountToken == token else {
+        throw failure("The transaction belongs to another Solar account.")
+      }
+      await transaction.finish()
+      return
+    }
+    // A repeated server acknowledgement of an already finished record is safe.
   }
 
   func restore() async throws -> [String: Any] {
@@ -168,6 +181,19 @@ final class SolarSubscriptionStore {
     return monthly.subscriptionPeriod.unit == .month && monthly.subscriptionPeriod.value == 1
       && yearly.subscriptionPeriod.unit == .year && yearly.subscriptionPeriod.value == 1
       && monthly.subscriptionGroupID == yearly.subscriptionGroupID
+  }
+
+  private func record(_ transaction: Transaction, signedTransaction: String, source: String) -> [String: Any] {
+    [
+      "productId": transaction.productID,
+      "transactionId": String(transaction.id),
+      "originalTransactionId": String(transaction.originalID),
+      "verified": true,
+      "source": source,
+      "expiresAt": transaction.expirationDate.map { ISO8601DateFormatter().string(from: $0) } as Any? ?? NSNull(),
+      "appAccountToken": transaction.appAccountToken?.uuidString as Any? ?? NSNull(),
+      "signedTransaction": signedTransaction
+    ]
   }
 
   private func periodUnit(_ unit: Product.SubscriptionPeriod.Unit) -> String {

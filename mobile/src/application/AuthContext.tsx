@@ -10,6 +10,8 @@ import { DeyeSolarApi } from "../core/api/DeyeSolarApi";
 import type { AuthResponse } from "../core/api/types";
 import { DemoApiClient } from "../features/demo/DemoApiClient";
 import { DEMO_API_BASE_URL, DEMO_USERNAME } from "../features/demo/fixtures";
+import { googleSignIn } from "../features/auth/googleSignIn";
+import { linkGoogleIdentity } from "../features/auth/identityOperations";
 import { SessionOperations, SessionStorage } from "./sessionStorage";
 
 type LoginInput = { baseUrl: string; username: string; password: string };
@@ -24,6 +26,7 @@ type AuthContextValue = {
   authError: string | null;
   login: (input: LoginInput) => Promise<void>;
   finishSignIn: (baseUrl: string, request: (api: DeyeSolarApi, signal: AbortSignal) => Promise<AuthResponse>) => Promise<void>;
+  linkGoogle: () => Promise<boolean>;
   enterDemo: () => Promise<void>;
   logout: () => Promise<void>;
   updateApiBaseUrl: (baseUrl: string) => Promise<void>;
@@ -168,6 +171,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await finishSignIn(input.baseUrl, (api, signal) => api.login(input.username.trim(), input.password, signal));
   }, [finishSignIn]);
 
+  const linkGoogle = useCallback(async () => {
+    const session = realSession.current;
+    if (!session || demoApiRef.current) throw new Error(t("Sign in before linking Google."));
+    const signal = operations.capture();
+    return linkGoogleIdentity(realApi, signal, () => googleSignIn(session.baseUrl,
+      (challenge, state) => realApi.startGoogleLink(challenge, state, signal)));
+  }, [operations, realApi]);
+
   const enterDemo = useCallback(async () => {
     const signal = beginSessionChange();
     try {
@@ -227,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiBaseUrl: demoApi ? DEMO_API_BASE_URL : apiBaseUrl,
     username: demoApi ? DEMO_USERNAME : username,
     isAuthenticated: Boolean(token) || Boolean(demoApi), isDemo: Boolean(demoApi), isBootstrapping, authError,
-    login, finishSignIn, enterDemo, logout, updateApiBaseUrl
+    login, finishSignIn, linkGoogle, enterDemo, logout, updateApiBaseUrl
   }}>{children}</AuthContext.Provider>;
 }
 

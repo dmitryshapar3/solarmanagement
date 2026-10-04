@@ -4,6 +4,44 @@ export const subscriptionProductIds = {
   yearly: "com.dshapar.solar.yearly"
 } as const;
 
+export type BillingAccess = {
+  status: "trial" | "active" | "expired";
+  hasAccess: boolean;
+  trialEndsAt: string;
+  subscriptionExpiresAt: string | null;
+  accessValidUntil: string | null;
+  appAccountToken: string;
+  socketLimit: number | null;
+  appleSubscriptionsEnabled: boolean;
+  serverNow: string;
+};
+
+export function readBillingAccess(value: unknown): BillingAccess {
+  const access = value as Partial<BillingAccess> | null;
+  const timestamp = (date: unknown) => typeof date === "string" && Number.isFinite(Date.parse(date));
+  if (!access || !["trial", "active", "expired"].includes(access.status ?? "")
+    || typeof access.hasAccess !== "boolean" || !timestamp(access.trialEndsAt) || !timestamp(access.serverNow)
+    || !(access.subscriptionExpiresAt === null || timestamp(access.subscriptionExpiresAt))
+    || !(access.accessValidUntil === null || timestamp(access.accessValidUntil))
+    || access.hasAccess && (!access.accessValidUntil || Date.parse(access.accessValidUntil) <= Date.parse(access.serverNow!))
+    || !access.hasAccess && access.accessValidUntil !== null
+    || typeof access.appAccountToken !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(access.appAccountToken)
+    || access.appAccountToken === "00000000-0000-0000-0000-000000000000"
+    || !(access.socketLimit === null || access.socketLimit === 1)
+    || typeof access.appleSubscriptionsEnabled !== "boolean"
+    || access.hasAccess && (access.status === "expired"
+      || access.status === "trial" && Date.parse(access.trialEndsAt!) <= Date.parse(access.serverNow!)
+      || access.status === "active" && (!access.subscriptionExpiresAt
+        || Date.parse(access.subscriptionExpiresAt) <= Date.parse(access.serverNow!)))) {
+    throw new Error(t("The server returned invalid account access. Please try again."));
+  }
+  return access as BillingAccess;
+}
+
+export function hasServerAccess(access: BillingAccess | null): boolean {
+  return Boolean(access?.hasAccess === true && (access.status === "trial" || access.status === "active"));
+}
+
 export type BillingProduct = {
   id: string;
   title: string;
@@ -27,17 +65,17 @@ export type StoreKitEntitlement = {
   transactionId: string;
   originalTransactionId: string;
   verified: boolean;
-  source: "storekit-current-entitlements";
+  source: "storekit-current-entitlements" | "storekit-unfinished";
   expiresAt: string | null;
   appAccountToken: string | null;
-  // Send to an authenticated verification endpoint if server-side account
-  // entitlements are integrated; do not log or persist this signed payload.
+  // Keep the JWS in memory until authenticated server verification acknowledges it.
   signedTransaction: string;
 };
 
 export type BillingSnapshot = {
   products: BillingProduct[];
   entitlements: StoreKitEntitlement[];
+  pendingTransactions: StoreKitEntitlement[];
   catalogReady: boolean;
   canMakePayments: boolean;
   catalogError: string | null;
@@ -61,20 +99,20 @@ export function canPurchaseSubscriptions(snapshot: BillingSnapshot | null): bool
   const monthly = snapshot.products.find(product => product.id === subscriptionProductIds.monthly);
   const yearly = snapshot.products.find(product => product.id === subscriptionProductIds.yearly);
   return Boolean(monthly && yearly && isExpectedProduct(monthly) && isExpectedProduct(yearly)
-    && monthly.subscriptionGroupId === yearly.subscriptionGroupId);
+    && monthly.subscriptionGroupId === yearly.subscriptionGroupId
+    && snapshot.products.every(product => !product.introEligible || product.introductoryOffer?.paymentMode !== "freeTrial"));
 }
 
-export function hasVerifiedSubscription(snapshot: BillingSnapshot | null): boolean {
-  return Boolean(snapshot?.entitlements.some(entitlement => entitlement.verified === true
-    && entitlement.source === "storekit-current-entitlements"
-    && Object.values(subscriptionProductIds).some(id => id === entitlement.productId)));
-}
-
-export function isEligibleFor14DayTrial(product: BillingProduct): boolean {
-  const offer = product.introductoryOffer;
-  return isExpectedProduct(product) && product.introEligible === true && offer?.paymentMode === "freeTrial"
-    && offer.periodCount === 1
-    && ((offer.periodUnit === "day" && offer.periodValue === 14) || (offer.periodUnit === "week" && offer.periodValue === 2));
+export function transactionsForAccount(snapshot: BillingSnapshot, appAccountToken: string): StoreKitEntitlement[] {
+  const transactions = new Map<string, StoreKitEntitlement>();
+  for (const transaction of [...snapshot.entitlements, ...snapshot.pendingTransactions]) {
+    if (transaction.verified !== true || !transaction.signedTransaction
+      || !["storekit-current-entitlements", "storekit-unfinished"].includes(transaction.source)
+      || !Object.values(subscriptionProductIds).some(id => id === transaction.productId)
+      || transaction.appAccountToken?.toLowerCase() !== appAccountToken.toLowerCase()) continue;
+    transactions.set(transaction.transactionId, transaction);
+  }
+  return [...transactions.values()];
 }
 
 export function subscriptionPriceLabel(product: BillingProduct): string {

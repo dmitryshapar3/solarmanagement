@@ -13,6 +13,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  storekit:
+    name: Native StoreKit purchase and recovery tests
+    runs-on: macos-26
+    timeout-minutes: 35
+    env:
+      CI: '1'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Xcode project generator
+        run: |
+          gem install xcodeproj --no-document
+          gem install cocoapods -v 1.16.2 --no-document
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install locked application dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Test purchases in an isolated iOS simulator
+        run: bash mobile/modules/solar-subscriptions/tests/run-ci.sh
+
+      - name: Compile the application and Expo subscription bridge
+        run: bash mobile/modules/solar-subscriptions/tests/run-app-build.sh
+
+      - name: Upload native test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: storekit-test-results
+          path: |
+            mobile/modules/solar-subscriptions/tests/.build/*.xcresult
+            mobile/modules/solar-subscriptions/tests/.build/*.log
+            mobile/modules/solar-subscriptions/tests/.build/test-*.json
+          if-no-files-found: error
+          retention-days: 14
+
   mobile:
     name: Mobile TypeScript, regression tests and iOS bundle
     runs-on: ubuntu-24.04
@@ -116,7 +162,10 @@ jobs:
         run: dotnet restore DeyeSolar.sln
 
       - name: Build and run every test project
-        run: dotnet test DeyeSolar.sln --configuration Release --no-restore --logger trx
+        run: |
+          dotnet build DeyeSolar.sln --configuration Release --no-restore
+          pwsh tests/DeyeSolar.Web.Tests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium --only-shell
+          dotnet test DeyeSolar.sln --configuration Release --no-build --logger trx
 
       - name: Verify test discovery and reject skipped tests
         if: ${{ always() }}

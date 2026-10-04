@@ -13,6 +13,22 @@ internal sealed class TestProvider(WorkerConfiguration configuration) : IIntegra
     private bool _pendingState;
     public async Task<JsonElement> InvokeAsync(string method, JsonElement parameters, CancellationToken ct)
     {
+        if (parameters.TryGetProperty("invalidErrorEnvelope", out var invalidEnvelope))
+        {
+            var id = parameters.GetProperty("responseId").GetInt64();
+            object response = invalidEnvelope.GetString() switch
+            {
+                "non-object" => new { jsonrpc = "2.0", id, error = "private-provider-detail" },
+                "missing-code" => new { jsonrpc = "2.0", id, error = new { message = "private-provider-detail" } },
+                "non-integer-code" => new { jsonrpc = "2.0", id, error = new { code = "bad", message = "private-provider-detail" } },
+                "missing-message" => new { jsonrpc = "2.0", id, error = new { code = -32000 } },
+                "both" => new { jsonrpc = "2.0", id, result = new { online = true }, error = new { code = -32000, message = "private-provider-detail" } },
+                "uncorrelated" => new { jsonrpc = "2.0", id = long.MaxValue, error = new { code = -32000, message = "private-provider-detail" } },
+                _ => throw new ArgumentException("Unknown invalid response fixture.")
+            };
+            await LengthFramedJson.WriteAsync(Console.OpenStandardOutput(), response, 1024 * 1024, ct);
+            await Task.Delay(Timeout.Infinite, ct);
+        }
         var account = configuration.Configuration.Values.GetProperty("account").GetString()!;
         if (method == "oauth.begin")
         {
@@ -49,11 +65,18 @@ internal sealed class TestProvider(WorkerConfiguration configuration) : IIntegra
             Environment.GetEnvironmentVariable("SOLAR_WORKER_SECRET_TEST") is null, "connected", "Connected", account));
         if (method == "discover") return IntegrationJson.Element(new[] { new IntegrationDiscoveredDevice("same-id", "0", "socket", account, account,
             IntegrationJson.Element(new { capabilities = new { canSwitch = true, canMeasurePower = true } })) });
-        if (method == "socket.read") return IntegrationJson.Element(new ProviderSocketTelemetry(parameters.GetProperty("remoteId").GetString()!, "0",
-            _isOn, true, _isOn ? 100 : 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        if (method == "socket.read")
+        {
+            if (parameters.GetProperty("remoteId").GetString() == "unavailable")
+                throw new InvalidOperationException("Fixture device is unavailable; private provider details must not escape.");
+            return IntegrationJson.Element(new ProviderSocketTelemetry(parameters.GetProperty("remoteId").GetString()!, "0",
+                _isOn, true, _isOn ? 100 : 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        }
         if (method == "socket.set")
         {
             _pendingState = parameters.TryGetProperty("isOn", out var desired) && desired.GetBoolean();
+            if (parameters.TryGetProperty("operationError", out var operationError) && operationError.GetBoolean())
+                throw new InvalidOperationException("Fixture command result is unknown.");
             var lower = parameters.TryGetProperty("lowercaseStatus", out var lowerStatus) && lowerStatus.GetBoolean();
             var mismatch = parameters.TryGetProperty("mismatchId", out var mismatchId) && mismatchId.GetBoolean();
             return IntegrationJson.Element(new ProviderSocketCommandResult(mismatch ? Guid.NewGuid().ToString("D") : parameters.GetProperty("commandId").GetString()!, lower ? "pending" : "Pending", "test-operation"));

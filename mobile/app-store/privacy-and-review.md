@@ -1,14 +1,14 @@
 # Privacy, age rating and review answers
 
-Source audit: 2026-09-30; App Store draft status updated 2026-10-01. These answers describe the checked-out mobile client, its StoreKit module and the Solar server. They do not establish the hosting operator's actual logging, vendor contracts, retention, or Apple approval. Recheck against the final submitted binary and deployed configuration. No real passwords, private review phone numbers, transaction payloads or customer readings belong in this document.
+Source audit: 2026-10-04; saved App Store draft status last checked 2026-10-01. These answers describe the checked-out mobile client, its StoreKit module and the Solar server. They do not establish the hosting operator's actual logging, vendor contracts, retention, or Apple approval. Recheck against the final submitted binary and deployed configuration. No real passwords, private review phone numbers, transaction payloads or customer readings belong in this document.
 
-The owner deferred public App Store publication on 2026-10-01. Finish TestFlight using the free weather API configuration; subscription enforcement is being disabled in that release. The StoreKit code/products remain preparation for a later paid App Store release. Do not publish the App Privacy questionnaire or submit the saved store draft as part of the current TestFlight scope.
+The current billing source prepares build `1.0.0 (9)` with a one-calendar-month account trial and subscription access enforced on the server. StoreKit purchasing remains disabled until the operator configures Apple billing. Previously uploaded TestFlight build 8 does not contain this client integration. The saved App Store metadata and privacy questionnaire require synchronization with the final tested native build 9 before submission; this source update does not upload the app, publish those answers or establish purchase readiness.
 
 ## App Privacy: supported answers
 
 **Do you or your third-party partners collect data from this app? Yes.** The server retains account/session identifiers and installation configuration submitted by the app. Having no advertising SDK does not make this a no-data-collected app.
 
-For the following five selected data types, use these follow-up answers:
+For the following six data types, use these follow-up answers:
 
 | App Store Connect question | Answer supported by the implemented use |
 | --- | --- |
@@ -24,6 +24,7 @@ For the following five selected data types, use these follow-up answers:
 | **Identifiers > Device ID** | Inverter serial numbers and Shelly device IDs are submitted in selection/configuration and retained with installation data. This describes connected-equipment IDs, not collection of the phone's advertising identifier |
 | **User Content > Other User Content** | Users create and edit rule names and related configuration; rule records persist. These text fields have no public social feed |
 | **Other Data > Other Data Types** | Saved thresholds, schedules, polling/integration settings and other system configuration are retained. The service also retains installation energy/device observations; identify these explicitly in the policy, rather than claiming the service only stores login details |
+| **Purchases > Purchase History** | The app sends Apple-signed subscription transactions to the authenticated server. The server retains account trial dates, product and transaction identifiers, an account token shared with Apple, expiry/revocation dates and verified subscription status; it refreshes status through Apple and Server Notifications V2 |
 
 These data are not anonymized before the account/installation can be identified. The backend currently serves a shared installation to its authorized accounts; absence of a user-ID column on every reading is not an anonymization mechanism.
 
@@ -33,7 +34,6 @@ Apple distinguishes retained off-device collection from local processing and tra
 
 | Data type | Current source conclusion | When to change the answer |
 | --- | --- | --- |
-| **Purchases > Purchase History** | **Do not select solely for the current local StoreKit flow.** `SolarSubscriptionStore` reads verified product/transaction IDs, entitlement dates and signed transactions into device memory; the JS context uses them locally. No Solar API uploads or server subscription records are implemented | Select it if transaction records or account entitlements are sent to and retained by the operator, a billing vendor or server notification handler. Re-audit if `appAccountToken` account linking or server verification is added |
 | **Financial Info > Payment Info** | **No** in current source. App Store billing does not expose card/bank details to this client or Solar server | Change if the operator starts receiving or retaining payment details through another implemented flow |
 | **Financial Info > Other Financial Info** | **No off-device personal financial collection from the app found.** The server retains energy observations and public electricity-price rows; revenue/deposit totals are computed for each API response. No personal invoice, payout account or revenue ledger is persisted by this code | Reassess if deployed logs, exports, invoices or billing features retain users' financial results. Displaying a computed value alone is not evidence of retained collection |
 | **User Content > Customer Support** | **Operator confirmation needed.** Support is via the approved public email; there is no in-app support-message form or automatic diagnostic upload | Include retained app-related support submissions when applicable and not eligible for optional disclosure. Confirm what is retained and whether it can be tied to the sender/account |
@@ -54,9 +54,9 @@ The policy should match these source facts:
 - Ordinary readings have a 31-day cleanup window and rule execution logs a 3-day cleanup window in `PollingWorker`; cleanup can be delayed by operational failures. This is not a guarantee about backups or external logs.
 - Identity, saved settings, rules, export observations and market-price rows have no automatic expiry implemented. Operator deletion and backup retention must be described accurately.
 - Deye Cloud, Shelly Cloud, Open-Meteo and hosting/network providers participate in the service. Open-Meteo receives server-configured installation coordinates; the mobile app does not request phone GPS.
-- The current StoreKit flow checks entitlement locally and does not send signed purchase records to Solar. Revisit the policy if that changes.
+- StoreKit purchase records are sent to Solar for authenticated verification and account binding. Signed payloads are not persisted in ordinary client storage. Server purchase identifiers and verified status have no automatic deletion period implemented; operator retention and deletion policy must cover them.
 
-The app has no account-registration flow. Do not claim that an in-app account-deletion feature exists. The operator's correction/deletion process and contact route still need to work.
+The current app has verified email/phone registration and Google account sign-in/linking. Do not claim that an in-app account-deletion feature exists. The operator's correction/deletion process and contact route still need to work.
 
 ## Age-rating questionnaire
 
@@ -98,7 +98,7 @@ Private rule names/settings do not constitute broad public UGC distribution. Exp
 
 The currently saved credential-free review notes are in [metadata.md](metadata.md). Try demo is integrated and exposes fictional data in the native installation screens. Sign-in required is off; the owner's supplied review contact is saved in Apple's private fields. Production credentials and the private contact phone remain outside the repository.
 
-The saved paid-flow notes must be revised to the eventual App Store binary when publication resumes. No separate Login subscription-review entry has been implemented by this task. The current TestFlight plan removes the subscription gate; free demo stays offline and connected access still requires server sign-in. When resuming a paid release, provide functional purchase review access: an informational preview that only redirects to sign-in does not let Apple complete the configured purchase flow.
+The saved paid-flow notes must match the final tested billing binary. No separate Login subscription-review entry has been implemented by this task. The demo stays offline; connected access requires server sign-in and a valid trial or subscription. Provide functional purchase review access with an isolated account: an informational preview that only redirects to sign-in does not let Apple complete the configured purchase flow.
 
 Apple's checklist accepts a complete demo mode. Guideline 2.1(a) also retains a prior-approval condition when replacing a demo account for legal/security reasons. Do not claim this draft resolves that condition: disclose the offline mode and real-equipment behavior, and obtain the applicable review-access agreement or supply a dedicated suitable account. Purchase review must also remain possible. [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/).
 
@@ -109,7 +109,7 @@ These apply when App Store publication resumes, rather than as new requests for 
 1. **Deployment and operation:** confirm that the new public pages are deployed; identify hosting/proxy/security providers, retained IP/request/response logs, their uses, retention and backups. Confirm no advertising/data-broker use by the operator or partners before finalizing No tracking.
 2. **Privacy operations:** operator/legal identity and working access/correction/deletion process; backup retention and who can access the shared installation. Confirm treatment of support emails and whether financial result exports or other retained records exist outside this source.
 3. **Review access:** Apple's applicable agreement to the demo-only hardware approach, or suitable isolated dedicated access if requested. Review contact details have already been supplied and saved; do not request them again. Do not put production equipment credentials in a public document.
-4. **Commercial account setup:** active Paid Apps Agreement, the owner's accurate bank/tax/trader information and any required territory-specific documents. U.S. base prices are actually configured at USD 4.99 monthly / USD 29.99 yearly, with two-week trials, in one subscription group. Verify Apple's sandbox catalog and final contract status before submission. ASC currently shows an existing non-trader declaration; the account holder must determine whether it remains accurate for paid distribution.
+4. **Commercial account setup:** active Paid Apps Agreement, the owner's accurate bank/tax/trader information and any required territory-specific documents. Previously configured U.S. base prices are USD 4.99 monthly / USD 29.99 yearly in one subscription group. Remove the old two-week introductory offers; the Solar server provides the account's one-month trial. Verify Apple's sandbox catalog and final contract status before submission. ASC previously showed a non-trader declaration; the account holder must determine whether it remains accurate for paid distribution.
 5. **Connected-provider commercial configuration:** the current owner decision is to keep the free API arrangement for TestFlight. Before any future commercial release, confirm the permitted Open-Meteo arrangement and privately configure a paid API key if required. Open-Meteo excludes commercial use from its free tier and places historical/satellite APIs on Professional or higher plans. CC BY attribution already shown by the app does not establish a commercial API-service licence. [Open-Meteo pricing](https://open-meteo.com/en/pricing).
 
 These are missing operational/account facts, not reasons to repeat permissions already given for testing, uploading or publication. Existing verified values in App Store Connect can supply the relevant account fields without requesting them again.

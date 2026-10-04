@@ -267,6 +267,87 @@ public sealed class PackageAndRuntimeTests
         Assert.Equal(1100m, (await ReadAsync(runtime, session)).LoadPower.Value);
     }
     [Fact]
+    public async Task UnavailableSocketDoesNotRetireHealthyDevicesOrNeighborAccount()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var package = await fixture.InstallAsync();
+        await using var runtime = fixture.Runtime();
+        var session = fixture.Session(package.Identity, "one");
+        var neighbor = fixture.Session(package.Identity, "two");
+        Assert.Equal(1m, (await ReadAsync(runtime, session)).BatterySoc.Value);
+        Assert.Equal(1m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var healthy = await runtime.InvokeAsync(session, "socket.read", IntegrationJson.Element(new { remoteId = "healthy" }), default);
+            Assert.True(healthy.GetProperty("online").GetBoolean());
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.InvokeAsync(session, "socket.read",
+                IntegrationJson.Element(new { remoteId = "unavailable" }), default));
+            Assert.Equal("The integration rejected the operation.", failure.Message);
+            // A retained process advances its own counter; restarting it would return one again.
+            Assert.Equal(2m + attempt, (await ReadAsync(runtime, session)).BatterySoc.Value);
+        }
+        var unaffected = await ReadAsync(runtime, neighbor);
+        Assert.Equal(2m, unaffected.BatterySoc.Value);
+        Assert.Equal(2200m, unaffected.LoadPower.Value);
+    }
+
+    [Fact]
+    public async Task CrashedWorkerStillBacksOffWithoutRetiringNeighborAccount()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var package = await fixture.InstallAsync();
+        await using var runtime = fixture.Runtime();
+        var session = fixture.Session(package.Identity, "one");
+        var neighbor = fixture.Session(package.Identity, "two");
+        Assert.Equal(1m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+        await Assert.ThrowsAsync<IOException>(() => ReadAsync(runtime, session, "crash"));
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => ReadAsync(runtime, session));
+        Assert.Contains("backing off", failure.Message);
+        Assert.Equal(2m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+    }
+
+    [Theory]
+    [InlineData("non-object")]
+    [InlineData("missing-code")]
+    [InlineData("non-integer-code")]
+    [InlineData("missing-message")]
+    [InlineData("both")]
+    [InlineData("uncorrelated")]
+    public async Task InvalidErrorEnvelopeStillRetiresTransportWithoutLeakingProviderDetails(string invalidErrorEnvelope)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var package = await fixture.InstallAsync();
+        await using var runtime = fixture.Runtime();
+        var session = fixture.Session(package.Identity, "one");
+        var neighbor = fixture.Session(package.Identity, "two");
+        Assert.Equal(1m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+        // The first device call follows the handshake and initialization frames on this independent transport.
+        var failure = await Assert.ThrowsAsync<IOException>(() => runtime.InvokeAsync(session, "socket.read",
+            IntegrationJson.Element(new { remoteId = "healthy", invalidErrorEnvelope, responseId = 3 }), default));
+        Assert.DoesNotContain("private-provider-detail", failure.ToString());
+        var retry = await Assert.ThrowsAsync<InvalidOperationException>(() => ReadAsync(runtime, session));
+        Assert.Contains("backing off", retry.Message);
+        Assert.Equal(2m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+    }
+
+    [Fact]
+    public async Task CommandOperationErrorStillRetiresSessionAndBacksOffWithoutRetry()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var package = await fixture.InstallAsync();
+        await using var runtime = fixture.Runtime();
+        var session = fixture.Session(package.Identity, "one");
+        var neighbor = fixture.Session(package.Identity, "two");
+        Assert.Equal(1m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.InvokeAsync(session, "socket.set",
+            IntegrationJson.Element(new { commandId = Guid.NewGuid().ToString("D"), isOn = true, operationError = true }), default));
+        Assert.Equal("The integration rejected the operation.", failure.Message);
+        var retry = await Assert.ThrowsAsync<InvalidOperationException>(() => ReadAsync(runtime, session));
+        Assert.Contains("backing off", retry.Message);
+        Assert.Equal(2m, (await ReadAsync(runtime, neighbor)).BatterySoc.Value);
+    }
+
+    [Fact]
     public async Task TimeoutEndsOnlyFailedSessionAndNeighborRemainsUsable()
     {
         await using var fixture = await Fixture.CreateAsync(requestTimeoutSeconds: 1);
@@ -311,6 +392,8 @@ public sealed class PackageAndRuntimeTests
         var id = Guid.NewGuid().ToString();
         var pending = await runtime.InvokeAsync(session, "socket.set", IntegrationJson.Element(new { commandId = id, lowercaseStatus }), default);
         Assert.Equal(lowercaseStatus ? "pending" : "Pending", pending.GetProperty("status").GetString());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.InvokeAsync(session, "socket.read",
+            IntegrationJson.Element(new { remoteId = "unavailable" }), default));
         await Assert.ThrowsAsync<InvalidOperationException>(() => ReadAsync(runtime, fixture.Session(package.Identity, "two")));
         await runtime.InvokeAsync(session, "socket.result", IntegrationJson.Element(new { commandId = id }), default);
         Assert.Equal(2200m, (await ReadAsync(runtime, fixture.Session(package.Identity, "two"))).LoadPower.Value);

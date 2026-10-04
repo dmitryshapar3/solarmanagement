@@ -1,15 +1,18 @@
 import { translate as t } from "../../core/i18n";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
+import { useAuth } from "../../application/AuthContext";
 import { solarSubscriptions } from "../../../modules/solar-subscriptions/src";
-import { BillingSnapshot, canPurchaseSubscriptions, hasVerifiedSubscription, PurchaseResult } from "./billingPolicy";
+import { BillingAccess, BillingSnapshot, canPurchaseSubscriptions, hasServerAccess, transactionsForAccount } from "./billingPolicy";
 
 type BillingAction = "purchase" | "restore" | "manage";
 type SubscriptionContextValue = {
+  access: BillingAccess | null;
   snapshot: BillingSnapshot | null;
   isChecking: boolean;
   hasAccess: boolean;
   canPurchase: boolean;
+  canUseAppStore: boolean;
   busy: BillingAction | null;
   error: string | null;
   notice: string | null;
@@ -21,144 +24,203 @@ type SubscriptionContextValue = {
 
 const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
 
-export function SubscriptionProvider({ children, appAccountToken }: {
-  children: ReactNode;
-  // Use a stable server-generated UUID for the authenticated Solar account
-  // when server-side signed-transaction verification is integrated.
-  appAccountToken?: string;
-}) {
+export function SubscriptionProvider({ children }: { children: ReactNode }) {
+  const { api } = useAuth();
+  const [access, setAccess] = useState<BillingAccess | null>(null);
   const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
   const [isChecking, setIsChecking] = useState(true);
   const [busy, setBusy] = useState<BillingAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(false);
-  const reading = useRef(false);
-  const entitlementReading = useRef(false);
+  const pending = useRef<AbortController | null>(null);
+  const refreshRequested = useRef(false);
   const action = useRef<BillingAction | null>(null);
-  const revision = useRef(0);
+  const verified = useRef(new Set<string>());
+  const acknowledged = useRef(new Set<string>());
+  const checkedAt = useRef(0);
   const supported = Platform.OS === "ios" && solarSubscriptions !== null;
 
-  const refresh = useCallback(async (reloadProducts = true) => {
-    if (!supported || !solarSubscriptions) {
-      if (mounted.current) {
-        setSnapshot(null);
-        setIsChecking(false);
-        setError("Subscriptions are available in the iOS app. Please contact support if access cannot be checked.");
+  const current = useCallback((controller: AbortController) => mounted.current
+    && pending.current === controller && !controller.signal.aborted, []);
+
+  const synchronize = useCallback(async (next: BillingSnapshot, initial: BillingAccess, controller: AbortController) => {
+    let authoritative = initial;
+    const native = solarSubscriptions;
+    if (!native || !initial.appleSubscriptionsEnabled) return authoritative;
+    for (const transaction of transactionsForAccount(next, initial.appAccountToken)) {
+      if (!current(controller)) return authoritative;
+      if (acknowledged.current.has(transaction.signedTransaction)) continue;
+      if (!verified.current.has(transaction.signedTransaction)) {
+        checkedAt.current = performance.now();
+        authoritative = await api.verifyAppleTransaction(transaction.signedTransaction, controller.signal);
+        if (!current(controller)) return authoritative;
+        verified.current.add(transaction.signedTransaction);
       }
-      return;
+      // A successful server receipt can report expired access. Acknowledge receipt
+      // independently of access, so retries never substitute for server approval.
+      await native.finishAsync(transaction.transactionId, initial.appAccountToken);
+      if (current(controller)) acknowledged.current.add(transaction.signedTransaction);
     }
-    const pending = reloadProducts ? reading : entitlementReading;
-    if (pending.current || action.current) return;
-    pending.current = true;
-    const generation = revision.current;
+    return authoritative;
+  }, [api, current]);
+
+  const refresh = useCallback(async () => {
+    if (!mounted.current) return;
+    if (pending.current || action.current) { refreshRequested.current = true; return; }
+    const controller = new AbortController();
+    pending.current = controller;
+    setIsChecking(true);
     try {
-      const next = reloadProducts ? await solarSubscriptions.getSnapshotAsync() : await solarSubscriptions.getEntitlementsAsync();
-      if (mounted.current && generation === revision.current) {
+      checkedAt.current = performance.now();
+      const authoritative = await api.getBillingAccess(controller.signal);
+      let nextAccess = authoritative;
+      if (supported && solarSubscriptions && authoritative.appleSubscriptionsEnabled) {
+        const next = await solarSubscriptions.getSnapshotAsync();
+        if (!current(controller)) return;
         setSnapshot(next);
+        nextAccess = await synchronize(next, authoritative, controller);
+      }
+      if (current(controller)) {
+        setAccess(nextAccess);
         setError(null);
       }
     } catch {
-      if (mounted.current && generation === revision.current) {
-        setSnapshot(null);
-        setError("Your App Store subscription could not be checked. Please try again.");
+      if (current(controller)) {
+        setAccess(null);
+        setError("Your account access could not be checked. Connect to the server and try again.");
       }
     } finally {
-      pending.current = false;
-      if (mounted.current && generation === revision.current) setIsChecking(false);
+      if (pending.current === controller) pending.current = null;
+      if (mounted.current && !controller.signal.aborted) setIsChecking(false);
+      if (mounted.current && refreshRequested.current && AppState.currentState === "active") {
+        refreshRequested.current = false;
+        void refresh();
+      }
     }
-  }, [supported]);
+  }, [api, current, supported, synchronize]);
 
   useEffect(() => {
     mounted.current = true;
-    const listener = solarSubscriptions?.addListener("entitlementsChanged", next => {
-      if (!mounted.current) return;
-      ++revision.current;
-      setSnapshot(next);
-      setIsChecking(false);
-      setError(null);
-    });
+    const invalidate = () => {
+      pending.current?.abort();
+      pending.current = null;
+      refreshRequested.current = false;
+      setAccess(null);
+      setIsChecking(true);
+    };
+    const denied = api.onBillingDenied(() => { invalidate(); void refresh(); });
+    // Native changes are invalidations; access always comes from the server.
+    const listener = solarSubscriptions?.addListener("entitlementsChanged", () => { void refresh(); });
     const foreground = AppState.addEventListener("change", state => {
+      // Apple's purchase sheet can make the app inactive. Preserve ownership of
+      // that action until it returns, while keeping cached connected data hidden.
+      if (action.current) { setAccess(null); refreshRequested.current = true; }
+      else invalidate();
       if (state === "active") void refresh();
     });
-    // Expiration may occur without a new transaction while the app stays open.
-    // Check the authoritative active set without repeatedly fetching products.
     const timer = setInterval(() => {
-      if (AppState.currentState === "active") void refresh(false);
+      if (AppState.currentState === "active") void refresh();
     }, 60_000);
     void refresh();
     return () => {
       mounted.current = false;
-      ++revision.current;
+      pending.current?.abort();
+      pending.current = null;
+      denied();
       listener?.remove();
       foreground.remove();
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [api, refresh]);
 
-  const run = useCallback(async (name: BillingAction, operation: () => Promise<void>) => {
-    if (action.current) return;
+  // Use the server's remaining duration; the device clock never grants access.
+  useEffect(() => {
+    const deadline = access?.accessValidUntil;
+    if (!hasServerAccess(access) || !deadline) return;
+    const milliseconds = Date.parse(deadline) - Date.parse(access!.serverNow) - (performance.now() - checkedAt.current);
+    if (!Number.isFinite(milliseconds)) { setAccess(null); return; }
+    const timer = setTimeout(() => { setAccess(null); void refresh(); }, Math.max(0, Math.min(milliseconds, 2_147_483_647)));
+    return () => clearTimeout(timer);
+  }, [access, refresh]);
+
+  const run = useCallback(async (name: BillingAction, operation: (controller: AbortController) => Promise<void>) => {
+    if (pending.current || action.current || !mounted.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
     action.current = name;
-    ++revision.current;
     setBusy(name);
     setError(null);
     setNotice(null);
     try {
-      await operation();
+      await operation(controller);
     } catch (exception) {
-      if (mounted.current) setError(exception instanceof Error ? exception.message : "The App Store action could not be completed.");
+      if (current(controller)) {
+        setAccess(null);
+        setError(exception instanceof Error ? exception.message : "The App Store action could not be completed.");
+      }
     } finally {
       action.current = null;
-      if (mounted.current) {
-        setBusy(null);
-        setIsChecking(false);
+      if (pending.current === controller) pending.current = null;
+      if (mounted.current) { setBusy(null); setIsChecking(false); }
+      if (mounted.current && refreshRequested.current && AppState.currentState === "active") {
+        refreshRequested.current = false;
+        void refresh();
       }
     }
-  }, []);
+  }, [current, refresh]);
 
+  const canUseAppStore = supported && access?.appleSubscriptionsEnabled === true;
+  const canPurchase = canUseAppStore && !isChecking && canPurchaseSubscriptions(snapshot);
   const purchase = useCallback(async (productId: string) => {
     const native = solarSubscriptions;
-    if (!native || !canPurchaseSubscriptions(snapshot)) {
+    if (!native || !canPurchase || !access) {
       setError("Subscriptions are temporarily unavailable. Please try again later.");
       return;
     }
-    await run("purchase", async () => {
-      const result: PurchaseResult = await native.purchaseAsync(productId, appAccountToken ?? null);
-      if (!mounted.current) return;
+    await run("purchase", async controller => {
+      const result = await native.purchaseAsync(productId, access.appAccountToken);
+      if (!current(controller)) return;
       setSnapshot(result.snapshot);
+      checkedAt.current = performance.now();
+      const authoritative = await api.getBillingAccess(controller.signal);
+      const nextAccess = await synchronize(result.snapshot, authoritative, controller);
+      if (!current(controller)) return;
+      setAccess(nextAccess);
       if (result.outcome === "pending") {
-        setNotice("Your purchase is awaiting App Store approval. Access starts when Apple verifies the transaction.");
-      } else if (result.outcome === "purchased" && !hasVerifiedSubscription(result.snapshot)) {
-        setNotice("The purchase was received. Restore purchases to check your current subscription, or contact support.");
+        setNotice("Your purchase is awaiting App Store approval. Access starts after server verification.");
+      } else if (result.outcome === "purchased" && nextAccess.status !== "active") {
+        setNotice("The purchase has not activated this account. Restore purchases or contact support.");
       }
     });
-  }, [appAccountToken, run, snapshot]);
+  }, [access, api, canPurchase, current, run, synchronize]);
 
   const restore = useCallback(async () => {
     const native = solarSubscriptions;
-    if (!native) return;
-    await run("restore", async () => {
+    if (!native || !canUseAppStore || !access) return;
+    await run("restore", async controller => {
       const next = await native.restoreAsync();
-      if (!mounted.current) return;
+      if (!current(controller)) return;
       setSnapshot(next);
-      setNotice(hasVerifiedSubscription(next) ? "Your subscription has been restored." : "No active subscription was found for this Apple Account.");
+      checkedAt.current = performance.now();
+      const authoritative = await api.getBillingAccess(controller.signal);
+      const nextAccess = await synchronize(next, authoritative, controller);
+      if (!current(controller)) return;
+      setAccess(nextAccess);
+      setNotice(nextAccess.status === "active" ? "Your subscription has been restored."
+        : "No active subscription was found for this Solar account. Use the account that made the purchase.");
     });
-  }, [run]);
+  }, [access, api, canUseAppStore, current, run, synchronize]);
 
   const manage = useCallback(async () => {
     const native = solarSubscriptions;
-    if (!native) return;
-    await run("manage", async () => {
-      await native.manageAsync();
-      const next = await native.getSnapshotAsync();
-      if (mounted.current) setSnapshot(next);
-    });
-  }, [run]);
+    if (!native || !canUseAppStore) return;
+    await run("manage", async () => { await native.manageAsync(); refreshRequested.current = true; });
+  }, [canUseAppStore, run]);
 
   return <SubscriptionContext.Provider value={{
-    snapshot, isChecking, hasAccess: supported && hasVerifiedSubscription(snapshot),
-    canPurchase: supported && canPurchaseSubscriptions(snapshot), busy, error, notice,
-    refresh, purchase, restore, manage
+    access, snapshot, isChecking, hasAccess: hasServerAccess(access), canPurchase, canUseAppStore,
+    busy, error, notice, refresh, purchase, restore, manage
   }}>{children}</SubscriptionContext.Provider>;
 }
 

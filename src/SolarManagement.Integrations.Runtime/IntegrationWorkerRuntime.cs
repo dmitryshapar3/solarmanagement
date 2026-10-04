@@ -60,7 +60,12 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
                 finally { _gate.Release(); }
                 return result;
             }
-            catch
+            catch (WorkerOperationException) when (method is "inverter.read" or "inverter.history" or "socket.read" or "socket.inventory")
+            {
+                // Read failure is scoped to the requested device. Commands still require the uncertain-result path.
+                throw new InvalidOperationException("The integration rejected the operation.");
+            }
+            catch (Exception error)
             {
                 await _gate.WaitAsync(CancellationToken.None);
                 try
@@ -70,6 +75,7 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
                 }
                 finally { _gate.Release(); }
                 await worker.Connection.DisposeAsync();
+                if (error is WorkerOperationException) throw new InvalidOperationException("The integration rejected the operation.");
                 throw;
             }
             finally { worker.Calls.Release(); }
@@ -169,7 +175,12 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
             }
             return worker;
         }
-        catch { await worker.DisposeAsync(); throw; }
+        catch (Exception error)
+        {
+            await worker.DisposeAsync();
+            if (error is WorkerOperationException) throw new InvalidOperationException("The integration rejected the operation.");
+            throw;
+        }
     }
     private async Task<T> SetupAsync<T>(ProviderPackageIdentity package, IntegrationDraftConfiguration draft,
         string method, object parameters, CancellationToken ct)

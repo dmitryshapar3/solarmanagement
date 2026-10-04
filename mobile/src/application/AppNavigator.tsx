@@ -1,13 +1,12 @@
 import { useLanguage } from "./LanguageContext";
 import { useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Banknote, CreditCard, History, LayoutDashboard, MoreHorizontal, PlugZap, Settings, SlidersHorizontal, SunMedium } from "lucide-react-native";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "./AuthContext";
-import { appStoreSubscriptionsEnabled } from "./releaseConfig";
 import { MoreStackParamList, RootStackParamList, RootTabsParamList } from "./navigationTypes";
 import { AppButton, Card, ErrorBanner, Header, Screen } from "../core/components";
 import { openPublicLink, PUBLIC_PRIVACY_URL, PUBLIC_SUPPORT_URL, PUBLIC_TERMS_URL } from "../core/publicLinks";
@@ -73,8 +72,6 @@ export function AppNavigator() {
       <SafeAreaProvider style={styles.demoContainer}><SolarNavigator key="demo" /></SafeAreaProvider>
     </View>;
   }
-
-  if (Platform.OS !== "ios" || !appStoreSubscriptionsEnabled) return <SolarNavigator key="real" />;
 
   return <SubscriptionProvider key={`${apiBaseUrl}:${username}`}>
     <SubscriptionGate onLogout={logout} privacyUrl={PUBLIC_PRIVACY_URL} termsUrl={PUBLIC_TERMS_URL} supportUrl={PUBLIC_SUPPORT_URL}>
@@ -207,7 +204,7 @@ function MoreScreen({ navigation }: NativeStackScreenProps<MoreStackParamList, "
         <AppButton label={t("Automation rules")} icon={SlidersHorizontal} variant="ghost" onPress={() => navigation.navigate("RulesList")} />
         <AppButton label={t("Readings & run history")} icon={History} variant="ghost" onPress={() => navigation.navigate("History")} />
         <AppButton label={t("Settings & account")} icon={Settings} variant="ghost" onPress={() => navigation.navigate("Settings")} />
-        {!isDemo && Platform.OS === "ios" && appStoreSubscriptionsEnabled && <AppButton label={t("Subscription")} icon={CreditCard} variant="ghost" onPress={() => navigation.navigate("Subscription")} />}
+        {!isDemo && <AppButton label={t("Subscription")} icon={CreditCard} variant="ghost" onPress={() => navigation.navigate("Subscription")} />}
       </Card>
       <ErrorBanner message={linkError} />
       <AppButton label={t("Privacy policy")} variant="ghost" onPress={() => void openLink(PUBLIC_PRIVACY_URL)} />
@@ -221,7 +218,7 @@ function MoreScreen({ navigation }: NativeStackScreenProps<MoreStackParamList, "
 function SubscriptionRoute() {
   const { t } = useLanguage();
   const { isDemo, logout } = useAuth();
-  if (isDemo || Platform.OS !== "ios" || !appStoreSubscriptionsEnabled) return <Screen><Header title="Solar Premium" subtitle={t("Subscriptions are not enabled in this TestFlight build.")} /></Screen>;
+  if (isDemo) return <Screen><Header title="Solar Premium" subtitle={t("Demo · Sample data")} /></Screen>;
   return <SubscriptionScreen onLogout={logout} privacyUrl={PUBLIC_PRIVACY_URL} termsUrl={PUBLIC_TERMS_URL} supportUrl={PUBLIC_SUPPORT_URL} />;
 }
 

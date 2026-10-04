@@ -9,6 +9,7 @@ using DeyeSolar.Infrastructure.Settlement;
 using DeyeSolar.Infrastructure.Solar;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Api;
+using DeyeSolar.Web.Billing;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
@@ -22,7 +23,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
     IConfiguration deployment, ILoggerFactory loggers, TimeProvider clock, IHostApplicationLifetime hostLifetime,
     IIntegrationRuntimeExecutor integrationExecutor, IntegrationSecretStore integrationSecrets,
     IntegrationChangeNotifier integrationChanges, string? legacySolarApiKey = null,
-    LegacyIntegrationBootstrap? integrationBootstrap = null) : IDisposable
+    LegacyIntegrationBootstrap? integrationBootstrap = null, BillingAccessService? billing = null) : IDisposable
 {
     private readonly SemaphoreSlim _requests = new(8, 8);
 
@@ -73,6 +74,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton(loggers);
         services.AddSingleton(clock);
+        if (billing is not null) services.AddSingleton(billing);
         services.AddSingleton<IHostApplicationLifetime>(lifetime);
         services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
         services.AddSingleton<AppSettingsService>();

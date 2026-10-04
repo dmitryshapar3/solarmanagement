@@ -89,9 +89,19 @@ internal sealed class WorkerConnection : IAsyncDisposable
                     || !response.TryGetProperty("id", out var id) || !id.TryGetInt64(out var requestId)
                     || !_pending.TryGetValue(requestId, out var completion))
                     throw new InvalidDataException("Worker returned an invalid or unsolicited response.");
-                if (response.TryGetProperty("error", out _)) completion.TrySetException(new InvalidOperationException("The integration rejected the operation."));
-                else if (response.TryGetProperty("result", out var result)) completion.TrySetResult(result.Clone());
-                else throw new InvalidDataException("Worker response has no result.");
+                var hasError = response.TryGetProperty("error", out var error);
+                var hasResult = response.TryGetProperty("result", out var result);
+                if (hasError == hasResult) throw new InvalidDataException("Worker response must contain exactly one result or error.");
+                if (hasError)
+                {
+                    if (error.ValueKind != JsonValueKind.Object || !error.TryGetProperty("code", out var code) || code.ValueKind != JsonValueKind.Number || !code.TryGetInt32(out _)
+                        || !error.TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.String)
+                        throw new InvalidDataException("Worker returned an invalid error response.");
+                    // A correlated operation error says nothing about the health of another device on this transport.
+                    // Provider messages may contain credentials and must never cross this boundary.
+                    if (!completion.TrySetException(new WorkerOperationException())) throw new InvalidDataException("Worker response was repeated.");
+                }
+                else if (!completion.TrySetResult(result.Clone())) throw new InvalidDataException("Worker response was repeated.");
             }
         }
         catch (Exception) when (_stop.IsCancellationRequested) { }
@@ -130,3 +140,5 @@ internal sealed class WorkerConnection : IAsyncDisposable
         catch (Exception ex) { _disposeCompleted.TrySetException(ex); throw; }
     }
 }
+
+internal sealed class WorkerOperationException() : InvalidOperationException("The integration rejected the operation.");

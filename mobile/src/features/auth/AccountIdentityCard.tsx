@@ -5,11 +5,10 @@ import { useAuth } from "../../application/AuthContext";
 import type { AuthOptions, VerificationChannel, VerificationResponse } from "../../core/api/types";
 import { AppButton, Card, ErrorBanner, SectionTitle, TextField } from "../../core/components";
 import { colors, spacing } from "../../core/theme";
-import { googleSignIn } from "./googleSignIn";
 
 export function AccountIdentityCard() {
   const { t } = useLanguage();
-  const { api, apiBaseUrl, username, isDemo, finishSignIn } = useAuth();
+  const { api, username, isDemo, linkGoogle } = useAuth();
   const [options, setOptions] = useState<AuthOptions | null>(null);
   const [channel, setChannel] = useState<VerificationChannel>("email");
   const [destination, setDestination] = useState("");
@@ -47,8 +46,8 @@ export function AccountIdentityCard() {
       {message ? <Text style={{ color: colors.primary }}>{t(message)}</Text> : null}
       <AppButton label={t("Link Google account")} variant="secondary" disabled={pending || !options?.googleEnabled}
         onPress={() => void run(async () => {
-          const response = await googleSignIn(apiBaseUrl, (challenge, state) => api.startGoogleLink(challenge, state));
-          if (response && mounted.current) await finishSignIn(apiBaseUrl, (_client, signal) => api.exchangeGoogleCode(response.code, response.codeVerifier, signal));
+          const linked = await linkGoogle();
+          if (linked && mounted.current) setMessage("Google is linked to this account.");
         })} />
       {options?.emailEnabled || options?.phoneEnabled ? <>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>

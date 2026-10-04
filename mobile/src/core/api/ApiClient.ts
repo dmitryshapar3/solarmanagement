@@ -40,6 +40,7 @@ export class ApiClient {
   private revision = 0;
   private readonly requests = new Set<AbortController>();
   private readonly sessionObservers = new Set<() => void>();
+  private readonly billingObservers = new Set<() => void>();
   private readonly onUnauthorized?: () => void;
   private readonly transport: ApiTransport;
 
@@ -71,6 +72,11 @@ export class ApiClient {
   onSessionChange(observer: () => void): () => void {
     this.sessionObservers.add(observer);
     return () => { this.sessionObservers.delete(observer); };
+  }
+
+  onBillingDenied(observer: () => void): () => void {
+    this.billingObservers.add(observer);
+    return () => { this.billingObservers.delete(observer); };
   }
 
   get sessionEpoch(): number { return this.revision; }
@@ -132,6 +138,14 @@ export class ApiClient {
         if (options.skipUnauthorizedHandler) throw new ApiError(401, extractErrorMessage(payload, 401));
         if (token) this.onUnauthorized?.();
         throw new ApiError(401, "Session expired. Sign in again.");
+      }
+      // Reaching the trial's socket quota does not revoke the account's valid
+      // trial or discard the integration form that displays its friendly error.
+      if (response.status === 402 && (payload as { code?: unknown } | null)?.code !== "trial_socket_limit") {
+        for (const observer of this.billingObservers) {
+          try { observer(); }
+          catch { /* A view observer cannot suppress an access denial. */ }
+        }
       }
       if (!response.ok) throw new ApiError(response.status, extractErrorMessage(payload, response.status));
       return payload as T;

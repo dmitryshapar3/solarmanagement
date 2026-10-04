@@ -21,6 +21,7 @@ using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Tenancy;
 using MudBlazor.Services;
 using DeyeSolar.Web.Localization;
+using DeyeSolar.Web.Billing;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpContextAccessor();
@@ -34,6 +35,7 @@ var integrationRuntimeConfiguration = new ConfigurationBuilder().AddInMemoryColl
         || value.Key.StartsWith("Integrations:", StringComparison.OrdinalIgnoreCase))).Build();
 // Authentication provider secrets must never be sourced from user-editable SQL settings.
 var authProviders = AuthProviderOptions.Capture(builder.Configuration);
+var appleBilling = AppleBillingOptions.Capture(builder.Configuration);
 var bootstrapAdminPassword = builder.Configuration["Auth:BootstrapAdminPassword"];
 var dataProtectionKeysPath = builder.Configuration["Auth:DataProtectionKeysPath"];
 var trustedProxyAddresses = builder.Configuration["Auth:TrustedProxyAddresses"];
@@ -86,6 +88,8 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
 .AddEntityFrameworkStores<DeyeSolarDbContext>()
 .AddDefaultTokenProviders();
 builder.Services.AddAccountIdentities(authProviders);
+builder.Services.AddAppleBilling(appleBilling);
+builder.Services.AddSingleton<BillingAccessService>();
 
 builder.Services.AddAuthentication()
     .AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(
@@ -112,6 +116,7 @@ builder.Services.AddIntegrationRuntime();
 builder.Services.AddDynamicIntegrations(integrationRuntimeConfiguration, builder.Environment.ContentRootPath);
 builder.Services.AddIntegrationManagement();
 builder.Services.AddTenantRequestServices(builder.Configuration, openMeteoApiKey);
+builder.Services.AddBillingSocketAccess();
 builder.Services.AddSingleton<MobileSessionStore>();
 builder.Services.AddScoped<MobileAuthService>();
 
@@ -197,7 +202,9 @@ app.UseAccountIdentityOrigin();
 app.UseAuthentication();
 app.UseMiddleware<LanguageMiddleware>();
 app.UseAuthorization();
+app.UseMiddleware<BillingAccessMiddleware>();
 app.UseMiddleware<InstallationBindingMiddleware>();
+app.MapAppleBilling();
 app.MapMobileApi();
 app.MapDynamicIntegrations();
 app.MapAccountIdentityApi();

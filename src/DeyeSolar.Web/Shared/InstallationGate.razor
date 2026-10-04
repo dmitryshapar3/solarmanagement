@@ -1,11 +1,23 @@
 @using DeyeSolar.Web.Data
 @using DeyeSolar.Web.Tenancy
+@using DeyeSolar.Web.Billing
+@using System.Security.Claims
+@implements IAsyncDisposable
 @inject AuthenticationStateProvider Authentication
 @inject InstallationMembershipService Memberships
 @inject CurrentInstallation Current
 @inject TenantRuntimeRegistry Runtimes
+@inject BillingAccessService Billing
+@inject CurrentBillingAccount BillingAccount
+@inject TimeProvider Clock
 
-@if (_ready)
+@if (_subscriptionRequired)
+{
+    <p role="alert">@T["Your trial has ended. Subscribe to read or control your sockets."]</p>
+    <a href="/billing">@T["Subscription"]</a>
+    <a href="/account">@T["Account"]</a>
+}
+else if (_ready)
 {
     @ChildContent
 }
@@ -23,6 +35,12 @@ else
     [Parameter] public RenderFragment? ChildContent { get; set; }
     private bool _ready;
     private bool _error;
+    private bool _subscriptionRequired;
+    private readonly CancellationTokenSource _stopping = new();
+    private Task? _accessMonitor;
+    private CancellationTokenSource? _deadlineCancellation;
+    private Task? _deadlineMonitor;
+    private long _accessVersion;
 
     protected override async Task OnInitializedAsync()
     {
@@ -30,12 +48,87 @@ else
         {
             var state = await Authentication.GetAuthenticationStateAsync();
             if (state.User.Identity?.IsAuthenticated != true) { _ready = true; return; }
+            var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            BillingAccount.BindOnce(userId);
+            if (!(await Billing.ReadAsync(userId, _stopping.Token)).HasAccess) { _subscriptionRequired = true; return; }
             var membership = await Memberships.ResolveAsync(state.User);
             if (membership is null) { _error = true; return; }
             Current.BindOnce(membership.InstallationId);
-            await Runtimes.GetAsync(membership.InstallationId);
+            await Runtimes.GetAsync(membership.InstallationId, _stopping.Token);
+            var access = await Billing.ReadAsync(userId, _stopping.Token);
+            if (!access.HasAccess) { _subscriptionRequired = true; return; }
             _ready = true;
+            await ArmDeadlineAsync(access);
+            _accessMonitor = MonitorAsync(userId);
         }
         catch { _error = true; }
+    }
+
+    private async Task MonitorAsync(string userId)
+    {
+        try
+        {
+            while (!_stopping.IsCancellationRequested && !_subscriptionRequired)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), Clock, _stopping.Token);
+                var access = await Billing.ReadAsync(userId, _stopping.Token);
+                if (_subscriptionRequired) return;
+                if (!access.HasAccess)
+                {
+                    await InvokeAsync(() => { _subscriptionRequired = true; _ready = false; StateHasChanged(); });
+                    return;
+                }
+                await ArmDeadlineAsync(access);
+            }
+        }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
+        catch
+        {
+            if (!_stopping.IsCancellationRequested)
+                await InvokeAsync(() => { _error = true; _ready = false; StateHasChanged(); });
+        }
+    }
+
+    private async Task ArmDeadlineAsync(BillingAccess access)
+    {
+        var version = ++_accessVersion;
+        _deadlineCancellation?.Cancel();
+        if (_deadlineMonitor is not null) await _deadlineMonitor;
+        _deadlineCancellation?.Dispose();
+        _deadlineCancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
+        var now = Clock.GetUtcNow();
+        var remaining = (access.AccessValidUntil ?? now) - now;
+        _deadlineMonitor = CloseAtDeadlineAsync(version, remaining, _deadlineCancellation.Token);
+    }
+
+    private async Task CloseAtDeadlineAsync(long version, TimeSpan remaining, CancellationToken ct)
+    {
+        try
+        {
+            // Refreshes may be blocked by a database outage; cached content still closes on its known deadline.
+            var started = Clock.GetTimestamp();
+            while (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining < TimeSpan.FromDays(1) ? remaining : TimeSpan.FromDays(1), Clock, ct);
+                remaining -= Clock.GetElapsedTime(started);
+                started = Clock.GetTimestamp();
+            }
+            if (ct.IsCancellationRequested) return;
+            await InvokeAsync(() =>
+            {
+                if (ct.IsCancellationRequested || version != _accessVersion) return;
+                _subscriptionRequired = true; _ready = false; StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _stopping.Cancel();
+        if (_accessMonitor is not null) await _accessMonitor;
+        if (_deadlineMonitor is not null) await _deadlineMonitor;
+        _deadlineCancellation?.Dispose();
+        _stopping.Dispose();
     }
 }
