@@ -23,6 +23,121 @@ namespace DeyeSolar.Web.Tests;
 public sealed class DynamicDeviceGatewayTests
 {
     [SqlServerFact]
+    public async Task AccountRevocationWhileQueuedRejectsBeforeIntentOrSecondRemoteEffect()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var complete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Executor.Send = async (_, parameters, _) => { started.SetResult(); await complete.Task; return Ack(parameters); };
+        var revoked = false;
+        Task Authorize(CancellationToken _) => revoked
+            ? Task.FromException(new DeyeSolar.Web.Auth.InstallationAccessException("Revoked.")) : Task.CompletedTask;
+        var socket = await f.Sockets("a").GetForUserAsync(new(f.SocketA), "actor", Authorize, default);
+        var first = socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.On), default);
+        await started.Task;
+        var second = socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.Off), default);
+        revoked = true;
+        complete.SetResult();
+        await first;
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => second);
+        Assert.Equal(1, f.Executor.Sends);
+        await using var db = f.Factory("a").CreateDbContext();
+        Assert.Single(await db.IntegrationCommands.ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task AccountRevocationAfterIntentBeforeDispatchProducesTerminalRejectionWithoutEffect()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var checks = 0;
+        Task Authorize(CancellationToken _) => ++checks > 1
+            ? Task.FromException(new DeyeSolar.Web.Auth.InstallationAccessException("Revoked.")) : Task.CompletedTask;
+        var socket = await f.Sockets("a").GetForUserAsync(new(f.SocketA), "actor", Authorize, default);
+        Assert.Equal(SocketCommandStatus.Rejected, (await socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.On), default)).Status);
+        Assert.Equal(0, f.Executor.Sends);
+        await using var db = f.Factory("a").CreateDbContext();
+        Assert.Equal("authorization_changed", (await db.IntegrationCommands.SingleAsync()).ErrorCode);
+    }
+    [SqlServerFact]
+    public async Task TimeWindowOffUsesObservedPowerDuringInverterOutageWithoutCreatingAnOnCommand()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Executor.SocketPower = true;
+        await using (var db = f.Factory("a").CreateDbContext())
+        {
+            var rule = await db.TriggerRules.SingleAsync();
+            rule.ActiveFrom = new TimeOnly(0, 0);
+            rule.ActiveTo = new TimeOnly(0, 0);
+            await db.SaveChangesAsync();
+        }
+        using var worker = Worker(f, _ => Task.FromException<InverterData>(new HttpRequestException()));
+        await worker.PollAndEvaluateAsync(default);
+        await using var check = f.Factory("a").CreateDbContext();
+        var intent = await check.IntegrationCommands.SingleAsync();
+        Assert.False(intent.DesiredState);
+        Assert.Equal("acknowledged", intent.Status);
+        Assert.False((await check.TriggerRules.SingleAsync()).CurrentState);
+        Assert.Equal(1, f.Executor.Sends);
+    }
+
+    [SqlServerFact]
+    public async Task UnknownPhysicalStateNeverAuthorizesOnAndIsExposedAsUnknown()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Executor.SocketPower = null;
+        using var worker = Worker(f, _ => Task.FromResult(new InverterData { BatterySoc = 100 }));
+        await worker.PollAndEvaluateAsync(default);
+        Assert.Equal(0, f.Executor.Sends);
+        var device = Assert.Single(await f.Sockets("a").RefreshDevicesAsync(default));
+        Assert.True(device.Online);
+        Assert.False(device.StateKnown);
+        await using var check = f.Factory("a").CreateDbContext();
+        Assert.Empty(await check.IntegrationCommands.ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task AutonomousRecoveryReadsPendingReceiptsAndKeepsUncertainEffectsBlocked()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Executor.Send = (_, p, _) => Task.FromResult(IntegrationJson.Element(new ProviderSocketCommandResult(p.GetProperty("commandId").GetString()!, "Pending", "operation-1")));
+        var gateway = f.Sockets("a");
+        var socket = await gateway.GetAsync(new(f.SocketA), default);
+        await socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.On), default);
+        await new SocketReceiptReconciler(f.Factory("a"), f.Sockets("a"), NullLogger.Instance).ReconcileAsync(default);
+        Assert.Equal(1, f.Executor.Sends);
+        Assert.Equal(1, f.Executor.Results);
+        Assert.Empty(await gateway.ListUnresolvedAsync(new(f.SocketA), default));
+        f.Executor.Send = (_, _, _) => throw new IOException();
+        await socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.Off), default);
+        await new SocketReceiptReconciler(f.Factory("a"), f.Sockets("a"), NullLogger.Instance).ReconcileAsync(default);
+        Assert.Equal(SocketCommandStatus.Uncertain, Assert.Single(await gateway.ListUnresolvedAsync(new(f.SocketA), default)).Status);
+        Assert.Equal(2, f.Executor.Sends);
+    }
+
+    [SqlServerFact]
+    public async Task StaleObservationCannotOverwriteAcknowledgementThatArrivedDuringRead()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var repository = new RuleRepository(f.Factory("a"));
+        var expected = Assert.Single(await repository.GetAllAsync(default));
+        f.Executor.BeforeRead = async () =>
+        {
+            await using var db = f.Factory("a").CreateDbContext();
+            var rule = await db.TriggerRules.SingleAsync();
+            rule.CurrentState = true;
+            rule.CurrentStateChangedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        };
+        Assert.False(await new RuleObservationReconciler(f.Factory("a"), f.Sockets("a")).ReconcileAsync(expected, DateTime.UtcNow, default));
+        Assert.True(Assert.Single(await repository.GetAllAsync(default)).CurrentState);
+    }
+
+    private static PollingWorker Worker(Fixture f, Func<CancellationToken, Task<InverterData>> refresh) => new(new Refresh(refresh),
+        new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), f.Sockets("a"),
+        new RuleRepository(f.Factory("a")), new DeyeSolar.RuleEngine.RuleEvaluator(), f.Factory("a"),
+        new Monitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Display:TimeZoneId"] = "UTC" }).Build()), NullLogger<PollingWorker>.Instance);
+    [SqlServerFact]
     public async Task AcknowledgementAndReplayChangeOnlyTheOwnedSocketRules()
     {
         await using var f = await Fixture.CreateAsync();
@@ -99,6 +214,98 @@ public sealed class DynamicDeviceGatewayTests
         await using var check = f.Factory("a").CreateDbContext();
         Assert.True((await check.TriggerRules.SingleAsync()).CurrentState);
         Assert.False((await check.TriggerRules.IgnoreQueryFilters().SingleAsync(r => r.InstallationId == "b")).CurrentState);
+    }
+
+    [SqlServerFact]
+    public async Task ObservationExpiresWhileAuthorizationWaitsCannotReleaseAnUncertainCommand()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var clock = new Clock(DateTimeOffset.UtcNow);
+        f.Executor.Send = (_, _, _) => throw new IOException();
+        var gateway = f.Sockets("a", clock);
+        var socket = await gateway.GetAsync(new(f.SocketA), default);
+        var id = new SocketCommandId(Guid.NewGuid());
+        Assert.Equal(SocketCommandStatus.Uncertain, (await socket.SetPowerAsync(new(id, SwitchState.On), default)).Status);
+        f.Executor.Age = TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1);
+        var authorizing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continueAuthorization = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var checks = 0;
+        async Task Authorize(CancellationToken ct)
+        {
+            if (++checks != 2) return;
+            authorizing.SetResult();
+            await continueAuthorization.Task.WaitAsync(ct);
+        }
+        var release = gateway.ReleaseForUserAsync(new(f.SocketA), id, "actor", Authorize, default);
+        await authorizing.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Now = clock.Now.AddMinutes(2);
+        continueAuthorization.SetResult();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => release);
+        Assert.Single(await gateway.ListUnresolvedAsync(new(f.SocketA), default));
+        Assert.Equal(1, f.Executor.Sends);
+        await using var db = f.Factory("a").CreateDbContext();
+        Assert.Equal("uncertain", (await db.IntegrationCommands.SingleAsync()).Status);
+    }
+
+    [SqlServerFact]
+    public async Task AutomaticDecisionExpiredAfterIntentIsRejectedWithoutProviderDispatch()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var gateway = f.Sockets("a");
+        var decisionCurrent = true;
+        var checks = 0;
+        Task Authorize(CancellationToken ct)
+        {
+            if (++checks == 2) decisionCurrent = false;
+            return Task.CompletedTask;
+        }
+        var socket = await gateway.GetForUserAsync(new(f.SocketA), "actor", Authorize, default);
+        var rule = Assert.Single(await new RuleRepository(f.Factory("a")).GetAllAsync(default));
+        using var decision = IntegrationAutomationSourceGuard.Enter(null, rule,
+            new InverterData { BatterySoc = 95, BatterySocValid = true }, true, () => decisionCurrent);
+        var result = await socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.On), default);
+        Assert.Equal(SocketCommandStatus.Rejected, result.Status);
+        Assert.Equal(0, f.Executor.Sends);
+        Assert.Empty(await gateway.ListUnresolvedAsync(new(f.SocketA), default));
+        await using var db = f.Factory("a").CreateDbContext();
+        Assert.Equal("condition_changed", (await db.IntegrationCommands.SingleAsync()).ErrorCode);
+        Assert.False((await db.TriggerRules.SingleAsync()).CurrentState);
+    }
+
+    [SqlServerFact]
+    public async Task AccessRevokedDuringObservationCannotReleaseAnUncertainCommand()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Executor.Send = (_, _, _) => throw new IOException();
+        var gateway = f.Sockets("a");
+        var socket = await gateway.GetAsync(new(f.SocketA), default);
+        var id = new SocketCommandId(Guid.NewGuid());
+        Assert.Equal(SocketCommandStatus.Uncertain, (await socket.SetPowerAsync(new(id, SwitchState.On), default)).Status);
+        var revoked = false;
+        f.Executor.BeforeRead = () => { revoked = true; return Task.CompletedTask; };
+        Task Authorize(CancellationToken ct) => revoked
+            ? Task.FromException(new DeyeSolar.Web.Auth.InstallationAccessException("Access revoked.")) : Task.CompletedTask;
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => gateway.ReleaseForUserAsync(
+            new(f.SocketA), id, "actor", Authorize, default));
+        Assert.Single(await gateway.ListUnresolvedAsync(new(f.SocketA), default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.Off), default));
+        Assert.Equal(1, f.Executor.Sends);
+    }
+
+    [SqlServerFact]
+    public async Task StalePhysicalObservationCannotReleaseAnUncertainCommand()
+    {
+        await using var f = await Fixture.CreateAsync();
+        f.Executor.Send = (_, _, _) => throw new IOException();
+        var gateway = f.Sockets("a");
+        var socket = await gateway.GetAsync(new(f.SocketA), default);
+        var id = new SocketCommandId(Guid.NewGuid());
+        Assert.Equal(SocketCommandStatus.Uncertain, (await socket.SetPowerAsync(new(id, SwitchState.On), default)).Status);
+        f.Executor.Age = TimeSpan.FromMinutes(11);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ReleaseAsync(new(f.SocketA), id, default));
+        Assert.Single(await gateway.ListUnresolvedAsync(new(f.SocketA), default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => socket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.Off), default));
+        Assert.Equal(1, f.Executor.Sends);
     }
 
     [SqlServerFact]
@@ -317,6 +524,11 @@ public sealed class DynamicDeviceGatewayTests
         public T Get(string? name) => value;
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
+    private sealed class Clock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
     private sealed class Refresh(Func<CancellationToken, Task<InverterData>> read) : IInverterRefreshService
     {
         public Task<InverterData> RefreshAsync(CancellationToken ct) => read(ct);
@@ -329,6 +541,8 @@ public sealed class DynamicDeviceGatewayTests
         public int Results;
         public bool Missing;
         public bool NullGood;
+        public bool? SocketPower = false;
+        public Func<Task>? BeforeRead;
         public TimeSpan Age = TimeSpan.FromSeconds(2);
         public Dictionary<string, int> SocByRemote = [];
         public Func<JsonElement, JsonElement> Result = Ack;
@@ -341,11 +555,16 @@ public sealed class DynamicDeviceGatewayTests
             if (method == "socket.result") { Interlocked.Increment(ref Results); return Task.FromResult(Result(p)); }
             var remote = p.GetProperty("remoteId").GetString()!;
             var observed = DateTimeOffset.UtcNow - Age;
-            if (method == "socket.read") return Task.FromResult(IntegrationJson.Element(new ProviderSocketTelemetry(remote, "0", false, true, 0, observed, DateTimeOffset.UtcNow)));
+            if (method == "socket.read") return ReadSocketAsync(remote, observed);
             var value = new ProviderMeasurement(Missing ? null : 0, Missing ? null : observed,
                 Missing ? ProviderMeasurementQuality.Missing : ProviderMeasurementQuality.Good);
             return Task.FromResult(IntegrationJson.Element(new ProviderInverterTelemetry(remote, DateTimeOffset.UtcNow, "Unknown",
                 Missing ? value : value with { Value = NullGood ? null : SocByRemote.GetValueOrDefault(remote) }, value, value, value, value, value, value, value)));
+        }
+        private async Task<JsonElement> ReadSocketAsync(string remote, DateTimeOffset observed)
+        {
+            if (BeforeRead is not null) await BeforeRead();
+            return IntegrationJson.Element(new ProviderSocketTelemetry(remote, "0", SocketPower, true, 0, observed, DateTimeOffset.UtcNow));
         }
     }
     private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
@@ -355,7 +574,7 @@ public sealed class DynamicDeviceGatewayTests
         public Executor Executor = new();
         private readonly IntegrationSecretStore _secrets = new(new EphemeralDataProtectionProvider());
         public Factory Factory(string installation) => new(options, installation);
-        public DynamicSocketGateway Sockets(string installation) => new(new IntegrationRegistry(Factory(installation), _secrets), Executor, Factory(installation), TimeProvider.System);
+        public DynamicSocketGateway Sockets(string installation, TimeProvider? clock = null) => new(new IntegrationRegistry(Factory(installation), _secrets), Executor, Factory(installation), clock ?? TimeProvider.System);
         public DynamicInverterGateway Inverters(string installation)
         {
             var registry = new IntegrationRegistry(Factory(installation), _secrets);

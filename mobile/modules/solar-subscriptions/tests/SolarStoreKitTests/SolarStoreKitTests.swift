@@ -1,5 +1,6 @@
 // Runs only against Xcode local StoreKit configuration: no Apple credentials or payments.
 import XCTest
+import UIKit
 import StoreKit
 import StoreKitTest
 
@@ -17,6 +18,12 @@ final class SolarStoreKitTests: XCTestCase {
     session.disableDialogs = true
     session.timeRate = .realTime
     store = SolarSubscriptionStore()
+    let sceneDeadline = Date().addingTimeInterval(10)
+    while !UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }), Date() < sceneDeadline {
+      try await Task.sleep(nanoseconds: 100_000_000)
+    }
+    XCTAssertTrue(UIApplication.shared.connectedScenes.contains(where: { $0.activationState == .foregroundActive }),
+      "The StoreKit test host must present an active scene before purchase and restore actions")
   }
   override func tearDown() async throws {
     store?.stop()
@@ -28,8 +35,8 @@ final class SolarStoreKitTests: XCTestCase {
   private func entitlements(_ snapshot: [String: Any]) -> [[String: Any]] { snapshot["entitlements"] as? [[String: Any]] ?? [] }
   private func products(_ snapshot: [String: Any]) -> [[String: Any]] { snapshot["products"] as? [[String: Any]] ?? [] }
   private func pending(_ snapshot: [String: Any]) -> [[String: Any]] { snapshot["pendingTransactions"] as? [[String: Any]] ?? [] }
-  private func waitForAccess(_ expected: Bool, productID: String? = nil) async throws -> [String: Any] {
-    let deadline = Date().addingTimeInterval(10)
+  private func waitForAccess(_ expected: Bool, productID: String? = nil, timeout: TimeInterval = 10) async throws -> [String: Any] {
+    let deadline = Date().addingTimeInterval(timeout)
     repeat {
       let value = await store.snapshot(reloadProducts: false)
       let active = entitlements(value).contains { productID == nil || $0["productId"] as? String == productID }
@@ -71,6 +78,10 @@ final class SolarStoreKitTests: XCTestCase {
     let transaction = try XCTUnwrap(session.allTransactions().first { $0.productIdentifier == monthly })
     try session.disableAutoRenewForTransaction(identifier: transaction.identifier)
     try assertVerified(await store.snapshot(reloadProducts: false), productID: monthly)
+    // Successful app delivery acknowledges the verified receipt before a later restore action.
+    // Unacknowledged delivery and account fencing are covered separately in test11.
+    let receipt = try XCTUnwrap(pending(snapshot).first)
+    try await store.finish(transactionID: try XCTUnwrap(receipt["transactionId"] as? String), appAccountToken: token.uuidString)
     try assertVerified(try await store.restore(), productID: monthly)
   }
 
@@ -86,21 +97,43 @@ final class SolarStoreKitTests: XCTestCase {
 
   func test04PendingAskToBuyDoesNotGrantUntilApproved() async throws {
     session.askToBuyEnabled = true
+    let started = ProcessInfo.processInfo.systemUptime
+    func trace(_ phase: String, snapshot: [String: Any]? = nil) {
+      let elapsed = String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started)
+      if let snapshot {
+        let active = self.entitlements(snapshot)
+        let unfinished = self.pending(snapshot)
+        let verifiedCount = (active + unfinished).filter {
+          $0["verified"] as? Bool == true && !($0["signedTransaction"] as? String ?? "").isEmpty
+        }.count
+        print("AskToBuy trace \(elapsed)s \(phase) entitlements=\(active.count) pending=\(unfinished.count) verifiedRecords=\(verifiedCount)")
+      } else {
+        print("AskToBuy trace \(elapsed)s \(phase)")
+      }
+    }
     let approved = expectation(description: "Verified approval reaches the native entitlement callback")
     var approvalDelivered = false
     store.changed = { snapshot in
+      trace("changed callback", snapshot: snapshot)
       if !approvalDelivered && self.entitlements(snapshot).contains(where: { $0["productId"] as? String == self.monthly }) {
         approvalDelivered = true
         approved.fulfill()
       }
     }
+    trace("before pending purchase")
     let result = try await store.purchase(productID: monthly, appAccountToken: UUID().uuidString)
+    trace("after pending purchase", snapshot: result["snapshot"] as? [String: Any])
     XCTAssertEqual(result["outcome"] as? String, "pending")
     XCTAssertTrue(entitlements(try XCTUnwrap(result["snapshot"] as? [String: Any])).isEmpty)
     let transaction = try XCTUnwrap(session.allTransactions().first { $0.productIdentifier == monthly })
+    trace("before approval")
     try session.approveAskToBuyTransaction(identifier: transaction.identifier)
+    trace("after approval")
     await fulfillment(of: [approved], timeout: 10)
-    try assertVerified(try await waitForAccess(true, productID: monthly), productID: monthly)
+    trace("after callback wait")
+    let checked = try await waitForAccess(true, productID: monthly)
+    try assertVerified(checked, productID: monthly)
+    trace("after current entitlement check", snapshot: checked)
   }
 
   func test05UserCancellationDoesNotGrantAccess() async throws {
@@ -159,13 +192,13 @@ final class SolarStoreKitTests: XCTestCase {
   func test09NaturalExpirationWithAcceleratedAppleClockAndRestore() async throws {
     // Apple documents accelerated renewal periods as an alternative to forcing
     // expiry. This exercises actual local period expiration and notifications.
-    session.timeRate = .oneRenewalEveryTwoSeconds
+    session.timeRate = .oneRenewalEveryTenSeconds
     let result = try await store.purchase(productID: monthly, appAccountToken: UUID().uuidString)
     XCTAssertEqual(result["outcome"] as? String, "purchased")
     try assertVerified(try XCTUnwrap(result["snapshot"] as? [String: Any]), productID: monthly)
     let transaction = try XCTUnwrap(session.allTransactions().first { $0.productIdentifier == monthly })
     try session.disableAutoRenewForTransaction(identifier: transaction.identifier)
-    let expired = try await waitForAccess(false)
+    let expired = try await waitForAccess(false, timeout: 20)
     XCTAssertTrue(entitlements(expired).isEmpty)
     let restoredExpired = try await store.restore()
     XCTAssertTrue(entitlements(restoredExpired).isEmpty)

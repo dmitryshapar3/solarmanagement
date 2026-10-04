@@ -51,7 +51,7 @@ public static class IntegrationWorkerHost
                         provider = factory(configuration);
                         if (provider.MinimumOperationTimeoutSeconds < 0
                             || provider.MinimumOperationTimeoutSeconds > configuration.MaximumOperationTimeoutSeconds)
-                            throw new InvalidDataException("Provider operation deadline exceeds the host bound.");
+                            throw new ArgumentException("Provider operation deadline exceeds the host bound.");
                         result = IntegrationJson.Element(new { initialized = true, minimumOperationTimeoutSeconds = provider.MinimumOperationTimeoutSeconds });
                     }
                     else
@@ -68,11 +68,12 @@ public static class IntegrationWorkerHost
                 }
                 finally { calls.Release(); }
             }
-            catch (Exception)
+            catch (Exception error)
             {
                 // Vendor responses and exception messages can contain credentials.
                 if (!shutdown.IsCancellationRequested)
-                    await RespondAsync(new { jsonrpc = "2.0", id, error = new { code = -32000, message = "Integration operation failed." } });
+                    await RespondAsync(new { jsonrpc = "2.0", id, error = new { code = -32000, message = "Integration operation failed.",
+                        data = new { failureKind = IntegrationFailureClassifier.Classify(error).ToString() } } });
             }
         }
         try

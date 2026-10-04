@@ -1,3 +1,4 @@
+import { validApiResponse } from "./responseContracts";
 import { currentLocale, translate as t } from "../i18n";
 
 export class ApiError extends Error {
@@ -148,6 +149,8 @@ export class ApiClient {
         }
       }
       if (!response.ok) throw new ApiError(response.status, extractErrorMessage(payload, response.status));
+      if (!validApiResponse(path, options.method ?? "GET", payload))
+        throw new ApiError(response.status, "The server returned an invalid API response. Check the server URL and try again.");
       return payload as T;
     };
     try {

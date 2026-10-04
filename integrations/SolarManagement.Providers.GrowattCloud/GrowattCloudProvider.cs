@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Text.Json;
 using SolarManagement.Integrations.Contracts;
@@ -16,9 +17,11 @@ public sealed class GrowattCloudProvider : CloudInverterProvider
     private readonly Dictionary<string, (JsonElement Data, DateTimeOffset Expires)> _latest = new(StringComparer.Ordinal);
     private decimal PowerFactor => Value("powerUnit") switch { "W" => 1m, "kW" => 1000m, _ => 0m };
 
-    public GrowattCloudProvider(WorkerConfiguration configuration) : this(configuration, null) { }
+    public GrowattCloudProvider(WorkerConfiguration configuration) : this(configuration, (HttpClient?)null) { }
     public GrowattCloudProvider(WorkerConfiguration configuration, HttpClient? http)
-        : base(configuration, http, "https://openapi.growatt.com")
+        : this(configuration, CloudProviderTransport.Create(configuration, http)) { }
+    public GrowattCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport)
+        : base(configuration, transport, "https://openapi.growatt.com")
     {
         _ = RequiredSecret("apiToken");
         if (Value("username") is not { Length: > 0 and <= 128 } username || username.Any(char.IsControl))

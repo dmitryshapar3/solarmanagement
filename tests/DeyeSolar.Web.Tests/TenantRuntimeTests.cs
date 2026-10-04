@@ -152,6 +152,54 @@ public class TenantRuntimeTests
     }
 
     [Fact]
+    public async Task InstallationStopClosesAdmissionAndDrainsInitializationEvenWhenCallerCancels()
+    {
+        using var builder = Builder();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        TenantRuntime? runtime = null;
+        await using var registry = new TenantRuntimeRegistry(async (id, ct) =>
+        {
+            started.SetResult();
+            await release.Task.WaitAsync(ct);
+            return runtime = Runtime(builder, id);
+        }, _ => Task.FromResult<IReadOnlyList<string>>(["first"]), default);
+        var initializing = registry.GetAsync("first");
+        await started.Task;
+        using var cancelled = new CancellationTokenSource();
+        var stopped = registry.StopInstallationAsync("first", cancelled.Token);
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registry.GetAsync("first"));
+        release.SetResult();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => initializing);
+        await registry.StopInstallationAsync("first");
+        Assert.Throws<ObjectDisposedException>(() => runtime!.Resolve<IInverterDataSource>());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registry.GetAsync("first"));
+    }
+
+    [Fact]
+    public async Task PausedInstallationCanBeReadmittedOnlyAfterDrainAndNeverAfterRetirement()
+    {
+        using var builder = Builder();
+        var calls = 0;
+        await using var registry = new TenantRuntimeRegistry((id, _) =>
+        {
+            calls++;
+            return Task.FromResult(Runtime(builder, id));
+        }, _ => Task.FromResult<IReadOnlyList<string>>(["first"]), default);
+        var first = await registry.GetAsync("first");
+        await registry.PauseInstallationAsync("first");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => registry.GetAsync("first"));
+        registry.ResumeInstallation("first");
+        var second = await registry.GetAsync("first");
+        Assert.NotSame(first, second);
+        Assert.Equal(2, calls);
+        await registry.StopInstallationAsync("first");
+        Assert.Throws<InvalidOperationException>(() => registry.ResumeInstallation("first"));
+    }
+
+    [Fact]
     public async Task RuntimeShutdownClearsPrivateSnapshotsAndRejectsFurtherResolution()
     {
         using var builder = Builder();

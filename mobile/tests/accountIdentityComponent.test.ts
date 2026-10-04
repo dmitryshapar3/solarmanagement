@@ -47,8 +47,8 @@ for (const [language, linkLabel, successMessage, loginMode] of [
       const status = linking && (!validProof || init.headers.Authorization !== "Bearer original-owner-token") ? 401 : 200;
       const body = pathname === "/api/auth/options" ? { googleEnabled: true, emailEnabled: false, phoneEnabled: false, registrationEnabled: true }
         : pathname === "/api/auth/google/link/start" ? { authorizationUrl: "https://solar.dshapar.com/auth/google?linkTicket=test", expiresAt: "2026-10-04T12:02:00Z" }
-        : pathname === "/api/auth/login" ? { token: "original-owner-token", username: "owner" }
-        : linking ? status === 200 ? { token: "unused-replacement-token", username: "owner" } : { message: "Google sign-in expired. Please start again." }
+        : pathname === "/api/auth/login" ? { token: "original-owner-token", username: "owner", expiresAt: "2026-11-04T12:00:00Z" }
+        : linking ? status === 200 ? { token: "unused-replacement-token", username: "owner", expiresAt: "2026-11-04T12:00:00Z" } : { message: "Google sign-in expired. Please start again." }
         : { authenticated: true, username: "owner" };
       return { status, ok: status === 200, text: async () => JSON.stringify(body) };
     },

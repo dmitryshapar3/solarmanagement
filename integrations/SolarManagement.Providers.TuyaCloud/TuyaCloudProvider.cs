@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -16,7 +17,9 @@ public sealed class TuyaCloudProvider : SocketCloudProviderBase
     private string? _token;
     private DateTimeOffset _tokenExpires;
     private readonly Dictionary<string, JsonElement> _specifications = new(StringComparer.Ordinal);
-    public TuyaCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null) : base(configuration, httpClient)
+    public TuyaCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null)
+        : this(configuration, CloudProviderTransport.Create(configuration, httpClient)) { }
+    public TuyaCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport) : base(configuration, transport)
     {
         _endpoint = Endpoint(configuration, Origins[0], Origins, "/").TrimEnd('/');
         _userId = Identity(configuration.Configuration.Values, "userId");

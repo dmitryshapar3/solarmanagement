@@ -8,7 +8,7 @@ public class RuleEvaluator
     public const int SolarProductionAverageWindowMinutes = 60;
 
     public IReadOnlyList<RuleAction> Evaluate(
-        InverterData current,
+        InverterData? current,
         IEnumerable<TriggerRule> rules,
         DateTimeOffset now,
         string? timeZoneId = null,
@@ -25,7 +25,7 @@ public class RuleEvaluator
                 continue;
             }
 
-            if (current.BatterySocValid == false)
+            if (!HasFreshSoc(current, now))
                 continue;
 
             if (rule.CurrentState)
@@ -41,6 +41,15 @@ public class RuleEvaluator
         }
 
         return actions;
+    }
+
+    public static bool HasFreshSoc([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] InverterData? current, DateTimeOffset now)
+    {
+        if (current is null || current.BatterySocValid == false) return false;
+        if (current.Telemetry is null) return true; // Compatibility data sources retain their existing validity contract.
+        var soc = current.Telemetry.BatterySoc;
+        return soc.Quality == SolarManagement.Inverters.Contracts.MeasurementQuality.Good
+            && soc.ObservedAt is { } observed && observed <= now && now - observed <= TimeSpan.FromMinutes(10);
     }
 
     private static bool ShouldTurnOn(

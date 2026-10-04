@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Billing;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -29,25 +30,20 @@ public sealed class IntegrationSetupGate
 
 public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarDbContext> factory,
     IIntegrationProviderCatalog catalog, IIntegrationSetupExecutor executor, IntegrationSecretStore secrets,
-    IDataProtectionProvider protection, TimeProvider clock, InstallationMembershipService memberships,
-    CurrentInstallation current, IntegrationChangeNotifier changes, IntegrationSetupGate gate,
+    TimeProvider clock, CurrentInstallation current, IntegrationChangeNotifier changes, IntegrationSetupGate gate,
+    IIntegrationManagerAccess managerAccess, IIntegrationConfigurationResolver configurationResolver,
+    IIntegrationSelectionTokens selectionTokens, IIntegrationDeviceBindingWriter bindingWriter,
+    IIntegrationConfigurationWriter configurationWriter, IIntegrationConnectionLifecycle lifecycle,
     IOptions<IntegrationRuntimeOptions>? runtimeOptions = null, IntegrationOAuthService? oauth = null,
-    BillingAccessService? billing = null)
+    IBillingAccessReader? billing = null, ITrialSocketQuota? quota = null)
 {
     private int SetupTimeoutSeconds => runtimeOptions?.Value.MaximumNegotiatedRequestTimeoutSeconds ?? 300;
 
-    private async Task EnsureManagerAsync(ClaimsPrincipal actor, CancellationToken ct)
-    {
-        var membership = await memberships.ResolveAsync(actor, ct);
-        if (membership is null || membership.InstallationId != current.Id || membership.Role is not ("Owner" or "IntegrationManager"))
-            throw new IntegrationRequestException("forbidden", "You do not have permission to manage this installation's integrations.", 403);
-        if (billing is not null) await billing.EnsureUserAsync(actor, ct);
-    }
+    private Task EnsureManagerAsync(ClaimsPrincipal actor, CancellationToken ct)
+        => managerAccess.EnsureAsync(actor, current.Id ?? throw new IntegrationRequestException("forbidden", "No installation is available.", 403), ct);
     private static IntegrationRequestException Conflict() => new("configuration_conflict", "The integration changed. Reload its settings before continuing.", 409);
     private static void Guard(IntegrationInstanceEntity instance, long revision, string version, string digest, string descriptor)
-    {
-        if (instance.Revision != revision || instance.PackageVersion != version || instance.PackageDigest != digest || instance.DescriptorDigest != descriptor) throw Conflict();
-    }
+        => IntegrationConfigurationIdentity.Guard(instance, revision, version, digest, descriptor);
     private static void Guard(IntegrationInstanceEntity instance, IntegrationConfigurationChange change)
         => Guard(instance, change.ExpectedRevision, change.PackageVersion, change.PackageDigest, change.DescriptorDigest);
     private static void ValidateDescriptor(IntegrationProviderDescriptor descriptor)
@@ -75,6 +71,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     }
     private static async Task LockSettingsMutationAsync(DeyeSolarDbContext db, IntegrationInstanceEntity expected, CancellationToken ct)
     {
+        await InstallationMutationGuard.EnsureEnabledAsync(db, ct);
         // Command intent insertion locks this same parent. Keep the lock until settings commit,
         // so an accepted active command cannot be retired between the check and generation change.
         var locked = await IntegrationPersistenceGuard.LockInstanceAsync(db, expected.Id, ct) ?? throw Conflict();
@@ -82,9 +79,9 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         if (locked.Generation != expected.Generation) throw Conflict();
     }
     private Dictionary<string, string> Open(IntegrationInstanceEntity instance, IntegrationConfigurationEntity config)
-        => secrets.Decrypt(instance.InstallationId, instance.Id, config.Revision, config.SecretsCiphertext);
+        => configurationResolver.ReadSecrets(instance, config);
     private static Dictionary<string, JsonElement> ReadValues(IntegrationConfigurationEntity config)
-        => JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(config.ValuesJson, IntegrationJson.Options) ?? new(StringComparer.Ordinal);
+        => IntegrationConfigurationResolver.ReadValues(config);
 
     public async Task<IReadOnlyList<IntegrationInstanceDto>> ListAsync(CancellationToken ct)
     {
@@ -98,7 +95,10 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             throw new IntegrationRequestException("validation", "Enter an integration name of up to 128 characters.");
         var descriptor = await catalog.GetAsync(request.ProviderId, null, ct);
         ValidateDescriptor(descriptor);
+        await EnsureManagerAsync(actor, ct);
         await using var db = await factory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await InstallationMutationGuard.EnsureEnabledAsync(db, ct);
         var instance = new IntegrationInstanceEntity
         {
             Id = Guid.NewGuid(),
@@ -124,6 +124,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             CreatedAt = clock.GetUtcNow()
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         changes.Publish(instance.InstallationId, instance.Id);
         return instance.ToDto();
     }
@@ -137,77 +138,9 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     }
     private IntegrationDraftConfiguration Resolve(IntegrationInstanceEntity instance, IntegrationConfigurationEntity saved,
         IntegrationProviderDescriptor descriptor, IntegrationConfigurationChange draft, bool allowMissingOAuthSecrets = false)
-    {
-        Guard(instance, draft);
-        if (draft.Values is null || draft.SecretOperations is null || draft.Values.Count > 100 || draft.SecretOperations.Count > 100)
-            throw new IntegrationRequestException("validation", "The configuration fields are invalid.");
-        var fields = descriptor.Fields.ToDictionary(f => f.Key, StringComparer.Ordinal);
-        if (draft.Values.Keys.Any(k => !fields.TryGetValue(k, out var f) || f.Secret || f.Kind == "secret")
-            || draft.SecretOperations.Keys.Any(k => !fields.TryGetValue(k, out var f) || !f.Secret && f.Kind != "secret"))
-            throw new IntegrationRequestException("validation", "The configuration contains an unknown field.");
-        var resolvedSecrets = Open(instance, saved);
-        var values = new Dictionary<string, JsonElement>(draft.Values, StringComparer.Ordinal);
-        var conditionValues = ReadValues(saved);
-        foreach (var (key, value) in values) conditionValues[key] = value;
-        var effectiveValues = IntegrationUiConditions.EffectiveValues(descriptor, IntegrationJson.Element(conditionValues));
-        foreach (var (key, operation) in draft.SecretOperations)
-        {
-            if (operation is null) throw new IntegrationRequestException("validation", "Choose a credential operation.");
-            switch (operation.Operation)
-            {
-                case "keep": break;
-                case "clear": resolvedSecrets.Remove(key); break;
-                case "replace" when operation.Value is { Length: > 0 and <= 8192 }: resolvedSecrets[key] = operation.Value; break;
-                default: throw new IntegrationRequestException("validation", "Enter a credential or choose keep or clear.");
-            }
-        }
-        foreach (var field in descriptor.Fields)
-        {
-            var active = IntegrationUiConditions.IsFieldActive(descriptor, field, effectiveValues);
-            var required = field.Required && active;
-            if (field.Secret || field.Kind == "secret")
-            {
-                var pendingOAuth = allowMissingOAuthSecrets && descriptor.OAuthDefinition?.SecretFieldKeys.Contains(field.Key, StringComparer.Ordinal) == true;
-                if (required && !pendingOAuth && (!resolvedSecrets.TryGetValue(field.Key, out var value) || string.IsNullOrWhiteSpace(value)))
-                    throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
-                continue;
-            }
-            if (!active && !values.ContainsKey(field.Key) && conditionValues.TryGetValue(field.Key, out var retained))
-                values[field.Key] = retained;
-            if (!values.TryGetValue(field.Key, out var json) || json.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-            {
-                if (required) throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
-                continue;
-            }
-            try { IntegrationDescriptorValidator.ValidateValue(field, json); }
-            catch (InvalidDataException) { throw new IntegrationRequestException("validation", $"Check {field.Label}."); }
-            if (required && json.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(json.GetString()))
-                throw new IntegrationRequestException("validation", $"Enter {field.Label}.");
-        }
-        return new(IntegrationJson.Element(values), resolvedSecrets);
-    }
-    private static string Fingerprint(IntegrationDraftConfiguration value)
-    {
-        var orderedValues = value.Values.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal).ToDictionary(p => p.Name, p => p.Value.Clone(), StringComparer.Ordinal);
-        var orderedSecrets = value.Secrets.OrderBy(p => p.Key, StringComparer.Ordinal).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { values = orderedValues, secrets = orderedSecrets }, IntegrationJson.Options))));
-    }
+        => configurationResolver.Resolve(instance, saved, descriptor, draft, allowMissingOAuthSecrets);
+    private static string Fingerprint(IntegrationDraftConfiguration value) => IntegrationConfigurationResolver.Fingerprint(value);
     private static ProviderPackageIdentity Package(IntegrationInstanceEntity value) => new(value.ProviderId, value.PackageVersion, value.PackageDigest);
-    private static IntegrationDiscoveredDevice PublicDevice(IntegrationDiscoveredDevice device)
-    {
-        var capabilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        if (device.Metadata is { ValueKind: JsonValueKind.Object } metadata
-            && metadata.TryGetProperty("capabilities", out var source) && source.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var key in new[] { "hasBattery", "hasSolarPower", "hasSignedGridPower", "hasLoadPower", "hasGridPowerHistory", "canSwitch", "canMeasurePower" })
-                if (source.TryGetProperty(key, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                    capabilities[key] = value.Clone();
-            if (source.TryGetProperty("solarBasis", out var basis) && basis.ValueKind == JsonValueKind.String
-                && basis.GetString() is "Unknown" or "PvDc" or "InverterAcOutput") capabilities["solarBasis"] = basis.Clone();
-        }
-        // Workers return only public capability data across the discovery boundary.
-        return device with { Metadata = IntegrationJson.Element(new { capabilities }) };
-    }
     private async Task<IntegrationTestResult> RunTestAsync(IntegrationInstanceEntity instance, IntegrationDraftConfiguration draft, CancellationToken ct)
     {
         using var lease = await gate.EnterAsync(ct);
@@ -250,33 +183,20 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             if (!verification.Success || string.IsNullOrEmpty(instance.AccountIdentity) || verification.AccountIdentity != instance.AccountIdentity)
                 throw new IntegrationRequestException("account_replacement_requires_new_instance", "Create a new integration for changed account credentials. Existing devices and history will remain linked to this account.", 409);
         }
+        await EnsureManagerAsync(actor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockSettingsMutationAsync(db, instance, ct);
         await EnsureNoActiveCommandsAsync(db, id, ct);
         if (draft.OAuthFlowId is { } authorization)
             await (oauth ?? throw new IntegrationRequestException("authorization_unavailable", "Authorization is unavailable.", 503))
                 .ConsumeAsync(db, instance, authorization, actor, ct);
-        instance.Revision++;
-        instance.Generation++;
-        instance.UpdatedAt = clock.GetUtcNow();
-        db.Add(new IntegrationConfigurationEntity
-        {
-            InstallationId = instance.InstallationId,
-            InstanceId = id,
-            Revision = instance.Revision,
-            ValuesJson = resolved.Values.GetRawText(),
-            SecretsCiphertext = secrets.Encrypt(instance.InstallationId, id, instance.Revision, resolved.Secrets),
-            CreatedAt = clock.GetUtcNow()
-        });
+        configurationWriter.AppendRevision(db, instance, resolved);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw Conflict(); }
         await transaction.CommitAsync(ct);
         changes.Publish(instance.InstallationId, id);
         return await ReadAsync(id, ct);
     }
-    private sealed record SelectionProof(string InstallationId, Guid InstanceId, long Revision, string PackageVersion,
-        string PackageDigest, string DescriptorDigest, string Fingerprint, DateTimeOffset ExpiresAt, IntegrationDiscoveredDevice Device);
-    private IDataProtector SelectionProtector => protection.CreateProtector("IntegrationDiscoverySelection.v1");
     public async Task<IntegrationDiscoveryResponse> DiscoverAsync(Guid id, IntegrationConfigurationChange draft, ClaimsPrincipal actor, CancellationToken ct)
     {
         await EnsureManagerAsync(actor, ct);
@@ -296,9 +216,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             throw new IntegrationRequestException("invalid_provider_response", "The provider returned unsupported device information.", 503);
         var expiry = clock.GetUtcNow().AddMinutes(5);
         var fingerprint = Fingerprint(resolved);
-        return new(result.Select(PublicDevice).Select(device => new IntegrationDiscoveryDevice(SelectionProtector.Protect(JsonSerializer.Serialize(
-            new SelectionProof(instance.InstallationId, id, instance.Revision, instance.PackageVersion, instance.PackageDigest, instance.DescriptorDigest, fingerprint, expiry, device), IntegrationJson.Options)),
-            device.Name, device.Kind, device.RemoteId, device.Channel ?? "", device.Metadata)).ToList(), expiry);
+        return selectionTokens.Issue(instance, result, fingerprint, expiry);
     }
     public async Task<IReadOnlyList<IntegrationBindingDto>> DevicesAsync(Guid id, CancellationToken ct)
     {
@@ -309,14 +227,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     public async Task<IntegrationBindingDto> SelectDeviceAsync(Guid id, SelectIntegrationDeviceRequest request, ClaimsPrincipal actor, CancellationToken ct)
     {
         await EnsureManagerAsync(actor, ct);
-        SelectionProof proof;
-        try
-        {
-            if (string.IsNullOrWhiteSpace(request.SelectionToken) || request.SelectionToken.Length > 32768) throw new InvalidDataException();
-            proof = JsonSerializer.Deserialize<SelectionProof>(SelectionProtector.Unprotect(request.SelectionToken), IntegrationJson.Options) ?? throw new InvalidDataException();
-        }
-        catch (Exception ex) when (ex is CryptographicException or JsonException or InvalidDataException)
-        { throw new IntegrationRequestException("invalid_selection", "Discover devices again before selecting this device."); }
+        var proof = selectionTokens.Read(request.SelectionToken);
         await using var db = await factory.CreateDbContextAsync(ct);
         var instance = await FindAsync(db, id, ct);
         var descriptor = await DescriptorAsync(instance, ct);
@@ -329,9 +240,11 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
             throw new IntegrationRequestException("save_before_selection", "Save the settings, then discover devices again before selecting a device.", 409);
         var device = proof.Device;
         var channel = device.Channel ?? "";
+        await EnsureManagerAsync(actor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await InstallationMutationGuard.EnsureEnabledAsync(db, ct);
         if (device.Kind == "socket" && billing is not null)
-            await billing.LockSocketSelectionAccountAsync(db, actor, instance.InstallationId, ct);
+            await (quota ?? throw new InvalidOperationException("A billing-enabled integration service requires a socket quota policy.")).LockSocketSelectionAccountAsync(db, actor, instance.InstallationId, ct);
         var locked = await IntegrationPersistenceGuard.LockInstanceAsync(db, id, ct) ?? throw Conflict();
         db.Entry(instance).CurrentValues.SetValues(locked);
         db.Entry(instance).OriginalValues.SetValues(locked);
@@ -340,38 +253,10 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         if (instance.AccountIdentity is not null && instance.AccountIdentity != proof.Device.AccountIdentity)
             throw new IntegrationRequestException("account_identity_changed", "The discovered device belongs to a different account. Create a new integration.", 409);
         if (device.Kind == "socket" && billing is not null)
-            await billing.EnsureSocketSelectionAsync(db, actor, instance.InstallationId, new(id, device.RemoteId, channel), ct);
-        var binding = await db.Set<IntegrationDeviceBindingEntity>().SingleOrDefaultAsync(b => b.InstanceId == id && b.Kind == device.Kind && b.RemoteId == device.RemoteId && b.Channel == channel, ct);
-        if (binding is null)
-        {
-            binding = new()
-            {
-                Id = Guid.NewGuid(),
-                InstallationId = instance.InstallationId,
-                InstanceId = id,
-                Kind = device.Kind,
-                AddedByUserId = device.Kind == "socket" ? actor.FindFirstValue(ClaimTypes.NameIdentifier) : null,
-                RemoteId = device.RemoteId,
-                Channel = channel,
-                Name = device.Name,
-                AccountIdentity = device.AccountIdentity,
-                MetadataJson = device.Metadata?.GetRawText() ?? "{}"
-            };
-            db.Add(binding);
-        }
-        if (device.Kind == "inverter")
-        {
-            // Clear the previous selection inside this transaction before the filtered
-            // unique index sees the new binding; readers cannot see a partial cutover.
-            await db.Set<IntegrationDeviceBindingEntity>().Where(b => b.Kind == "inverter" && b.IsDefault)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(b => b.IsDefault, false), ct);
-            binding.IsDefault = true;
-            if (db.Entry(binding).State != EntityState.Added)
-                db.Entry(binding).Property(b => b.IsDefault).IsModified = true;
-        }
+            await (quota ?? throw new InvalidOperationException("A billing-enabled integration service requires a socket quota policy.")).EnsureSocketSelectionAsync(db, actor, instance.InstallationId, new(id, device.RemoteId, channel), ct);
+        var binding = await bindingWriter.BindAsync(db, instance, device, actor, ct);
         instance.AccountIdentity ??= device.AccountIdentity;
-        instance.Generation++;
-        instance.UpdatedAt = clock.GetUtcNow();
+        lifecycle.Touch(instance);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw Conflict(); }
         await transaction.CommitAsync(ct);
@@ -400,25 +285,15 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
                 throw new IntegrationRequestException("account_identity_changed", "The account identity changed. Create a new integration.", 409);
             instance.AccountIdentity ??= result.AccountIdentity;
         }
+        await EnsureManagerAsync(actor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockSettingsMutationAsync(db, instance, ct);
         if (enabled) await EnsureNoActiveCommandsAsync(db, id, ct);
-        var retired = 0;
-        if (!enabled)
-            retired = await db.IntegrationCommands.Where(command => command.InstanceId == id && (command.Status == "requested" || command.Status == "pending"))
-                .ExecuteUpdateAsync(update => update.SetProperty(command => command.Status, "uncertain")
-                    .SetProperty(command => command.ErrorCode, "retired_generation")
-                    .SetProperty(command => command.CompletedAt, clock.GetUtcNow()), ct);
-        if (!alreadyDesired)
-        {
-            instance.State = desired;
-            instance.Generation++;
-            instance.UpdatedAt = clock.GetUtcNow();
-        }
+        var changed = await lifecycle.SetEnabledAsync(db, instance, enabled, ct);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw Conflict(); }
         await transaction.CommitAsync(ct);
-        if (!alreadyDesired || retired > 0) changes.Publish(instance.InstallationId, id);
+        if (changed) changes.Publish(instance.InstallationId, id);
         return instance.ToDto();
     }
 }

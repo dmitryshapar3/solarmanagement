@@ -1,12 +1,16 @@
 @page "/rules"
-@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Domain.Interfaces.IConfigurationRules RuleRepo
+@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 @inject NavigationManager Nav
 @using DeyeSolar.Web.Shared
 
 <PageTitle>@T["Rules - DeyeSolar"]</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-4">@T["Trigger Rules"]</MudText>
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@T.Translate(_error)</MudAlert>
+}
 
 <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/rules/edit"
            StartIcon="@Icons.Material.Filled.Add" Class="mb-4">
@@ -94,6 +98,7 @@ else
 @code {
     private List<TriggerRule>? _rules;
     private string? _tz;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,7 +134,10 @@ else
     private async Task ToggleEnabled(TriggerRule rule, bool enabled)
     {
         rule.Enabled = enabled;
-        await RuleRepo.UpdateAsync(rule, CancellationToken.None);
+        try { await RuleRepo.UpdateAsync(rule, CancellationToken.None); _error = null; }
+        catch (ArgumentException error) { _error = error.Message; }
+        catch { _error = "The rule could not be saved. Check its device and source, then try again."; }
+        finally { _rules = await RuleRepo.GetAllAsync(CancellationToken.None); }
     }
 
     private async Task DeleteRule(int id)

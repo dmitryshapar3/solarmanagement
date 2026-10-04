@@ -7,9 +7,10 @@
 @inject InstallationMembershipService Memberships
 @inject CurrentInstallation Current
 @inject TenantRuntimeRegistry Runtimes
-@inject BillingAccessService Billing
+@inject DeyeSolar.Web.Billing.IBillingAccessReader Billing
 @inject CurrentBillingAccount BillingAccount
 @inject TimeProvider Clock
+@inject DeyeSolar.Web.Auth.InteractiveSecurityContext Security
 
 @if (_subscriptionRequired)
 {
@@ -54,6 +55,8 @@ else
             var membership = await Memberships.ResolveAsync(state.User);
             if (membership is null) { _error = true; return; }
             Current.BindOnce(membership.InstallationId);
+            Security.BindOnce(state.User);
+            await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.Read, _stopping.Token);
             await Runtimes.GetAsync(membership.InstallationId, _stopping.Token);
             var access = await Billing.ReadAsync(userId, _stopping.Token);
             if (!access.HasAccess) { _subscriptionRequired = true; return; }
@@ -71,6 +74,7 @@ else
             while (!_stopping.IsCancellationRequested && !_subscriptionRequired)
             {
                 await Task.Delay(TimeSpan.FromSeconds(5), Clock, _stopping.Token);
+                await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.Read, _stopping.Token);
                 var access = await Billing.ReadAsync(userId, _stopping.Token);
                 if (_subscriptionRequired) return;
                 if (!access.HasAccess)

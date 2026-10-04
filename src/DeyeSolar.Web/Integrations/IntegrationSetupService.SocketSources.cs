@@ -53,8 +53,7 @@ public sealed partial class IntegrationSetupService
             }
         }
         device.MetadataJson = IntegrationSocketAssociation.Write(device, request.SourceInverterId, request.PhaseCount);
-        instance.Generation++;
-        instance.UpdatedAt = clock.GetUtcNow();
+        lifecycle.Touch(instance);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw Conflict(); }
         await transaction.CommitAsync(ct);

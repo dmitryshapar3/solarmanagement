@@ -20,6 +20,20 @@ namespace DeyeSolar.Web.Tests;
 public sealed class LegacyIntegrationBootstrapTests
 {
     [SqlServerFact]
+    public async Task CurrentPatchOnlyCatalogImportsLegacyConfigurationAndPinsExactPackage()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.Catalog.PackageVersion = "1.0.2";
+        Assert.True(await fixture.Bootstrap.RunAsync(fixture.Factory("site-a"), fixture.Effective, default));
+        await using var db = fixture.Factory("site-a").CreateDbContext();
+        var imported = await db.IntegrationInstances.ToListAsync();
+        Assert.Equal(2, imported.Count);
+        Assert.All(imported, instance => Assert.Equal("1.0.2", instance.PackageVersion));
+        Assert.Equal(2, await db.IntegrationConfigurations.CountAsync());
+        Assert.True(await db.IntegrationDeviceBindings.AnyAsync(binding => binding.IsDefault && binding.Kind == "inverter"));
+    }
+
+    [SqlServerFact]
     public async Task LegacyPvConfirmationSurvivesRuntimeSeedingReloadAndReconfirmation()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -336,10 +350,11 @@ public sealed class LegacyIntegrationBootstrapTests
     private sealed class Catalog : IIntegrationProviderCatalog
     {
         public bool IncludeShelly { get; set; } = true;
+        public string PackageVersion { get; set; } = "1.0.0";
         public Task<IReadOnlyList<IntegrationProviderDescriptor>> GetProvidersAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<IntegrationProviderDescriptor>>(IncludeShelly ? [Descriptor("deye.cloud"), Descriptor("shelly.cloud")] : [Descriptor("deye.cloud")]);
         public async Task<IntegrationProviderDescriptor> GetAsync(string providerId, string? version, CancellationToken ct)
             => (await GetProvidersAsync(ct)).Single(value => value.ProviderId == providerId);
-        private static IntegrationProviderDescriptor Descriptor(string provider) => new(provider, "1.0.0", new string('A', 64), new string('B', 64), provider, 1, 1, [], [], ["test", "discover"]);
+        private IntegrationProviderDescriptor Descriptor(string provider) => new(provider, PackageVersion, new string('A', 64), new string('B', 64), provider, 1, 1, [], [], ["test", "discover"]);
     }
 }

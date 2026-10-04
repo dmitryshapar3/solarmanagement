@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Billing;
 using SolarManagement.Integrations.Contracts;
@@ -25,10 +26,12 @@ public static class TenantRequestServices
             provider.GetRequiredService<ILoggerFactory>(), provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<IIntegrationRuntimeExecutor>(),
             provider.GetRequiredService<IntegrationSecretStore>(), provider.GetRequiredService<IntegrationChangeNotifier>(), solarApiKey,
-            provider.GetRequiredService<LegacyIntegrationBootstrap>(), provider.GetRequiredService<BillingAccessService>()));
+            provider.GetRequiredService<LegacyIntegrationBootstrap>(), provider.GetRequiredService<IBillingAccessReader>(), provider.GetRequiredService<ITrialSocketQuota>()));
         services.AddSingleton<TenantRuntimeRegistry>();
         services.AddScoped<IDbContextFactory<DeyeSolarDbContext>, RequestDbContextFactory>();
         Add<AppSettingsService>(services);
+        Add<IAppSettingsReader>(services);
+        Add<IAppSettingsWriter>(services);
         Add<IInverterDataSource>(services);
         Add<IExportGridHistorySource>(services);
         Add<IExportReadingStore>(services);
@@ -45,7 +48,7 @@ public static class TenantRequestServices
         Add<InverterDataSnapshot>(services);
         Add<DeviceStatusSnapshot>(services);
         Add<RuleEvaluator>(services);
-        Add<IRuleRepository>(services);
+        services.AddScoped<IConfigurationRules>(provider => new AuthorizedRuleRepository(Resolve<IRuleRepository>(provider), provider.GetRequiredService<InteractiveSecurityContext>()));
         Add<IntegrationProbeGate>(services);
         Add<IDeviceLabelStore>(services);
         Add<DeviceNameService>(services);
@@ -60,6 +63,8 @@ public static class TenantRequestServices
         Add<IInverterCatalog>(services);
         Add<ISmartSocketCatalog>(services);
         Add<ISocketCommandTracker>(services);
+        Add<IAccountSocketCatalog>(services);
+        Add<IAccountSocketControl>(services);
         Add<DynamicSocketGateway>(services);
         AddOptions<PollingOptions>(services);
         AddOptions<DisplayOptions>(services);

@@ -254,7 +254,7 @@ public class InverterProviderE2ETests
         var history = await worker.CallAsync("inverter.history", History("1"));
         Assert.True(history.GetProperty("isComplete").GetBoolean());
         Assert.Equal(-450, Assert.Single(history.GetProperty("samples").EnumerateArray()).GetProperty("powerWatts").GetInt32());
-        Assert.Single(server.Requests.Where(x => x.Path == "/thirdData/login"));
+        Assert.Single(server.Requests, x => x.Path == "/thirdData/login");
         server.AssertNoProtocolFailures();
     }
 

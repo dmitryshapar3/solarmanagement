@@ -1,6 +1,6 @@
 @page "/history"
 @inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 @using Microsoft.EntityFrameworkCore
 
 <PageTitle>@T["History - DeyeSolar"]</PageTitle>

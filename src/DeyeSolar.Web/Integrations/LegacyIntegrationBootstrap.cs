@@ -18,6 +18,15 @@ public sealed class LegacyIntegrationBootstrap(IIntegrationProviderCatalog catal
 {
     public const string MarkerSection = "IntegrationMigration";
     public const string MarkerKey = "Completed";
+
+    private async Task<IntegrationProviderDescriptor?> ImportPackageAsync(string providerId, CancellationToken ct)
+    {
+        var installed = await catalog.GetVersionsAsync(providerId, ct);
+        // These releases retain the former connection schema. Do not import into an unknown future schema.
+        return installed.SingleOrDefault(package => package.PackageVersion == "1.0.2")
+            ?? installed.SingleOrDefault(package => package.PackageVersion == "1.0.1")
+            ?? installed.SingleOrDefault(package => package.PackageVersion == "1.0.0");
+    }
     public async Task<bool> RunAsync(IDbContextFactory<DeyeSolarDbContext> factory, IConfiguration effective, CancellationToken ct)
     {
         await using var db = await factory.CreateDbContextAsync(ct);
@@ -48,8 +57,8 @@ public sealed class LegacyIntegrationBootstrap(IIntegrationProviderCatalog catal
         var maximumInterval = ((runtimeOptions?.Value.MaximumNegotiatedRequestTimeoutSeconds ?? 300) - 60) * 500;
         // Do not delete legacy credentials or claim completion when a configured interval cannot be executed.
         if (hasShelly && Math.Max(1000, shelly.RequestIntervalMilliseconds) > maximumInterval) return false;
-        var deyePackage = hasDeye ? (await catalog.GetVersionsAsync("deye.cloud", ct)).SingleOrDefault(provider => provider.PackageVersion == "1.0.0") : null;
-        var shellyPackage = hasShelly ? (await catalog.GetVersionsAsync("shelly.cloud", ct)).SingleOrDefault(provider => provider.PackageVersion == "1.0.0") : null;
+        var deyePackage = hasDeye ? await ImportPackageAsync("deye.cloud", ct) : null;
+        var shellyPackage = hasShelly ? await ImportPackageAsync("shelly.cloud", ct) : null;
         if (hasDeye && deyePackage is null || hasShelly && shellyPackage is null) return false;
         var now = clock.GetUtcNow();
         var imported = new List<Guid>();

@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -11,7 +12,9 @@ public sealed class NetatmoControlProvider : SocketCloudProviderBase
     public static IReadOnlyList<string> Operations { get; } = ["test", "discover", "socket.inventory", "socket.read", "socket.set"];
     private static readonly string[] Origins = ["https://api.netatmo.com"];
     private readonly string _endpoint, _accessToken;
-    public NetatmoControlProvider(WorkerConfiguration configuration, HttpClient? httpClient = null) : base(configuration, httpClient)
+    public NetatmoControlProvider(WorkerConfiguration configuration, HttpClient? httpClient = null)
+        : this(configuration, CloudProviderTransport.Create(configuration, httpClient)) { }
+    public NetatmoControlProvider(WorkerConfiguration configuration, ICloudJsonTransport transport) : base(configuration, transport)
     {
         _endpoint = Endpoint(configuration, "https://api.netatmo.com/api", Origins, "/api");
         _accessToken = Secret(configuration, "accessToken");

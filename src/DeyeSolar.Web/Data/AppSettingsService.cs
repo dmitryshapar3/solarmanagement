@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Data;
 
-public class AppSettingsService
+public sealed class AppSettingsService : IAppSettingsReader, IAppSettingsWriter
 {
     private readonly IDbContextFactory<DeyeSolarDbContext> _dbFactory;
     private readonly IConfiguration _configuration;
@@ -52,33 +52,38 @@ public class AppSettingsService
         return result;
     }
 
-    public async Task SaveSectionAsync<T>(string section, T options) where T : class
+    public Task SaveSectionAsync<T>(string section, T options) where T : class
+        => SaveSectionsAsync(new Dictionary<string, object> { [section] = options });
+
+    public async Task SaveSectionsAsync(IReadOnlyDictionary<string, object> sections, CancellationToken ct = default)
     {
-        if (section is "DeyeCloud" or "Shelly" || section.StartsWith("IntegrationRuntime", StringComparison.OrdinalIgnoreCase)
-            || section.StartsWith("Integrations", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Provider credentials must be changed through versioned integration settings. Publisher trust is configured by the operator.");
-        await using var db = await _dbFactory.CreateDbContextAsync();
-
-        foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        if (sections.Count == 0) return;
+        foreach (var (section, options) in sections)
         {
-            if (prop.Name == "Section" || !prop.CanRead)
-                continue;
-
-            var value = ToSettingValue(prop.GetValue(options));
-            var existing = await db.AppSettings
-                .FirstOrDefaultAsync(s => s.Section == section && s.Key == prop.Name);
-
-            if (existing != null)
+            if (string.IsNullOrWhiteSpace(section) || section.Length > 128 || options is null) throw new ArgumentException("A settings section and its values are required.");
+            if (section is "DeyeCloud" or "Shelly" || section.StartsWith("IntegrationRuntime", StringComparison.OrdinalIgnoreCase)
+                || section.StartsWith("Integrations", StringComparison.OrdinalIgnoreCase)
+                || section.StartsWith("Auth", StringComparison.OrdinalIgnoreCase) || section.StartsWith("AppleBilling", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Provider credentials and deployment security must be changed through their dedicated settings.");
+        }
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var atomic = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var names = sections.Keys.ToArray();
+        var existing = await db.AppSettings.Where(s => names.Contains(s.Section)).ToListAsync(ct);
+        foreach (var (section, options) in sections)
+        {
+            foreach (var prop in options.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                existing.Value = value;
-            }
-            else
-            {
-                db.AppSettings.Add(new AppSetting { Section = section, Key = prop.Name, Value = value });
+                if (prop.Name == "Section" || !prop.CanRead || prop.GetIndexParameters().Length != 0) continue;
+                if (section == "SolarEstimate" && prop.Name == "ApiKey") continue;
+                var value = ToSettingValue(prop.GetValue(options));
+                var setting = existing.SingleOrDefault(s => s.Section == section && s.Key == prop.Name);
+                if (setting is null) db.AppSettings.Add(new AppSetting { Section = section, Key = prop.Name, Value = value });
+                else setting.Value = value;
             }
         }
-
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
+        await atomic.CommitAsync(ct);
         _configurationRoot?.Reload();
     }
 

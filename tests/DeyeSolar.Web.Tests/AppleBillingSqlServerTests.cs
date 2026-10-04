@@ -333,8 +333,8 @@ public class AppleBillingSqlServerTests
         public DatabaseFailure DatabaseFailure { get; } = databaseFailure;
         public DeyeSolarDbContext Context() => new(options);
         public AppleSubscriptionRefreshWorker Worker(bool enabled = true) => new(
-            app.Services.GetRequiredService<IServiceScopeFactory>(), options, enabled ? Signer.Options : new AppleBillingOptions(),
-            NullLogger<AppleSubscriptionRefreshWorker>.Instance);
+            app.Services.GetRequiredService<IServiceScopeFactory>(), enabled ? Signer.Options : new AppleBillingOptions(),
+            NullLogger<AppleSubscriptionRefreshWorker>.Instance, new DeyeSolar.Web.Operations.WorkerHealthReporter(Clock));
         public string Receipt() => Signer.Sign(Signer.Transaction());
         public Task<HttpResponseMessage> NotifyAsync() => Client.PostAsJsonAsync("/api/billing/apple/notifications",
             new AppleNotificationRequest(Signer.Sign(Signer.Notification(Receipt()))));
@@ -448,9 +448,10 @@ public class AppleBillingSqlServerTests
                 builder.Services.AddAuthorization();
                 builder.Services.AddHttpContextAccessor();
                 builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddScoped<MobileAuthService>();
                 builder.Services.AddSingleton<TimeProvider>(clock);
-                builder.Services.AddSingleton<BillingAccessService>();
+                builder.Services.AddBillingAccess();
                 builder.Services.AddScoped<CurrentBillingAccount>();
                 builder.Services.AddAppleBilling(signer.Options);
                 var worker = builder.Services.Single(descriptor => descriptor.ImplementationType == typeof(AppleSubscriptionRefreshWorker));

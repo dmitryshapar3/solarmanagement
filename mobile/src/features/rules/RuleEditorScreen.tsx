@@ -187,7 +187,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
               key={device.id}
               accessibilityRole="button"
               accessibilityLabel={demoDisplayName(device.name)}
-              accessibilityHint={`${t(device.category ?? device.id)}, ${!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")}`}
+              accessibilityHint={`${t(device.category ?? device.id)}, ${!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}`}
               accessibilityState={{ selected: rule.entityId === device.id }}
               onPress={() => { Keyboard.dismiss(); setField("entityId", device.id); }}
               style={[styles.deviceChoice, rule.entityId === device.id && styles.deviceChoiceSelected]}
@@ -196,7 +196,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
                 <Text style={styles.deviceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
                 <Text style={styles.deviceCategory}>{t(device.category ?? device.id)}</Text>
               </View>
-              <StatusPill label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
+              <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
             </Pressable>
           ))}
         </View>
@@ -309,6 +309,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
 
 function toRequest(rule: Rule): RuleRequest {
   return {
+    configurationVersion: rule.configurationVersion,
     name: rule.name,
     entityId: rule.entityId,
     sourceInverterId: rule.sourceInverterId ?? null,

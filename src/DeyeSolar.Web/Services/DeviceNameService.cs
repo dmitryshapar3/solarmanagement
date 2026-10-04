@@ -16,7 +16,7 @@ public interface IDeviceLabelStore
 }
 
 /// <summary>Uses existing settings storage, so installation isolation applies through AppSettingsService.</summary>
-public sealed class AppSettingsDeviceLabelStore(AppSettingsService settings) : IDeviceLabelStore
+public sealed class AppSettingsDeviceLabelStore(IAppSettingsReader settings, IAppSettingsWriter writer) : IDeviceLabelStore
 {
     public sealed class DeviceLabelsOptions { public string LabelsJson { get; set; } = "{}"; }
     public async Task<Dictionary<string, string>> LoadAsync(CancellationToken ct)
@@ -29,7 +29,7 @@ public sealed class AppSettingsDeviceLabelStore(AppSettingsService settings) : I
     public Task SaveAsync(Dictionary<string, string> labels, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return settings.SaveSectionAsync("DeviceLabels", new DeviceLabelsOptions { LabelsJson = JsonSerializer.Serialize(labels) });
+        return writer.SaveSectionAsync("DeviceLabels", new DeviceLabelsOptions { LabelsJson = JsonSerializer.Serialize(labels) });
     }
 }
 
@@ -74,6 +74,6 @@ public sealed class DeviceNameService(IDeviceLabelStore store, DeviceStatusSnaps
         labels.TryGetValue(LabelKey(device.Id), out var name);
         if (!TryName(name, out name)) name = null;
         return new(device.Id, name ?? device.Name, device.Category, device.Online, device.IsOn, device.CurrentPowerW,
-            CloudName: device.Name, LocalName: name);
+            CloudName: device.Name, LocalName: name, StateKnown: device.StateKnown);
     }
 }

@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using SolarManagement.Integrations.Contracts;
@@ -14,9 +15,11 @@ public sealed class HuaweiFusionSolarProvider : CloudInverterProvider
     private string? _xsrf;
     private DateTimeOffset _loginAt;
     private bool _loginRejected;
-    public HuaweiFusionSolarProvider(WorkerConfiguration configuration) : this(configuration, null) { }
+    public HuaweiFusionSolarProvider(WorkerConfiguration configuration) : this(configuration, (HttpClient?)null) { }
     public HuaweiFusionSolarProvider(WorkerConfiguration configuration, HttpClient? http)
-        : base(configuration, http, "https://eu5.fusionsolar.huawei.com") { }
+        : this(configuration, CloudProviderTransport.Create(configuration, http)) { }
+    public HuaweiFusionSolarProvider(WorkerConfiguration configuration, ICloudJsonTransport transport)
+        : base(configuration, transport, "https://eu5.fusionsolar.huawei.com") { }
     private bool OAuth => Value("authMode") == "accessToken";
     private decimal GridSign => Sign("gridPositiveDirection", "import", "export");
     private decimal BatterySign => Sign("batteryPositiveDirection", "discharge", "charge");

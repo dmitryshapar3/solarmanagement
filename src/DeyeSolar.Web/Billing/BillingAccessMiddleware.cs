@@ -4,7 +4,7 @@ namespace DeyeSolar.Web.Billing;
 
 public sealed class BillingAccessMiddleware(RequestDelegate next)
 {
-    public async Task InvokeAsync(HttpContext context, BillingAccessService billing, CurrentBillingAccount account)
+    public async Task InvokeAsync(HttpContext context, IBillingAccessReader billing, CurrentBillingAccount account)
     {
         if (context.User.Identity?.IsAuthenticated == true && context.User.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId)
             account.BindOnce(userId);

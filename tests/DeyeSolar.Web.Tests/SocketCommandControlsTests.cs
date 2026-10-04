@@ -213,7 +213,7 @@ public class SocketCommandControlsTests
             return root;
         }
         public Task DispatchAsync(ulong id) => DispatchEventAsync(id, null, new MouseEventArgs());
-        public (ulong EventId, bool Disabled) Button(int root, string label) => Assert.Single(Buttons(root).Where(button => button.Label.Trim() == label)).Button;
+        public (ulong EventId, bool Disabled) Button(int root, string label) => Assert.Single(Buttons(root), button => button.Label.Trim() == label).Button;
         public bool HasButton(int root, string label) => Buttons(root).Any(button => button.Label.Trim() == label);
         private IEnumerable<(string Label, (ulong EventId, bool Disabled) Button)> Buttons(int componentId)
         {

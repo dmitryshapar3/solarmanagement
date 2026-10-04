@@ -281,6 +281,54 @@ public sealed class AppleSignedDataVerifierTests
         Assert.Equal(1, calls);
     }
 
+    [Fact]
+    public async Task ResponseBodyDeadlineIsRetryableEvenAfterHeadersHaveAlreadyArrived()
+    {
+        using var fixture = new AppleSignedFixture();
+        var options = new AppleBillingOptions
+        {
+            Enabled = true, Environment = "Sandbox", PrivateKeyPath = fixture.Options.PrivateKeyPath,
+            RequestTimeout = TimeSpan.FromMilliseconds(100)
+        };
+        using var http = new HttpClient(new StalledBodyHandler()) { Timeout = Timeout.InfiniteTimeSpan };
+        var client = new AppleAppStoreClient(http, options, fixture.Verifier, fixture.Clock);
+        var task = client.ReadSubscriptionAsync("1001", default);
+        var failure = await Assert.ThrowsAsync<AppleBillingException>(() => task.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.True(failure.Retryable);
+        Assert.Equal("apple_unavailable", failure.Code);
+    }
+
+    [Fact]
+    public async Task CallerCancellationDuringResponseBodyIsPropagated()
+    {
+        using var fixture = new AppleSignedFixture();
+        using var http = new HttpClient(new StalledBodyHandler());
+        using var caller = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var client = new AppleAppStoreClient(http, fixture.Options, fixture.Verifier, fixture.Clock);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ReadSubscriptionAsync("1001", caller.Token));
+    }
+
+    private sealed class StalledBodyHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledBody()) });
+    }
+    private sealed class StalledBody : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        { await Task.Delay(Timeout.InfiniteTimeSpan, ct); return 0; }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+    }
+
     private sealed class AppleHttpHandler(Func<HttpRequestMessage, string> response) : HttpMessageHandler
     {
         public Uri? Uri { get; private set; }

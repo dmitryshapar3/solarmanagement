@@ -19,7 +19,12 @@ public static class AppleBillingEndpoints
         services.AddSingleton<IAppleSignedDataVerifier, AppleSignedDataVerifier>();
         services.AddHttpClient<IAppleAppStoreClient, AppleAppStoreClient>(http => http.Timeout = TimeSpan.FromSeconds(30))
             .RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddScoped<SqlAppleSubscriptionStore>();
+        services.AddScoped<IAppleSubscriptionCatalog>(provider => provider.GetRequiredService<SqlAppleSubscriptionStore>());
+        services.AddScoped<IAppleSubscriptionWriter>(provider => provider.GetRequiredService<SqlAppleSubscriptionStore>());
         services.AddScoped<AppleBillingService>();
+        services.TryAddSingleton<DeyeSolar.Web.Operations.WorkerHealthReporter>();
+        services.TryAddSingleton<DeyeSolar.Web.Operations.IWorkerHealthReporter>(provider => provider.GetRequiredService<DeyeSolar.Web.Operations.WorkerHealthReporter>());
         services.AddHostedService<AppleSubscriptionRefreshWorker>();
         services.AddRateLimiter(limits => limits.AddConcurrencyLimiter("apple-notifications", limiter =>
         {
@@ -31,7 +36,7 @@ public static class AppleBillingEndpoints
 
     public static void MapAppleBilling(this WebApplication app)
     {
-        app.MapGet("/api/billing/access", async Task<IResult> (HttpContext context, BillingAccessService access, CancellationToken ct) =>
+        app.MapGet("/api/billing/access", async Task<IResult> (HttpContext context, IBillingAccessReader access, CancellationToken ct) =>
         {
             var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (userId is null) return Results.Unauthorized();

@@ -29,7 +29,13 @@ public class GoogleIdentityFlowTests
     private sealed class SqliteModelContext(DbContextOptions<DeyeSolarDbContext> options) : DeyeSolarDbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
-        { base.OnModelCreating(modelBuilder); modelBuilder.Entity<Installation>().Property(i => i.CreatedAt).HasConversion<long>(); }
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<Installation>().Property(i => i.CreatedAt).HasConversion<long>();
+            // SQLite needs scalar storage for the live Identity lockout comparison; SQL Server
+            // uses its native datetimeoffset column in production.
+            modelBuilder.Entity<IdentityUser>().Property(u => u.LockoutEnd).HasConversion<long>();
+        }
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     {
@@ -55,6 +61,7 @@ public class GoogleIdentityFlowTests
             builder.Services.ConfigureApplicationCookie(options => options.Cookie.SecurePolicy = CookieSecurePolicy.Always);
             builder.Services.AddAccountIdentities(new AuthProviderOptions { GoogleClientId = "local-test-client", GoogleClientSecret = "local-test-secret" });
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System); builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
             builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
             builder.Services.AddAuthorization(); App = builder.Build();
             App.UseRouting(); App.UseRateLimiter(); App.UseAccountIdentityOrigin(); App.UseAuthentication(); App.UseAuthorization();

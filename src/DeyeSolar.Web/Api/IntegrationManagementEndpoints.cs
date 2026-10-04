@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
@@ -32,14 +33,14 @@ public static class IntegrationManagementEndpoints
             try { await site.SaveAsync(request); }
             catch (ArgumentException exception) { return Results.BadRequest(new ApiError(exception.Message)); }
             return Results.NoContent();
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
         api.MapPost("/settings/test/{kind}", async Task<IResult> (string kind, IntegrationTestRequest request,
             HttpContext context, IAntiforgery antiforgery, IIntegrationTestService tests, CancellationToken ct) =>
         {
             if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new ApiError("A valid request verification token is required."));
             if (kind is not ("deye" or "shelly" or "openmeteo" or "pse")) return Results.BadRequest(new ApiError("Choose a supported integration."));
             return Results.Ok(await tests.TestAsync(kind, request, ct));
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
         api.MapPatch("/devices/{id}/name", async Task<IResult> (string id, DeviceNameRequest request,
             HttpContext context, IAntiforgery antiforgery, DeviceNameService names, CancellationToken ct) =>
         {
@@ -47,7 +48,7 @@ public static class IntegrationManagementEndpoints
             if (!DeviceNameService.TryName(request.Name, out var name)) return Results.BadRequest(new ApiError("Use a device name of up to 80 characters without control characters."));
             var device = await names.RenameAsync(id, name, ct);
             return device is null ? Results.NotFound(new ApiError("Refresh devices and choose a device from this installation.")) : Results.Ok(device);
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
     }
 
     // Native requests authenticate using bearer tokens and never ambient cookies. Cookie requests

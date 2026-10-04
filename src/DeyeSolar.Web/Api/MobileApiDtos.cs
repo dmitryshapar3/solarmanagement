@@ -57,7 +57,8 @@ public sealed record DeviceDto(
     bool IsOn,
     int? CurrentPowerW,
     string? CloudName = null,
-    string? LocalName = null);
+    string? LocalName = null,
+    bool? StateKnown = null);
 
 public sealed record DeviceListResponse(
     IReadOnlyList<DeviceDto> Devices,
@@ -99,7 +100,8 @@ public sealed record TriggerRuleDto(
     bool CurrentState,
     DateTime? CurrentStateChangedAt,
     DateTime? LastEvaluated,
-    Guid? SourceInverterId = null);
+    Guid? SourceInverterId = null,
+    string? ConfigurationVersion = null);
 
 public sealed record TriggerRuleRequest(
     string Name,
@@ -115,6 +117,7 @@ public sealed record TriggerRuleRequest(
     string? ActiveFrom,
     string? ActiveTo)
 {
+    public string? ConfigurationVersion { get; init; }
     private Guid? _sourceInverterId;
     public Guid? SourceInverterId
     {
@@ -217,7 +220,7 @@ public static class MobileApiMappings
             device.Category,
             device.Online,
             device.IsOn,
-            device.CurrentPowerW);
+            device.CurrentPowerW, StateKnown: device.StateKnown);
 
     public static RuleSummaryDto ToSummaryDto(this TriggerRule rule)
         => new(
@@ -257,7 +260,8 @@ public static class MobileApiMappings
             rule.CurrentState,
             rule.CurrentStateChangedAt,
             rule.LastEvaluated,
-            rule.SourceInverterId);
+            rule.SourceInverterId,
+            rule.ConfigurationVersion);
 
     public static ReadingDto ToDto(this Reading reading)
         => new(
@@ -340,6 +344,7 @@ public static class MobileApiMappings
     public static TriggerRule ToRule(this TriggerRuleRequest request, TriggerRule? existing = null)
     {
         var rule = existing ?? new TriggerRule();
+        if (request.ConfigurationVersion is not null) rule.ConfigurationVersion = request.ConfigurationVersion;
         rule.Name = request.Name.Trim();
         rule.EntityId = request.EntityId.Trim();
         rule.Enabled = request.Enabled;

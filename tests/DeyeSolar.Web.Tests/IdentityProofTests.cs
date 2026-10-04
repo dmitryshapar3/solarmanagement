@@ -63,7 +63,7 @@ public class IdentityProofTests
         var delivery = new Delivery(); var service = new OneTimeVerificationService(delivery, Enabled, new Clock());
         var challenge = await service.StartAsync(new("email", "person@example.test", "login"), null, default);
         var results = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => service.VerifyAsync(challenge.VerificationId, delivery.Code, "login", null, default)));
-        Assert.Single(results.Where(result => result is not null));
+        Assert.Single(results, result => result is not null);
     }
 
     [Fact]

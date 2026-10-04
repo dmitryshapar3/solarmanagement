@@ -2,7 +2,7 @@
 @using DeyeSolar.Web.Services
 @inject InverterDataSnapshot Snapshot
 @inject IInverterRefreshService InverterRefresh
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 @inject TimeProvider Clock
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SolarEstimateOptions> EstimateOptions
 @inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions

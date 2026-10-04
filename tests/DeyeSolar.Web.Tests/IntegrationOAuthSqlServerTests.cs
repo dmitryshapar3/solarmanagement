@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -274,10 +275,12 @@ public class IntegrationOAuthSqlServerTests
             builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DeyeSolarDbContext>();
             builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
             builder.Services.AddAuthorization(); builder.Services.AddAntiforgery();
+            builder.Services.AddAccountIdentities(new AuthProviderOptions());
             builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
             builder.Services.AddSingleton(f.Secrets);
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
             builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
             builder.Services.AddSingleton<IntegrationSetupGate>();
             builder.Services.AddSingleton(new IntegrationOAuthOptions { PublicBaseUrl = "https://solar.example" });
             builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
@@ -288,6 +291,13 @@ public class IntegrationOAuthSqlServerTests
             builder.Services.AddScoped<CurrentInstallation>();
             builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>>(p => new RequestFactory(options, p.GetRequiredService<CurrentInstallation>()));
             builder.Services.AddScoped<InstallationMembershipService>();
+            builder.Services.AddScoped<DeyeSolar.Web.Auth.IInstallationAccessAuthorizer, DeyeSolar.Web.Auth.InstallationAccessAuthorizer>();
+            builder.Services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
+            builder.Services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
+            builder.Services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
+            builder.Services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
+            builder.Services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
+            builder.Services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
             builder.Services.AddScoped<IntegrationSetupService>();
             builder.Services.AddScoped<DynamicSocketGateway>(_ => throw new InvalidOperationException("This OAuth fixture must not execute device commands."));
             builder.Services.AddSingleton<IIntegrationPackageManager>(f.OriginManager);
@@ -328,7 +338,7 @@ public class IntegrationOAuthSqlServerTests
             f.Token = await f.LoginAsync("a", false);
             f.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", f.Token);
             using var created = await f.Client.PostAsJsonAsync("/api/v2/integrations", new CreateIntegrationRequest("oauth.fixture", "OAuth A"));
-            Assert.True(created.StatusCode == HttpStatusCode.OK, await created.Content.ReadAsStringAsync());
+            Assert.True(created.StatusCode == HttpStatusCode.OK, $"{created.StatusCode}: {await created.Content.ReadAsStringAsync()}");
             f.Instance = (await created.Content.ReadFromJsonAsync<IntegrationInstanceDto>())!;
             var tokenB = await f.LoginAsync("b", false);
             f.Client.DefaultRequestHeaders.Authorization = new("Bearer", tokenB);

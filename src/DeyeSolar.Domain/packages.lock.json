@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "solarmanagement.inverters.contracts": {
+        "type": "Project"
+      },
+      "solarmanagement.smartsockets.contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

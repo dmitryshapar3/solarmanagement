@@ -123,7 +123,7 @@ public class MobileSolarApiTests
             Assert.Equal(new DateOnly(2026, 9, 30), history.SelectedDate);
             Assert.Equal(history.Today, history.SelectedDate);
             Assert.Equal("Europe/Warsaw", history.TimeZoneId);
-            var measured = Assert.Single(history.Points.Where(point => point.ActualKw.HasValue));
+            var measured = Assert.Single(history.Points, point => point.ActualKw.HasValue);
             Assert.Equal(2, measured.ActualKw);
             Assert.Equal(Now.Date.AddHours(11), measured.Timestamp.UtcDateTime);
             Assert.NotNull(measured.Possible);
@@ -311,6 +311,7 @@ public class MobileSolarApiTests
                 builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddScoped<MobileAuthService>();
                 builder.Services.AddSingleton<TimeProvider>(new Clock());
                 builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
@@ -324,8 +325,10 @@ public class MobileSolarApiTests
                 builder.Services.AddSingleton<ISocketInventoryService>(socket);
                 builder.Services.AddSingleton<InverterDataSnapshot>();
                 builder.Services.AddSingleton<DeviceStatusSnapshot>();
-                builder.Services.AddSingleton<IRuleRepository, RuleRepository>();
+                builder.Services.AddSingleton<IConfigurationRules, RuleRepository>();
                 builder.Services.AddSingleton<AppSettingsService>();
+                builder.Services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
+                builder.Services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
                 builder.Services.AddSingleton<ExportReadingStore>();
                 builder.Services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
                 builder.Services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();

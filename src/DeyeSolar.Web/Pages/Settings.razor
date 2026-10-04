@@ -1,9 +1,11 @@
+@inject DeyeSolar.Web.Auth.InteractiveSecurityContext Security
 @page "/settings"
 @using DeyeSolar.Web.Api
 @using DeyeSolar.Web.Services
 @using DeyeSolar.Web.Integrations
 @inject IIntegrationTestService IntegrationTests
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsReader
+@inject DeyeSolar.Web.Data.IAppSettingsWriter SettingsWriter
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
@@ -79,8 +81,8 @@
     protected override async Task OnInitializedAsync()
     {
         _languageToken = T.GetAntiforgeryToken();
-        _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
-        _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
+        _polling = await SettingsReader.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
+        _display = await SettingsReader.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -107,6 +109,7 @@
 
     private async Task TestConnection(string kind)
     {
+        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
         if (_testing is not null) return;
         _testing = kind;
         _testResults.Remove(kind);
@@ -117,13 +120,15 @@
 
     private async Task SavePolling()
     {
-        await SettingsService.SaveSectionAsync("Polling", _polling);
+        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
+        await SettingsWriter.SaveSectionAsync("Polling", _polling);
         Snackbar.Add(T["Polling settings saved"], Severity.Success);
     }
 
     private async Task SaveDisplay()
     {
-        await SettingsService.SaveSectionAsync("Display", _display);
+        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
+        await SettingsWriter.SaveSectionAsync("Display", _display);
         Snackbar.Add(T["Display settings saved"], Severity.Success);
     }
 

@@ -257,8 +257,7 @@ public class ShellyCloudClient : ISocketController
             var content = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode || pathAndQuery == "/v2/devices/api/set/switch" && response.StatusCode != HttpStatusCode.OK)
-                throw new InvalidOperationException(
-                    $"Shelly API error {(int)response.StatusCode} {response.ReasonPhrase}: {DescribeErrorContent(content)}");
+                throw new HttpRequestException("Shelly request failed.", null, response.StatusCode);
 
             if (string.IsNullOrWhiteSpace(content))
                 content = "{}";

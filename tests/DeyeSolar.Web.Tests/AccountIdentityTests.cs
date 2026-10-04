@@ -45,6 +45,7 @@ public class AccountIdentityTests
                 options.Password.RequireDigit = false; options.Password.RequireUppercase = false; options.Password.RequireLowercase = false;
             }).AddEntityFrameworkStores<DeyeSolarDbContext>();
             services.AddScoped<InstallationMembershipService>(); services.AddScoped<AccountIdentityService>(); services.AddSingleton<MobileSessionStore>();
+            services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
             services.AddSingleton(new AuthProviderOptions());
             Provider = services.BuildServiceProvider();
         }
@@ -122,6 +123,6 @@ public class AccountIdentityTests
         var forged = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(InstallationIds.ClaimType, InstallationIds.Legacy)], "test"));
         Assert.Null(await resolver.ResolveAsync(forged));
         await using var db = new DeyeSolarDbContext(fixture.Options); db.InstallationMemberships.Remove(await db.InstallationMemberships.SingleAsync()); await db.SaveChangesAsync();
-        Assert.Null(await accounts.SessionAsync(user.Id, default));
+        Assert.Null((await accounts.SessionAsync(user.Id, default))!.InstallationId);
     }
 }

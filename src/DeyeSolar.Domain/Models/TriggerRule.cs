@@ -2,6 +2,8 @@ namespace DeyeSolar.Domain.Models;
 
 public class TriggerRule : IInstallationOwned
 {
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string? ConfigurationVersion { get; set; }
     public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;

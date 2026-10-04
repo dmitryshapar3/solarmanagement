@@ -226,8 +226,8 @@ function DeviceCard({
           <Text style={styles.category}>{device.id}</Text>
         </View>
         <StatusPill
-          label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")}
-          tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"}
+          label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}
+          tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"}
         />
       </View>
 

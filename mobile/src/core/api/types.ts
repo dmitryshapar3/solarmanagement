@@ -47,6 +47,7 @@ export type Device = {
   category: string | null;
   online: boolean;
   isOn: boolean;
+  stateKnown?: boolean | null;
   currentPowerW: number | null;
   cloudName?: string;
   localName?: string | null;
@@ -83,6 +84,7 @@ export type DeviceList = {
 };
 
 export type Rule = {
+  configurationVersion?: string | null;
   id: number;
   name: string;
   entityId: string;

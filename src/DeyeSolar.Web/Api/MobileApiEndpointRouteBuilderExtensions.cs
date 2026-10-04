@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -41,9 +42,9 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 context.User.Identity?.IsAuthenticated == true,
                 context.User.Identity?.Name)));
 
-        authorized.MapPost("/auth/logout", (HttpContext context, MobileAuthService auth) =>
+        authorized.MapPost("/auth/logout", async (HttpContext context, MobileAuthService auth) =>
         {
-            auth.SignOut(context.Request.Headers.Authorization);
+            await auth.SignOutAsync(context.Request.Headers.Authorization, context.RequestAborted);
             return Results.NoContent();
         });
 
@@ -53,8 +54,8 @@ public static class MobileApiEndpointRouteBuilderExtensions
             IInverterRefreshService refresh,
             InverterDataSnapshot inverterSnapshot,
             DeviceStatusSnapshot deviceSnapshot,
-            IRuleRepository ruleRepository,
-            AppSettingsService settings,
+            IConfigurationRules ruleRepository,
+            IAppSettingsReader settings,
             IServiceProvider services,
             CancellationToken ct) =>
         {
@@ -115,12 +116,12 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
         authorized.MapPost("/devices/state", () => Results.Json(new ApiError("Update the app to send commands with a persistent request identity."), statusCode: 426));
 
-        authorized.MapGet("/rules", async (IRuleRepository rules, CancellationToken ct) =>
+        authorized.MapGet("/rules", async (IConfigurationRules rules, CancellationToken ct) =>
             Results.Ok((await rules.GetAllAsync(ct)).Select(r => r.ToDto()).ToList()));
 
         authorized.MapGet("/rules/{id:int}", async Task<IResult> (
             int id,
-            IRuleRepository rules,
+            IConfigurationRules rules,
             CancellationToken ct) =>
         {
             var rule = await rules.GetByIdAsync(id, ct);
@@ -131,7 +132,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
         authorized.MapPost("/rules", async Task<IResult> (
             TriggerRuleRequest request,
-            IRuleRepository rules,
+            IConfigurationRules rules,
             CancellationToken ct) =>
         {
             var result = TryBuildRule(request, existing: null, out var rule);
@@ -143,13 +144,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 var created = await rules.CreateAsync(rule!, ct);
                 return Results.Created($"/api/rules/{created.Id}", created.ToDto());
             }
+            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapPut("/rules/{id:int}", async Task<IResult> (
             int id,
             TriggerRuleRequest request,
-            IRuleRepository rules,
+            IConfigurationRules rules,
             CancellationToken ct) =>
         {
             var existing = await rules.GetByIdAsync(id, ct);
@@ -165,13 +167,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.UpdateAsync(updated!, ct);
                 return Results.Ok(updated!.ToDto());
             }
+            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapPatch("/rules/{id:int}/enabled", async Task<IResult> (
             int id,
             RuleEnabledRequest request,
-            IRuleRepository rules,
+            IConfigurationRules rules,
             CancellationToken ct) =>
         {
             var rule = await rules.GetByIdAsync(id, ct);
@@ -184,17 +187,18 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.UpdateAsync(rule, ct);
                 return Results.Ok(rule.ToDto());
             }
+            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
             catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapDelete("/rules/{id:int}", async Task<IResult> (
             int id,
-            IRuleRepository rules,
+            IConfigurationRules rules,
             CancellationToken ct) =>
         {
             await rules.DeleteAsync(id, ct);
             return Results.NoContent();
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapGet("/readings", async (
             int? hours,
@@ -248,7 +252,7 @@ public static class MobileApiEndpointRouteBuilderExtensions
             return Results.Ok(logs.Select(r => r.ToDto()).ToList());
         });
 
-        authorized.MapGet("/settings", async (AppSettingsService settings) =>
+        authorized.MapGet("/settings", async (IAppSettingsReader settings) =>
         {
             var deye = await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
             var shelly = await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
@@ -269,18 +273,18 @@ public static class MobileApiEndpointRouteBuilderExtensions
         authorized.MapPost("/settings/deye/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
         authorized.MapPut("/settings/polling", async Task<IResult> (
             PollingSettingsDto request,
-            AppSettingsService settings) =>
+            IAppSettingsWriter settings) =>
         {
             if (request.IntervalSeconds is < 5 or > 300)
                 return Results.BadRequest(new ApiError("Polling interval must be between 5 and 300 seconds."));
 
             await settings.SaveSectionAsync(PollingOptions.Section, request.ToOptions());
             return Results.NoContent();
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
 
         authorized.MapPut("/settings/display", async Task<IResult> (
             DisplaySettingsDto request,
-            AppSettingsService settings) =>
+            IAppSettingsWriter settings) =>
         {
             if (string.IsNullOrWhiteSpace(request.TimeZoneId))
                 return Results.BadRequest(new ApiError("TimeZoneId is required."));
@@ -291,14 +295,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
 
             await settings.SaveSectionAsync(DisplayOptions.Section, new DisplayOptions { TimeZoneId = timeZoneId });
             return Results.NoContent();
-        });
+        }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
 
         authorized.MapPost("/settings/socket/selected-device", () => Results.Json(new ApiError("Update the app to select a registered integration device."), statusCode: 426));
     }
 
     private static async Task<MobileDashboardResponse> ReadDashboardAsync(
         InverterDataSnapshot inverterSnapshot, DeviceStatusSnapshot deviceSnapshot,
-        IRuleRepository ruleRepository, AppSettingsService settings, IServiceProvider services, CancellationToken ct)
+        IConfigurationRules ruleRepository, IAppSettingsReader settings, IServiceProvider services, CancellationToken ct)
     {
         var display = await settings.LoadSectionAsync<DisplayOptions>(DisplayOptions.Section);
         var rules = await ruleRepository.GetAllAsync(ct);

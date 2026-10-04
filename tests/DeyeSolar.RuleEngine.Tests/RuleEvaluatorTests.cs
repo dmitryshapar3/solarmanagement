@@ -5,6 +5,20 @@ namespace DeyeSolar.RuleEngine.Tests;
 
 public class RuleEvaluatorTests
 {
+    [Fact]
+    public void MissingInverterStillTurnsOffOutsideWindowButNeverTurnsOn()
+    {
+        var rule = MakeRule(currentState: true);
+        rule.ActiveFrom = new TimeOnly(8, 0);
+        rule.ActiveTo = new TimeOnly(9, 0);
+        var evaluator = new RuleEvaluator();
+        var now = new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
+        Assert.False(Assert.Single(evaluator.Evaluate(null, [rule], now)).TurnOn);
+        rule.CurrentState = false;
+        Assert.Empty(evaluator.Evaluate(null, [rule], now));
+        rule.ActiveTo = new TimeOnly(15, 0);
+        Assert.Empty(evaluator.Evaluate(null, [rule], now));
+    }
     private readonly RuleEvaluator _evaluator = new();
     private readonly DateTimeOffset _now = new(2024, 6, 15, 12, 0, 0, TimeSpan.Zero);
 

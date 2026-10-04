@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using DeyeSolar.Web.Data;
@@ -8,13 +9,13 @@ public class MobileAuthService
 {
     private readonly UserManager<IdentityUser> _userManager;
     private readonly SignInManager<IdentityUser> _signInManager;
-    private readonly MobileSessionStore _sessions;
+    private readonly IAccountSessionStore _sessions;
     private readonly InstallationMembershipService _memberships;
 
     public MobileAuthService(
         UserManager<IdentityUser> userManager,
         SignInManager<IdentityUser> signInManager,
-        MobileSessionStore sessions,
+        IAccountSessionStore sessions,
         InstallationMembershipService memberships)
     {
         _userManager = userManager;
@@ -28,7 +29,7 @@ public class MobileAuthService
         var user = await FindAndCheckPasswordAsync(request);
         if (user is null) return null;
         var membership = await _memberships.GetForUserAsync(user.Id);
-        return membership is null ? null : _sessions.Create(user.Id, user.UserName ?? request.Username, user.SecurityStamp, membership.InstallationId);
+        return await _sessions.CreateAsync(user.Id, user.UserName ?? request.Username, user.SecurityStamp, membership?.InstallationId);
     }
 
     public async Task<IdentityUser?> FindAndCheckPasswordAsync(MobileLoginRequest request)
@@ -41,13 +42,13 @@ public class MobileAuthService
             ?? await _userManager.Users.SingleOrDefaultAsync(u => u.PhoneNumber == normalized && u.PhoneNumberConfirmed);
         if (user == null) return null;
         var membership = await _memberships.GetForUserAsync(user.Id);
-        if (membership == null || !user.EmailConfirmed && !user.PhoneNumberConfirmed && membership.InstallationId != InstallationIds.Legacy)
+        if (!user.EmailConfirmed && !user.PhoneNumberConfirmed && membership?.InstallationId != InstallationIds.Legacy)
             return null;
         var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
         return result.Succeeded ? user : null;
     }
 
-    public void SignOut(string? authorizationHeader)
+    public async Task SignOutAsync(string? authorizationHeader, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(authorizationHeader) ||
             !authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
@@ -55,6 +56,6 @@ public class MobileAuthService
             return;
         }
 
-        _sessions.Revoke(authorizationHeader["Bearer ".Length..].Trim());
+        await _sessions.RevokeAsync(authorizationHeader["Bearer ".Length..].Trim(), ct);
     }
 }

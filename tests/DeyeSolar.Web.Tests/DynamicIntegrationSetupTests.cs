@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using System.Security.Claims;
 using System.Text.Json;
 using DeyeSolar.Web.Data;
@@ -74,10 +75,8 @@ public class DynamicIntegrationSetupTests
         var calls = fixture.Executor.Calls;
         if (operation == "status")
         {
-            var denied = await service.AuthorizationStatusAsync(instance.Id, started.FlowId, revoked, default);
-            Assert.Equal("failed", denied.Status);
-            Assert.Empty(denied.Values);
-            Assert.Empty(denied.SecretPresent);
+            var denied = await Assert.ThrowsAsync<IntegrationRequestException>(() => service.AuthorizationStatusAsync(instance.Id, started.FlowId, revoked, default));
+            Assert.Equal("forbidden", denied.Code);
         }
         else
         {
@@ -952,6 +951,7 @@ public class DynamicIntegrationSetupTests
             builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
             builder.Services.AddAuthorization();
             builder.Services.AddAntiforgery();
+            builder.Services.AddAccountIdentities(new AuthProviderOptions());
             builder.Services.AddSingleton(_protection);
             builder.Services.AddSingleton(Secrets);
             builder.Services.AddSingleton(_changes);
@@ -964,12 +964,20 @@ public class DynamicIntegrationSetupTests
             builder.Services.AddScoped<CurrentInstallation>();
             builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>>(provider => Factory(provider.GetRequiredService<CurrentInstallation>().Id ?? "site-a"));
             builder.Services.AddScoped<InstallationMembershipService>();
+            builder.Services.AddScoped<DeyeSolar.Web.Auth.IInstallationAccessAuthorizer, DeyeSolar.Web.Auth.InstallationAccessAuthorizer>();
+            builder.Services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
+            builder.Services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
+            builder.Services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
+            builder.Services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
+            builder.Services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
+            builder.Services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
             builder.Services.AddScoped<IntegrationSetupService>();
             builder.Services.AddSingleton<IIntegrationProviderCatalog>(new Catalog());
             builder.Services.AddSingleton<IIntegrationSetupExecutor>(Executor);
             builder.Services.AddSingleton<IIntegrationPackageManager>(new DeniedPackageManager());
             builder.Services.AddSingleton<LegacyIntegrationBootstrap>();
             builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
             builder.Services.AddSingleton(provider => new TenantRuntimeFactory(options, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
                 NullLoggerFactory.Instance, TimeProvider.System, provider.GetRequiredService<IHostApplicationLifetime>(), new TenantTestExecutor(), Secrets, _changes));
             builder.Services.AddSingleton<TenantRuntimeRegistry>();
@@ -1011,7 +1019,9 @@ public class DynamicIntegrationSetupTests
         {
             var current = new CurrentInstallation(); current.BindOnce(installation);
             var factory = Factory(installation);
-            return new(factory, catalog ?? new Catalog(), Executor, Secrets, _protection, TimeProvider.System, new(factory), current, _changes, _gate,
+            return new(factory, catalog ?? new Catalog(), Executor, Secrets, TimeProvider.System, current, _changes, _gate,
+                new IntegrationManagerAccess(new(factory), new FixtureInstallationAuthorizer(new(factory))), new IntegrationConfigurationResolver(Secrets),
+                new IntegrationSelectionTokens(_protection), new IntegrationDeviceBindingWriter(), new IntegrationConfigurationWriter(Secrets, TimeProvider.System, new IntegrationConnectionLifecycle(TimeProvider.System)), new IntegrationConnectionLifecycle(TimeProvider.System),
                 setupLimits is null ? null : Options.Create(setupLimits), OAuth(catalog ?? new Catalog()));
         }
         public IntegrationOAuthService OAuth(IIntegrationProviderCatalog catalog) => new(options, catalog, Executor, Secrets, new(), TimeProvider.System,

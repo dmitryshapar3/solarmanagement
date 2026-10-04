@@ -166,7 +166,7 @@ public sealed class TenantRuntime : IAsyncDisposable
         try
         {
             ApplySolarReset();
-            if (_provider.GetService<BillingAccessService>() is { } billing
+            if (_provider.GetService<IBillingAccessReader>() is { } billing
                 && !await billing.InstallationHasAccessAsync(InstallationId, operation.Token).ConfigureAwait(false))
             {
                 Resolve<DeviceStatusSnapshot>().Clear();
@@ -175,7 +175,7 @@ public sealed class TenantRuntime : IAsyncDisposable
             await Resolve<InverterSelectionMonitor>().RefreshAsync(operation.Token).ConfigureAwait(false);
             var now = _clock.GetUtcNow();
             var interval = TimeSpan.FromSeconds(Math.Clamp(Resolve<IOptionsMonitor<PollingOptions>>().CurrentValue.IntervalSeconds, 1, 3600));
-            if (now >= _nextPoll && !string.IsNullOrWhiteSpace(Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey))
+            if (now >= _nextPoll)
             {
                 _nextPoll = now + interval;
                 await RunSafelyAsync(() => Resolve<PollingWorker>().PollAndEvaluateAsync(operation.Token), "Inverter", operation.Token).ConfigureAwait(false);

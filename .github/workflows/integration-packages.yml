@@ -11,7 +11,7 @@ permissions:
 jobs:
   deployment-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '8.0.x'
+      - name: Restore locked release dependencies and reject vulnerabilities
+        run: |
+          dotnet restore DeyeSolar.sln --locked-mode
+          python3 scripts/audit-nuget.py
       - name: Build signed fixture deployment without production keys
         shell: pwsh
         run: |
@@ -39,7 +43,7 @@ jobs:
           root = Path(os.environ['RUNNER_TEMP']) / 'solar-deployment'
           settings = json.loads((root / 'integration-bootstrap.json').read_text(encoding='utf-8-sig'))
           assert settings['Integrations']['KeyRingPath'] == '/data/keys/integrations'
-          assert 'Integrations__KeyRingPath=/data/keys/integrations' in Path('docker-compose.integrations.yml').read_text()
+          assert 'Integrations__KeyRingPath=/data/keys/integrations' in Path('Dockerfile').read_text()
           deployment = Path('k8s/deployment.yaml').read_text()
           assert '- name: Integrations__KeyRingPath\n              value: "/data/keys/integrations"' in deployment
           assert 'mountPath: /data/keys' in deployment
@@ -58,3 +62,13 @@ jobs:
           assert not list((root / 'web').glob('SolarManagement.Integrations.WorkerSdk.*'))
           print('All signed provider packages are separate from the Web publish; every declared payload digest matches.')
           PY
+      - name: Exercise Production image, SQL outage, restart and encrypted restore
+        run: python3 scripts/production-smoke.py
+      - name: Upload redacted container drill diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-drill-diagnostics
+          path: ${{ runner.temp }}/solar-smoke-*/*.log
+          if-no-files-found: ignore
+          retention-days: 7

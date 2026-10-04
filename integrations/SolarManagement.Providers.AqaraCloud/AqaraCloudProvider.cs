@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Text;
 using System.Security.Cryptography;
@@ -13,7 +14,9 @@ public sealed class AqaraCloudProvider : SocketCloudProviderBase
     private static readonly string[] Origins = ["https://open-ger.aqara.com", "https://open-usa.aqara.com", "https://open-cn.aqara.com", "https://open-sg.aqara.com", "https://open-kr.aqara.com", "https://open-ru.aqara.com"];
     private readonly string _endpoint, _appId, _keyId, _appKey, _accessToken;
     private readonly Dictionary<string, JsonElement> _resources = new(StringComparer.Ordinal);
-    public AqaraCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null) : base(configuration, httpClient)
+    public AqaraCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null)
+        : this(configuration, CloudProviderTransport.Create(configuration, httpClient)) { }
+    public AqaraCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport) : base(configuration, transport)
     {
         _endpoint = Endpoint(configuration, Origins[0] + "/v3.0/open/api", Origins, "/v3.0/open/api");
         _appId = Secret(configuration, "appId"); _keyId = Secret(configuration, "keyId");

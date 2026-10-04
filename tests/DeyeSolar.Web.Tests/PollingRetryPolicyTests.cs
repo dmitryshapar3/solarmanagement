@@ -1,10 +1,27 @@
 using System.Net;
 using DeyeSolar.Web.Workers;
+using SolarManagement.Integrations.Contracts;
 
 namespace DeyeSolar.Web.Tests;
 
 public class PollingRetryPolicyTests
 {
+    [Theory]
+    [InlineData(IntegrationFailureKind.Transient, 3)]
+    [InlineData(IntegrationFailureKind.RateLimited, 3)]
+    [InlineData(IntegrationFailureKind.Authentication, 1)]
+    [InlineData(IntegrationFailureKind.InvalidResponse, 1)]
+    [InlineData(IntegrationFailureKind.ProviderRejected, 1)]
+    public async Task WorkerCategoriesRetryOnlyTransientReadFailures(IntegrationFailureKind kind, int expected)
+    {
+        var attempts = 0;
+        await Assert.ThrowsAsync<IntegrationOperationException>(() => PollingRetryPolicy.ExecuteAsync<int>(_ =>
+        {
+            attempts++;
+            return Task.FromException<int>(new IntegrationOperationException(kind));
+        }, default, initialDelay: TimeSpan.Zero));
+        Assert.Equal(expected, attempts);
+    }
     [Fact]
     public async Task ExecuteAsync_RetriesHttpTimeoutAndEventuallyReturnsResult()
     {

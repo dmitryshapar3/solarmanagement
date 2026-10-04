@@ -125,13 +125,13 @@ public class ShellyCloudClientTests
             """))));
         var devices = await client.GetNormalizedInventoryAsync(default);
         Assert.Equal(3, devices.Count);
-        var first = Assert.Single(devices.Where(device => device.RemoteId == "shared" && device.Channel == "0"));
-        var second = Assert.Single(devices.Where(device => device.RemoteId == "shared" && device.Channel == "1"));
+        var first = Assert.Single(devices, device => device.RemoteId == "shared" && device.Channel == "0");
+        var second = Assert.Single(devices, device => device.RemoteId == "shared" && device.Channel == "1");
         Assert.True(first.IsOn);
         Assert.False(second.IsOn);
         Assert.Equal(42, first.CurrentPowerWatts);
         Assert.Equal(0, second.CurrentPowerWatts);
-        var unknown = Assert.Single(devices.Where(device => device.RemoteId == "unknown"));
+        var unknown = Assert.Single(devices, device => device.RemoteId == "unknown");
         Assert.Null(unknown.IsOn);
         Assert.Null(unknown.Online);
         Assert.Null(unknown.CurrentPowerWatts);

@@ -21,6 +21,8 @@ public sealed class AppleAppStoreClient(HttpClient http, AppleBillingOptions opt
         if (!options.Enabled) throw new AppleBillingException("Apple subscriptions are not configured.", "apple_unavailable", true);
         if (originalTransactionId.Length is < 1 or > 64 || !originalTransactionId.All(char.IsAsciiDigit))
             throw new AppleBillingException("Invalid Apple transaction identifier.", "invalid_apple_transaction");
+        using var deadline = new CancellationTokenSource(options.RequestTimeout, clock);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var startedAt = clock.GetUtcNow();
         var host = options.Environment == "Production" ? "https://api.storekit.apple.com" : "https://api.storekit-sandbox.apple.com";
         using var request = new HttpRequestMessage(HttpMethod.Get, host + "/inApps/v1/subscriptions/" + originalTransactionId);
@@ -28,18 +30,18 @@ public sealed class AppleAppStoreClient(HttpClient http, AppleBillingOptions opt
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         try
         {
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, operation.Token);
             if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
                 throw InvalidResponse(startedAt);
             if (!response.IsSuccessStatusCode)
                 throw new AppleBillingException("Apple subscription status is temporarily unavailable.", "apple_unavailable", true);
             if (response.Content.Headers.ContentLength > 1024 * 1024) throw InvalidResponse(startedAt);
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(operation.Token);
             // Cap the body even when Apple's HTTP response has no Content-Length.
             using var buffer = new MemoryStream();
             var chunk = new byte[8192];
             int read;
-            while ((read = await stream.ReadAsync(chunk, cancellationToken)) != 0)
+            while ((read = await stream.ReadAsync(chunk, operation.Token)) != 0)
             {
                 if (buffer.Length + read > 1024 * 1024) throw InvalidResponse(startedAt);
                 buffer.Write(chunk, 0, read);

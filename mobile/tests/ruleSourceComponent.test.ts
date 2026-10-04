@@ -47,7 +47,7 @@ for (const { source, defaultAvailable } of [{ source: "battery-inverter", defaul
       const pathname = new URL(url).pathname;
       const body = init.body ? JSON.parse(init.body) : undefined;
       calls.push({ path: pathname, method: init.method, body });
-      const result = pathname === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", online: true, isOn: false }], lastUpdated: null }
+      const result = pathname === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", category: null, currentPowerW: null, online: true, isOn: false }], lastUpdated: null }
         : pathname === "/api/rules/4" ? init.method === "PUT" ? { ...rule, ...body } : rule
         : pathname === "/api/v2/integration-socket-sources" ? [
           { id: "primary-inverter", name: "Primary inverter", isDefault: defaultAvailable },
@@ -100,7 +100,7 @@ test("a missing saved source is retained; unavailable sources prevent enabling b
     if (init.method === "PUT") writes.push(JSON.parse(init.body!));
     const unavailable = route === "/api/v2/integration-socket-sources";
     const result = unavailable ? { message: "Sources temporarily unavailable." }
-      : route === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", online: true, isOn: false }], lastUpdated: null }
+      : route === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", category: null, currentPowerW: null, online: true, isOn: false }], lastUpdated: null }
       : rule;
     return { status: unavailable ? 503 : 200, ok: !unavailable, text: async () => JSON.stringify(result) };
   } }));

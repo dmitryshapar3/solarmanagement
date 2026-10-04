@@ -1,4 +1,5 @@
 using System.Net;
+using SolarManagement.Integrations.Contracts;
 
 namespace DeyeSolar.Web.Workers;
 
@@ -56,6 +57,9 @@ internal static class PollingRetryPolicy
 
         if (exception is OperationCanceledException)
             return true;
+
+        if (exception is TimeoutException) return true;
+        if (exception is IntegrationOperationException integration) return integration.IsTransient;
 
         if (exception is not HttpRequestException httpException)
             return false;

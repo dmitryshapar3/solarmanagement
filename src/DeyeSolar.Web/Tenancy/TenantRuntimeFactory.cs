@@ -23,7 +23,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
     IConfiguration deployment, ILoggerFactory loggers, TimeProvider clock, IHostApplicationLifetime hostLifetime,
     IIntegrationRuntimeExecutor integrationExecutor, IntegrationSecretStore integrationSecrets,
     IntegrationChangeNotifier integrationChanges, string? legacySolarApiKey = null,
-    LegacyIntegrationBootstrap? integrationBootstrap = null, BillingAccessService? billing = null) : IDisposable
+    LegacyIntegrationBootstrap? integrationBootstrap = null, IBillingAccessReader? billing = null, ITrialSocketQuota? quota = null) : IDisposable
 {
     private readonly SemaphoreSlim _requests = new(8, 8);
 
@@ -74,10 +74,13 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton(loggers);
         services.AddSingleton(clock);
-        if (billing is not null) services.AddSingleton(billing);
+        if (billing is not null) services.AddSingleton<IBillingAccessReader>(billing);
+        if (quota is not null) services.AddSingleton<ITrialSocketQuota>(quota);
         services.AddSingleton<IHostApplicationLifetime>(lifetime);
         services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
         services.AddSingleton<AppSettingsService>();
+        services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
+        services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
         services.Configure<DeyeCloudOptions>(configuration.GetSection(DeyeCloudOptions.Section));
         services.Configure<ShellyOptions>(configuration.GetSection(ShellyOptions.Section));
         services.Configure<PollingOptions>(configuration.GetSection(PollingOptions.Section));
@@ -95,6 +98,8 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<DynamicInverterGateway>();
         services.AddSingleton<IInverterCatalog>(provider => provider.GetRequiredService<DynamicInverterGateway>());
         services.AddSingleton<DynamicSocketGateway>();
+        services.AddSingleton<IAccountSocketCatalog>(provider => provider.GetRequiredService<DynamicSocketGateway>());
+        services.AddSingleton<IAccountSocketControl>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddSingleton<ISmartSocketCatalog>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddSingleton<ISocketCommandTracker>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddHttpClient<PseExportPriceClient>(client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers()
@@ -123,7 +128,22 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<DeviceStatusSnapshot>();
         services.AddSingleton<RuleEvaluator>();
         services.AddSingleton<IRuleRepository, RuleRepository>();
-        services.AddSingleton<PollingWorker>();
+        services.AddSingleton<IRuleRunHistory>(provider => new RuleRunHistory(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
+            provider.GetRequiredService<ILogger<RuleRunHistory>>()));
+        services.AddSingleton<IRuleObservationReconciler>(provider => new RuleObservationReconciler(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
+            provider.GetRequiredService<ISocketController>()));
+        services.AddSingleton<ISocketReceiptReconciler>(provider => new SocketReceiptReconciler(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
+            provider.GetRequiredService<ISocketCommandTracker>(), provider.GetRequiredService<ILogger<SocketReceiptReconciler>>()));
+        services.AddSingleton<IRuleAutomationExecutor>(provider => new RuleAutomationExecutor(provider.GetRequiredService<ISocketController>(),
+            provider.GetRequiredService<IRuleRepository>(), provider.GetRequiredService<RuleEvaluator>(), provider.GetRequiredService<IAppSettingsReader>(),
+            provider.GetRequiredService<IRuleRunHistory>(), provider.GetRequiredService<IRuleObservationReconciler>(), provider.GetRequiredService<ILogger<RuleAutomationExecutor>>()));
+        services.AddSingleton<IRulePollingCycle>(provider => new RulePollingCycle(
+            provider.GetRequiredService<IInverterRefreshService>(), provider.GetRequiredService<IOptionsMonitor<InverterConnectionOptions>>(),
+            provider.GetRequiredService<IRuleRepository>(), provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
+            provider.GetRequiredService<IRuleRunHistory>(), provider.GetRequiredService<IRuleAutomationExecutor>(), provider.GetRequiredService<ISocketReceiptReconciler>(),
+            provider.GetRequiredService<ILogger<RulePollingCycle>>(), provider.GetRequiredService<IInverterDataSource>(), provider.GetRequiredService<ExportReadingStore>()));
+        services.AddSingleton(provider => new PollingWorker(provider.GetRequiredService<IRulePollingCycle>(),
+            provider.GetRequiredService<IOptionsMonitor<PollingOptions>>(), provider.GetRequiredService<ILogger<PollingWorker>>()));
         // These are singletons inside one immutable tenant container, never application-wide instances.
         services.AddSingleton<IntegrationProbeGate>();
         services.AddSingleton<IIntegrationTestService, IntegrationTestService>();

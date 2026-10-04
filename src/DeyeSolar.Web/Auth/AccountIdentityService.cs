@@ -6,15 +6,15 @@ using Microsoft.EntityFrameworkCore;
 namespace DeyeSolar.Web.Auth;
 
 public sealed class AccountIdentityService(UserManager<IdentityUser> users, DeyeSolarDbContext db,
-    InstallationMembershipService memberships, MobileSessionStore sessions, AuthProviderOptions providers)
+    InstallationMembershipService memberships, IAccountSessionStore sessions, AuthProviderOptions providers)
 {
     public async Task<MobileAuthResponse?> SessionAsync(string userId, CancellationToken ct)
     {
         var user = await users.FindByIdAsync(userId);
         var membership = await memberships.GetForUserAsync(userId, ct);
-        if (user is null || membership is null || await users.IsLockedOutAsync(user)) return null;
-        var session = sessions.Create(user.Id, user.UserName ?? "", user.SecurityStamp, membership.InstallationId);
-        return new(session.Token, session.ExpiresAt, session.UserName, membership.InstallationId);
+        if (user is null || await users.IsLockedOutAsync(user)) return null;
+        var session = await sessions.CreateAsync(user.Id, user.UserName ?? "", user.SecurityStamp, membership?.InstallationId, ct);
+        return new(session.Token, session.ExpiresAt, session.UserName, membership?.InstallationId);
     }
 
     public async Task<IdentityUser?> FindVerifiedAsync(VerifiedIdentity identity, CancellationToken ct)

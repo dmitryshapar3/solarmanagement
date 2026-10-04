@@ -1,9 +1,9 @@
 {
-  "providerId": "deye.cloud", "packageVersion": "1.0.1", "publisherId": "solar-management",
+  "providerId": "deye.cloud", "packageVersion": "1.0.2", "publisherId": "solar-management",
   "wireVersion": 1, "runtimeIdentifier": "portable", "entryPoint": "SolarManagement.Providers.DeyeCloud.dll", "files": {},
   "allowedOrigins": ["https://eu1-developer.deyecloud.com", "https://us1-developer.deyecloud.com"],
   "descriptor": {
-    "providerId": "deye.cloud", "packageVersion": "1.0.1", "packageDigest": "", "descriptorDigest": "", "displayName": "Deye Cloud",
+    "providerId": "deye.cloud", "packageVersion": "1.0.2", "packageDigest": "", "descriptorDigest": "", "displayName": "Deye Cloud",
     "uiContractVersion": 1, "configurationVersion": 1, "requiredUiFeatures": ["text", "secret"],
     "fields": [
       {"key": "baseUrl", "kind": "text", "label": "Regional API URL", "required": true, "defaultValue": "https://eu1-developer.deyecloud.com/v1.0"},

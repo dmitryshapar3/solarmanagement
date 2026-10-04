@@ -11,8 +11,12 @@ namespace DeyeSolar.Web.Pages;
 
 [Authorize, EnableRateLimiting("identity-auth")]
 public sealed class AccountModel(UserManager<IdentityUser> users, OneTimeVerificationService verification,
-    AccountIdentityService accounts, AuthProviderOptions providers, GoogleMobileTicketStore tickets) : PageModel
+    AccountIdentityService accounts, AuthProviderOptions providers, GoogleMobileTicketStore tickets, AccountSecurityService security) : PageModel
 {
+    [BindProperty] public string CurrentPassword { get; set; } = "";
+    [BindProperty] public string NewPassword { get; set; } = "";
+    [BindProperty] public string SecurityVerificationId { get; set; } = "";
+    [BindProperty] public string SecurityCode { get; set; } = "";
     [BindProperty] public string Channel { get; set; } = "email";
     [BindProperty] public string Destination { get; set; } = "";
     [BindProperty] public string VerificationId { get; set; } = "";
@@ -68,4 +72,32 @@ public sealed class AccountModel(UserManager<IdentityUser> users, OneTimeVerific
         properties.Items["solar.oauth.once"] = tickets.StartCallback();
         return Challenge(properties, GoogleIdentityEndpoints.Scheme);
     }
+    private AccountSecurityProof Proof() => new(CurrentPassword, SecurityVerificationId, SecurityCode);
+    public async Task<IActionResult> OnPostSecurityCodeAsync(CancellationToken ct)
+    {
+        try { SecurityVerificationId = (await security.StartProofAsync(User, Channel, Destination, ct)).VerificationId; Notice = "A verification code was sent. It expires in 10 minutes."; }
+        catch (Exception error) when (error is AccountSecurityException or VerificationRateLimitException or VerificationDeliveryException) { ErrorMessage = error.Message; }
+        await LoadAsync(); return Page();
+    }
+    public async Task<IActionResult> OnPostPasswordAsync(CancellationToken ct)
+    {
+        try { await security.ChangePasswordAsync(User, new(Proof(), NewPassword), ct); await HttpContext.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme); return Redirect("/login"); }
+        catch (AccountSecurityException error) { ErrorMessage = error.Message; await LoadAsync(); return Page(); }
+    }
+    public async Task<IActionResult> OnPostRevokeAsync(CancellationToken ct)
+    {
+        try { await security.RevokeAllAsync(User, Proof(), ct); await HttpContext.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme); return Redirect("/login"); }
+        catch (AccountSecurityException error) { ErrorMessage = error.Message; await LoadAsync(); return Page(); }
+    }
+    public async Task<IActionResult> OnPostExportAsync(CancellationToken ct)
+    {
+        try { var data = await security.ExportAsync(User, Proof(), ct); return File(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(data), "application/json", "solar-account.json"); }
+        catch (AccountSecurityException error) { ErrorMessage = error.Message; await LoadAsync(); return Page(); }
+    }
+    public async Task<IActionResult> OnPostDeleteAsync(CancellationToken ct)
+    {
+        try { await security.DeleteAsync(User, Proof(), ct); await HttpContext.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme); return Redirect("/login"); }
+        catch (AccountSecurityException error) { ErrorMessage = error.Message; await LoadAsync(); return Page(); }
+    }
+
 }

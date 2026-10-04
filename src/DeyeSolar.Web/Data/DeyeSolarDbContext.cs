@@ -29,6 +29,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        ConfigureAccountSessions(modelBuilder);
         ConfigureBilling(modelBuilder);
         ConfigureDynamicIntegrations(modelBuilder);
         modelBuilder.Entity<Installation>(e =>
@@ -36,6 +37,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
             e.HasKey(i => i.Id);
             e.Property(i => i.Id).HasMaxLength(64);
             e.Property(i => i.Name).HasMaxLength(128);
+            e.Property(i => i.OffboardingUserId).HasMaxLength(450);
         });
         modelBuilder.Entity<InstallationMembership>(e =>
         {

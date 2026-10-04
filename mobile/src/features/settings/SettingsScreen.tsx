@@ -19,6 +19,7 @@ import type { IntegrationKind, IntegrationTestResult, SolarSiteSettings } from "
 import { setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
+import { AccountSecurityCard } from "../auth/AccountSecurityCard";
 import { AccountIdentityCard } from "../auth/AccountIdentityCard";
 import { IntegrationSettings } from "../integrations/IntegrationSettings";
 
@@ -138,6 +139,7 @@ export function SettingsScreen() {
         {languageSettings}
         <ErrorBanner message={error ?? t("Settings could not be loaded.")} />
         <AppButton label={t("Retry")} icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
+        <AccountSecurityCard />
       </Screen>
     );
   }
@@ -213,6 +215,7 @@ export function SettingsScreen() {
 
       {languageSettings}
       <AccountIdentityCard />
+      <AccountSecurityCard />
 
       <SectionTitle title={t("Mobile API")} />
       <Card style={styles.form}>

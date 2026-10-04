@@ -11,3 +11,13 @@ mobile/dist
 **/appsettings.*.local.json
 scripts/restore-creds.*
 .env*
+**/.env*
+**/__pycache__
+**/*.pem
+**/*.p8
+**/*.p12
+**/*.key
+**/*.mobileprovision
+**/credentials.json
+**/data
+mobile

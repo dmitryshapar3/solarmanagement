@@ -235,7 +235,7 @@ public sealed class OpenMeteoSolarClientTests
             ? WithRetryAfter(HttpStatusCode.TooManyRequests, TimeSpan.FromMinutes(10))
             : Json(ValidSatellite()));
         await Assert.ThrowsAsync<HttpRequestException>(() => Client(handler).ReadAsync(new(), Now, CancellationToken.None));
-        Assert.Single(handler.Requests.Where(IsRoof1));
+        Assert.Single(handler.Requests, IsRoof1);
     }
 
     [Fact]

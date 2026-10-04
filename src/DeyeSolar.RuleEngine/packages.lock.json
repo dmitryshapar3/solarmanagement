@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "deyesolar.domain": {
+        "type": "Project",
+        "dependencies": {
+          "SolarManagement.Inverters.Contracts": "[1.0.0, )",
+          "SolarManagement.SmartSockets.Contracts": "[1.0.0, )"
+        }
+      },
+      "solarmanagement.inverters.contracts": {
+        "type": "Project"
+      },
+      "solarmanagement.smartsockets.contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

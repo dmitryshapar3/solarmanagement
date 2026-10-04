@@ -116,8 +116,14 @@ final class SolarSubscriptionStore {
       await subscription.isEligibleForIntroOffer {
       throw failure("Subscriptions are temporarily unavailable. Please try again later.")
     }
+    guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) else {
+      throw failure("An App Store action requires the app to be in the foreground.")
+    }
     let options: Set<Product.PurchaseOption> = [.appAccountToken(token)]
-    switch try await product.purchase(options: options) {
+    let purchaseResult: Product.PurchaseResult
+    if #available(iOS 17.0, *) { purchaseResult = try await product.purchase(confirmIn: scene, options: options) }
+    else { purchaseResult = try await product.purchase(options: options) }
+    switch purchaseResult {
     case .success(let result):
       guard case .verified(let transaction) = result, transaction.productID == productID else {
         throw failure("The App Store could not verify this purchase. Please restore purchases or contact support.")

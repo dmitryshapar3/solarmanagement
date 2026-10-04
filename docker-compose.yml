@@ -1,9 +1,71 @@
 services:
-  deye-solar:
-    build: .
-    ports:
-      - "8080:8080"
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Server=host.docker.internal,1433;Database=DeyeSolar;User Id=sa;Password=Dev@Password123!;TrustServerCertificate=True;MultipleActiveResultSets=true
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: ${MSSQL_PID:-Express}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Run scripts/prepare-compose.py and use its protected env file}
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "SQLCMDPASSWORD=\"$$MSSQL_SA_PASSWORD\" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
     restart: unless-stopped
+
+  migration:
+    build: .
+    image: ${SOLAR_IMAGE:-solar-management:local}
+    command: ["--migrate-only"]
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DefaultConnectionFile: /run/secrets/migration_connection
+      Auth__BootstrapAdminPasswordFile: /run/secrets/bootstrap_password
+      Operations__RuntimeDatabaseUser: solar_runtime
+      Operations__RuntimeDatabasePasswordFile: /run/secrets/runtime_password
+    secrets:
+      - migration_connection
+      - bootstrap_password
+      - runtime_password
+    volumes:
+      - protection-keys:/data/keys
+      - integration-packages:/data/integration-packages
+    restart: "no"
+
+  deye-solar:
+    image: ${SOLAR_IMAGE:-solar-management:local}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${SOLAR_HTTP_PORT:-8080}:8080"
+    environment:
+      ConnectionStrings__DefaultConnectionFile: /run/secrets/runtime_connection
+    secrets:
+      - runtime_connection
+    volumes:
+      - protection-keys:/data/keys
+      - integration-packages:/data/integration-packages
+    restart: unless-stopped
+    stop_grace_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+secrets:
+  migration_connection:
+    file: ${SOLAR_SECRETS_DIRECTORY:?Run scripts/prepare-compose.py}/migration-connection.txt
+  runtime_connection:
+    file: ${SOLAR_SECRETS_DIRECTORY:?Run scripts/prepare-compose.py}/runtime-connection.txt
+  runtime_password:
+    file: ${SOLAR_SECRETS_DIRECTORY:?Run scripts/prepare-compose.py}/runtime-password.txt
+  bootstrap_password:
+    file: ${SOLAR_SECRETS_DIRECTORY:?Run scripts/prepare-compose.py}/bootstrap-password.txt
+
+volumes:
+  sql-data:
+  protection-keys:
+  integration-packages:

@@ -20,7 +20,9 @@ project.root_object.attributes['TargetAttributes'] = {
     settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.dshapar.solar.localTests.' + target.name
     settings['SWIFT_VERSION'] = '5.0'
     settings['GENERATE_INFOPLIST_FILE'] = 'YES'
-    settings['CODE_SIGNING_ALLOWED'] = 'NO'
+    settings['CODE_SIGNING_ALLOWED'] = 'YES'
+    settings['CODE_SIGN_IDENTITY'] = '-'
+    settings['ENABLE_TESTABILITY'] = 'YES'
     settings['TARGETED_DEVICE_FAMILY'] = '1,2'
     settings['SUPPORTED_PLATFORMS'] = 'iphonesimulator'
     settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
@@ -48,7 +50,7 @@ tests.resources_build_phase.add_file_reference(project.main_group.new_file(relat
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(host, tests)
-scheme.test_action.should_use_launch_scheme_args_env = false
+scheme.test_action.should_use_launch_scheme_args_env = true
 scheme.test_action.xml_element.attributes['parallelizable'] = 'NO'
 scheme.test_action.xml_element.attributes['systemAttachmentLifetime'] = 'keepNever'
 scheme.test_action.xml_element.attributes['userAttachmentLifetime'] = 'keepNever'

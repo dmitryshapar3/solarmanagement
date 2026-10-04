@@ -18,23 +18,30 @@ public class RuleRepository : IRuleRepository
     public async Task<List<TriggerRule>> GetAllAsync(CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.TriggerRules.ToListAsync(ct);
+        var rules = await db.TriggerRules.ToListAsync(ct);
+        foreach (var rule in rules) rule.ConfigurationVersion = RuleConfigurationVersion.Read(rule);
+        return rules;
     }
 
     public async Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.TriggerRules.SingleOrDefaultAsync(rule => rule.Id == id, ct);
+        var rule = await db.TriggerRules.SingleOrDefaultAsync(rule => rule.Id == id, ct);
+        if (rule is not null) rule.ConfigurationVersion = RuleConfigurationVersion.Read(rule);
+        return rule;
     }
 
     public async Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await RuleTargetPolicy.LockInstallationAsync(db, ct);
+        await RuleTargetPolicy.ValidateAsync(db, rule, ct);
         await ValidateSourceAsync(db, rule, ct);
         db.TriggerRules.Add(rule);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        rule.ConfigurationVersion = RuleConfigurationVersion.Read(rule);
         return rule;
     }
 
@@ -43,12 +50,21 @@ public class RuleRepository : IRuleRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        await ValidateSourceAsync(db, rule, ct);
-
+        await RuleTargetPolicy.LockInstallationAsync(db, ct);
         var current = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == rule.Id, ct)
             ?? throw new ArgumentException("Rule not found.");
+        RuleConfigurationVersion.Check(rule, current);
+        await RuleTargetPolicy.ValidateAsync(db, rule, ct);
+        await ValidateSourceAsync(db, rule, ct);
         // Configuration snapshots can predate an acknowledged command or another evaluation.
         // Only the command coordinator owns runtime state; an editor cannot restore its stale copy.
+        if (await RuleTargetPolicy.IdentityAsync(db, current.EntityId, ct) != await RuleTargetPolicy.IdentityAsync(db, rule.EntityId, ct))
+        {
+            // Runtime history belongs to the physical target; observations initialize a replacement.
+            current.CurrentState = false;
+            current.CurrentStateChangedAt = null;
+            current.LastEvaluated = null;
+        }
         current.Name = rule.Name;
         current.EntityId = rule.EntityId;
         current.SourceInverterId = rule.SourceInverterId;
@@ -67,6 +83,7 @@ public class RuleRepository : IRuleRepository
         rule.CurrentState = current.CurrentState;
         rule.CurrentStateChangedAt = current.CurrentStateChangedAt;
         rule.LastEvaluated = current.LastEvaluated;
+        rule.ConfigurationVersion = RuleConfigurationVersion.Read(current);
     }
 
     public async Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct)
@@ -96,11 +113,14 @@ public class RuleRepository : IRuleRepository
     public async Task DeleteAsync(int id, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await RuleTargetPolicy.LockInstallationAsync(db, ct);
         var rule = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == id, ct);
         if (rule != null)
         {
             db.TriggerRules.Remove(rule);
             await db.SaveChangesAsync(ct);
         }
+        await transaction.CommitAsync(ct);
     }
 }

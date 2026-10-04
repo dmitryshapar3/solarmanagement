@@ -35,6 +35,7 @@ public partial class DeyeSolarDbContext
             e.Property(x => x.PackageDigest).HasMaxLength(128);
             e.Property(x => x.DescriptorDigest).HasMaxLength(128);
             e.HasIndex(x => x.StateHash).IsUnique();
+            e.HasIndex(x => x.ExpiresAt);
             e.HasIndex(x => new { x.InstallationId, x.InstanceId, x.UserId, x.ExpiresAt });
             e.HasOne<IntegrationInstanceEntity>().WithMany().HasForeignKey(x => new { x.InstallationId, x.InstanceId })
                 .HasPrincipalKey(x => new { x.InstallationId, x.Id }).OnDelete(DeleteBehavior.Restrict);

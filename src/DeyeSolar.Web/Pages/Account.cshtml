@@ -25,3 +25,21 @@
     </form>
 }
 <p><a href="/">@T["Return to your installation"]</a></p>
+
+<h2>@T["Account security"]</h2>
+<p>@T["Confirm your current password or a new verification code to change your password, revoke sessions, export data or delete your account."]</p>
+<form method="post" asp-page-handler="SecurityCode" class="auth-form">
+    <label>@T["Verified email or phone"]</label><input name="Destination" required maxlength="254" />
+    <select name="Channel"><option value="email">@T["Email"]</option><option value="phone">@T["Phone (SMS)"]</option></select>
+    <button type="submit">@T["Send verification code"]</button>
+</form>
+<form method="post" class="auth-form">
+    <input type="hidden" asp-for="SecurityVerificationId" />
+    <label>@T["Current password"]</label><input asp-for="CurrentPassword" type="password" autocomplete="current-password" maxlength="128" />
+    <label>@T["Verification code"]</label><input asp-for="SecurityCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+    <label>@T["New password"]</label><input asp-for="NewPassword" type="password" autocomplete="new-password" maxlength="128" />
+    <button type="submit" asp-page-handler="Password">@T["Change password"]</button>
+    <button type="submit" asp-page-handler="Revoke">@T["Sign out all devices"]</button>
+    <button type="submit" asp-page-handler="Export">@T["Export account data"]</button>
+    <button type="submit" asp-page-handler="Delete">@T["Delete account and owned installations"]</button>
+</form>

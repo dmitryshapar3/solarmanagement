@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -12,9 +13,11 @@ public sealed class SolisCloudProvider : CloudInverterProvider
     public static IReadOnlyList<string> Operations { get; } = ["test", "discover", "inverter.read", "inverter.history"];
     public override int MinimumOperationTimeoutSeconds => 120;
     private readonly Dictionary<string, string> _stations = new(StringComparer.Ordinal);
-    public SolisCloudProvider(WorkerConfiguration configuration) : this(configuration, null) { }
+    public SolisCloudProvider(WorkerConfiguration configuration) : this(configuration, (HttpClient?)null) { }
     public SolisCloudProvider(WorkerConfiguration configuration, HttpClient? http)
-        : base(configuration, http, "https://api-oauth2.soliscloud.com") { }
+        : this(configuration, CloudProviderTransport.Create(configuration, http)) { }
+    public SolisCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport)
+        : base(configuration, transport, "https://api-oauth2.soliscloud.com") { }
 
     private async Task<JsonElement> PostAsync(string operation, object body, CancellationToken ct)
     {

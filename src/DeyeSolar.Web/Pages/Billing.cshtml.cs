@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace DeyeSolar.Web.Pages;
 
 [Authorize]
-public sealed class BillingModel(BillingAccessService billing) : PageModel
+public sealed class BillingModel(IBillingAccessReader billing) : PageModel
 {
     public BillingAccess? Access { get; private set; }
     public async Task OnGetAsync(CancellationToken ct)

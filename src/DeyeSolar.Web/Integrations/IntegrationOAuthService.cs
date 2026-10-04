@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,7 +16,7 @@ namespace DeyeSolar.Web.Integrations;
 /// <summary>Authorization results remain encrypted drafts until the configuration transaction consumes them.</summary>
 public sealed class IntegrationOAuthService(DbContextOptions<DeyeSolarDbContext> database,
     IIntegrationProviderCatalog catalog, IIntegrationSetupExecutor executor, IntegrationSecretStore secrets,
-    IntegrationOAuthOptions options, TimeProvider clock, MobileSessionStore sessions, IntegrationSetupGate gate,
+    IntegrationOAuthOptions options, TimeProvider clock, IAccountSessionStore sessions, IntegrationSetupGate gate,
     IOptions<IntegrationRuntimeOptions> runtimeOptions)
 {
     private sealed record Envelope(IntegrationDraftConfiguration Draft, string Verifier, string ReturnNonce,
@@ -54,7 +55,7 @@ public sealed class IntegrationOAuthService(DbContextOptions<DeyeSolarDbContext>
             || callbackActor.FindFirstValue("AspNet.Identity.SecurityStamp") is { } actorStamp && actorStamp != user.SecurityStamp)) return false;
         if (flow.Client == "mobile")
         {
-            var session = envelope.MobileToken is null ? null : sessions.Find(envelope.MobileToken);
+            var session = envelope.MobileToken is null ? null : await sessions.FindAsync(envelope.MobileToken, ct);
             return session is not null && session.UserId == flow.UserId && session.SecurityStamp == user.SecurityStamp
                 && session.InstallationId == flow.InstallationId;
         }

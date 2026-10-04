@@ -234,7 +234,7 @@ function DeviceChoice({ device, selected, onPress }: { device: Device; selected:
         <PlugZap color={device.online ? colors.primary : colors.subtle} size={16} />
         <Text style={styles.deviceChoiceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
       </View>
-      <StatusPill label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
+      <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
     </Pressable>
   );
 }
@@ -268,7 +268,7 @@ function DeviceLine({ device }: { device: Device }) {
       </View>
       <View style={styles.rowStatus}>
         <Text style={styles.powerText}>{formatWatts(device.currentPowerW)}</Text>
-        <StatusPill label={!device.online ? t("Offline") : device.isOn ? t("ON") : t("OFF")} tone={!device.online ? "neutral" : device.isOn ? "success" : "warning"} />
+        <StatusPill label={!device.online ? t("Offline") : device.stateKnown === false ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown === false ? "neutral" : device.isOn ? "success" : "warning"} />
       </View>
     </Card>
   );

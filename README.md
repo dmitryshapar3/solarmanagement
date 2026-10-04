@@ -87,9 +87,9 @@ The GitHub Actions workflow in `.github/workflows/tests.yml` provisions SQL Serv
 
 ## Containers and deployment
 
-The `Dockerfile` publishes the backend using .NET 8 and serves HTTP on port 8080. `docker-compose.yml` runs the application against an external SQL Server; it does not provision a database. Update its connection configuration for the target environment before running `docker compose up --build`.
+The `Dockerfile` publishes the backend using .NET 8 and serves HTTP on port 8080. `docker-compose.yml` provisions SQL Server, a privileged migration job and the restricted application runtime. Generate protected secrets with `scripts/prepare-compose.py`, build the signed provider bundle, and use `docker-compose.integrations.yml` as described in the production operations guide.
 
-Legacy Kubernetes manifests and deployment tooling are under `k8s`. Review the target cluster, database connection and required secrets before using them. Back up the database before deploying a version with new migrations. Building the iOS app does not require deploying the backend again.
+Production startup validates the migrated schema and uses a restricted SQL login. Run the privileged migration job before starting the runtime. Compose provisions isolated SQL, persistent key/package storage and file-based connection secrets; Kubernetes uses a separate migration job and one automation owner. See [production releases and recovery](docs/production-operations.md) for setup, health probes, coordinated encrypted backup/restore and executable Docker smoke checks. Building the iOS app does not require deploying the backend again.
 
 ## More detail
 
@@ -98,3 +98,5 @@ Legacy Kubernetes manifests and deployment tooling are under `k8s`. Review the t
 - [Open-Meteo commercial API setup](docs/open-meteo-commercial.md)
 - [Electricity export estimates, storage and upgrades](docs/solar-sales.md)
 - [Public backend pages and App Store release checks](docs/app-store-backend.md)
+
+The [production readiness and SOLID audit (5 October 2026)](docs/production-readiness-audit-2026-10-05.md) records implemented safeguards, validation evidence and remaining rollout conditions.

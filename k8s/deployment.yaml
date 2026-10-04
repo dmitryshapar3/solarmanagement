@@ -7,6 +7,8 @@ metadata:
     app: deye-solar
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: deye-solar
@@ -15,11 +17,21 @@ spec:
       labels:
         app: deye-solar
     spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
       imagePullSecrets:
         - name: ghcr-secret
       containers:
         - name: deye-solar
-          image: ghcr.io/dmitryshapar3/deye-solar:latest
+          image: SOLAR_RELEASE_IMAGE
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - containerPort: 8080
           env:
@@ -30,7 +42,12 @@ spec:
             - name: Integrations__KeyRingPath
               value: "/data/keys/integrations"
             - name: ConnectionStrings__DefaultConnection
-              value: "Server=sqlserver-service.production.svc.cluster.local,1433;Database=DeyeSolar;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;MultipleActiveResultSets=true"
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-database
+                  key: runtime-connection
+            - name: Operations__DatabaseMode
+              value: validate
             - name: Shelly__ServerUri
               valueFrom:
                 secretKeyRef:
@@ -69,16 +86,22 @@ spec:
               mountPath: /app/integration-bootstrap.json
               subPath: integration-bootstrap.json
               readOnly: true
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 60
           livenessProbe:
             httpGet:
-              path: /
+              path: /health/live
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /
+              path: /health/ready
               port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10

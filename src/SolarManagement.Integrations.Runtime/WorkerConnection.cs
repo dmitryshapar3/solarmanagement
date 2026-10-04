@@ -99,7 +99,11 @@ internal sealed class WorkerConnection : IAsyncDisposable
                         throw new InvalidDataException("Worker returned an invalid error response.");
                     // A correlated operation error says nothing about the health of another device on this transport.
                     // Provider messages may contain credentials and must never cross this boundary.
-                    if (!completion.TrySetException(new WorkerOperationException())) throw new InvalidDataException("Worker response was repeated.");
+                    var kind = IntegrationFailureKind.ProviderRejected;
+                    if (error.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+                        && data.TryGetProperty("failureKind", out var category) && category.ValueKind == JsonValueKind.String
+                        && Enum.TryParse<IntegrationFailureKind>(category.GetString(), out var parsed) && Enum.IsDefined(parsed)) kind = parsed;
+                    if (!completion.TrySetException(new WorkerOperationException(kind))) throw new InvalidDataException("Worker response was repeated.");
                 }
                 else if (!completion.TrySetResult(result.Clone())) throw new InvalidDataException("Worker response was repeated.");
             }
@@ -141,4 +145,7 @@ internal sealed class WorkerConnection : IAsyncDisposable
     }
 }
 
-internal sealed class WorkerOperationException() : InvalidOperationException("The integration rejected the operation.");
+internal sealed class WorkerOperationException(IntegrationFailureKind kind) : InvalidOperationException("The integration rejected the operation.")
+{
+    public IntegrationFailureKind Kind { get; } = kind;
+}

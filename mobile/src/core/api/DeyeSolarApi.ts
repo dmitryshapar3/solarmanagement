@@ -1,3 +1,4 @@
+import { AccountSecurityApi } from "./AccountSecurityApi";
 import { ApiClient, ApiError } from "./ApiClient";
 import { translate as t } from "../i18n";
 import { IntegrationApi } from "./IntegrationApi";
@@ -39,10 +40,12 @@ export class DeyeSolarApi {
     return this.client.request("/api/account/language", { method: "PUT", body: { language } });
   }
   readonly integrations: IntegrationApi;
+  readonly accountSecurity: AccountSecurityApi;
   readonly socketCommands: SocketCommandCoordinator;
 
   constructor(private readonly client: ApiClient) {
     this.integrations = new IntegrationApi(client);
+    this.accountSecurity = new AccountSecurityApi(client);
     this.socketCommands = new SocketCommandCoordinator(this.integrations);
     client.onSessionChange(() => this.socketCommands.reset());
   }

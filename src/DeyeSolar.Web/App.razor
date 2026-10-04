@@ -6,7 +6,9 @@
 
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
-          <InstallationGate>
+          <ErrorBoundary @key="routeData">
+           <ChildContent>
+            <InstallationGate>
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                 <NotAuthorized>
                     @{
@@ -15,7 +17,14 @@
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-          </InstallationGate>
+            </InstallationGate>
+           </ChildContent>
+           <ErrorContent>
+            <p role="alert">@T["Action failed."]</p>
+            <button @onclick="ReloadApplication">@T["Retry"]</button>
+            <a href="/account">@T["Account"]</a>
+           </ErrorContent>
+          </ErrorBoundary>
         </Found>
         <NotFound>
             <PageTitle>@T["Not found"]</PageTitle>
@@ -27,6 +36,7 @@
 </CascadingAuthenticationState>
 
 @code {
+    private void ReloadApplication() => NavigationManager.NavigateTo("/", true);
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
 
     private readonly MudTheme _theme = new()

@@ -7,6 +7,7 @@ xcodebuild -version
 # Avoid hard-coded Xcode paths, model names and pre-existing runner simulators.
 solar_storekit_selection="$(python3 - <<'PY'
 import json
+import os
 import subprocess
 import sys
 
@@ -18,6 +19,11 @@ runtimes = [runtime for runtime in simctl('list', 'runtimes')['runtimes']
             and int(runtime['version'].split('.')[0]) >= 18]
 if not runtimes:
     raise SystemExit('An installed iOS 18+ simulator runtime is required.')
+requested_version = os.environ.get('SOLAR_STOREKIT_RUNTIME_VERSION')
+if requested_version:
+    runtimes = [runtime for runtime in runtimes if runtime['version'] == requested_version]
+    if not runtimes:
+        raise SystemExit('The requested StoreKit iOS runtime ' + requested_version + ' is not installed.')
 runtime = max(runtimes, key=lambda item: tuple(map(int, item['version'].split('.'))))
 version = runtime['version'].split('.')
 runtime_version = sum(int(part) << shift for part, shift in zip(version + ['0'] * (3 - len(version)), (16, 8, 0)))

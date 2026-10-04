@@ -8,6 +8,96 @@ namespace DeyeSolar.Web.Tests;
 public class RuleRepositoryStateTests
 {
     [SqlServerFact]
+    public async Task DisabledInstallationRejectsStaleRuleCreateUpdateAndDelete()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        var edited = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        var originalName = edited.Name;
+        edited.Name = "Late edit";
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            (await db.Installations.SingleAsync(installation => installation.Id == "site-a")).IsEnabled = false;
+            await db.SaveChangesAsync();
+        }
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.CreateAsync(new() { EntityId = "late-target", Name = "Late create" }, default));
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.UpdateAsync(edited, default));
+        await Assert.ThrowsAsync<DeyeSolar.Web.Auth.InstallationAccessException>(() => repository.DeleteAsync(edited.Id, default));
+        Assert.Equal(originalName, (await repository.GetByIdAsync(edited.Id, default))!.Name);
+    }
+
+    [SqlServerFact]
+    public async Task StaleEditorCannotOverwriteAnotherEditorsConfigurationButRuntimeUpdatesDoNotConflict()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        var first = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        var stale = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        first.Name = "First saved edit";
+        await repository.UpdateAsync(first, default);
+        stale.SocTurnOnThreshold = 99;
+        await Assert.ThrowsAsync<RuleConfigurationConflictException>(() => repository.UpdateAsync(stale, default));
+        var current = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        Assert.Equal("First saved edit", current.Name);
+        Assert.Equal(70, current.SocTurnOnThreshold);
+        await repository.RecordEvaluationAsync(current.Id, DateTime.UtcNow, default);
+        current.Name = "Saved after evaluation";
+        await repository.UpdateAsync(current, default);
+        Assert.Equal("Saved after evaluation", (await repository.GetByIdAsync(current.Id, default))!.Name);
+    }
+    [SqlServerFact]
+    public async Task ChangingPhysicalTargetDoesNotInheritThePreviousTargetsStateOrCooldown()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            var rule = await db.TriggerRules.SingleAsync(r => r.Id == fixture.TargetId);
+            rule.CurrentState = true;
+            rule.CurrentStateChangedAt = DateTime.UtcNow;
+            rule.LastEvaluated = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        var edited = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        edited.EntityId = "new-physical-socket";
+        await repository.UpdateAsync(edited, default);
+        var saved = (await repository.GetByIdAsync(fixture.TargetId, default))!;
+        Assert.False(saved.CurrentState);
+        Assert.Null(saved.CurrentStateChangedAt);
+        Assert.Null(saved.LastEvaluated);
+    }
+
+    [SqlServerFact]
+    public async Task DuplicateTargetAdmissionRejectsCreateAndEnableButAllowsDisabledDrafts()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        var duplicate = new TriggerRule { EntityId = "socket-one", Name = "Duplicate" };
+        Assert.Contains("already has an enabled automation rule", (await Assert.ThrowsAsync<ArgumentException>(
+            () => repository.CreateAsync(duplicate, default))).Message);
+        duplicate.Enabled = false;
+        await repository.CreateAsync(duplicate, default);
+        duplicate.Enabled = true;
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.UpdateAsync(duplicate, default));
+        Assert.False((await repository.GetByIdAsync(duplicate.Id, default))!.Enabled);
+    }
+
+    [SqlServerFact]
+    public async Task ConcurrentDuplicateAdmissionHasExactlyOneWinner()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        async Task<bool> AdmitAsync(string name)
+        {
+            try
+            {
+                await new RuleRepository(fixture.Factory("site-a")).CreateAsync(new() { EntityId = "contended-target", Name = name }, default);
+                return true;
+            }
+            catch (ArgumentException) { return false; }
+        }
+        Assert.Single(await Task.WhenAll(AdmitAsync("First"), AdmitAsync("Second")), winner => winner);
+    }
+    [SqlServerFact]
     public async Task StaleConfigurationSavePreservesAcknowledgedStateAndEvaluationAcrossIndependentRules()
     {
         await using var fixture = await Fixture.CreateAsync();

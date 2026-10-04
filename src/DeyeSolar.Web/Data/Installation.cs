@@ -15,6 +15,10 @@ public class Installation
     public string Name { get; set; } = "My solar installation";
     public DateTimeOffset CreatedAt { get; set; }
     public bool IsEnabled { get; set; } = true;
+    // A temporary deletion fence is recoverable after a process crash. These markers
+    // are cleared on success/rollback or by startup recovery before workers admit data.
+    public string? OffboardingUserId { get; set; }
+    public bool? OffboardingWasEnabled { get; set; }
 }
 
 public class InstallationMembership

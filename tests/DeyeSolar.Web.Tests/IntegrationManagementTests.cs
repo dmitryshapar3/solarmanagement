@@ -160,7 +160,7 @@ public class IntegrationManagementTests
         }
         var settings = new AppSettingsService(factory, new ConfigurationBuilder().Build());
         var selected = new InverterConnectionOptions { DeviceKey = Guid.NewGuid().ToString("D") };
-        var service = new SiteSettingsService(settings, new Monitor<InverterConnectionOptions>(selected), new NoInverterSource());
+        var service = new SiteSettingsService(settings, settings, new Monitor<InverterConnectionOptions>(selected), new NoInverterSource());
         var wrong = Site() with
         {
             SelectedDeviceSn = "forged-inverter",
@@ -195,7 +195,8 @@ public class IntegrationManagementTests
         builder.Services.AddAuthorization(); builder.Services.AddAntiforgery();
         var tests = new CountingTests(); builder.Services.AddSingleton<IIntegrationTestService>(tests);
         builder.Services.AddSingleton(new DeviceNameService(new Labels(), Devices()));
-        builder.Services.AddSingleton(new SiteSettingsService(new(new NeverFactory(), new ConfigurationBuilder().Build()),
+        var settings = new AppSettingsService(new NeverFactory(), new ConfigurationBuilder().Build());
+        builder.Services.AddSingleton(new SiteSettingsService(settings, settings,
             new Monitor<InverterConnectionOptions>(new()), new NoInverterSource()));
         await using var app = builder.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapIntegrationManagement();
         app.MapGet("/_fixture/csrf", (HttpContext context, IAntiforgery antiforgery) =>

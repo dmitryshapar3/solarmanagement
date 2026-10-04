@@ -1,6 +1,6 @@
 @page "/rules/edit"
 @page "/rules/edit/{Id:int}"
-@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject DeyeSolar.Domain.Interfaces.IConfigurationRules RuleRepo
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject SolarManagement.Inverters.Contracts.IInverterCatalog InverterCatalog
@@ -312,6 +312,7 @@
 
             Nav.NavigateTo("/rules");
         }
+        catch (ArgumentException error) { if (!_disposed) _validationError = error.Message; }
         catch (Exception) { if (!_disposed) _validationError = T["The rule could not be saved. Check its device and source, then try again."]; }
         finally { if (!_disposed) _saving = false; }
     }

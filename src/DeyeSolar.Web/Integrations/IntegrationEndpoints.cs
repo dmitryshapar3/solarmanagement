@@ -1,3 +1,4 @@
+using DeyeSolar.Web.Auth;
 using System.Security.Cryptography;
 using System.Security.Claims;
 using System.Text;
@@ -33,6 +34,12 @@ public static class IntegrationEndpoints
         services.AddSingleton<IntegrationOAuthService>();
         services.AddSingleton<IIntegrationOriginPolicyStore, IntegrationOriginPolicyFileStore>();
         services.AddSingleton<LegacyIntegrationBootstrap>();
+        services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
+        services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
+        services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
+        services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
+        services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
+        services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
         services.AddScoped<IntegrationSetupService>();
         services.AddScoped<IIntegrationRegistry, IntegrationRegistry>();
         return services;
@@ -95,7 +102,7 @@ public static class IntegrationEndpoints
         api.MapGet("/integrations/{id:guid}/devices", (Guid id, IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.DevicesAsync(id, ct)));
         api.MapPut("/integrations/{id:guid}/devices/{deviceId:guid}/source", (Guid id, Guid deviceId, IntegrationSocketSourceChange request,
             IntegrationSetupService service, HttpContext context, IAntiforgery antiforgery, CancellationToken ct)
-            => WriteAsync(context, antiforgery, () => service.SetSocketSourceAsync(id, deviceId, request, context.User, ct)));
+            => WriteAsync(context, antiforgery, () => service.SetSocketSourceAsync(id, deviceId, request, context.User, ct))).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageIntegrations));
         api.MapPost("/integrations/{id:guid}/devices/selection", (Guid id, SelectIntegrationDeviceRequest request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SelectDeviceAsync(id, request, context.User, ct)));
         api.MapPost("/integrations/{id:guid}/enable", (Guid id, IntegrationVersionGuard request, IntegrationSetupService service,
@@ -103,18 +110,24 @@ public static class IntegrationEndpoints
         api.MapPost("/integrations/{id:guid}/disable", (Guid id, IntegrationVersionGuard request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SetEnabledAsync(id, false, request, context.User, ct)));
         api.MapPost("/devices/{id:guid}/commands", (Guid id, IntegrationSocketCommandRequest request, DynamicSocketGateway gateway,
-            HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, async () =>
+            HttpContext context, IAntiforgery antiforgery, InteractiveSecurityContext security, CancellationToken ct) => WriteAsync(context, antiforgery, async () =>
             {
-                var socket = await gateway.GetForUserAsync(new(id), context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
+                var socket = await gateway.GetForUserAsync(new(id), context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                    token => security.EnsureAsync(InstallationPermission.ControlDevices, token), ct);
                 await socket.SetPowerAsync(new(new(request.CommandId), request.IsOn ? SwitchState.On : SwitchState.Off), ct);
                 return await gateway.DescribeResultAsync(id, request.CommandId, ct);
-            }));
+            })).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ControlDevices));
         api.MapGet("/devices/{id:guid}/commands/{commandId:guid}", (Guid id, Guid commandId, DynamicSocketGateway gateway, CancellationToken ct)
             => ReadAsync(() => gateway.DescribeResultAsync(id, commandId, ct)));
         api.MapGet("/devices/{id:guid}/commands", (Guid id, DynamicSocketGateway gateway, CancellationToken ct)
             => ReadAsync(() => gateway.UnresolvedAsync(id, ct)));
         api.MapPost("/devices/{id:guid}/commands/{commandId:guid}/release", (Guid id, Guid commandId, DynamicSocketGateway gateway,
-            HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => gateway.ReleaseAsync(id, commandId, ct)));
+            HttpContext context, IAntiforgery antiforgery, InteractiveSecurityContext security, CancellationToken ct) => WriteAsync(context, antiforgery, async () =>
+            {
+                await gateway.ReleaseForUserAsync(new(id), new(commandId), context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+                    token => security.EnsureAsync(InstallationPermission.ControlDevices, token), ct);
+                return await gateway.DescribeResultAsync(id, commandId, ct);
+            })).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ControlDevices));
         api.MapPost("/integration-packages/install", async Task<IResult> (IntegrationPackageInstallRequest request, IIntegrationPackageManager manager,
             HttpContext context, IAntiforgery antiforgery, UserManager<IdentityUser> users,
             LegacyIntegrationBootstrap legacy, CurrentInstallation installation, TenantRuntimeRegistry runtimes,

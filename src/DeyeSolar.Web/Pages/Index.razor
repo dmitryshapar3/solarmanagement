@@ -10,7 +10,7 @@
 @inject IInverterRefreshService InverterRefresh
 @inject DeviceStatusSnapshot DeviceSnapshot
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventory
-@inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
+@inject DeyeSolar.Domain.Interfaces.IConfigurationRules RuleRepo
 @using DeyeSolar.Web.Shared
 @implements IDisposable
 
@@ -160,7 +160,7 @@
     }
 </MudGrid>
 
-@inject DeyeSolar.Web.Data.AppSettingsService SettingsService
+@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 
 @code {
     private InverterData? _data;

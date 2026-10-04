@@ -402,7 +402,8 @@ public class GoogleIdentitySqlServerTests
                 var google = new GoogleBackchannel();
                 builder.Services.PostConfigure<GoogleOptions>(GoogleIdentityEndpoints.Scheme, options => options.Backchannel = new HttpClient(google));
                 builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
-                builder.Services.AddAuthorization(); builder.Services.AddSingleton<MobileSessionStore>(); builder.Services.AddScoped<MobileAuthService>();
+                builder.Services.AddAuthorization(); builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>()); builder.Services.AddScoped<MobileAuthService>();
                 var clock = new Clock(); builder.Services.AddSingleton<TimeProvider>(clock);
                 app = builder.Build(); app.UseRouting(); app.UseRateLimiter(); app.UseAccountIdentityOrigin(); app.UseAuthentication(); app.UseAuthorization();
                 app.MapAccountIdentityApi(); app.MapGoogleIdentity();

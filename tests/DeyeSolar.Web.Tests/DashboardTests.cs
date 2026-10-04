@@ -405,7 +405,7 @@ public class DashboardTests
             services.AddSingleton(snapshot);
             services.AddSingleton(new DeviceStatusSnapshot());
             services.AddSingleton<IInverterRefreshService>(refresh);
-            services.AddSingleton<IRuleRepository>(rules);
+            services.AddSingleton<IConfigurationRules>(rules);
             services.AddSingleton<ISocketController>(sockets);
             services.AddSingleton<ISocketInventoryService>(sockets);
             services.AddSingleton<ISmartSocketCatalog>(sockets);
@@ -413,6 +413,8 @@ public class DashboardTests
             services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
             services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
             services.AddSingleton<AppSettingsService>();
+            services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
+            services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
             services.AddSingleton<ISolarHistoryService, HistoryService>();
             services.AddSingleton<IExportSalesService, SalesService>();
             services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");

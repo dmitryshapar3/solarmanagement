@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -14,7 +15,9 @@ public sealed class EWeLinkCloudProvider : SocketCloudProviderBase
     private static readonly string[] Origins = ["https://eu-apia.coolkit.cc", "https://us-apia.coolkit.cc", "https://as-apia.coolkit.cc", "https://cn-apia.coolkit.cn"];
     private readonly string _endpoint, _appId, _accessToken;
     private DateTimeOffset _lastRequest;
-    public EWeLinkCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null) : base(configuration, httpClient)
+    public EWeLinkCloudProvider(WorkerConfiguration configuration, HttpClient? httpClient = null)
+        : this(configuration, CloudProviderTransport.Create(configuration, httpClient)) { }
+    public EWeLinkCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport) : base(configuration, transport)
     {
         _endpoint = Endpoint(configuration, Origins[0], Origins, "/").TrimEnd('/');
         _appId = Secret(configuration, "appId");

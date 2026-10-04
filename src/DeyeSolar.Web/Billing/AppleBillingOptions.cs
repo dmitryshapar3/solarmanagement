@@ -6,6 +6,7 @@ namespace DeyeSolar.Web.Billing;
 public sealed class AppleBillingOptions
 {
     public bool Enabled { get; init; }
+    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     public string BundleId { get; init; } = "com.dshapar.solar";
     public string Environment { get; init; } = "Production";
     public long AppAppleId { get; init; }
@@ -14,7 +15,8 @@ public sealed class AppleBillingOptions
     public string PrivateKeyPath { get; init; } = string.Empty;
     public string[] RootCertificatePaths { get; init; } = [];
     public string[] ProductIds { get; init; } = ["com.dshapar.solar.monthly", "com.dshapar.solar.yearly"];
-    public static TimeSpan MaximumStatusAge => TimeSpan.FromHours(1);
+    public static TimeSpan MaximumStatusAge => BillingEntitlementPolicy.MaximumStatusAge;
+    public BillingProductPolicy ProductPolicy => new(Enabled, Environment, ProductIds);
     public static TimeSpan RefreshInterval => TimeSpan.FromMinutes(15);
 
     // Capture before the user-editable SQL configuration provider is installed.
@@ -24,6 +26,7 @@ public sealed class AppleBillingOptions
         var options = new AppleBillingOptions
         {
             Enabled = bool.TryParse(section["Enabled"], out var enabled) && enabled,
+            RequestTimeout = TimeSpan.FromSeconds(int.TryParse(section["RequestTimeoutSeconds"], out var timeout) ? timeout : 30),
             BundleId = section["BundleId"] ?? "com.dshapar.solar",
             Environment = section["Environment"] ?? "Production",
             AppAppleId = long.TryParse(section["AppAppleId"], out var appId) ? appId : 0,
@@ -40,6 +43,8 @@ public sealed class AppleBillingOptions
 
     public void Validate()
     {
+        if (RequestTimeout <= TimeSpan.Zero || RequestTimeout > TimeSpan.FromMinutes(2))
+            throw new InvalidOperationException("Billing:Apple:RequestTimeoutSeconds must be between 1 and 120.");
         if (!Enabled) return;
         if (Environment is not ("Sandbox" or "Production") || string.IsNullOrWhiteSpace(BundleId)
             || BundleId.Length > 200 || Environment == "Production" && AppAppleId <= 0 || !Guid.TryParse(IssuerId, out _)

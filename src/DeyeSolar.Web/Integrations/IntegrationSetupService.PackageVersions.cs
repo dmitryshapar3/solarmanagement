@@ -49,24 +49,15 @@ public sealed partial class IntegrationSetupService
         if (!sameConfiguration && await db.IntegrationDeviceBindings.AnyAsync(binding => binding.InstanceId == id, ct)
             && (tested.AccountIdentity is null || tested.AccountIdentity != instance.AccountIdentity))
             throw new IntegrationRequestException("account_reverification_required", "Create a new connection and select its devices because account continuity could not be verified.", 409);
+        await EnsureManagerAsync(actor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockSettingsMutationAsync(db, instance, ct);
         await EnsureNoActiveCommandsAsync(db, id, ct);
         instance.PackageVersion = target.PackageVersion;
         instance.PackageDigest = target.PackageDigest;
         instance.DescriptorDigest = target.DescriptorDigest;
-        instance.Revision++;
-        instance.Generation++;
-        instance.UpdatedAt = clock.GetUtcNow();
         instance.AccountIdentity = tested.AccountIdentity ?? instance.AccountIdentity;
-        db.Add(new IntegrationConfigurationEntity
-        {
-            InstanceId = id,
-            Revision = instance.Revision,
-            ValuesJson = resolved.Values.GetRawText(),
-            SecretsCiphertext = secrets.Encrypt(instance.InstallationId, id, instance.Revision, resolved.Secrets),
-            CreatedAt = clock.GetUtcNow()
-        });
+        configurationWriter.AppendRevision(db, instance, resolved);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw Conflict(); }
         await transaction.CommitAsync(ct);

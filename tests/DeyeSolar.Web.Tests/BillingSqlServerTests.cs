@@ -159,8 +159,8 @@ public class BillingSqlServerTests
         }).ToArray();
         barrier.SetResult();
         var outcomes = await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30));
-        var accepted = Assert.Single(outcomes.Where(outcome => outcome.Binding is not null));
-        var refused = Assert.Single(outcomes.Where(outcome => outcome.Error is not null));
+        var accepted = Assert.Single(outcomes, outcome => outcome.Binding is not null);
+        var refused = Assert.Single(outcomes, outcome => outcome.Error is not null);
         Assert.Equal("trial_socket_limit", refused.Error!.Code);
         Assert.Equal(402, refused.Error.Status);
         var replay = await host.Setup(SiteA).SelectDeviceAsync(accepted.Item.Instance.Id, accepted.Item.Request, host.Actor(SiteA), default);
@@ -286,7 +286,7 @@ public class BillingSqlServerTests
         await host.SetTrialAsync(OwnerA, host.Clock.Now.AddMonths(-1).AddSeconds(2), host.Clock.Now.AddSeconds(2));
         var gateway = host.Gateway(SiteA, appleEnabled: true);
         var current = new CurrentBillingAccount(); current.BindOnce(OwnerA);
-        var circuit = new BillingSocketAccess(gateway, host.Access(appleEnabled: true), current);
+        var circuit = host.Circuit(gateway, OwnerA, current);
         var socket = await circuit.GetAsync(new(device), default);
         var command = new SetSocketPowerCommand(new(Guid.NewGuid()), SwitchState.On);
         Assert.Equal(SocketCommandStatus.Acknowledged, (await socket.SetPowerAsync(command, default)).Status);
@@ -317,7 +317,7 @@ public class BillingSqlServerTests
         Assert.Equal(before, await host.PersistedStateAsync());
 
         var payer = new CurrentBillingAccount(); payer.BindOnce(OwnerB);
-        var paidCircuit = new BillingSocketAccess(gateway, host.Access(appleEnabled: true), payer);
+        var paidCircuit = host.Circuit(gateway, OwnerB, payer);
         Assert.Single((await paidCircuit.ReadInventoryAsync(false, default)).Devices);
         Assert.Equal(providerCalls, host.Executor.RuntimeCalls);
         Assert.Throws<InvalidOperationException>(() => current.BindOnce(OwnerB));
@@ -335,7 +335,7 @@ public class BillingSqlServerTests
         await host.SetTrialAsync(OwnerA, host.Clock.Now.AddMonths(-1).AddSeconds(2), host.Clock.Now.AddSeconds(2));
         var gateway = host.Gateway(SiteA, appleEnabled: true);
         var account = new CurrentBillingAccount(); account.BindOnce(OwnerA);
-        var circuit = new BillingSocketAccess(gateway, host.Access(appleEnabled: true), account);
+        var circuit = host.Circuit(gateway, OwnerA, account);
         var socket = await circuit.GetAsync(new(device), default);
         var firstCommand = new SetSocketPowerCommand(new(Guid.NewGuid()), SwitchState.On);
         var queuedCommand = new SetSocketPowerCommand(new(Guid.NewGuid()), SwitchState.Off);
@@ -361,7 +361,7 @@ public class BillingSqlServerTests
             Assert.Equal(firstCommand.CommandId.Value, (await db.IntegrationCommands.SingleAsync()).Id);
         Assert.Equal(1, host.Executor.SetCalls);
         var payer = new CurrentBillingAccount(); payer.BindOnce(OwnerB);
-        var paidSocket = await new BillingSocketAccess(gateway, host.Access(appleEnabled: true), payer).GetAsync(new(device), default);
+        var paidSocket = await host.Circuit(gateway, OwnerB, payer).GetAsync(new(device), default);
         Assert.Equal(SocketCommandStatus.Acknowledged, (await paidSocket.SetPowerAsync(new(new(Guid.NewGuid()), SwitchState.Off), default)).Status);
         Assert.Equal(2, host.Executor.SetCalls);
     }
@@ -486,13 +486,14 @@ public class BillingSqlServerTests
         await using var db = new DeyeSolarDbContext(options);
         try
         {
-            await db.Database.MigrateAsync();
+            var billingMigration = db.Database.GetMigrations().Single(migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
+            await db.GetService<IMigrator>().MigrateAsync(billingMigration);
             var latest = await db.Database.GetAppliedMigrationsAsync();
             Assert.Empty(await db.BillingAccounts.ToListAsync());
             Assert.Empty(await db.AppleSubscriptions.ToListAsync());
             await db.GetService<IMigrator>().MigrateAsync("20261004010452_DynamicIntegrationOAuth");
             Assert.DoesNotContain((await db.Database.GetAppliedMigrationsAsync()), migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
-            await db.Database.MigrateAsync();
+            await db.GetService<IMigrator>().MigrateAsync(billingMigration);
             Assert.Equal(latest, await db.Database.GetAppliedMigrationsAsync());
             Assert.Empty(await db.BillingAccounts.ToListAsync());
             Assert.Empty(await db.AppleSubscriptions.ToListAsync());
@@ -524,15 +525,36 @@ public class BillingSqlServerTests
         public Factory Factory(string? installation = null, DbCommandInterceptor? interceptor = null) => new(
             interceptor is null ? options : new DbContextOptionsBuilder<DeyeSolarDbContext>(options).AddInterceptors(interceptor).Options, installation);
         public BillingAccessService Access(bool appleEnabled = false) => new(options, Clock, new AppleBillingOptions { Enabled = appleEnabled });
-        public ClaimsPrincipal Actor(string installation, string? user = null) => new(new ClaimsIdentity([
-            new Claim(ClaimTypes.NameIdentifier, user ?? (installation == SiteA ? OwnerA : OwnerB)),
-            new Claim(InstallationIds.ClaimType, installation)], "fixture-principal"));
+        private readonly Dictionary<string, ClaimsPrincipal> _actors = new();
+        public ClaimsPrincipal Actor(string installation, string? user = null)
+        {
+            user ??= installation == SiteA ? OwnerA : OwnerB;
+            var key = installation + ":" + user;
+            if (_actors.TryGetValue(key, out var existing)) return existing;
+            using var db = Factory().CreateDbContext();
+            var stamp = db.Users.Single(u => u.Id == user).SecurityStamp!;
+            var session = app.Services.GetRequiredService<MobileSessionStore>().Create(user, user, stamp, installation);
+            return _actors[key] = new(new ClaimsIdentity([
+                new Claim(ClaimTypes.NameIdentifier, user), new Claim(InstallationIds.ClaimType, installation),
+                new Claim(InstallationAccessAuthorizer.StampClaim, stamp),
+                new Claim(InstallationAccessAuthorizer.SessionClaim, session.Token)], "fixture-principal"));
+        }
+        public BillingSocketAccess Circuit(DynamicSocketGateway gateway, string user, CurrentBillingAccount account)
+        {
+            var installation = new CurrentInstallation(); installation.BindOnce(SiteA);
+            var security = new InteractiveSecurityContext(new InstallationAccessAuthorizer(options,
+                app.Services.GetRequiredService<IAccountSessionStore>(), Clock), installation, new HttpContextAccessor());
+            security.BindOnce(Actor(SiteA, user));
+            return new(gateway, gateway, gateway, gateway, gateway, gateway, Access(appleEnabled: true), account, security);
+        }
         public IntegrationSetupService Setup(string installation, bool appleEnabled = false, DbCommandInterceptor? interceptor = null)
         {
             var current = new CurrentInstallation(); current.BindOnce(installation);
             var factory = Factory(installation, interceptor);
-            return new(factory, new Catalog(), Executor, secrets, protection, Clock, new(factory), current, changes, gate,
-                billing: Access(appleEnabled));
+            return new(factory, new Catalog(), Executor, secrets, Clock, current, changes, gate,
+                new IntegrationManagerAccess(new(factory), new FixtureInstallationAuthorizer(new(factory)), Access(appleEnabled)), new IntegrationConfigurationResolver(secrets),
+                new IntegrationSelectionTokens(protection), new IntegrationDeviceBindingWriter(), new IntegrationConfigurationWriter(secrets, Clock, new IntegrationConnectionLifecycle(Clock)), new IntegrationConnectionLifecycle(Clock),
+                billing: Access(appleEnabled), quota: new TrialSocketQuota(Access(appleEnabled)));
         }
         public DynamicSocketGateway Gateway(string installation, bool appleEnabled = false) => new(
             new IntegrationRegistry(Factory(installation), secrets), Executor, Factory(installation), Clock, Access(appleEnabled));
@@ -687,10 +709,11 @@ public class BillingSqlServerTests
                 builder.Services.AddSingleton(options);
                 builder.Services.AddSingleton<TimeProvider>(clock);
                 builder.Services.AddAppleBilling(new AppleBillingOptions());
-                builder.Services.AddScoped<BillingAccessService>();
+                builder.Services.AddBillingAccess();
                 builder.Services.AddScoped<CurrentBillingAccount>();
                 builder.Services.AddScoped<MobileAuthService>();
                 builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddSingleton<IDataProtectionProvider>(protection);
                 builder.Services.AddSingleton(secrets);
                 builder.Services.AddSingleton(changes);
@@ -698,7 +721,14 @@ public class BillingSqlServerTests
                 builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>, RequestDbContextFactory>();
                 builder.Services.AddSingleton<IIntegrationProviderCatalog>(new Catalog());
                 builder.Services.AddSingleton<IIntegrationSetupExecutor>(executor);
-                builder.Services.AddScoped<IntegrationSetupService>();
+                builder.Services.AddScoped<IInstallationAccessAuthorizer, InstallationAccessAuthorizer>();
+                builder.Services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
+            builder.Services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
+            builder.Services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
+            builder.Services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
+            builder.Services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
+            builder.Services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
+            builder.Services.AddScoped<IntegrationSetupService>();
                 builder.Services.AddSingleton(new IntegrationOAuthOptions());
                 builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
                 builder.Services.AddSingleton<IntegrationOAuthService>();

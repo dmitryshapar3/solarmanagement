@@ -88,7 +88,7 @@ public class ExportSalesApiTests
             }
             else
             {
-                Assert.Single(result.Buckets.Where(bucket => bucket.ExpectedHours > 0));
+                Assert.Single(result.Buckets, bucket => bucket.ExpectedHours > 0);
                 Assert.All(result.Buckets.Where(bucket => bucket.ExpectedHours == 0), bucket =>
                 {
                     Assert.Null(bucket.ExportKwh);
@@ -280,6 +280,7 @@ public class ExportSalesApiTests
                     .AddScheme<AuthenticationSchemeOptions, SyntheticAuthentication>(AuthenticationScheme, _ => { })
                     .AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
                 builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddAuthorization();
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
                 builder.Services.AddScoped(_ => factory.CreateDbContext());

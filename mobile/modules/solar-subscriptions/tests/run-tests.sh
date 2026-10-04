@@ -12,9 +12,8 @@ xcodebuild build-for-testing \
   -project "$script_root/.build/SolarStoreKit.xcodeproj" -scheme SolarStoreKit \
   -configuration Debug -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$solar_storekit_simulator" \
-  -derivedDataPath "$script_root/.build/DerivedData" CODE_SIGNING_ALLOWED=NO \
+  -derivedDataPath "$script_root/.build/DerivedData" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
   > "$script_root/.build/build.log" 2>&1
-codesign --force --deep --sign - "$script_root/.build/DerivedData/Build/Products/Debug-iphonesimulator/SolarStoreKitHost.app"
 codesign --verify --deep --strict "$script_root/.build/DerivedData/Build/Products/Debug-iphonesimulator/SolarStoreKitHost.app"
 # There is one StoreKit test environment: run serially, never in parallel.
 solar_storekit_xctestrun=("$script_root"/.build/DerivedData/Build/Products/SolarStoreKit_*.xctestrun)

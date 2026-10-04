@@ -7,8 +7,8 @@ namespace DeyeSolar.Web.Api;
 internal static class ApiAuthorization
 {
     public static readonly AuthorizationPolicy BearerUser = new AuthorizationPolicyBuilder(MobileBearerAuthenticationHandler.SchemeName)
-        .RequireAuthenticatedUser().RequireClaim(InstallationIds.ClaimType).Build();
+        .RequireAuthenticatedUser().Build();
     public static readonly AuthorizationPolicy AuthenticatedUser = new AuthorizationPolicyBuilder(
         IdentityConstants.ApplicationScheme, MobileBearerAuthenticationHandler.SchemeName)
-        .RequireAuthenticatedUser().RequireClaim(InstallationIds.ClaimType).Build();
+        .RequireAuthenticatedUser().Build();
 }

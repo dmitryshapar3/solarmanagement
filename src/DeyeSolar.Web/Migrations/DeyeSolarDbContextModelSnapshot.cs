@@ -17,10 +17,93 @@ namespace DeyeSolar.Web.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.0")
+                .HasAnnotation("ProductVersion", "8.0.31")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DeyeSolar.Domain.Billing.AppleSubscription", b =>
+                {
+                    b.Property<string>("OriginalTransactionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("AppAccountToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("GracePeriodExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsFreeTrial")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("ObservationStartedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("SourceSignedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransactionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("OriginalTransactionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("AppleSubscriptions");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Domain.Billing.BillingAccount", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("AppAccountToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("TrialStartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("AppAccountToken")
+                        .IsUnique();
+
+                    b.ToTable("BillingAccounts");
+                });
 
             modelBuilder.Entity("DeyeSolar.Domain.Models.TriggerRule", b =>
                 {
@@ -93,87 +176,43 @@ namespace DeyeSolar.Web.Migrations
                     b.ToTable("TriggerRules");
                 });
 
-            modelBuilder.Entity("DeyeSolar.Web.Billing.AppleSubscription", b =>
+            modelBuilder.Entity("DeyeSolar.Web.Data.AccountSessionEntity", b =>
                 {
-                    b.Property<string>("OriginalTransactionId")
+                    b.Property<string>("TokenHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<Guid>("AppAccountToken")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<DateTimeOffset>("CheckedAt")
-                        .HasColumnType("datetimeoffset");
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("Environment")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
-                    b.Property<DateTimeOffset?>("ExpiresAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("GracePeriodExpiresAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset?>("InvalidatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("IsFreeTrial")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset>("ObservationStartedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("ProductId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<DateTimeOffset>("SourceSignedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<string>("TransactionId")
-                        .IsRequired()
+                    b.Property<string>("InstallationId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("SecurityStamp")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
-                    b.HasKey("OriginalTransactionId");
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
-                    b.HasIndex("UserId");
+                    b.HasKey("TokenHash");
 
-                    b.ToTable("AppleSubscriptions");
-                });
+                    b.HasIndex("ExpiresAt");
 
-            modelBuilder.Entity("DeyeSolar.Web.Billing.BillingAccount", b =>
-                {
-                    b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(450)");
+                    b.HasIndex("UserId", "CreatedAt");
 
-                    b.Property<Guid>("AppAccountToken")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("TrialStartedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("UserId");
-
-                    b.HasIndex("AppAccountToken")
-                        .IsUnique();
-
-                    b.ToTable("BillingAccounts");
+                    b.ToTable("AccountSessions");
                 });
 
             modelBuilder.Entity("DeyeSolar.Web.Data.AppSetting", b =>
@@ -269,6 +308,13 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("OffboardingUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool?>("OffboardingWasEnabled")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -744,6 +790,8 @@ namespace DeyeSolar.Web.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExpiresAt");
+
                     b.HasIndex("StateHash")
                         .IsUnique();
 
@@ -958,6 +1006,24 @@ namespace DeyeSolar.Web.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("DeyeSolar.Domain.Billing.AppleSubscription", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Domain.Billing.BillingAccount", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithOne()
+                        .HasForeignKey("DeyeSolar.Domain.Billing.BillingAccount", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("DeyeSolar.Domain.Models.TriggerRule", b =>
                 {
                     b.HasOne("DeyeSolar.Web.Data.Installation", null)
@@ -967,20 +1033,11 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("DeyeSolar.Web.Billing.AppleSubscription", b =>
+            modelBuilder.Entity("DeyeSolar.Web.Data.AccountSessionEntity", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("DeyeSolar.Web.Billing.BillingAccount", b =>
-                {
-                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
-                        .WithOne()
-                        .HasForeignKey("DeyeSolar.Web.Billing.BillingAccount", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

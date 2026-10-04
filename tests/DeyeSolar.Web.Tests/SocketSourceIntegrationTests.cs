@@ -251,6 +251,7 @@ public class SocketSourceIntegrationTests
         {
             base.OnModelCreating(builder);
             builder.Entity<Installation>().Property(i => i.CreatedAt).HasConversion<long>();
+            builder.Entity<IntegrationCommandEntity>().Property(i => i.CreatedAt).HasConversion<long>();
         }
     }
 
@@ -281,8 +282,11 @@ public class SocketSourceIntegrationTests
         {
             var current = new CurrentInstallation(); current.BindOnce(installation);
             var factory = Factory(installation);
-            return new(factory, new UnusedSetup(), new UnusedSetup(), Secrets, _protection, TimeProvider.System,
-                new(factory), current, new(NullLogger<IntegrationChangeNotifier>.Instance), new());
+            return new(factory, new UnusedSetup(), new UnusedSetup(), Secrets, TimeProvider.System,
+                current, new(NullLogger<IntegrationChangeNotifier>.Instance), new(),
+                new IntegrationManagerAccess(new(factory), new FixtureInstallationAuthorizer(new(factory))),
+                new IntegrationConfigurationResolver(Secrets), new IntegrationSelectionTokens(_protection), new IntegrationDeviceBindingWriter(),
+                new IntegrationConfigurationWriter(Secrets, TimeProvider.System, new IntegrationConnectionLifecycle(TimeProvider.System)), new IntegrationConnectionLifecycle(TimeProvider.System));
         }
         public DynamicSocketGateway Sockets(string installation) => new(new IntegrationRegistry(Factory(installation), Secrets), Executor, Factory(installation), TimeProvider.System);
         public async Task<IntegrationDeviceBindingEntity> BindingAsync(Guid device)
@@ -359,6 +363,9 @@ public class SocketSourceIntegrationTests
                 return Task.FromResult(IntegrationJson.Element(new ProviderSocketCommandResult(parameters.GetProperty("commandId").GetString()!,
                     Pending ? "Pending" : "Acknowledged", Pending ? "fixture-operation" : null)));
             }
+            if (method == "socket.read") return Task.FromResult(IntegrationJson.Element(new ProviderSocketTelemetry(
+                parameters.GetProperty("remoteId").GetString()!, parameters.GetProperty("channel").GetString(),
+                false, true, 0, DateTimeOffset.UtcNow.AddSeconds(-1), DateTimeOffset.UtcNow)));
             if (method != "inverter.read") throw new InvalidOperationException("Unexpected fixture operation.");
             var remote = parameters.GetProperty("remoteId").GetString()!;
             var observed = DateTimeOffset.UtcNow.AddSeconds(-2);

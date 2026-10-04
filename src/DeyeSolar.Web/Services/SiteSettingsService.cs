@@ -13,7 +13,7 @@ public sealed record SolarSiteSettings(double Latitude, double Longitude, string
 public sealed record SalesSiteSettings(string ContractStartDate, string TimeZoneId, bool PayNegativePrices);
 public sealed record SiteSettingsDto(SolarSiteSettings SolarEstimate, SalesSiteSettings SolarSales, string SelectedDeviceSn = "");
 
-public sealed class SiteSettingsService(AppSettingsService settings, IOptionsMonitor<InverterConnectionOptions> inverter,
+public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSettingsWriter writer, IOptionsMonitor<InverterConnectionOptions> inverter,
     IInverterDataSource source)
 {
     private async Task<string> SelectedDeviceAsync()
@@ -62,12 +62,15 @@ public sealed class SiteSettingsService(AppSettingsService settings, IOptionsMon
         if (solar.DeyeSolarPowerIsPvDcConfirmed && (selectedSn.Length == 0 || solar.DeyeSolarPowerConfirmedDeviceSn != selectedSn))
             throw new ArgumentException("Save and select the primary inverter in Integrations, then reload before confirming its PV readings.");
         // Save only editable properties; advanced model assumptions and server keys remain in place.
-        await settings.SaveSectionAsync(SolarEstimateOptions.Section, new
+        await writer.SaveSectionsAsync(new Dictionary<string, object>
+        {
+            [SolarEstimateOptions.Section] = new
         {
             solar.Latitude, solar.Longitude, LocationLabel = solar.LocationLabel.Trim(), solar.TimeZoneId,
             solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
             solar.DeyeSolarPowerIsPvDcConfirmed, DeyeConfirmedDeviceSn = solar.DeyeSolarPowerIsPvDcConfirmed ? selectedSn : ""
+            },
+            [SolarSalesOptions.Section] = draft.SolarSales
         });
-        await settings.SaveSectionAsync(SolarSalesOptions.Section, draft.SolarSales);
     }
 }

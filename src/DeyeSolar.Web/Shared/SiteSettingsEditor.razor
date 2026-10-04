@@ -1,3 +1,4 @@
+@inject DeyeSolar.Web.Auth.InteractiveSecurityContext Security
 @using DeyeSolar.Domain.Options
 @using DeyeSolar.Web.Services
 @using System.Globalization
@@ -86,6 +87,7 @@ else
         new(_contractStart, _sales.TimeZoneId, _sales.PayNegativePrices));
     private async Task SaveAsync()
     {
+        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
         if (_busy) return;
         _message = null; _success = false;
         var draft = Draft();
@@ -98,6 +100,7 @@ else
     }
     private async Task TestAsync()
     {
+        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
         if (_busy) return;
         _busy = true; _message = null; _success = false;
         try

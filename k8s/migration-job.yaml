@@ -1,0 +1,78 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: deye-solar-migrate-
+  namespace: deye-solar
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: migrate
+          image: SOLAR_RELEASE_IMAGE
+          args: ["--migrate-only"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-database
+                  key: migration-connection
+            - name: Operations__StartupTimeoutSeconds
+              value: "540"
+            - name: Operations__RuntimeDatabaseUser
+              value: solar_runtime
+            - name: Operations__RuntimeDatabasePasswordFile
+              value: /run/secrets/runtime-password
+            - name: Auth__BootstrapAdminPassword
+              valueFrom:
+                secretKeyRef:
+                  name: deye-solar-database
+                  key: bootstrap-password
+                  optional: true
+          volumeMounts:
+            - name: database-secret
+              mountPath: /run/secrets
+              readOnly: true
+            - name: integration-packages
+              mountPath: /data/integration-packages
+            - name: protection-keys
+              mountPath: /data/keys
+            - name: integration-bundle
+              mountPath: /app/integration-bundle
+              subPath: integration-bundle
+              readOnly: true
+            - name: integration-bundle
+              mountPath: /app/integration-bootstrap.json
+              subPath: integration-bootstrap.json
+              readOnly: true
+      volumes:
+        - name: database-secret
+          secret:
+            secretName: deye-solar-database
+            defaultMode: 0440
+            items:
+              - key: runtime-password
+                path: runtime-password
+        - name: integration-packages
+          persistentVolumeClaim:
+            claimName: deye-solar-integration-packages
+        - name: protection-keys
+          persistentVolumeClaim:
+            claimName: deye-solar-protection-keys
+        - name: integration-bundle
+          persistentVolumeClaim:
+            claimName: deye-solar-integration-bundle

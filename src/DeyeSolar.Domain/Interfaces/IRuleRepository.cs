@@ -2,12 +2,7 @@ using DeyeSolar.Domain.Models;
 
 namespace DeyeSolar.Domain.Interfaces;
 
-public interface IRuleRepository
+public interface IRuleRepository : IConfigurationRules
 {
-    Task<List<TriggerRule>> GetAllAsync(CancellationToken ct);
-    Task<TriggerRule?> GetByIdAsync(int id, CancellationToken ct);
-    Task<TriggerRule> CreateAsync(TriggerRule rule, CancellationToken ct);
-    Task UpdateAsync(TriggerRule rule, CancellationToken ct);
     Task RecordEvaluationAsync(int ruleId, DateTime when, CancellationToken ct);
-    Task DeleteAsync(int id, CancellationToken ct);
 }

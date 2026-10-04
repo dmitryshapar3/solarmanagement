@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using DeyeSolar.Web.Api;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using DeyeSolar.Web.Data;
@@ -27,6 +30,16 @@ public static class AuthServiceCollectionExtensions
         });
     }
 
+    public static IServiceCollection AddAccountSecurity(this IServiceCollection services)
+    {
+        services.AddScoped<AccountSecurityService>();
+        services.AddScoped<AccountFreshProofVerifier>();
+        services.AddScoped<AccountDataExporter>();
+        services.AddScoped<AccountDeletionService>();
+        services.AddScoped<AccountOffboardingRecovery>();
+        return services;
+    }
+
     public static IServiceCollection AddAccountIdentities(this IServiceCollection services, AuthProviderOptions providers)
     {
         if (!Uri.TryCreate(providers.PublicBaseUrl, UriKind.Absolute, out var publicUri) || publicUri.Scheme != "https"
@@ -37,6 +50,61 @@ public static class AuthServiceCollectionExtensions
         services.AddScoped<InstallationMembershipService>();
         services.AddScoped<IUserClaimsPrincipalFactory<IdentityUser>, InstallationClaimsPrincipalFactory>();
         services.AddScoped<AccountIdentityService>();
+        services.TryAddSingleton<IAccountSessionStore>(provider => provider.GetRequiredService<MobileSessionStore>());
+        services.AddScoped<IInstallationAccessAuthorizer, InstallationAccessAuthorizer>();
+        services.AddScoped<InteractiveSecurityContext>();
+        services.AddHttpContextAccessor();
+        services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.Zero);
+        services.ConfigureApplicationCookie(options =>
+        {
+            var signingIn = options.Events.OnSigningIn;
+            options.Events.OnSigningIn = async context =>
+            {
+                await signingIn(context);
+                var principal = context.Principal!;
+                var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+                var installationId = principal.FindFirstValue(InstallationIds.ClaimType);
+                if (userId is null) return;
+                var store = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionStore>();
+                var session = await store.CreateAsync(userId, principal.Identity?.Name ?? "", principal.FindFirstValue(InstallationAccessAuthorizer.StampClaim), installationId, context.HttpContext.RequestAborted);
+                var identity = (ClaimsIdentity)principal.Identity!;
+                if (installationId is null) identity.AddClaim(new(InstallationIds.ClaimType, ""));
+                identity.AddClaim(new(InstallationAccessAuthorizer.SessionClaim, session.Token));
+            };
+            var signingOut = options.Events.OnSigningOut;
+            options.Events.OnSigningOut = async context =>
+            {
+                if (context.HttpContext.User.FindFirstValue(InstallationAccessAuthorizer.SessionClaim) is { } token)
+                    await context.HttpContext.RequestServices.GetRequiredService<IAccountSessionStore>().RevokeAsync(token, context.HttpContext.RequestAborted);
+                await signingOut(context);
+            };
+            var validating = options.Events.OnValidatePrincipal;
+            options.Events.OnValidatePrincipal = async context =>
+            {
+                var token = context.Principal?.FindFirstValue(InstallationAccessAuthorizer.SessionClaim);
+                await validating(context);
+                if (context.Principal?.Identity?.IsAuthenticated != true) return;
+                var store = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionStore>();
+                if (token is null)
+                {
+                    if (store is MobileSessionStore { IsPersistent: true }) context.RejectPrincipal();
+                    return;
+                }
+                var session = await store.FindAsync(token, context.HttpContext.RequestAborted);
+                if (session is null || session.UserId != context.Principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                    || session.SecurityStamp != context.Principal.FindFirstValue(InstallationAccessAuthorizer.StampClaim)) { context.RejectPrincipal(); return; }
+                var identity = (ClaimsIdentity)context.Principal.Identity;
+                foreach (var claim in identity.FindAll(InstallationIds.ClaimType).Concat(identity.FindAll(InstallationIds.RoleClaimType)).ToArray()) identity.RemoveClaim(claim);
+                // Identity regeneration may choose a different remaining membership. Account
+                // authentication survives membership removal; tenant selection never follows it.
+                identity.AddClaim(new(InstallationIds.ClaimType, session.InstallationId ?? ""));
+                var memberships = context.HttpContext.RequestServices.GetRequiredService<InstallationMembershipService>();
+                if (await memberships.ResolveAsync(context.Principal, context.HttpContext.RequestAborted) is { } member)
+                    identity.AddClaim(new(InstallationIds.RoleClaimType, member.Role));
+                if (identity.FindFirst(InstallationAccessAuthorizer.SessionClaim) is null)
+                    identity.AddClaim(new(InstallationAccessAuthorizer.SessionClaim, token));
+            };
+        });
         services.AddSingleton<OneTimeVerificationService>();
         services.AddSingleton<GoogleMobileTicketStore>();
         services.AddSingleton<IIdentityVerificationDelivery, IdentityVerificationDelivery>();

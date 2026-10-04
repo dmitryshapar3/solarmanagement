@@ -67,6 +67,8 @@ internal sealed class TestProvider(WorkerConfiguration configuration) : IIntegra
             IntegrationJson.Element(new { capabilities = new { canSwitch = true, canMeasurePower = true } })) });
         if (method == "socket.read")
         {
+            if (parameters.TryGetProperty("failureKind", out var failureKind))
+                throw new IntegrationOperationException(Enum.Parse<IntegrationFailureKind>(failureKind.GetString()!));
             if (parameters.GetProperty("remoteId").GetString() == "unavailable")
                 throw new InvalidOperationException("Fixture device is unavailable; private provider details must not escape.");
             return IntegrationJson.Element(new ProviderSocketTelemetry(parameters.GetProperty("remoteId").GetString()!, "0",

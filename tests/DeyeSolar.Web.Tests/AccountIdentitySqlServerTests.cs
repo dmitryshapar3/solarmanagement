@@ -101,7 +101,7 @@ public class AccountIdentitySqlServerTests
         var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => host.CompleteAsync(proof)));
         try
         {
-            Assert.Single(responses.Where(response => response.StatusCode == HttpStatusCode.OK));
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
             Assert.Equal(3, responses.Count(response => response.StatusCode == HttpStatusCode.BadRequest));
         }
         finally { foreach (var response in responses) response.Dispose(); }
@@ -149,7 +149,7 @@ public class AccountIdentitySqlServerTests
     }
 
     [SqlServerFact]
-    public async Task LinkingProofCannotBeUsedByAnotherBearerOrRevokedMembership()
+    public async Task LinkingProofRequiresTheSameLiveAccountSessionAndSurvivesMembershipRemoval()
     {
         await using var host = await Host.StartAsync();
         var first = await host.RegisterAsync("first@example.test");
@@ -174,6 +174,10 @@ public class AccountIdentitySqlServerTests
             await db.SaveChangesAsync();
         }
         var revokedState = await host.ReadStateAsync();
+        using (var removedMembership = await host.StartResponseAsync("removed-membership@example.test", "link", first.Token))
+            Assert.Equal(HttpStatusCode.OK, removedMembership.StatusCode);
+        Assert.Equal(revokedState, await host.ReadStateAsync());
+        await host.RevokeSessionAsync(first.Token);
         using (var revoked = await host.StartResponseAsync("revoked@example.test", "link", first.Token))
             Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
         Assert.Equal(revokedState, await host.ReadStateAsync());
@@ -282,6 +286,7 @@ public class AccountIdentitySqlServerTests
         public Factory Factory { get; } = factory;
         public Clock Clock { get; } = clock;
         public Delivery Delivery { get; } = delivery;
+        public Task RevokeSessionAsync(string token) => app.Services.GetRequiredService<IAccountSessionStore>().RevokeAsync(token);
 
         public async Task<HttpResponseMessage> LanguageAsync(HttpMethod method, string? token,
             object? body = null, string header = "en")
@@ -453,6 +458,7 @@ public class AccountIdentitySqlServerTests
                 builder.Services.AddScoped<UiText>();
                 builder.Services.AddScoped<UserLanguageService>();
                 builder.Services.AddSingleton<MobileSessionStore>();
+            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 var clock = new Clock();
                 var delivery = new Delivery();
                 builder.Services.AddSingleton<TimeProvider>(clock);

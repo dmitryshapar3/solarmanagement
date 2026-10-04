@@ -19,7 +19,7 @@ test("Google linking exchanges proof with the original bearer and keeps that ses
   const calls: { url: string; authorization?: string; body?: string }[] = [];
   const client = new ApiClient({ baseUrl, token: "original-account", transport: async (url, init) => {
     calls.push({ url, authorization: init.headers.Authorization, body: init.body });
-    return response(200, { token: "unused-new-session", username: "same-owner" });
+    return response(200, new URL(url).pathname === "/api/auth/session" ? { authenticated: true, username: "same-owner" } : { token: "unused-new-session", username: "same-owner", expiresAt: "2026-11-04T12:00:00Z" });
   } });
   const api = new DeyeSolarApi(client);
   const sessions = new SessionOperations();
@@ -39,7 +39,7 @@ for (const status of [401, 409, 503]) {
     const authorizations: (string | undefined)[] = [];
     const client = new ApiClient({ baseUrl, token: "original-account", onUnauthorized: () => { expired++; }, transport: async (_url, init) => {
       authorizations.push(init.headers.Authorization);
-      return linking ? response(status, { message: "The identity could not be linked." }) : response(200, { authenticated: true });
+      return linking ? response(status, { message: "The identity could not be linked." }) : response(200, { authenticated: true, username: "same-owner" });
     } });
     const api = new DeyeSolarApi(client);
     await assert.rejects(linkGoogleIdentity(api, new SessionOperations().capture(), async () => proof),
@@ -64,7 +64,7 @@ for (const action of ["logout", "replacement-account", "replacement-endpoint"] a
     const calls: { url: string; authorization?: string }[] = [];
     const client = new ApiClient({ baseUrl, token: "original-account", transport: async (url, init) => {
       calls.push({ url, authorization: init.headers.Authorization });
-      return response(200, { authenticated: true });
+      return response(200, { authenticated: true, username: "same-owner" });
     } });
     const api = new DeyeSolarApi(client);
     const sessions = new SessionOperations();

@@ -1,3 +1,4 @@
+using SolarManagement.Integrations.WorkerSdk;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -13,9 +14,11 @@ public sealed class SungrowCloudProvider : CloudInverterProvider
     public override int MinimumOperationTimeoutSeconds => 180;
     private static readonly string[] Points = ["13003", "13141", "13150", "13126", "13138", "13139", "13143", "13149", "13121", "13119"];
     private readonly Dictionary<string, JsonElement> _devices = new(StringComparer.Ordinal);
-    public SungrowCloudProvider(WorkerConfiguration configuration) : this(configuration, null) { }
+    public SungrowCloudProvider(WorkerConfiguration configuration) : this(configuration, (HttpClient?)null) { }
     public SungrowCloudProvider(WorkerConfiguration configuration, HttpClient? http)
-        : base(configuration, http, "https://gateway.isolarcloud.eu") { }
+        : this(configuration, CloudProviderTransport.Create(configuration, http)) { }
+    public SungrowCloudProvider(WorkerConfiguration configuration, ICloudJsonTransport transport)
+        : base(configuration, transport, "https://gateway.isolarcloud.eu") { }
 
     private async Task<JsonElement> PostAsync(string operation, Dictionary<string, object?> body, CancellationToken ct)
     {

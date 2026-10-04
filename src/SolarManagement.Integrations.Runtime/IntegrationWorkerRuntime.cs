@@ -60,10 +60,10 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
                 finally { _gate.Release(); }
                 return result;
             }
-            catch (WorkerOperationException) when (method is "inverter.read" or "inverter.history" or "socket.read" or "socket.inventory")
+            catch (WorkerOperationException failure) when (method is "inverter.read" or "inverter.history" or "socket.read" or "socket.inventory")
             {
                 // Read failure is scoped to the requested device. Commands still require the uncertain-result path.
-                throw new InvalidOperationException("The integration rejected the operation.");
+                throw new IntegrationOperationException(failure.Kind);
             }
             catch (Exception error)
             {
@@ -75,7 +75,7 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
                 }
                 finally { _gate.Release(); }
                 await worker.Connection.DisposeAsync();
-                if (error is WorkerOperationException) throw new InvalidOperationException("The integration rejected the operation.");
+                if (error is WorkerOperationException failure) throw new IntegrationOperationException(failure.Kind);
                 throw;
             }
             finally { worker.Calls.Release(); }
@@ -123,7 +123,7 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
             await current.Connection.DisposeAsync();
         }
         if (_failures.TryGetValue(session.InstanceId, out var failure) && failure.RetryAt > DateTimeOffset.UtcNow)
-            throw new InvalidOperationException("Integration worker is backing off after a failure.");
+            throw new IntegrationOperationException(IntegrationFailureKind.Transient);
         await EnsureCapacityAsync();
         // Remember only fencing metadata and a fingerprint; evicted sessions must not retain their credentials.
         _known[session.InstanceId] = new(session.InstallationId, session.Package, session.ConfigurationRevision, session.Generation, hash, false);
@@ -178,7 +178,7 @@ public sealed class IntegrationWorkerRuntime : IIntegrationRuntimeExecutor, IInt
         catch (Exception error)
         {
             await worker.DisposeAsync();
-            if (error is WorkerOperationException) throw new InvalidOperationException("The integration rejected the operation.");
+            if (error is WorkerOperationException failure) throw new IntegrationOperationException(failure.Kind);
             throw;
         }
     }

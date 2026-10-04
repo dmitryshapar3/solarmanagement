@@ -71,7 +71,7 @@ test("integration APIs send read-only draft probes with version fencing and opaq
   const api = new IntegrationApi(new ApiClient({ baseUrl: "https://solar.example", token: "owner-token", transport: async (url, options) => {
     calls.push({ path: new URL(url).pathname, method: options.method, body: options.body ? JSON.parse(options.body) : undefined,
       bearer: options.headers.Authorization });
-    return { status: 200, ok: true, text: async () => "{}" };
+    return { status: 200, ok: true, text: async () => JSON.stringify(fixtureResponse(new URL(url).pathname, options.method)) };
   } }));
   const { provider, configuration } = integrationFixture();
   const change = integrationChange(createIntegrationDraft(provider, configuration));
@@ -104,9 +104,9 @@ test("configuration conflicts remain failures and canceled integration responses
 test("only provider setup operations receive the extended deadline; inventory and command deadlines stay bounded", async t => {
   const timer = t.mock.method(globalThis, "setTimeout");
   const calls: { path: string; deadline: number }[] = [];
-  const api = new IntegrationApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url) => {
+  const api = new IntegrationApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url, options) => {
     calls.push({ path: new URL(url).pathname, deadline: timer.mock.calls.at(-1)!.arguments[1] as number });
-    return { status: 200, ok: true, text: async () => "{}" };
+    return { status: 200, ok: true, text: async () => JSON.stringify(fixtureResponse(new URL(url).pathname, options.method)) };
   } }));
   const { provider, configuration } = integrationFixture();
   const change = integrationChange(createIntegrationDraft(provider, configuration));
@@ -144,3 +144,15 @@ test("the extended transport deadline accepts its upper bound and still aborts a
   assert.equal(requests, 1);
   assert.equal(transportSignal!.aborted, true);
 });
+
+function fixtureResponse(path: string, method: string): unknown {
+  const { provider, configuration } = integrationFixture();
+  if (path.endsWith("/test")) return { success: true, code: "ok", message: "Ready" };
+  if (path.endsWith("/discovery")) return { devices: [], expiresAt: "2026-11-04T12:00:00Z" };
+  if (path.endsWith("/selection")) return { id: "socket-a", instanceId: "instance-a", kind: "smart-socket", name: "Socket", remoteId: "remote", isDefault: false };
+  if (path.endsWith("/integration-providers")) return { providers: [provider], revision: "fixture" };
+  if (path.endsWith("/devices")) return [];
+  if (path.includes("/commands")) return method === "GET" && path.endsWith("/commands") ? []
+    : { deviceId: "socket-a", commandId: "command-a", isOn: true, status: "pending", rejection: null, createdAt: "2026-10-04T12:00:00Z", completedAt: null };
+  return configuration.instance;
+}
