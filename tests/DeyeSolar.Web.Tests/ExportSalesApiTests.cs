@@ -1,3 +1,4 @@
+using SolarManagement.Inverters.Contracts;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -287,7 +288,7 @@ public class ExportSalesApiTests
                 var clock = new FixedClock();
                 builder.Services.AddSingleton<TimeProvider>(clock);
                 builder.Services.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptions<SolarSalesOptions>(new()));
-                builder.Services.AddSingleton<IOptionsMonitor<DeyeCloudOptions>>(new FixedOptions<DeyeCloudOptions>(new() { DeviceSn = "selected" }));
+                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new FixedOptions<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
                 builder.Services.AddSingleton<IExportReadingStore, ExportReadingStore>();
                 builder.Services.AddSingleton<IExportPriceStore, ExportPriceStore>();
                 var history = new RejectingHistory();

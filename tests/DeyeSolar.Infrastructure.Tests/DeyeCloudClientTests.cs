@@ -359,6 +359,30 @@ public class DeyeCloudClientTests
         Assert.Null(result.GridDeviceSn);
     }
 
+    [Fact]
+    public async Task NormalizedReadingKeepsMissingSocDistinctFromRealZeroAndRejectsUnknownMeasurementTime()
+    {
+        async Task<SolarManagement.Integrations.Contracts.ProviderInverterTelemetry> Read(string payload)
+        {
+            var handler = new QueueHttpMessageHandler(
+                _ => Task.FromResult(JsonResponse(HttpStatusCode.OK, """{"success":true,"accessToken":"test-token","expiresIn":3600}""")),
+                _ => Task.FromResult(JsonResponse(HttpStatusCode.OK, payload)));
+            return await CreateClient(handler, new CapturingLogger<DeyeCloudClient>()).ReadNormalizedDataAsync(default);
+        }
+        var missing = await Read(LatestPayload("1700000000", "0", "W"));
+        Assert.Null(missing.BatterySoc.Value);
+        Assert.Equal(SolarManagement.Integrations.Contracts.ProviderMeasurementQuality.Missing, missing.BatterySoc.Quality);
+        Assert.Equal(0m, missing.SolarPower.Value);
+        Assert.Equal(SolarManagement.Integrations.Contracts.ProviderMeasurementQuality.Good, missing.SolarPower.Quality);
+        var zero = await Read(LatestPayload("1700000000", "0", "W").Replace("\"dataList\": [", "\"dataList\": [{\"key\":\"SOC\",\"value\":0},"));
+        Assert.Equal(0m, zero.BatterySoc.Value);
+        Assert.Equal(SolarManagement.Integrations.Contracts.ProviderMeasurementQuality.Good, zero.BatterySoc.Quality);
+        var unknownTime = await Read(LatestPayload("null", "4100", "W"));
+        Assert.Null(unknownTime.SolarPower.Value);
+        Assert.Equal(SolarManagement.Integrations.Contracts.ProviderMeasurementQuality.Invalid, unknownTime.SolarPower.Quality);
+        Assert.Equal("Unknown", missing.SolarBasis);
+    }
+
     private static Task<DeyeSolar.Domain.Models.InverterData> ReadLatestAsync(string payload)
     {
         var handler = new QueueHttpMessageHandler(

@@ -64,3 +64,18 @@ test("provided source metadata must establish recent aligned solar and grid read
   assert.equal(reportedPowerBalance(reading({ solarObservedAt: null, gridObservedAt: null, solarDeviceSn: null, gridDeviceSn: null }), now).watts, null);
   assert.equal(reportedPowerBalance(reading(), now).watts, 0); // Backward-compatible poll-only estimate is explicit in the UI.
 });
+
+test("explicit invalid power flags hide default zeros while real zero and legacy readings remain available", () => {
+  const zero = reading({ solarProduction: 0, gridConsumption: 0, batteryPower: 0, loadPower: 0 });
+  for (const key of ["batteryPowerValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"]) {
+    assert.equal(calculatePowerBalance({ ...zero, [key]: false }), null);
+    assert.equal(reportedPowerBalance({ ...zero, [key]: false }, now).watts, null);
+    assert.equal(calculatePowerBalance({ ...zero, [key]: true }), 0);
+    assert.equal(calculatePowerBalance({ ...zero, [key]: null }), 0);
+  }
+  assert.deepEqual(batteryFlow(0, false), { label: "Battery power", watts: null });
+  assert.deepEqual(batteryFlow(0, true), { label: "Battery idle", watts: 0 });
+  assert.deepEqual(batteryFlow(0, null), { label: "Battery idle", watts: 0 });
+  assert.equal(zero.batteryPower, 0);
+  assert.equal(zero.loadPower, 0);
+});

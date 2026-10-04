@@ -6,49 +6,37 @@ public class DeviceStatusSnapshot
 {
     private IReadOnlyList<DevicePowerInfo>? _current;
     private DateTimeOffset? _lastUpdated;
+    private readonly object _sync = new();
+    private long _epoch;
 
-    public IReadOnlyList<DevicePowerInfo>? Current => _current;
+    public IReadOnlyList<DevicePowerInfo>? Current { get { lock (_sync) return _current; } }
 
-    public DateTimeOffset? LastUpdated => _lastUpdated;
+    public DateTimeOffset? LastUpdated { get { lock (_sync) return _lastUpdated; } }
+    public long Epoch { get { lock (_sync) return _epoch; } }
 
     public event Action? OnDataUpdated;
 
     public void Clear()
     {
-        _current = null;
-        _lastUpdated = null;
+        lock (_sync) { _epoch++; _current = null; _lastUpdated = null; }
         OnDataUpdated?.Invoke();
     }
 
     public void Update(IReadOnlyList<DevicePowerInfo> devices)
     {
-        _current = devices;
-        _lastUpdated = DateTimeOffset.UtcNow;
+        lock (_sync) { _current = devices; _lastUpdated = DateTimeOffset.UtcNow; }
         OnDataUpdated?.Invoke();
     }
-
-    public void SetDeviceState(string entityId, bool isOn)
+    public bool TryUpdate(IReadOnlyList<DevicePowerInfo> devices, long expectedEpoch)
     {
-        if (_current == null)
-            return;
-
-        var updated = false;
-        var devices = _current
-            .Select(device =>
-            {
-                if (!string.Equals(device.Id, entityId, StringComparison.OrdinalIgnoreCase))
-                    return device;
-
-                updated = true;
-                return device with { Online = true, IsOn = isOn };
-            })
-            .ToList();
-
-        if (!updated)
-            return;
-
-        _current = devices;
-        _lastUpdated = DateTimeOffset.UtcNow;
+        lock (_sync)
+        {
+            if (_epoch != expectedEpoch) return false;
+            _current = devices;
+            _lastUpdated = DateTimeOffset.UtcNow;
+        }
         OnDataUpdated?.Invoke();
+        return true;
     }
+
 }

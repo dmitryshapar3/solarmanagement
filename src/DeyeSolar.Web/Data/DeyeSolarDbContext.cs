@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Data;
 
-public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
+public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
 {
     public DeyeSolarDbContext(DbContextOptions<DeyeSolarDbContext> options) : base(options) { }
     public DeyeSolarDbContext(DbContextOptions<DeyeSolarDbContext> options, string installationId) : base(options)
@@ -29,6 +29,7 @@ public class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        ConfigureDynamicIntegrations(modelBuilder);
         modelBuilder.Entity<Installation>(e =>
         {
             e.HasKey(i => i.Id);
@@ -151,6 +152,10 @@ public class Reading : IInstallationOwned
 {
     public string InstallationId { get; set; } = string.Empty;
     public int Id { get; set; }
+    public Guid? InverterId { get; set; }
+    public bool? BatterySocValid { get; set; }
+    public long ConfigurationRevision { get; set; }
+    public long RuntimeGeneration { get; set; }
     public DateTime Timestamp { get; set; }
     public int BatterySoc { get; set; }
     public double BatteryTemperature { get; set; }

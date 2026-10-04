@@ -53,7 +53,7 @@ export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", 
   return <><Card style={styles.card}>
     <TileHeader title="Electricity sales" loading={resource.loading} onRefresh={() => void resource.refresh()}
       onDetails={showDetails ? () => onDetails ? onDetails(period, selected) : navigation.navigate("SalesDetails", { period, date: selected }) : undefined} />
-    <StatusPill label="Deye estimate" tone="info" />
+    <StatusPill label="inverter estimate" tone="info" />
     {!compact ? <>
       <SegmentedControl options={[{ label: "Day", value: "Day" }, { label: "Month", value: "Month" }, { label: "Year", value: "Year" }]} value={period} onChange={setPeriod} />
       <PeriodNavigation caption={dateCaption(selected, period)} previous={periodAnchor(selected, period) > "2000-01-01"} next={periodAnchor(selected, period) < periodAnchor(today, period)}

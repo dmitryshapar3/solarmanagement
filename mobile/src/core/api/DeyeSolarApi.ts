@@ -1,4 +1,6 @@
 import { ApiClient, ApiError } from "./ApiClient";
+import { IntegrationApi } from "./IntegrationApi";
+import { SocketCommandCoordinator } from "./SocketCommandCoordinator";
 import {
   AuthResponse,
   Dashboard,
@@ -28,7 +30,14 @@ type DeyeDeviceSelectionRequest = {
 };
 
 export class DeyeSolarApi {
-  constructor(private readonly client: ApiClient) {}
+  readonly integrations: IntegrationApi;
+  readonly socketCommands: SocketCommandCoordinator;
+
+  constructor(private readonly client: ApiClient) {
+    this.integrations = new IntegrationApi(client);
+    this.socketCommands = new SocketCommandCoordinator(this.integrations);
+    client.onSessionChange(() => this.socketCommands.reset());
+  }
 
   getAuthOptions(signal?: AbortSignal): Promise<AuthOptions> {
     return this.client.request("/api/auth/options", { signal, skipUnauthorizedHandler: true });

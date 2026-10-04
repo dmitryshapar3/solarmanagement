@@ -1,0 +1,25 @@
+using System.Text.Json;
+using SolarManagement.Inverters.Contracts;
+
+namespace DeyeSolar.Web.Integrations;
+
+internal static class IntegrationCapabilities
+{
+    public static InverterCapabilities Read(IntegrationDeviceBindingEntity binding)
+    {
+        var unknown = new InverterCapabilities(false, false, false, false, false, SolarPowerBasis.Unknown);
+        try
+        {
+            using var json = JsonDocument.Parse(binding.MetadataJson);
+            if (json.RootElement.ValueKind != JsonValueKind.Object
+                || !json.RootElement.TryGetProperty("capabilities", out var value)
+                || value.ValueKind != JsonValueKind.Object) return unknown;
+            bool Flag(string name) => value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.True;
+            var basis = value.TryGetProperty("solarBasis", out var property) && property.ValueKind == JsonValueKind.String
+                && Enum.TryParse<SolarPowerBasis>(property.GetString(), out var parsed) && Enum.IsDefined(parsed)
+                ? parsed : SolarPowerBasis.Unknown;
+            return new(Flag("hasBattery"), Flag("hasSolarPower"), Flag("hasSignedGridPower"), Flag("hasLoadPower"), Flag("hasGridPowerHistory"), basis);
+        }
+        catch (JsonException) { return unknown; }
+    }
+}

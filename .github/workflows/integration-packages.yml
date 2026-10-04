@@ -1,0 +1,60 @@
+name: Integration packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build signed fixture deployment without production keys
+        shell: pwsh
+        run: |
+          $privateKey = Join-Path $env:RUNNER_TEMP 'fixture-private.pem'
+          $publicKey = Join-Path $env:RUNNER_TEMP 'fixture-public.pem'
+          dotnet run --project tools/SolarManagement.IntegrationPackager --configuration Release -- --generate-key $privateKey $publicKey
+          if ($LASTEXITCODE -ne 0) { throw 'Fixture key generation failed.' }
+          ./tools/Build-IntegrationDeployment.ps1 -SigningKeyPath $privateKey -PublicKeyPath $publicKey -OutputDirectory (Join-Path $env:RUNNER_TEMP 'solar-deployment') -IncludeWeb
+      - name: Verify host isolation and deployment archive digests
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import zipfile
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'solar-deployment'
+          settings = json.loads((root / 'integration-bootstrap.json').read_text(encoding='utf-8-sig'))
+          assert settings['Integrations']['KeyRingPath'] == '/data/keys/integrations'
+          assert 'Integrations__KeyRingPath=/data/keys/integrations' in Path('docker-compose.integrations.yml').read_text()
+          deployment = Path('k8s/deployment.yaml').read_text()
+          assert '- name: Integrations__KeyRingPath\n              value: "/data/keys/integrations"' in deployment
+          assert 'mountPath: /data/keys' in deployment
+          config = settings['IntegrationRuntime']
+          assert len(config['BootstrapPackages']) == 2
+          for entry in config['BootstrapPackages']:
+              archive = root / 'integration-bundle' / Path(entry['ArchivePath']).name
+              assert hashlib.sha256(archive.read_bytes()).hexdigest().upper() == entry['ExpectedSha256']
+              with zipfile.ZipFile(archive) as package:
+                  manifest = json.loads(package.read('manifest.json'))
+                  assert set(package.namelist()) == set(manifest['files']) | {'manifest.json', 'manifest.signature'}
+                  assert all(hashlib.sha256(package.read(name)).hexdigest().upper() == digest for name, digest in manifest['files'].items())
+                  assert not any('private' in name.lower() or name.endswith('.pem') for name in package.namelist())
+          assert 'PRIVATE KEY' not in (root / 'integration-bundle' / 'publisher-public-key.pem').read_text()
+          assert not list((root / 'web').glob('SolarManagement.Providers.*'))
+          assert not list((root / 'web').glob('SolarManagement.Integrations.WorkerSdk.*'))
+          print('Both signed packages are separate from the Web publish; every declared payload digest matches.')
+          PY

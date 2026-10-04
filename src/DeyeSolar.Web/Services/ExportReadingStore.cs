@@ -1,5 +1,6 @@
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Integrations;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Services;
@@ -43,6 +44,15 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
 
         await using var db = await factory.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var identity = samples[0];
+        if (identity.InverterId is { } deviceId)
+        {
+            if (deviceSn != deviceId.ToString("D") || samples.Any(s => s.InverterId != deviceId
+                || s.ConfigurationRevision != identity.ConfigurationRevision || s.RuntimeGeneration != identity.RuntimeGeneration))
+                throw new InvalidDataException("A history batch contains multiple source generations.");
+            if (!await IntegrationPersistenceGuard.LockCurrentAsync(db, deviceId, identity.ConfigurationRevision, identity.RuntimeGeneration, ct))
+                throw new InvalidOperationException("The inverter connection changed before history was saved.");
+        }
         // Stable lock order also applies when overlapping backfill batches run concurrently.
         foreach (var sample in samples.DistinctBy(sample => sample.Timestamp).OrderBy(sample => sample.Timestamp))
             await UpsertAsync(db, deviceSn, sample.Timestamp.UtcDateTime, sample.GridPowerWatts, polledAt.UtcDateTime, ct);
@@ -62,6 +72,9 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
 
         await using var db = await factory.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (data.InverterId is { } deviceId && !await IntegrationPersistenceGuard.LockCurrentAsync(db, deviceId,
+            data.ConfigurationRevision, data.RuntimeGeneration, ct))
+            throw new InvalidOperationException("The inverter connection changed before telemetry was saved.");
         if (validGrid)
             await UpsertAsync(db, data.GridDeviceSn!, data.GridObservedAt!.Value.UtcDateTime,
                 data.GridConsumption, data.Timestamp.UtcDateTime, ct);
@@ -78,7 +91,11 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
             SolarDeviceSn = data.SolarObservedAt.HasValue ? data.SolarDeviceSn : null,
             GridConsumption = data.GridConsumption,
             LoadPower = data.LoadPower,
-            DataSource = "DeyeCloud"
+            InverterId = data.InverterId,
+            BatterySocValid = data.BatterySocValid,
+            ConfigurationRevision = data.ConfigurationRevision,
+            RuntimeGeneration = data.RuntimeGeneration,
+            DataSource = "Integration"
         });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

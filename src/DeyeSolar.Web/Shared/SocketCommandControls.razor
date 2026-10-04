@@ -1,0 +1,161 @@
+@using SolarManagement.SmartSockets.Contracts
+@inject ISmartSocketCatalog SocketCatalog
+@inject ISocketCommandTracker CommandTracker
+@implements IDisposable
+
+<MudStack Row="true" Spacing="1">
+    <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="@(() => SendAsync(true))" Disabled="@CannotSend">Socket ON</MudButton>
+    <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => SendAsync(false))" Disabled="@CannotSend">Socket OFF</MudButton>
+</MudStack>
+@if (_receipt is { } receipt)
+{
+    <MudAlert Severity="Severity.Info" Class="mt-2">@ReceiptMessage(receipt.Status)</MudAlert>
+    @if (Unresolved(receipt.Status))
+    {
+        <MudButton Variant="Variant.Outlined" OnClick="@(() => CheckAsync(false))" Disabled="@_busy" Class="mt-2">Check command result</MudButton>
+    }
+    @if (receipt.Status == SocketCommandStatus.Uncertain)
+    {
+        <MudText Typo="Typo.caption" Class="mt-2">The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.</MudText>
+        <MudButton Variant="Variant.Outlined" OnClick="@(() => CheckAsync(true))" Disabled="@_busy" Class="mt-2">Allow another command</MudButton>
+    }
+}
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mt-2">@_error</MudAlert>
+    <MudButton Variant="Variant.Text" OnClick="RecoverAsync" Disabled="@_busy">Reload command results</MudButton>
+}
+
+@code {
+    [Parameter] public string? DeviceId { get; set; }
+    [Parameter] public bool Online { get; set; }
+    [Parameter] public EventCallback OnAcknowledged { get; set; }
+    private string? _loadedId;
+    private SocketCommandReceipt? _receipt;
+    private bool _busy;
+    private bool _ready;
+    private bool _disposed;
+    private int _generation;
+    private string? _error;
+    private readonly CancellationTokenSource _stop = new();
+    private bool CannotSend => _busy || !_ready || !Online || !Guid.TryParse(DeviceId, out _) || _receipt is { } receipt && Unresolved(receipt.Status);
+    private static bool Unresolved(SocketCommandStatus status) => status is SocketCommandStatus.Pending or SocketCommandStatus.Uncertain;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == DeviceId) return;
+        _loadedId = DeviceId;
+        ++_generation;
+        _receipt = null;
+        _ready = false;
+        _busy = false;
+        _error = null;
+        await RecoverAsync();
+    }
+
+    private async Task RecoverAsync()
+    {
+        if (_disposed || _busy || !Guid.TryParse(DeviceId, out var id)) return;
+        var generation = _generation;
+        _busy = true;
+        try
+        {
+            var receipts = await CommandTracker.ListUnresolvedAsync(new(id), _stop.Token);
+            if (!Current(generation)) return;
+            if (receipts.Any(receipt => receipt.DeviceId.Value != id)) throw new InvalidDataException("Mismatched command receipt.");
+            if (_receipt is null || !Unresolved(_receipt.Status))
+                _receipt = receipts.OrderBy(receipt => receipt.CreatedAt).FirstOrDefault();
+            _ready = true;
+            _error = null;
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception) { if (Current(generation)) { _ready = false; _error = "Command results are unavailable. Reload them before sending another command."; } }
+        finally { if (Current(generation)) _busy = false; }
+    }
+
+    private async Task SendAsync(bool isOn)
+    {
+        if (CannotSend || !Guid.TryParse(DeviceId, out var id)) return;
+        var generation = _generation;
+        _busy = true;
+        _error = null;
+        SocketCommandReceipt? pending = null;
+        try
+        {
+            var unresolved = await CommandTracker.ListUnresolvedAsync(new(id), _stop.Token);
+            if (!Current(generation)) return;
+            if (unresolved.Any(receipt => receipt.DeviceId.Value != id)) throw new InvalidDataException("Mismatched command receipt.");
+            if (unresolved.Count > 0) { _receipt = unresolved.OrderBy(receipt => receipt.CreatedAt).First(); return; }
+            var socket = await SocketCatalog.GetAsync(new(id), _stop.Token);
+            if (!Current(generation)) return;
+            if (!socket.Capabilities.CanSwitch) { _error = "This device does not support switching."; return; }
+            var commandId = new SocketCommandId(Guid.NewGuid());
+            pending = new(new(id), commandId, isOn ? SwitchState.On : SwitchState.Off, SocketCommandStatus.Pending, DateTimeOffset.UtcNow, null);
+            _receipt = pending;
+            var result = await socket.SetPowerAsync(new(commandId, pending.DesiredState), _stop.Token);
+            if (!Current(generation)) return;
+            if (result.CommandId != commandId) throw new InvalidDataException("Mismatched command receipt.");
+            _receipt = pending with { Status = result.Status };
+            if (result.Status == SocketCommandStatus.Acknowledged) await PublishAcknowledgedAsync(generation);
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (Current(generation))
+            {
+                if (pending is not null) _receipt = pending with { Status = SocketCommandStatus.Uncertain };
+                _error = pending is null ? "The command could not be started. Reload command results before trying again."
+                    : "The command may have executed. Check its result before sending another command.";
+                if (pending is null) _ready = false;
+            }
+        }
+        finally { if (Current(generation)) _busy = false; }
+    }
+
+    private async Task CheckAsync(bool release)
+    {
+        if (_disposed || _busy || _receipt is not { } receipt) return;
+        if (release && receipt.Status != SocketCommandStatus.Uncertain) return;
+        var generation = _generation;
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (release)
+            {
+                var result = await CommandTracker.ReleaseAsync(receipt.DeviceId, receipt.CommandId, _stop.Token);
+                if (!Current(generation)) return;
+                if (result.DeviceId != receipt.DeviceId || result.CommandId != receipt.CommandId || result.DesiredState != receipt.DesiredState)
+                    throw new InvalidDataException("Mismatched command receipt.");
+                _receipt = result;
+            }
+            else
+            {
+                var result = await CommandTracker.ReadResultAsync(receipt.DeviceId, receipt.CommandId, _stop.Token);
+                if (!Current(generation)) return;
+                if (result.CommandId != receipt.CommandId) throw new InvalidDataException("Mismatched command receipt.");
+                _receipt = receipt with { Status = result.Status };
+            }
+            if (_receipt.Status == SocketCommandStatus.Acknowledged) await PublishAcknowledgedAsync(generation);
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception) { if (Current(generation)) _error = "The result is unavailable. The previous command remains unconfirmed."; }
+        finally { if (Current(generation)) _busy = false; }
+    }
+
+    private bool Current(int generation) => !_disposed && _generation == generation;
+    private async Task PublishAcknowledgedAsync(int generation)
+    {
+        try { await OnAcknowledged.InvokeAsync(); }
+        catch (Exception) { if (Current(generation)) _error = "The command is acknowledged; the next device observation could not be loaded. Refresh devices."; }
+    }
+    private static string ReceiptMessage(SocketCommandStatus status) => status switch
+    {
+        SocketCommandStatus.Acknowledged => "The provider acknowledged the command. Device state comes from the next observation.",
+        SocketCommandStatus.Rejected => "The provider rejected the command. No successful switch was confirmed.",
+        SocketCommandStatus.Pending => "The command is pending. Check its result before sending another command.",
+        SocketCommandStatus.UncertainClosed => "Another command is allowed. The previous command result remains unknown and its operation may still finish.",
+        _ => "The command is unconfirmed. Check its result before sending another command."
+    };
+    public void Dispose() { if (_disposed) return; _disposed = true; ++_generation; _stop.Cancel(); _stop.Dispose(); }
+}

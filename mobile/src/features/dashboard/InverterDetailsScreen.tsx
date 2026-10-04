@@ -18,7 +18,7 @@ export function InverterDetailsScreen() {
     const timer = setInterval(() => setClock(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
-  const battery = batteryFlow(inverter?.batteryPower);
+  const battery = batteryFlow(inverter?.batteryPower, inverter?.batteryPowerValid);
   const balance = reportedPowerBalance(inverter);
   useEffect(() => { if (resource.data) setDisplayTimeZone(resource.data.timeZoneId); }, [resource.data]);
   return <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh(true)}>
@@ -26,32 +26,35 @@ export function InverterDetailsScreen() {
     <AppButton label="Refresh" accessibilityLabel="Inverter details refresh" icon={RefreshCcw} loading={resource.loading} onPress={() => void resource.refresh(true)} variant="secondary" compact />
     <ErrorBanner message={resource.error} />
     {resource.loading && !resource.data ? <LoadingState label="Loading inverter readings..." /> : !inverter ?
-      <EmptyState title="No Deye reading available." detail="Refresh to request the latest inverter data." /> : <>
+      <EmptyState title="No inverter reading available." detail="Refresh to request the latest inverter data." /> : <>
       <Card style={styles.card}>
         <Text style={styles.caption}>Latest reported solar power</Text>
-        <Text style={styles.hero}>{formatWatts(inverter.solarProduction)}</Text>
+        <Text style={styles.hero}>{formatWatts(inverter.solarPowerValid === false ? null : inverter.solarProduction)}</Text>
         <Text style={styles.note}>Polled {formatDateTime(inverter.timestamp)}</Text>
         {inverter.solarObservedAt ? <Text style={styles.note}>Solar measured {formatDateTime(inverter.solarObservedAt)}</Text> : null}
         {inverter.gridObservedAt ? <Text style={styles.note}>Grid measured {formatDateTime(inverter.gridObservedAt)}</Text> : null}
-        <Text style={styles.note}>Source: {inverter.dataSource || "Deye"}</Text>
-        <Text style={styles.note}>Polling time may be later than the inverter measurement time. Individual panel readings are not available here. A zero in these reported values may also mean that Deye did not provide that reading.</Text>
+        <Text style={styles.note}>Source: {inverter.dataSource || "inverter"}</Text>
+        <Text style={styles.note}>Polling time may be later than the inverter measurement time. Individual panel readings are not available here. Unavailable measurements are shown with a dash.</Text>
+        {inverter.batteryPowerValid == null ? <Text style={styles.note}>This older server does not identify missing battery and load readings; a reported zero may mean that a measurement was not supplied.</Text> : null}
       </Card>
       <SectionTitle title="Battery" />
       <Card style={styles.card}>
-        <Metric label="State of charge" value={formatPercent(inverter.batterySoc)} />
-        <ProgressBar value={inverter.batterySoc} />
-        <Metric label="Power" value={formatSignedWatts(inverter.batteryPower)} detail={batteryModeLabel(inverter.batteryPower)} />
-        <Metric label="Voltage" value={quantity(inverter.batteryVoltage, "V")} />
-        <Metric label="Current" value={quantity(inverter.batteryCurrent, "A")} />
-        <Metric label="Temperature" value={quantity(inverter.batteryTemperature, "°C")} />
+        <Metric label="State of charge" value={formatPercent(inverter.batterySocValid === false ? null : inverter.batterySoc)} />
+        {inverter.batterySocValid !== false ? <ProgressBar value={inverter.batterySoc} /> : null}
+        <Metric label="Power" value={formatSignedWatts(inverter.batteryPowerValid === false ? null : inverter.batteryPower)}
+          detail={inverter.batteryPowerValid === false ? "Unavailable" : batteryModeLabel(inverter.batteryPower)} />
+        <Metric label="Voltage" value={quantity(inverter.batteryVoltageValid === false ? null : inverter.batteryVoltage, "V")} />
+        <Metric label="Current" value={quantity(inverter.batteryCurrentValid === false ? null : inverter.batteryCurrent, "A")} />
+        <Metric label="Temperature" value={quantity(inverter.batteryTemperatureValid === false ? null : inverter.batteryTemperature, "°C")} />
         <Text style={styles.note}>Negative battery power means charging; positive means discharging.</Text>
       </Card>
       <SectionTitle title="Energy flows" />
       <Card style={styles.card}>
-        <Metric label="Solar generation" value={formatWatts(inverter.solarProduction)} />
-        <Metric label="Load" value={formatWatts(inverter.loadPower)} />
+        <Metric label="Solar generation" value={formatWatts(inverter.solarPowerValid === false ? null : inverter.solarProduction)} />
+        <Metric label="Load" value={formatWatts(inverter.loadPowerValid === false ? null : inverter.loadPower)} />
         <Metric label={battery.label} value={battery.watts === null ? "—" : formatWatts(battery.watts)} />
-        <Metric label="Grid power" value={formatSignedWatts(inverter.gridConsumption)} detail={gridModeLabel(inverter.gridConsumption)} />
+        <Metric label="Grid power" value={formatSignedWatts(inverter.gridPowerValid === false ? null : inverter.gridConsumption)}
+          detail={inverter.gridPowerValid === false ? "Unavailable" : gridModeLabel(inverter.gridConsumption)} />
         <Text style={styles.note}>Negative grid power means export; positive means import. These are instantaneous power readings, not accumulated energy.</Text>
       </Card>
       <SectionTitle title="Power balance" />
@@ -60,14 +63,14 @@ export function InverterDetailsScreen() {
           detail={balance.watts === null ? balance.reason ?? "Unavailable" : balanceDirection(balance.watts)} />
         <Text style={styles.note}>Solar + signed grid + signed battery − load. Grid import and battery discharge are positive; export and charging are negative.</Text>
         {!hasSourceMetadata(inverter) ? <Text style={styles.note}>This server supplies polling time only; source measurement times cannot be checked.</Text> : null}
-        <Text style={styles.note}>This is an approximate balance of reported values. Measurements may be taken at different times, and an unavailable reading may appear as zero. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</Text>
+        <Text style={styles.note}>This is an approximate balance of reported values. Measurements may be taken at different times. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</Text>
       </Card>
     </>}
   </Screen>;
 }
 
-function quantity(value: number, unit: string) {
-  return Number.isFinite(value) ? `${Number(value.toFixed(2))} ${unit}` : "—";
+function quantity(value: number | null, unit: string) {
+  return value !== null && Number.isFinite(value) ? `${Number(value.toFixed(2))} ${unit}` : "—";
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {

@@ -54,6 +54,9 @@ public class AppSettingsService
 
     public async Task SaveSectionAsync<T>(string section, T options) where T : class
     {
+        if (section is "DeyeCloud" or "Shelly" || section.StartsWith("IntegrationRuntime", StringComparison.OrdinalIgnoreCase)
+            || section.StartsWith("Integrations", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Provider credentials must be changed through versioned integration settings. Publisher trust is configured by the operator.");
         await using var db = await _dbFactory.CreateDbContextAsync();
 
         foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))

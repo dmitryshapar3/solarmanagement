@@ -5,7 +5,7 @@
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
 @inject TimeProvider Clock
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SolarEstimateOptions> EstimateOptions
-@inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.DeyeCloudOptions> DeyeOptions
+@inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @implements IDisposable
 
 <PageTitle>Inverter details - DeyeSolar</PageTitle>
@@ -21,7 +21,7 @@
     <InverterReadings Data="_reading" TimeZoneId="@_timeZone" Now="Clock.GetUtcNow()"
                       AlignmentToleranceSeconds="EstimateOptions.CurrentValue.AlignmentToleranceSeconds"
                       MaximumAgeMinutes="EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes"
-                      ExpectedDeviceSn="@DeyeOptions.CurrentValue.DeviceSn" />
+                      ExpectedDeviceSn="@InverterOptions.CurrentValue.DeviceKey" />
 </MudPaper>
 
 @code {
@@ -65,7 +65,7 @@
         _error = null;
         try { await InverterRefresh.RefreshAsync(_lifetime.Token); if (!_disposed) _reading = Snapshot.Current; }
         catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed) _error = "Could not refresh Deye readings. Showing the last available reading; please try again."; }
+        catch (Exception) { if (!_disposed) _error = "Could not refresh inverter readings. Showing the last available reading; please try again."; }
         finally { if (!_disposed) _refreshing = false; }
     }
     public void Dispose()

@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/SolarManagement.Inverters.Contracts/SolarManagement.Inverters.Contracts.csproj" /><ProjectReference Include="../SolarManagement.Integrations.WorkerSdk/SolarManagement.Integrations.WorkerSdk.csproj" /></ItemGroup>
+</Project>

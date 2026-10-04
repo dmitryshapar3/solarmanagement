@@ -1,9 +1,11 @@
+using DeyeSolar.Web.Integrations;
+using SolarManagement.Integrations.Contracts;
+using SolarManagement.Inverters.Contracts;
+using SolarManagement.SmartSockets.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
-using DeyeSolar.Infrastructure.DeyeCloud;
-using DeyeSolar.Infrastructure.Shelly;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
@@ -20,19 +22,18 @@ public static class TenantRequestServices
         services.AddSingleton(provider => new TenantRuntimeFactory(
             provider.GetRequiredService<DbContextOptions<DeyeSolarDbContext>>(), deployment,
             provider.GetRequiredService<ILoggerFactory>(), provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IHostApplicationLifetime>(), solarApiKey));
+            provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<IIntegrationRuntimeExecutor>(),
+            provider.GetRequiredService<IntegrationSecretStore>(), provider.GetRequiredService<IntegrationChangeNotifier>(), solarApiKey,
+            provider.GetRequiredService<LegacyIntegrationBootstrap>()));
         services.AddSingleton<TenantRuntimeRegistry>();
         services.AddScoped<IDbContextFactory<DeyeSolarDbContext>, RequestDbContextFactory>();
         Add<AppSettingsService>(services);
-        Add<DeyeCloudClient>(services);
-        Add<ShellyCloudClient>(services);
         Add<IInverterDataSource>(services);
         Add<IExportGridHistorySource>(services);
         Add<IExportReadingStore>(services);
         Add<IExportPriceStore>(services);
         Add<IExportPriceSource>(services);
         Add<IExportSalesService>(services);
-        Add<ShellySocketInventoryService>(services);
         Add<ISocketController>(services);
         Add<ISocketInventoryService>(services);
         Add<ISolarRadiationSource>(services);
@@ -54,6 +55,11 @@ public static class TenantRequestServices
         services.AddScoped<ISolarHistoryService>(provider => new HistoryBorrow(Resolve<ISolarHistoryService>(provider)));
         AddOptions<DeyeCloudOptions>(services);
         AddOptions<ShellyOptions>(services);
+        AddOptions<InverterConnectionOptions>(services);
+        Add<IInverterCatalog>(services);
+        Add<ISmartSocketCatalog>(services);
+        Add<ISocketCommandTracker>(services);
+        Add<DynamicSocketGateway>(services);
         AddOptions<PollingOptions>(services);
         AddOptions<DisplayOptions>(services);
         AddOptions<SolarEstimateOptions>(services);

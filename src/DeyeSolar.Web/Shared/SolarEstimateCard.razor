@@ -5,7 +5,7 @@
 @inject SolarEstimateService EstimateService
 @inject InverterDataSnapshot InverterSnapshot
 @inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
-@inject IOptionsMonitor<DeyeCloudOptions> DeyeOptions
+@inject IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @inject IInverterRefreshService InverterRefresh
 @inject TimeProvider Clock
 @implements IAsyncDisposable
@@ -35,9 +35,9 @@
                         <p class="solar-info-notice">@estimateNotice</p>
                     }
                     <p>@ActualInfo</p>
-                    @if (!DeyePvDcConfirmed)
+                    @if (!PvDcConfirmed)
                     {
-                        <p class="solar-info-notice">The Deye power type is unconfirmed. Values are not compared.</p>
+                        <p class="solar-info-notice">The inverter power type is unconfirmed. Values are not compared.</p>
                     }
                     <div class="solar-attribution">
                         <a href="@(IsWeatherModel ? "https://open-meteo.com/en/docs" : "https://open-meteo.com/en/docs/satellite-radiation-api")"
@@ -57,7 +57,7 @@
         @if (_refreshError is not null) { <p class="solar-notice" role="alert">@_refreshError</p> }
         <div class="solar-readings">
             <div class="solar-reading solar-reading-actual">
-                <span class="solar-label" id="solar-actual-label">Latest Deye generation</span>
+                <span class="solar-label" id="solar-actual-label">Latest inverter generation</span>
                 <output class="solar-value" aria-labelledby="solar-actual-label" data-testid="solar-actual">
                     @if (HasUsableActual && CurrentActual is { } actual)
                     {
@@ -65,7 +65,7 @@
                     }
                     else
                     {
-                        <span class="solar-unavailable" aria-label="The Deye reading is unavailable">—</span>
+                        <span class="solar-unavailable" aria-label="The inverter reading is unavailable">—</span>
                     }
                 </output>
             </div>
@@ -88,7 +88,7 @@
         @if (EstimateNotice is { } notice) { <p class="solar-notice" role="status">@notice</p> }
         @if (Overview)
         {
-            <p class="solar-timestamps">The chart shows hourly average power. The latest Deye reading is separate; missing hours remain gaps.</p>
+            <p class="solar-timestamps">The chart shows hourly average power. The latest inverter reading is separate; missing hours remain gaps.</p>
             <SolarHistoryChart @ref="_history" Data="HistoryData" Overview="true" Embedded="true" />
         }
         @if (Detailed)
@@ -119,9 +119,9 @@
                 @if (CurrentState.Comparison.Actual is { } historical)
                 {
                     <dl class="solar-metadata">
-                        <div><dt>Historical Deye power</dt><dd>@Number(historical.PowerKw) kW</dd></div>
-                        <div><dt>Deye measurement time</dt><dd><time datetime="@historical.Timestamp.ToString("O")">@FormatTime(historical.Timestamp)</time></dd></div>
-                        <div><dt>Deye power basis</dt><dd>@BasisLabel(historical.Basis)</dd></div>
+                        <div><dt>Historical inverter power</dt><dd>@Number(historical.PowerKw) kW</dd></div>
+                        <div><dt>Inverter measurement time</dt><dd><time datetime="@historical.Timestamp.ToString("O")">@FormatTime(historical.Timestamp)</time></dd></div>
+                        <div><dt>Inverter power basis</dt><dd>@BasisLabel(historical.Basis)</dd></div>
                         @if (ComparisonEstimate is { } comparisonEstimate)
                         {
                             <div><dt>Estimate for comparison</dt><dd>@Number(comparisonEstimate.CentralKw) kW</dd></div>
@@ -130,13 +130,13 @@
                         }
                         @if (HasVerifiedComparison)
                         {
-                            <div><dt>Deye minus estimate</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationKw) kW</dd></div>
+                            <div><dt>Inverter minus estimate</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationKw) kW</dd></div>
                             <div><dt>Deviation</dt><dd>@OptionalNumber(CurrentState.Comparison.DeviationPercent) %</dd></div>
                         }
                     </dl>
                 }
                 @if (!HasVerifiedComparison) { <p class="solar-notice">@(CurrentState.Comparison.Reason ?? "A verified comparison is not available.")</p> }
-                <p class="solar-timestamps">This historical reading can differ from the latest Deye snapshot. The server checks age, measurement type and timestamp alignment. A percentage may be unavailable at night or at very low power.</p>
+                <p class="solar-timestamps">This historical reading can differ from the latest inverter snapshot. The server checks age, measurement type and timestamp alignment. A percentage may be unavailable at night or at very low power.</p>
             </section>
             <div class="solar-attribution"><a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener noreferrer">Open-Meteo weather</a> · <a href="https://open-meteo.com/en/licence" target="_blank" rel="noopener noreferrer">CC BY 4.0</a></div>
         }
@@ -171,13 +171,13 @@
     private DateTimeOffset ClockNow => Now ?? _clock;
     private SolarPowerEstimate? Estimate => CurrentState.Estimate;
     private SolarPowerEstimate? ComparisonEstimate => CurrentState.ComparisonEstimate ?? (Estimate?.Observation.Kind == SolarRadiationKind.Satellite ? Estimate : null);
-    private bool HasVerifiedComparison => DeyePvDcConfirmed && !CurrentState.RefreshFailed && CurrentState.Error is null
+    private bool HasVerifiedComparison => PvDcConfirmed && !CurrentState.RefreshFailed && CurrentState.Error is null
         && CurrentState.Comparison.Status != SolarComparisonStatus.InsufficientData && ComparisonEstimate is not null;
     private string ComparisonLabel => !HasVerifiedComparison ? "Comparison unavailable" : CurrentState.Comparison.Status switch
         { SolarComparisonStatus.WithinRange => "Within estimate range", SolarComparisonStatus.BelowEstimate => "Below estimate range", _ => "Above estimate range" };
-    private bool DeyePvDcConfirmed => CurrentOptions.DeyeSolarPowerIsPvDcConfirmed
+    private bool PvDcConfirmed => CurrentOptions.DeyeSolarPowerIsPvDcConfirmed
         && !string.IsNullOrWhiteSpace(CurrentOptions.DeyeConfirmedDeviceSn)
-        && CurrentOptions.DeyeConfirmedDeviceSn == DeyeOptions.CurrentValue.DeviceSn;
+        && CurrentOptions.DeyeConfirmedDeviceSn == InverterOptions.CurrentValue.DeviceKey;
     private bool IsWeatherModel => Estimate is null || Estimate.Observation.Kind == SolarRadiationKind.WeatherModel;
     private DateTimeOffset? SourceTimestamp => IsWeatherModel
         ? Estimate?.Observation.RetrievedAt ?? Estimate?.Timestamp : Estimate?.Timestamp;
@@ -189,8 +189,8 @@
         && estimate.Timestamp <= ClockNow && !EvaluationStopped
         && SourceTimestamp is { } sourceAt && sourceAt <= ClockNow && (ClockNow - sourceAt).TotalMinutes <= MaximumAgeMinutes;
     private string? ActualDeviceIssue => string.IsNullOrWhiteSpace(CurrentActual?.SolarDeviceSn)
-        || string.IsNullOrWhiteSpace(DeyeOptions.CurrentValue.DeviceSn) ? "The Deye reading's device is unverified"
-        : CurrentActual.SolarDeviceSn != DeyeOptions.CurrentValue.DeviceSn ? "The reading belongs to another inverter" : null;
+        || string.IsNullOrWhiteSpace(InverterOptions.CurrentValue.DeviceKey) ? "The inverter reading's device is unverified"
+        : CurrentActual.SolarDeviceSn != InverterOptions.CurrentValue.DeviceKey ? "The reading belongs to another inverter" : null;
     private bool HasUsableActual => ActualDeviceIssue is null && CurrentActual is { SolarObservedAt: { } observedAt, SolarProduction: >= 0 }
         && observedAt <= ClockNow && (ClockNow - observedAt).TotalMinutes <= ActualMaximumAgeMinutes;
     private string? EstimateNotice => EvaluationStopped ? "The calculation has stopped updating. The estimate is unavailable."
@@ -198,15 +198,15 @@
         : CurrentState.RefreshFailed ? "Weather refresh failed. The latest available data is used."
         : SourceTimestamp is { } sourceAt && (ClockNow - sourceAt).TotalMinutes > StaleAfterMinutes ? "Weather data is stale. The estimate is approximate."
         : null;
-    private bool HasWarning => EstimateNotice is not null || !HasUsableActual || !DeyePvDcConfirmed;
+    private bool HasWarning => EstimateNotice is not null || !HasUsableActual || !PvDcConfirmed;
     private string EstimateInfo => Estimate is { } estimate
         ? $"{(IsWeatherModel ? "Weather estimate" : "Satellite estimate")} · {(estimate.Basis == SolarPowerBasis.Ac ? "AC" : "PV DC")}. At {FormatTime(estimate.Timestamp)}."
         : "No weather estimate has been received yet.";
-    private string ActualInfo => CurrentActual is not { SolarProduction: >= 0 } actual ? "The Deye reading is unavailable."
+    private string ActualInfo => CurrentActual is not { SolarProduction: >= 0 } actual ? "The inverter reading is unavailable."
         : ActualDeviceIssue is { } deviceIssue ? deviceIssue + "."
-        : actual.SolarObservedAt is not { } observedAt ? "The Deye measurement time is unverified."
-        : observedAt > ClockNow ? "The Deye measurement time is invalid."
-        : $"{((ClockNow - observedAt).TotalMinutes > ActualMaximumAgeMinutes ? "The Deye reading is stale" : DeyePvDcConfirmed ? "Deye · PV DC" : "Deye")}. Measured at {FormatTime(observedAt)}.";
+        : actual.SolarObservedAt is not { } observedAt ? "The inverter measurement time is unverified."
+        : observedAt > ClockNow ? "The inverter measurement time is invalid."
+        : $"{((ClockNow - observedAt).TotalMinutes > ActualMaximumAgeMinutes ? "The inverter reading is stale" : PvDcConfirmed ? "Inverter · PV DC" : "Inverter")}. Measured at {FormatTime(observedAt)}.";
 
     protected override void OnInitialized()
     {
@@ -230,7 +230,7 @@
             await RefreshAsync();
         }
         catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed) _refreshError = "Could not refresh Deye readings. Showing the last available results; please try again."; }
+        catch (Exception) { if (!_disposed) _refreshError = "Could not refresh inverter readings. Showing the last available results; please try again."; }
         finally { if (!_disposed) _refreshing = false; }
     }
 

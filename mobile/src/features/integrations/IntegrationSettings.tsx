@@ -1,0 +1,322 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { Keyboard, StyleSheet, Text, View } from "react-native";
+import { AppButton, Card, EmptyState, ErrorBanner, SectionTitle, StatusPill, SwitchRow, TextField } from "../../core/components";
+import { ApiError } from "../../core/api/ApiClient";
+import type {
+  IntegrationApi, IntegrationDeviceBinding, IntegrationDiscovery, IntegrationInstance,
+  IntegrationProvider, IntegrationTest, SecretOperation
+} from "../../core/api/IntegrationApi";
+import { colors, spacing, typography } from "../../core/theme";
+import {
+  createIntegrationDraft, integrationChange, integrationDraftChanged, isSecretField,
+  supportsField, unsupportedProvider, type IntegrationDraft
+} from "./integrationDraft";
+
+export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }: {
+  api: IntegrationApi;
+  isDemo?: boolean;
+  onSelectionChanged?: () => Promise<void>;
+}) {
+  const [providers, setProviders] = useState<IntegrationProvider[]>([]);
+  const [instances, setInstances] = useState<IntegrationInstance[]>([]);
+  const [providerId, setProviderId] = useState("");
+  const [name, setName] = useState("");
+  const [draft, setDraft] = useState<IntegrationDraft | null>(null);
+  const [bindings, setBindings] = useState<IntegrationDeviceBinding[]>([]);
+  const [versions, setVersions] = useState<IntegrationProvider[]>([]);
+  const [targetVersion, setTargetVersion] = useState("");
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [discovery, setDiscovery] = useState<IntegrationDiscovery | null>(null);
+  const [testResult, setTestResult] = useState<IntegrationTest | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const operation = useRef<AbortController | null>(null);
+  const activeApi = useRef(api);
+  const mounted = useRef(true);
+  activeApi.current = api;
+
+  useEffect(() => {
+    operation.current?.abort();
+    operation.current = null;
+    mounted.current = true;
+    setBusy(null);
+    setLoading(true);
+    setProviders([]);
+    setInstances([]);
+    setProviderId("");
+    setName("");
+    setError(null);
+    setCatalogError(null);
+    setDraft(null);
+    setBindings([]);
+    setVersions([]);
+    setTargetVersion("");
+    setVersionError(null);
+    setDiscovery(null);
+    setTestResult(null);
+    return () => { mounted.current = false; operation.current?.abort(); };
+  }, [api]);
+
+  const refreshCatalog = useCallback(async (signal?: AbortSignal) => {
+    if (isDemo) { setLoading(false); return; }
+    try {
+      const [catalog, list] = await Promise.allSettled([api.getCatalog(signal), api.getInstances(signal)]);
+      if (signal?.aborted || !mounted.current || activeApi.current !== api) return;
+      if (catalog.status === "fulfilled") setProviders(catalog.value.providers);
+      if (list.status === "fulfilled") setInstances(list.value);
+      const failed = catalog.status === "rejected" ? catalog.reason : list.status === "rejected" ? list.reason : null;
+      setCatalogError(failed ? failed instanceof ApiError && failed.status === 404
+        ? "This server does not support dynamic integrations. Update the server to manage integrations here."
+        : failed instanceof Error ? failed.message : "The integration catalog is unavailable." : null);
+    } catch (exception) {
+      if (!signal?.aborted && mounted.current && activeApi.current === api) {
+        setCatalogError(exception instanceof ApiError && exception.status === 404
+          ? "This server does not support dynamic integrations. Update the server to manage integrations here."
+          : exception instanceof Error ? exception.message : "The integration catalog is unavailable.");
+      }
+    } finally {
+      if (!signal?.aborted && mounted.current && activeApi.current === api) setLoading(false);
+    }
+  }, [api, isDemo]);
+
+  useFocusEffect(useCallback(() => {
+    const controller = new AbortController();
+    void refreshCatalog(controller.signal);
+    return () => controller.abort();
+  }, [refreshCatalog]));
+
+  async function run(label: string, action: (signal: AbortSignal) => Promise<void>) {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    Keyboard.dismiss();
+    setBusy(label);
+    setError(null);
+    try { await action(controller.signal); }
+    catch (exception) {
+      if (mounted.current && activeApi.current === api && !controller.signal.aborted) {
+        setError(exception instanceof ApiError && exception.status === 409
+          ? `${exception.message} Your draft is preserved.`
+          : exception instanceof Error ? exception.message : "The integration action failed.");
+      }
+    } finally {
+      if (operation.current === controller) {
+        operation.current = null;
+        if (mounted.current && activeApi.current === api) setBusy(null);
+      }
+    }
+  }
+
+  async function open(instance: IntegrationInstance, signal: AbortSignal) {
+    const configuration = await api.getConfiguration(instance.id, signal);
+    if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+    const provider = providers.find(item => samePackage(item, configuration.instance))
+      ?? await api.getProvider(configuration.instance.providerId, configuration.instance.packageVersion, signal);
+    if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+    if (!samePackage(provider, configuration.instance)) throw new Error("The integration's installed settings changed. Refresh the catalog before editing it.");
+    setDraft(createIntegrationDraft(provider, configuration));
+    setBindings([]);
+    setDiscovery(null);
+    setTestResult(null);
+    setVersions([]);
+    setTargetVersion(configuration.instance.packageVersion);
+    setVersionError(null);
+    const [devices, packages] = await Promise.allSettled([api.getDevices(instance.id, signal), api.getProviderVersions(instance.providerId, signal)]);
+    if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+    if (devices.status === "fulfilled") setBindings(devices.value);
+    if (packages.status === "fulfilled") setVersions(packages.value.filter(item => item.providerId === instance.providerId));
+    else setVersionError("Package versions could not be loaded. Current settings can still be edited.");
+    if (devices.status === "rejected") throw devices.reason;
+  }
+
+  function patchValue(key: string, value: string) {
+    setDraft(current => current && { ...current, values: { ...current.values, [key]: value } });
+    setDiscovery(null);
+    setTestResult(null);
+  }
+
+  function patchSecret(key: string, value: SecretOperation) {
+    setDraft(current => current && { ...current, secrets: { ...current.secrets, [key]: value } });
+    setDiscovery(null);
+    setTestResult(null);
+  }
+
+  const selectedProvider = providers.find(provider => provider.providerId === providerId);
+  const unsupported = draft ? unsupportedProvider(draft.provider) : null;
+  const packageAvailable = !draft || samePackage(draft.provider, draft.configuration.instance);
+  const formDisabled = Boolean(busy || unsupported || !packageAvailable);
+  const changed = draft ? integrationDraftChanged(draft) : false;
+
+  return <>
+    <SectionTitle title="Integrations" />
+    {isDemo ? <Card><Text style={styles.detail}>Integration setup is available after connecting to your server. Demo mode uses sample devices.</Text></Card> : <>
+      <ErrorBanner message={catalogError} />
+      <ErrorBanner message={error} />
+      <AppButton label={loading ? "Loading integrations..." : "Refresh integration catalog"} variant="secondary"
+        disabled={Boolean(busy) || loading} onPress={() => void run("catalog", refreshCatalog)} />
+      {instances.map(instance => <Card key={instance.id} style={styles.form}>
+        <Text style={styles.title}>{instance.name}</Text>
+        <StatusPill label={instance.status} tone={instance.status === "enabled" ? "success" : "neutral"} />
+        <AppButton label={`Configure ${instance.name}`} variant="secondary" disabled={Boolean(busy)}
+          onPress={() => void run("open", signal => open(instance, signal))} />
+        {instance.status === "enabled" ? <AppButton label={`Disable ${instance.name}`} variant="secondary" disabled={Boolean(busy)}
+          onPress={() => void run("disable", async signal => {
+            const disabled = await api.setEnabled(instance.id, false, { expectedRevision: instance.revision,
+              packageVersion: instance.packageVersion, packageDigest: instance.packageDigest, descriptorDigest: instance.descriptorDigest }, signal);
+            if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+            setInstances(current => current.map(item => item.id === disabled.id ? disabled : item));
+            setDraft(current => current?.configuration.instance.id === disabled.id
+              ? { ...current, configuration: { ...current.configuration, instance: disabled } } : current);
+            setDiscovery(null);
+          })} /> : null}
+      </Card>)}
+      {!loading && !catalogError && !instances.length ? <EmptyState title="Add your first integration." /> : null}
+      {providers.length ? <Card style={styles.form}>
+        <Text style={styles.title}>Add integration</Text>
+        {providers.map(provider => <AppButton key={`${provider.providerId}:${provider.packageVersion}:${provider.packageDigest}`}
+          label={provider.displayName} variant={providerId === provider.providerId ? "primary" : "secondary"}
+          disabled={Boolean(busy) || Boolean(unsupportedProvider(provider))}
+          onPress={() => { setProviderId(provider.providerId); setName(provider.displayName); }} />)}
+        {selectedProvider ? <>
+          <TextField label="Integration name" value={name} onChangeText={setName} editable={!busy} />
+          <AppButton label="Add integration" disabled={Boolean(busy) || !name.trim()}
+            onPress={() => void run("create", async signal => {
+              const instance = await api.create(selectedProvider.providerId, name.trim(), signal);
+              if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+              setInstances(current => [...current, instance]);
+              await open(instance, signal);
+            })} />
+        </> : null}
+      </Card> : null}
+      {draft ? <Card style={styles.form}>
+        <Text style={styles.title}>{draft.configuration.instance.name}</Text>
+        <Text style={styles.detail}>{draft.provider.displayName}</Text>
+        <Text style={styles.detail}>Installed package version: {draft.configuration.instance.packageVersion}</Text>
+        <ErrorBanner message={versionError} />
+        {versions.length > 1 ? <View style={styles.form}>
+          <Text style={styles.title}>Package version</Text>
+          {versions.map(version => <AppButton key={`${version.packageVersion}:${version.packageDigest}`} label={`Version ${version.packageVersion}`}
+            variant={targetVersion === version.packageVersion ? "primary" : "secondary"} disabled={Boolean(busy) || Boolean(unsupportedProvider(version))}
+            onPress={() => setTargetVersion(version.packageVersion)} />)}
+          <Text style={styles.detail}>Switching replaces this form and discards its unsaved draft. Saved configuration is validated against the selected version; incompatible changes require a new integration.</Text>
+          <AppButton label="Switch package version (discard draft)" variant="secondary"
+            disabled={Boolean(busy) || Boolean(unsupported) || !packageAvailable || targetVersion === draft.configuration.instance.packageVersion
+              || !versions.some(version => version.packageVersion === targetVersion && !unsupportedProvider(version))}
+            onPress={() => void run("package", async signal => {
+              const saved = draft.configuration.instance;
+              const instance = await api.switchPackage(saved.id, { expectedRevision: saved.revision,
+                packageVersion: saved.packageVersion, packageDigest: saved.packageDigest, descriptorDigest: saved.descriptorDigest }, targetVersion, signal);
+              if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+              setDraft(null);
+              setBindings([]);
+              setDiscovery(null);
+              setTestResult(null);
+              setInstances(current => current.map(item => item.id === instance.id ? instance : item));
+              await open(instance, signal);
+              if (!signal.aborted && mounted.current && activeApi.current === api) await onSelectionChanged?.();
+            })} />
+        </View> : null}
+        <ErrorBanner message={unsupported || (!packageAvailable ? "This integration version is no longer available. Your draft is preserved; refresh the catalog before continuing." : null)} />
+        {draft.provider.fields.map(field => {
+          if (!supportsField(field)) return <Text key={field.key} style={styles.detail}>{field.label}: this field needs a newer app. Its saved value is preserved.</Text>;
+          if (isSecretField(field)) {
+            const secret = draft.secrets[field.key] ?? { operation: "keep" };
+            return <View key={field.key} style={styles.form}>
+              <Text style={styles.title}>{field.label}{field.required ? " *" : ""}</Text>
+              <Text style={styles.detail}>{draft.configuration.secretPresent[field.key] ? "A value is saved. It is never shown." : "No value is saved."}</Text>
+              <View style={styles.row}>
+                {(["keep", "replace", "clear"] as const).map(action => <AppButton key={action}
+                  label={action === "keep" ? "Keep saved" : action === "replace" ? "Replace" : "Clear"}
+                  accessibilityLabel={`${field.label}: ${action}`} compact
+                  variant={secret.operation === action ? "primary" : "secondary"} disabled={formDisabled}
+                  onPress={() => patchSecret(field.key, action === "replace" ? { operation: action, value: "" } : { operation: action })} />)}
+              </View>
+              {secret.operation === "replace" ? <TextField label={`New ${field.label}`} secureTextEntry value={secret.value ?? ""}
+                editable={!formDisabled} onChangeText={value => patchSecret(field.key, { operation: "replace", value })} /> : null}
+            </View>;
+          }
+          const value = draft.values[field.key] ?? "";
+          if (field.kind === "boolean") return <SwitchRow key={field.key} title={field.label} disabled={formDisabled}
+            value={value === "true"} onValueChange={next => patchValue(field.key, String(next))} />;
+          if (field.kind === "select") return <View key={field.key} style={styles.form}>
+            <Text style={styles.title}>{field.label}{field.required ? " *" : ""}</Text>
+            {!field.required ? <AppButton label="No selection" variant={value === "" ? "primary" : "secondary"}
+              disabled={formDisabled} onPress={() => patchValue(field.key, "")} /> : null}
+            {(field.options ?? []).map(option => <AppButton key={option.value} label={option.label}
+              variant={value === option.value ? "primary" : "secondary"} disabled={formDisabled}
+              onPress={() => patchValue(field.key, option.value)} />)}
+          </View>;
+          return <TextField key={field.key} label={`${field.label}${field.required ? " *" : ""}`} value={value}
+            keyboardType={field.kind === "number" || field.kind === "integer" ? "numbers-and-punctuation" : "default"}
+            editable={!formDisabled} onChangeText={next => patchValue(field.key, next)} />;
+        })}
+        <AppButton label="Save integration settings" disabled={formDisabled} loading={busy === "save"}
+          onPress={() => void run("save", async signal => {
+            const saved = await api.saveConfiguration(draft.configuration.instance.id, integrationChange(draft), signal);
+            if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+            setDraft(createIntegrationDraft(draft.provider, saved));
+            setDiscovery(null);
+            setTestResult(null);
+            setInstances(current => current.map(instance => instance.id === saved.instance.id ? saved.instance : instance));
+            await onSelectionChanged?.();
+          })} />
+        {draft.provider.actions.includes("test") ? <AppButton label="Test draft connection" variant="secondary" disabled={formDisabled}
+          loading={busy === "test"} onPress={() => void run("test", async signal => {
+            const result = await api.test(draft.configuration.instance.id, integrationChange(draft), signal);
+            if (!signal.aborted && mounted.current && activeApi.current === api) setTestResult(result);
+          })} /> : null}
+        {testResult ? <Text style={styles.detail}>{testResult.message}</Text> : null}
+        {draft.provider.actions.includes("discover") ? <AppButton label="Discover draft devices" variant="secondary" disabled={formDisabled}
+          loading={busy === "discover"} onPress={() => void run("discover", async signal => {
+            const result = await api.discover(draft.configuration.instance.id, integrationChange(draft), signal);
+            if (!signal.aborted && mounted.current && activeApi.current === api) setDiscovery(result);
+          })} /> : null}
+        <Text style={styles.detail}>Testing and discovery do not save settings or switch devices. Save settings before selecting a discovered device.</Text>
+        {discovery && !discovery.devices.length ? <Text style={styles.detail}>Discovery returned no devices.</Text> : null}
+        {discovery?.devices.map(device => <View key={device.selectionToken} style={styles.form}>
+          <Text style={styles.title}>{device.name}</Text>
+          <Text style={styles.detail}>{device.kind} · {device.remoteId}{device.channel ? ` · ${device.channel}` : ""}</Text>
+          <AppButton label={`Use ${device.name}`} variant="secondary"
+            disabled={formDisabled || changed || !Number.isFinite(Date.parse(discovery.expiresAt)) || Date.parse(discovery.expiresAt) <= Date.now()}
+            onPress={() => void run("select", async signal => {
+              await api.selectDevice(draft.configuration.instance.id, integrationChange(draft), device.selectionToken, signal);
+              await open(draft.configuration.instance, signal);
+              if (!signal.aborted) await onSelectionChanged?.();
+            })} />
+        </View>)}
+        {bindings.map(device => <Text key={device.id} style={styles.detail}>
+          {device.name}{device.isDefault ? " · Selected" : ""}
+        </Text>)}
+        <AppButton label={draft.configuration.instance.status === "enabled" ? "Disable integration" : "Enable integration"}
+          variant="secondary" disabled={Boolean(busy) || draft.configuration.instance.status !== "enabled" && (changed || Boolean(unsupported) || !packageAvailable)}
+          onPress={() => void run("enabled", async signal => {
+            const saved = draft.configuration.instance;
+            const instance = await api.setEnabled(saved.id, saved.status !== "enabled",
+              { expectedRevision: saved.revision, packageVersion: saved.packageVersion, packageDigest: saved.packageDigest,
+                descriptorDigest: saved.descriptorDigest }, signal);
+            if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+            setDraft(current => current && { ...current, configuration: { ...current.configuration, instance } });
+            setInstances(current => current.map(item => item.id === instance.id ? instance : item));
+            setDiscovery(null);
+          })} />
+        <AppButton label="Reload saved settings (discard draft)" variant="secondary" disabled={Boolean(busy)}
+          onPress={() => void run("reload", signal => open(draft.configuration.instance, signal))} />
+      </Card> : null}
+    </>}
+  </>;
+}
+
+function samePackage(provider: IntegrationProvider, instance: IntegrationInstance): boolean {
+  return provider.providerId === instance.providerId && provider.packageVersion === instance.packageVersion
+    && provider.packageDigest === instance.packageDigest && provider.descriptorDigest === instance.descriptorDigest;
+}
+
+const styles = StyleSheet.create({
+  form: { gap: spacing.md },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  title: { color: colors.text, fontSize: typography.body, fontWeight: "700" },
+  detail: { color: colors.muted, fontSize: typography.caption }
+});

@@ -1,12 +1,12 @@
 @using System.Globalization
 
-<section class="inverter-readings" aria-label="Deye inverter readings">
+<section class="inverter-readings" aria-label="Inverter readings">
     <h2>Energy flows</h2>
     <dl class="inverter-metrics">
-        <div><dt>Solar generation</dt><dd data-testid="inverter-pv">@(Data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } && observed <= (Now ?? DateTimeOffset.UtcNow) ? Number(Data.SolarProduction / 1000d) : "—") kW</dd></div>
-        <div><dt>Load</dt><dd>@Watts(Data?.LoadPower) W</dd></div>
-        <div><dt>Grid</dt><dd>@Watts(Data?.GridConsumption) W</dd><span>@(Data is null ? "Awaiting reading" : Data.GridConsumption < 0 ? "Exporting" : Data.GridConsumption > 0 ? "Importing" : "Idle")</span></div>
-        <div><dt>@PowerBalance.BatteryLabel(Data?.BatteryPower)</dt><dd data-testid="inverter-battery-power">@Watts(Data?.BatteryPower) W</dd></div>
+        <div><dt>Solar generation</dt><dd data-testid="inverter-pv">@(Data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } && Data.SolarPowerValid != false && observed <= (Now ?? DateTimeOffset.UtcNow) ? Number(Data.SolarProduction / 1000d) : "—") kW</dd></div>
+        <div><dt>Load</dt><dd data-testid="inverter-load">@Watts(Data?.LoadPowerValid == false ? null : Data?.LoadPower) W</dd></div>
+        <div><dt>Grid</dt><dd data-testid="inverter-grid">@Watts(GridPower) W</dd><span>@(Data is null ? "Awaiting reading" : GridPower is null ? "Grid measurement unavailable" : GridPower < 0 ? "Exporting" : GridPower > 0 ? "Importing" : "Idle")</span></div>
+        <div><dt>@PowerBalance.BatteryLabel(Data?.BatteryPowerValid == false ? null : Data?.BatteryPower)</dt><dd data-testid="inverter-battery-power">@Watts(Data?.BatteryPowerValid == false ? null : Data?.BatteryPower) W</dd></div>
     </dl>
     <h2>Power balance</h2>
     @{ var balance = Balance; }
@@ -14,22 +14,23 @@
         <div><dt>Balance difference</dt><dd data-testid="inverter-balance">@SignedWatts(balance.Watts)</dd><span>@(balance.Watts is { } difference ? PowerBalance.Direction(difference) : balance.UnavailableReason)</span></div>
     </dl>
     <p>Solar + signed grid + signed battery − load. Grid import and battery discharge are positive; export and charging are negative.</p>
-    <p>This is an approximate balance of reported values. Measurements may be taken at different times, and an unavailable reading may appear as zero. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</p>
+    <p>This is an approximate balance of reported values. Measurements may be taken at different times. Conversion and measurement differences also contribute; this is not a measurement of inverter losses.</p>
     <h2>Battery details</h2>
     <dl class="inverter-metrics">
-        <div><dt>Battery SOC</dt><dd>@(Data?.BatterySoc.ToString(CultureInfo.InvariantCulture) ?? "—") %</dd></div>
-        <div><dt>Voltage</dt><dd>@OptionalNumber(Data?.BatteryVoltage) V</dd></div>
-        <div><dt>Current</dt><dd>@OptionalNumber(Data?.BatteryCurrent) A</dd></div>
-        <div><dt>Temperature</dt><dd>@OptionalNumber(Data?.BatteryTemperature) °C</dd></div>
+        <div><dt>Battery SOC</dt><dd data-testid="inverter-soc">@(Data?.BatterySocValid == false ? "—" : Data?.BatterySoc.ToString(CultureInfo.InvariantCulture) ?? "—") %</dd></div>
+        <div><dt>Voltage</dt><dd data-testid="inverter-voltage">@OptionalNumber(Data?.BatteryVoltageValid == false ? null : Data?.BatteryVoltage) V</dd></div>
+        <div><dt>Current</dt><dd data-testid="inverter-current">@OptionalNumber(Data?.BatteryCurrentValid == false ? null : Data?.BatteryCurrent) A</dd></div>
+        <div><dt>Temperature</dt><dd data-testid="inverter-temperature">@OptionalNumber(Data?.BatteryTemperatureValid == false ? null : Data?.BatteryTemperature) °C</dd></div>
     </dl>
     <h2>Reading times</h2>
     <dl class="inverter-metrics">
-        <div><dt>Deye solar measurement</dt><dd>@(Data?.SolarObservedAt is { } measuredAt ? Time(measuredAt) : "Unavailable")</dd></div>
-        <div><dt>Deye grid measurement</dt><dd>@(Data?.GridObservedAt is { } gridAt ? Time(gridAt) : "Unavailable")</dd></div>
+        <div><dt>Solar measurement</dt><dd>@(Data?.SolarPowerValid != false && Data?.SolarObservedAt is { } measuredAt ? Time(measuredAt) : "Unavailable")</dd></div>
+        <div><dt>Grid measurement</dt><dd>@(Data?.GridPowerValid != false && Data?.GridObservedAt is { } gridAt ? Time(gridAt) : "Unavailable")</dd></div>
         <div><dt>Last poll</dt><dd>@(Data is not null ? Time(Data.Timestamp) : "Unavailable")</dd></div>
         <div><dt>Display time zone</dt><dd>@TimeZoneId</dd></div>
     </dl>
-    <p>Polling time can be later than the inverter measurement time. Solar power is unavailable when a valid measurement time is missing. Other fields may report zero when a reading is unavailable.</p>
+    <p>Polling time can be later than the inverter measurement time. Unavailable measurements are shown with a dash. Solar power is unavailable when a valid measurement time is missing.</p>
+    @if (Data?.Telemetry is null) { <p>This legacy reading does not identify missing battery and load values; a reported zero may mean that a measurement was not supplied.</p> }
     <p>Battery charging and discharging follow the reported battery power. Battery current keeps its signed value.</p>
 </section>
 
@@ -40,6 +41,7 @@
     [Parameter] public int AlignmentToleranceSeconds { get; set; } = 120;
     [Parameter] public int MaximumAgeMinutes { get; set; } = 10;
     [Parameter] public string? ExpectedDeviceSn { get; set; }
+    private int? GridPower => Data?.GridPowerValid == false ? null : Data?.GridConsumption;
     private PowerBalanceReading Balance => PowerBalance.FromReading(Data, Now ?? DateTimeOffset.UtcNow, AlignmentToleranceSeconds, MaximumAgeMinutes, ExpectedDeviceSn);
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-GB");
     private static string Number(double value) => value.ToString("N2", English);

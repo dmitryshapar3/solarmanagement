@@ -42,7 +42,7 @@ public class EnergyDetailsTests
     {
         var html = await RenderReadingsAsync(new() { SolarProduction = 0, SolarObservedAt = null }, DateTimeOffset.UtcNow);
         Assert.Matches("data-testid=\"inverter-pv\"[^>]*>— kW", html);
-        Assert.Contains("Deye solar measurement", html);
+        Assert.Contains("Solar measurement", html);
         Assert.Contains("Unavailable", html);
         Assert.Matches("data-testid=\"inverter-balance\"[^>]*>—", html);
     }

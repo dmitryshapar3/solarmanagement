@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -53,7 +55,7 @@ public class SolarEstimateCardTests
             Assert.Contains("Latest solar snapshot", html);
             Assert.Contains("Data sources and timestamps", html);
             Assert.Contains("Possible", html);
-            Assert.Contains("Latest Deye generation", html);
+            Assert.Contains("Latest inverter generation", html);
             if (scenario == "empty")
             {
                 Assert.Contains("Estimate unavailable", html);
@@ -84,7 +86,7 @@ public class SolarEstimateCardTests
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
         var visible = StripTags(Regex.Replace(html, "<details\\b.*?</details>", "", RegexOptions.Singleline));
         Assert.Contains("Possible", visible);
-        Assert.Contains("Latest Deye generation", visible);
+        Assert.Contains("Latest inverter generation", visible);
         Assert.DoesNotContain("Deviation", html);
         Assert.DoesNotContain("Approximate range", html);
         Assert.DoesNotContain("Roofs and configuration", html);
@@ -138,11 +140,11 @@ public class SolarEstimateCardTests
     }
 
     [Theory]
-    [InlineData("stale", "The Deye reading is stale")]
-    [InlineData("missing-time", "The Deye measurement time is unverified")]
-    [InlineData("future", "The Deye measurement time is invalid")]
-    [InlineData("negative", "The Deye reading is unavailable")]
-    [InlineData("missing", "The Deye reading is unavailable")]
+    [InlineData("stale", "The inverter reading is stale")]
+    [InlineData("missing-time", "The inverter measurement time is unverified")]
+    [InlineData("future", "The inverter measurement time is invalid")]
+    [InlineData("negative", "The inverter reading is unavailable")]
+    [InlineData("missing", "The inverter reading is unavailable")]
     public async Task UnavailableActualDoesNotBecomeZeroOrAStaleCurrentValue(string scenario, string reason)
     {
         var fixture = CreateFixture();
@@ -179,7 +181,7 @@ public class SolarEstimateCardTests
 
         Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
-        Assert.Contains("The Deye power type is unconfirmed", html);
+        Assert.Contains("The inverter power type is unconfirmed", html);
         Assert.DoesNotContain("Within the expected range", html);
         Assert.DoesNotContain("Deviation", html);
         Assert.Contains("solar-info-warning", html);
@@ -187,7 +189,7 @@ public class SolarEstimateCardTests
 
     [Theory]
     [InlineData("other-device", "The reading belongs to another inverter")]
-    [InlineData(null, "The Deye reading's device is unverified")]
+    [InlineData(null, "The inverter reading's device is unverified")]
     public async Task ForeignOrUnverifiedDeviceSnapshotIsNeverPresentedAsThisInstallation(string? measuredDevice, string reason)
     {
         var fixture = CreateFixture();
@@ -336,7 +338,7 @@ public class SolarEstimateCardTests
         services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddOptions<SolarEstimateOptions>();
-        services.Configure<DeyeCloudOptions>(o => o.DeviceSn = "test-device");
+        services.Configure<InverterConnectionOptions>(o => o.DeviceKey = "test-device");
         services.AddSingleton<NavigationManager, TestNavigation>();
         services.AddSingleton<InverterDataSnapshot>();
         services.AddSingleton<IInverterRefreshService, UnusedRefresh>();

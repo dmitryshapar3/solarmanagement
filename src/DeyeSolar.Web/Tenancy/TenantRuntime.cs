@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using DeyeSolar.Web.Data;
+using Microsoft.EntityFrameworkCore;
 using System.Text;
 using System.Text.Json;
 using DeyeSolar.Domain.Interfaces;
@@ -8,6 +10,8 @@ using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using DeyeSolar.Web.Integrations;
+using SolarManagement.Inverters.Contracts;
 
 namespace DeyeSolar.Web.Tenancy;
 
@@ -21,12 +25,14 @@ public sealed class TenantRuntime : IAsyncDisposable
     private readonly SemaphoreSlim _cycleGate = new(1, 1);
     private readonly object _sync = new();
     private readonly IDisposable _configurationSubscription;
+    private readonly IntegrationChangeNotifier _integrationChanges;
     private CancellationTokenSource? _cycleCancellation;
     private Task? _disposeTask;
     private string _deyeKey;
     private string _shellyKey;
     private string _siteKey;
     private int _solarReset;
+    private int _bootstrapRequested;
     private DateTimeOffset _nextPoll;
     private DateTimeOffset _nextDevices;
     private DateTimeOffset _nextSolar;
@@ -40,6 +46,8 @@ public sealed class TenantRuntime : IAsyncDisposable
         _lifetime = lifetime;
         _clock = clock;
         _logger = provider.GetRequiredService<ILogger<TenantRuntime>>();
+        _integrationChanges = provider.GetRequiredService<IntegrationChangeNotifier>();
+        _integrationChanges.Changed += IntegrationChanged;
         (_deyeKey, _shellyKey, _siteKey) = ConfigurationKeys();
         if (!TenantRuntimeOptions.HasSolarConfiguration(_configuration.GetSection(SolarEstimateOptions.Section).Get<SolarEstimateOptions>()!))
             Resolve<SolarEstimateService>().Reset(TenantRuntimeOptions.ConfigureSiteMessage);
@@ -47,6 +55,29 @@ public sealed class TenantRuntime : IAsyncDisposable
     }
 
     public string InstallationId { get; }
+    private void IntegrationChanged(string installationId, Guid instanceId)
+    {
+        if (installationId.Length == 0)
+        {
+            Interlocked.Exchange(ref _bootstrapRequested, 1);
+            return;
+        }
+        if (installationId != InstallationId) return;
+        CancellationTokenSource? operation;
+        lock (_sync)
+        {
+            if (_disposeTask is not null) return;
+            operation = _cycleCancellation;
+            _solarReset = 1;
+            _nextPoll = _nextDevices = _nextSolar = DateTimeOffset.MinValue;
+        }
+        Resolve<InverterSelectionMonitor>().Invalidate();
+        Resolve<DynamicSocketGateway>().Invalidate();
+        Cancel(operation);
+        Notify(() => Resolve<InverterDataSnapshot>().Clear());
+        Notify(() => Resolve<DeviceStatusSnapshot>().Clear());
+        _ = ResetEstimateAsync();
+    }
     public IServiceProvider Services => _provider;
     public T Resolve<T>() where T : notnull
     {
@@ -54,12 +85,13 @@ public sealed class TenantRuntime : IAsyncDisposable
         return _provider.GetRequiredService<T>();
     }
 
-    public Task RefreshSettingsAsync(CancellationToken ct = default)
+    public async Task RefreshSettingsAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         lock (_sync) ObjectDisposedException.ThrowIf(_disposeTask is not null, this);
+        if (Interlocked.Exchange(ref _bootstrapRequested, 0) != 0 && _provider.GetService<LegacyIntegrationBootstrap>() is { } bootstrap)
+            await bootstrap.RunAsync(Resolve<IDbContextFactory<DeyeSolarDbContext>>(), _configuration, ct);
         _configuration.Reload();
-        return Task.CompletedTask;
     }
 
     private (string Deye, string Shelly, string Site) ConfigurationKeys() =>
@@ -133,21 +165,24 @@ public sealed class TenantRuntime : IAsyncDisposable
         try
         {
             ApplySolarReset();
+            await Resolve<InverterSelectionMonitor>().RefreshAsync(operation.Token).ConfigureAwait(false);
             var now = _clock.GetUtcNow();
             var interval = TimeSpan.FromSeconds(Math.Clamp(Resolve<IOptionsMonitor<PollingOptions>>().CurrentValue.IntervalSeconds, 1, 3600));
-            if (now >= _nextPoll && TenantRuntimeOptions.HasDeyeConfiguration(Resolve<IOptionsMonitor<DeyeCloudOptions>>().CurrentValue))
+            if (now >= _nextPoll && !string.IsNullOrWhiteSpace(Resolve<IOptionsMonitor<InverterConnectionOptions>>().CurrentValue.DeviceKey))
             {
                 _nextPoll = now + interval;
                 await RunSafelyAsync(() => Resolve<PollingWorker>().PollAndEvaluateAsync(operation.Token), "Inverter", operation.Token).ConfigureAwait(false);
             }
-            if (now >= _nextDevices && TenantRuntimeOptions.HasShellyConfiguration(Resolve<IOptionsMonitor<ShellyOptions>>().CurrentValue))
+            if (now >= _nextDevices)
             {
                 _nextDevices = now + interval;
                 await RunSafelyAsync(async () =>
                 {
+                    var snapshot = Resolve<DeviceStatusSnapshot>();
+                    var epoch = snapshot.Epoch;
                     var devices = await Resolve<ISocketInventoryService>().RefreshDevicesAsync(operation.Token).ConfigureAwait(false);
                     operation.Token.ThrowIfCancellationRequested();
-                    Resolve<DeviceStatusSnapshot>().Update(devices);
+                    snapshot.TryUpdate(devices, epoch);
                 }, "Socket discovery", operation.Token).ConfigureAwait(false);
             }
             if (now >= _nextSolar && TenantRuntimeOptions.HasSolarConfiguration(Resolve<IOptionsMonitor<SolarEstimateOptions>>().CurrentValue))
@@ -189,6 +224,7 @@ public sealed class TenantRuntime : IAsyncDisposable
     private async Task StopAsync()
     {
         _configurationSubscription.Dispose();
+        _integrationChanges.Changed -= IntegrationChanged;
         _lifetime.StopApplication();
         Cancel(_cycleCancellation);
         await _cycleGate.WaitAsync().ConfigureAwait(false);

@@ -1,20 +1,15 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Api;
-using DeyeSolar.Web.Data;
 using Microsoft.Extensions.Options;
 
 namespace DeyeSolar.Web.Services;
 
 /// <summary>Bounded, read-only probes. Draft settings, tokens and responses never enter storage or logs.</summary>
-public sealed class IntegrationTestService(AppSettingsService settings, IHttpClientFactory clients,
+public sealed class IntegrationTestService(IHttpClientFactory clients,
     IOptionsMonitor<SolarEstimateOptions> solarOptions, TimeProvider clock, IntegrationProbeGate gate) : IIntegrationTestService
 {
     public const string ClientName = "IntegrationReadOnlyTest";
@@ -22,8 +17,8 @@ public sealed class IntegrationTestService(AppSettingsService settings, IHttpCli
     public async Task<IntegrationTestResult> TestAsync(string kind, IntegrationTestRequest request, CancellationToken ct)
     {
         kind = kind.ToLowerInvariant();
-        if (kind is not ("deye" or "shelly" or "openmeteo" or "pse"))
-            return Result(kind, false, "configuration", "Choose a supported integration.");
+        if (kind is not ("openmeteo" or "pse"))
+            return Result(kind, false, "configuration", "Configure device manufacturers in the integrations section.");
         if (!await gate.Lock.WaitAsync(0, ct)) return Result(kind, false, "busy", "Another connection test is running. Please try again shortly.");
         try
         {
@@ -35,8 +30,6 @@ public sealed class IntegrationTestService(AppSettingsService settings, IHttpCli
             using var client = clients.CreateClient(ClientName);
             var message = kind switch
             {
-                "deye" => await DeyeAsync(client, request, timeout.Token),
-                "shelly" => await ShellyAsync(client, request, timeout.Token),
                 "openmeteo" => await WeatherAsync(client, request, timeout.Token),
                 _ => await PseAsync(client, timeout.Token)
             };
@@ -50,41 +43,6 @@ public sealed class IntegrationTestService(AppSettingsService settings, IHttpCli
     }
 
     private IntegrationTestResult Result(string kind, bool success, string code, string message) => new(kind, success, code, message, clock.GetUtcNow());
-    private static bool Field(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 2048;
-
-    private async Task<string> DeyeAsync(HttpClient client, IntegrationTestRequest draft, CancellationToken ct)
-    {
-        var value = draft.DeyeCloud?.ToOptions() ?? await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-        if (!ProviderEndpointPolicy.TryDeye(value.BaseUrl, out var uri) || !Field(value.AppId) || !Field(value.AppSecret)
-            || !Field(value.Email) || !Field(value.Password)) throw new ProbeConfigurationException();
-        using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, new Uri(uri, "account/token?appId=" + Uri.EscapeDataString(value.AppId)))
-        { Content = JsonContent.Create(new { appSecret = value.AppSecret, email = value.Email,
-            password = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.Password))).ToLowerInvariant() }) };
-        using var token = await ReadAsync(client, tokenRequest, ct);
-        if (!True(token.RootElement, "success")) throw new ProbeAuthenticationException();
-        if (!token.RootElement.TryGetProperty("accessToken", out var access) || access.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(access.GetString()) || access.GetString()!.Length > 8192) throw new InvalidDataException();
-        using var stationsRequest = new HttpRequestMessage(HttpMethod.Post, new Uri(uri, "station/listWithDevice"))
-        { Content = JsonContent.Create(new { page = 1, size = 1 }) };
-        stationsRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access.GetString());
-        using var stations = await ReadAsync(client, stationsRequest, ct);
-        if (!True(stations.RootElement, "success") || !stations.RootElement.TryGetProperty("stationList", out var list)
-            || list.ValueKind != JsonValueKind.Array) throw new InvalidDataException();
-        return "Connected. DeyeCloud account access was verified without changing the inverter.";
-    }
-
-    private async Task<string> ShellyAsync(HttpClient client, IntegrationTestRequest draft, CancellationToken ct)
-    {
-        var value = draft.Shelly?.ToOptions() ?? await settings.LoadSectionAsync<ShellyOptions>(ShellyOptions.Section);
-        if (!ProviderEndpointPolicy.TryShelly(value.ServerUri, out var uri) || !Field(value.AuthKey)) throw new ProbeConfigurationException();
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(uri, "device/all_status?show_info=true&no_shared=true&auth_key=" + Uri.EscapeDataString(value.AuthKey)));
-        using var response = await ReadAsync(client, request, ct);
-        var root = response.RootElement;
-        if (!True(root, "isok")) throw new ProbeAuthenticationException();
-        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object
-            || !data.TryGetProperty("devices_status", out var devices) || devices.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
-        return "Connected. Shelly Cloud device access was verified without switching any device.";
-    }
 
     private async Task<string> WeatherAsync(HttpClient client, IntegrationTestRequest draft, CancellationToken ct)
     {
@@ -113,9 +71,6 @@ public sealed class IntegrationTestService(AppSettingsService settings, IHttpCli
             throw new InvalidDataException();
         return "Connected. The public PSE electricity price feed was verified.";
     }
-
-    private static bool True(JsonElement root, string property) => root.ValueKind == JsonValueKind.Object
-        && root.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.True;
 
     private static async Task<JsonDocument> ReadAsync(HttpClient client, HttpRequestMessage request, CancellationToken ct)
     {

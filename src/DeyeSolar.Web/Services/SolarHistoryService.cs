@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -25,7 +27,7 @@ public interface ISolarHistoryService
 }
 
 public sealed class SolarHistoryService(ISolarHistoryRadiationSource weather, ISolarHistoryStore store,
-    IOptionsMonitor<SolarEstimateOptions> options, IOptionsMonitor<DeyeCloudOptions> deyeOptions,
+    IOptionsMonitor<SolarEstimateOptions> options, IOptionsMonitor<InverterConnectionOptions> inverterOptions,
     TimeProvider clock, ILogger<SolarHistoryService> logger) : ISolarHistoryService, IDisposable
 {
     private readonly SemaphoreSlim _weatherGate = new(1, 1);
@@ -50,7 +52,7 @@ public sealed class SolarHistoryService(ISolarHistoryRadiationSource weather, IS
         }
         config.Validate();
         var key = SolarEstimateService.ConfigurationKey(config);
-        var device = deyeOptions.CurrentValue.DeviceSn;
+        var device = inverterOptions.CurrentValue.DeviceKey;
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, TimeZoneInfo.FindSystemTimeZoneById(config.TimeZoneId)).DateTime);
         var selectedDate = endDate ?? today;
         var (start, end) = SolarHistoryAggregation.Range(period, now, config.TimeZoneId, selectedDate);
@@ -60,7 +62,7 @@ public sealed class SolarHistoryService(ISolarHistoryRadiationSource weather, IS
         var actualTask = ReadActualAsync(config, device, start, end, now, ct);
         await Task.WhenAll(weatherTask, actualTask);
         ct.ThrowIfCancellationRequested();
-        if (device != deyeOptions.CurrentValue.DeviceSn || key != SolarEstimateService.ConfigurationKey(options.CurrentValue))
+        if (device != inverterOptions.CurrentValue.DeviceKey || key != SolarEstimateService.ConfigurationKey(options.CurrentValue))
             return new(start, end, config.TimeZoneId, [], ActualError: "Installation settings changed. Refresh the chart.")
                 { SelectedDate = selectedDate, Today = today };
 
@@ -109,8 +111,8 @@ public sealed class SolarHistoryService(ISolarHistoryRadiationSource weather, IS
     private async Task<(IReadOnlyList<SolarActual> Samples, string? Error)> ReadActualAsync(
         SolarEstimateOptions config, string device, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(device) || !config.DeyeSolarPowerIsPvDcConfirmed
-            || config.DeyeConfirmedDeviceSn != device)
+        if (string.IsNullOrWhiteSpace(device) || !config.SolarPowerIsPvDcConfirmed
+            || config.ConfirmedInverterKey != device)
             return ([], "Confirm the selected inverter's PV power type before comparing readings.");
         // Adjacent measurements support interpolation at either boundary without scanning
         // from an older selected period all the way through the current date.

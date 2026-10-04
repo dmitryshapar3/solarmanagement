@@ -3,14 +3,18 @@ type PowerReadings = {
   gridConsumption?: number | null;
   batteryPower?: number | null;
   loadPower?: number | null;
+  batteryPowerValid?: boolean | null;
+  loadPowerValid?: boolean | null;
+  gridPowerValid?: boolean | null;
+  solarPowerValid?: boolean | null;
   solarObservedAt?: string | null;
   gridObservedAt?: string | null;
   solarDeviceSn?: string | null;
   gridDeviceSn?: string | null;
 };
 
-export function batteryFlow(power?: number | null) {
-  if (typeof power !== "number" || !Number.isFinite(power))
+export function batteryFlow(power?: number | null, valid?: boolean | null) {
+  if (valid === false || typeof power !== "number" || !Number.isFinite(power))
     return { label: "Battery power", watts: null };
   return {
     label: power < 0 ? "Battery charging" : power > 0 ? "Battery discharging" : "Battery idle",
@@ -20,7 +24,8 @@ export function batteryFlow(power?: number | null) {
 
 // Grid import and battery discharge supply power; export and charging consume it.
 export function calculatePowerBalance(readings?: PowerReadings | null): number | null {
-  if (!readings) return null;
+  if (!readings || readings.batteryPowerValid === false || readings.loadPowerValid === false
+    || readings.gridPowerValid === false || readings.solarPowerValid === false) return null;
   const { solarProduction: solar, gridConsumption: grid, batteryPower: battery, loadPower: load } = readings;
   if (![solar, grid, battery, load].every((value) => typeof value === "number" && Number.isFinite(value))
     || solar! < 0 || load! < 0) return null;
@@ -34,11 +39,11 @@ export function reportedPowerBalance(readings?: (PowerReadings & { timestamp: st
   if (watts === null || !readings) return { watts: null, reason: "Required power readings are unavailable." };
   // Older deployments supply poll time only. New source metadata must be valid before using its readings.
   const timestamp = readings.timestamp;
-  if (typeof timestamp !== "string") return { watts: null, reason: "A recent Deye poll is required to calculate the balance." };
+  if (typeof timestamp !== "string") return { watts: null, reason: "A recent inverter poll is required to calculate the balance." };
   const polledAt = utcTime(timestamp);
   if (!Number.isFinite(polledAt) || !Number.isFinite(now) || !Number.isFinite(maximumAgeMs) || maximumAgeMs < 0
     || polledAt > now || now - polledAt > maximumAgeMs)
-    return { watts: null, reason: "A recent Deye poll is required to calculate the balance." };
+    return { watts: null, reason: "A recent inverter poll is required to calculate the balance." };
   if (hasSourceMetadata(readings)) {
     const solarAt = utcTime(readings.solarObservedAt);
     const gridAt = utcTime(readings.gridObservedAt);

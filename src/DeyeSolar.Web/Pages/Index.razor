@@ -5,11 +5,11 @@
 @using Microsoft.Extensions.Options
 @inject InverterDataSnapshot Snapshot
 @inject TimeProvider Clock
-@inject IOptionsMonitor<DeyeCloudOptions> DeyeOptions
+@inject IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
 @inject IInverterRefreshService InverterRefresh
 @inject DeviceStatusSnapshot DeviceSnapshot
-@inject DeyeSolar.Domain.Interfaces.ISocketController SocketController
+@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventory
 @inject DeyeSolar.Domain.Interfaces.IRuleRepository RuleRepo
 @using DeyeSolar.Web.Shared
 @implements IDisposable
@@ -23,15 +23,15 @@
                 <div class="energy-status-heading">
                     <div>
                         <h2 id="energy-status-title">Current generation</h2>
-                        <span class="energy-status-source">DeyeCloud</span>
+                        <span class="energy-status-source">Inverter</span>
                         @if (_data is { } reading)
                         {
-                            <span class="energy-status-updated" title="Poll time; the Deye measurement may be older.">Last Deye poll <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
+                            <span class="energy-status-updated" title="Poll time; the inverter measurement may be older.">Last inverter poll <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
                         }
                     </div>
                     <div class="energy-status-actions">
                     <button type="button" class="energy-status-refresh" @onclick="RefreshInverterAsync" disabled="@_refreshing"
-                            aria-label="Refresh inverter data" title="Fetch the latest Deye readings">
+                            aria-label="Refresh inverter data" title="Fetch the latest inverter readings">
                         <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
                         @(_refreshing ? "Refreshing…" : "Refresh")
                     </button>
@@ -40,7 +40,7 @@
                 </div>
                 <div class="energy-status-metrics">
                     <div class="energy-status-metric energy-status-primary" data-testid="solar-generation">
-                        <span class="energy-status-label">Solar generation · Deye</span>
+                        <span class="energy-status-label">Solar generation · Inverter</span>
                         <strong>@SolarPower<small>kW</small></strong>
                         @if (HasSolarReading && _data?.SolarObservedAt is { } observedAt)
                         {
@@ -53,22 +53,22 @@
                     </div>
                     <div class="energy-status-metric" data-testid="load-power">
                         <span class="energy-status-label">Load</span>
-                        <strong>@Power(_data?.LoadPower)<small>W</small></strong>
+                        <strong>@Power(_data?.LoadPowerValid == false ? null : _data?.LoadPower)<small>W</small></strong>
                     </div>
                     <div class="energy-status-metric" data-testid="grid-power">
                         <span class="energy-status-label">Grid</span>
-                        <strong>@Power(_data?.GridConsumption)<small>W</small></strong>
+                        <strong>@Power(GridPower)<small>W</small></strong>
                         <span class="energy-status-direction @GridClass">@GridDirection</span>
                     </div>
                     <div class="energy-status-metric" data-testid="battery-power">
-                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPower)</span>
-                        <strong>@Power(_data?.BatteryPower)<small>W</small></strong>
-                        <span class="energy-status-direction">@(_data is null ? "Awaiting reading" : "Reported Deye power")</span>
+                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)</span>
+                        <strong>@Power(_data?.BatteryPowerValid == false ? null : _data?.BatteryPower)<small>W</small></strong>
+                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid == false ? "Awaiting reading" : "Reported inverter power")</span>
                     </div>
                 </div>
                 @if (_data is null)
                 {
-                    <p class="energy-status-message" role="status">Waiting for the first Deye reading.</p>
+                    <p class="energy-status-message" role="status">Waiting for the first inverter reading.</p>
                 }
                 @if (_refreshError is not null)
                 {
@@ -108,22 +108,7 @@
                         }
                     }
                 </MudSelect>
-                <MudStack Row="true" Spacing="2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Success"
-                               Disabled="@string.IsNullOrWhiteSpace(_manualDeviceId)"
-                               OnClick="@(() => ManualToggle(true))">
-                        Socket ON
-                    </MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Error"
-                               Disabled="@string.IsNullOrWhiteSpace(_manualDeviceId)"
-                               OnClick="@(() => ManualToggle(false))">
-                        Socket OFF
-                    </MudButton>
-                </MudStack>
-                @if (!string.IsNullOrEmpty(_actionMessage))
-                {
-                    <MudAlert Severity="@_actionSeverity" Class="mt-2">@_actionMessage</MudAlert>
-                }
+                <SocketCommandControls DeviceId="@_manualDeviceId" Online="@(_devices?.FirstOrDefault(device => device.Id == _manualDeviceId)?.Online == true)" OnAcknowledged="RefreshManualDevicesAsync" />
             </MudPaper>
         </MudItem>
 
@@ -182,21 +167,19 @@
     private List<TriggerRule>? _rules;
     private IReadOnlyList<DevicePowerInfo>? _devices;
     private string? _manualDeviceId;
-    private string? _actionMessage;
-    private Severity _actionSeverity;
     private string? _tz;
-    private DeyeSolar.Domain.Options.ShellyOptions _shelly = new();
     private bool _refreshing;
     private bool _disposed;
     private string? _refreshError;
     private readonly CancellationTokenSource _lifetime = new();
     private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.InvariantCulture) : "—";
-    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading
-        && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == DeyeOptions.CurrentValue.DeviceSn
+    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid != false
+        && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == InverterOptions.CurrentValue.DeviceKey
         && observed <= Clock.GetUtcNow() && (Clock.GetUtcNow() - observed).TotalMinutes <= EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes;
     private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.GetCultureInfo("en-GB")) : "—";
-    private string GridDirection => _data is null ? "Awaiting reading" : _data.GridConsumption < 0 ? "Exporting" : _data.GridConsumption > 0 ? "Importing" : "Idle";
-    private string GridClass => _data?.GridConsumption < 0 ? "energy-status-positive" : _data?.GridConsumption > 0 ? "energy-status-active" : "";
+    private int? GridPower => _data?.GridPowerValid == false ? null : _data?.GridConsumption;
+    private string GridDirection => _data is null ? "Awaiting reading" : GridPower is null ? "Grid measurement unavailable" : GridPower < 0 ? "Exporting" : GridPower > 0 ? "Importing" : "Idle";
+    private string GridClass => GridPower < 0 ? "energy-status-positive" : GridPower > 0 ? "energy-status-active" : "";
     private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
 
     protected override async Task OnInitializedAsync()
@@ -263,8 +246,8 @@
         catch (Exception)
         {
             if (!_disposed) _refreshError = _data is null
-                ? "Could not fetch Deye readings. Please try again."
-                : "Could not refresh Deye readings. Showing the last successful reading; please try again.";
+                ? "Could not fetch inverter readings. Please try again."
+                : "Could not refresh inverter readings. Showing the last successful reading; please try again.";
         }
         finally
         {
@@ -279,79 +262,26 @@
         return local.ToString("MM/dd HH:mm:ss");
     }
 
-    private async Task ManualToggle(bool turnOn)
+    private async Task RefreshManualDevicesAsync()
     {
-        try
-        {
-            var entityId = _manualDeviceId;
-            if (string.IsNullOrWhiteSpace(entityId))
-            {
-                _actionMessage = "Select a device first.";
-                _actionSeverity = Severity.Warning;
-                return;
-            }
-
-            if (turnOn)
-                await SocketController.TurnOnAsync(entityId, CancellationToken.None);
-            else
-                await SocketController.TurnOffAsync(entityId, CancellationToken.None);
-
-            await UpdateMatchingRuleStates(entityId, turnOn);
-            MarkManualDeviceState(entityId, turnOn);
-
-            var deviceName = _devices?.FirstOrDefault(d => d.Id == entityId)?.Name ?? entityId;
-            _actionMessage = turnOn ? $"{deviceName} turned ON" : $"{deviceName} turned OFF";
-            _actionSeverity = Severity.Success;
-        }
-        catch (Exception ex)
-        {
-            _actionMessage = $"Error: {ex.Message}";
-            _actionSeverity = Severity.Error;
-        }
-    }
-
-    private async Task UpdateMatchingRuleStates(string entityId, bool isOn)
-    {
-        var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
-        foreach (var rule in rules.Where(r => string.Equals(r.EntityId, entityId, StringComparison.OrdinalIgnoreCase)))
-        {
-            if (rule.CurrentState == isOn)
-                continue;
-
-            rule.CurrentState = isOn;
-            await RuleRepo.UpdateAsync(rule, CancellationToken.None);
-        }
-
-        _rules = await RuleRepo.GetAllAsync(CancellationToken.None);
-        _devices = BuildManualDevices(_rules);
+        var epoch = DeviceSnapshot.Epoch;
+        var devices = await SocketInventory.RefreshDevicesAsync(_lifetime.Token);
+        if (_disposed) return;
+        DeviceSnapshot.TryUpdate(devices, epoch);
+        await LoadRulesAndManualDevices();
     }
 
     private async Task LoadRulesAndManualDevices()
     {
-        var shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
-        if (_disposed) return;
         var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
         if (_disposed) return;
-        _shelly = shelly;
         _rules = rules;
         _devices = BuildManualDevices(_rules);
         SelectDefaultManualDevice();
     }
 
     private IReadOnlyList<DevicePowerInfo> BuildManualDevices(IReadOnlyList<TriggerRule> rules)
-        => ManualSocketDevices.Build(rules, _shelly.DeviceId, DeviceSnapshot.Current);
-
-    private void MarkManualDeviceState(string entityId, bool isOn)
-    {
-        if (_devices == null)
-            return;
-
-        _devices = _devices
-            .Select(device => string.Equals(device.Id, entityId, StringComparison.OrdinalIgnoreCase)
-                ? device with { IsOn = isOn }
-                : device)
-            .ToList();
-    }
+        => DeviceSnapshot.Current ?? ManualSocketDevices.Build(rules, null);
 
     private void SelectDefaultManualDevice()
     {

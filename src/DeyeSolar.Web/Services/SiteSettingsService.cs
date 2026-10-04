@@ -1,6 +1,9 @@
 using System.Globalization;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Domain.Interfaces;
+using Microsoft.Extensions.Options;
+using SolarManagement.Inverters.Contracts;
 
 namespace DeyeSolar.Web.Services;
 
@@ -10,14 +13,19 @@ public sealed record SolarSiteSettings(double Latitude, double Longitude, string
 public sealed record SalesSiteSettings(string ContractStartDate, string TimeZoneId, bool PayNegativePrices);
 public sealed record SiteSettingsDto(SolarSiteSettings SolarEstimate, SalesSiteSettings SolarSales, string SelectedDeviceSn = "");
 
-public sealed class SiteSettingsService(AppSettingsService settings)
+public sealed class SiteSettingsService(AppSettingsService settings, IOptionsMonitor<InverterConnectionOptions> inverter,
+    IInverterDataSource source)
 {
+    private async Task<string> SelectedDeviceAsync()
+    {
+        if (source is IInverterSelectionRefresher refresher) await refresher.RefreshSelectionAsync(CancellationToken.None);
+        return inverter.CurrentValue.DeviceKey;
+    }
     public async Task<SiteSettingsDto> LoadAsync()
     {
         var solar = await settings.LoadSectionAsync<SolarEstimateOptions>(SolarEstimateOptions.Section);
         var sales = await settings.LoadSectionAsync<SolarSalesOptions>(SolarSalesOptions.Section);
-        var deye = await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-        var selectedSn = deye.DeviceSn?.Trim() ?? "";
+        var selectedSn = await SelectedDeviceAsync();
         var confirmed = solar.DeyeSolarPowerIsPvDcConfirmed && selectedSn.Length > 0
             && solar.DeyeConfirmedDeviceSn == selectedSn;
         return new(new(solar.Latitude, solar.Longitude, solar.LocationLabel, solar.TimeZoneId,
@@ -49,11 +57,10 @@ public sealed class SiteSettingsService(AppSettingsService settings)
     public async Task SaveAsync(SiteSettingsDto draft)
     {
         if (!TryValidate(draft, out var error)) throw new ArgumentException(error);
-        var deye = await settings.LoadSectionAsync<DeyeCloudOptions>(DeyeCloudOptions.Section);
-        var selectedSn = deye.DeviceSn?.Trim() ?? "";
+        var selectedSn = await SelectedDeviceAsync();
         var solar = draft.SolarEstimate;
         if (solar.DeyeSolarPowerIsPvDcConfirmed && (selectedSn.Length == 0 || solar.DeyeSolarPowerConfirmedDeviceSn != selectedSn))
-            throw new ArgumentException("Save and select the inverter in DeyeCloud settings, then reload before confirming its PV readings.");
+            throw new ArgumentException("Save and select the primary inverter in Integrations, then reload before confirming its PV readings.");
         // Save only editable properties; advanced model assumptions and server keys remain in place.
         await settings.SaveSectionAsync(SolarEstimateOptions.Section, new
         {

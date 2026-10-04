@@ -1,3 +1,5 @@
+using SolarPowerBasis = DeyeSolar.Domain.Models.SolarPowerBasis;
+using SolarManagement.Inverters.Contracts;
 using System.Text.Json;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -17,7 +19,7 @@ public interface ISolarEstimateStore
 }
 
 public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> factory,
-    IOptionsMonitor<DeyeCloudOptions> deyeOptions) : ISolarEstimateStore
+    IOptionsMonitor<InverterConnectionOptions> inverterOptions) : ISolarEstimateStore
 {
     private const string CacheSection = "SolarEstimateCache";
 
@@ -44,7 +46,7 @@ public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> fac
 
     public async Task<SolarActual?> FindActualAsync(DateTimeOffset timestamp, int toleranceSeconds, DateTimeOffset now, CancellationToken ct)
     {
-        var deviceSn = deyeOptions.CurrentValue.DeviceSn;
+        var deviceSn = inverterOptions.CurrentValue.DeviceKey;
         if (string.IsNullOrWhiteSpace(deviceSn)) return null;
         await using var db = await factory.CreateDbContextAsync(ct);
         var earliest = timestamp.AddSeconds(-toleranceSeconds).UtcDateTime;
@@ -56,7 +58,7 @@ public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> fac
         // Repeated measurements use the latest persisted valid correction, matching history.
         var nearest = rows.OrderBy(r => Math.Abs((r.SolarObservedAt!.Value - timestamp.UtcDateTime).TotalSeconds))
             .ThenBy(r => r.SolarObservedAt).ThenByDescending(r => r.Id).FirstOrDefault();
-        if (deyeOptions.CurrentValue.DeviceSn != deviceSn) return null;
+        if (inverterOptions.CurrentValue.DeviceKey != deviceSn) return null;
         return nearest == null ? null : new(new DateTimeOffset(DateTime.SpecifyKind(nearest.SolarObservedAt!.Value, DateTimeKind.Utc)),
             nearest.SolarProduction / 1000.0, SolarPowerBasis.PvDc);
     }

@@ -46,16 +46,16 @@ export function CurrentSolarSnapshot({ state, liveInverter, timeZoneId = "Europe
 
 function SolarSnapshotValues({ state, liveInverter, timeZoneId }: Pick<SolarSnapshotProps, "state" | "liveInverter"> & { timeZoneId: string }) {
   const sourceAvailable = state && !state.error && !state.refreshFailed;
-  const actualKw = liveInverter && Number.isFinite(liveInverter.solarProduction) && liveInverter.solarProduction >= 0 ? liveInverter.solarProduction / 1000 : null;
+  const actualKw = liveInverter && liveInverter.solarPowerValid !== false && Number.isFinite(liveInverter.solarProduction) && liveInverter.solarProduction >= 0 ? liveInverter.solarProduction / 1000 : null;
   return <>
     <View style={styles.metrics}>
-      <View style={styles.metric}><Text style={styles.muted}>Latest reported Deye</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(actualKw, "kW", 2)}</Text></View>
+      <View style={styles.metric}><Text style={styles.muted}>Latest reported inverter</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(actualKw, "kW", 2)}</Text></View>
       <View style={styles.metric}><Text style={styles.muted}>Possible · weather estimate</Text><Text style={[styles.metricValue, styles.amberValue]}>{amount(sourceAvailable ? state.estimate?.centralKw : null, "kW", 2)}</Text></View>
     </View>
-    {liveInverter ? <Text style={styles.muted}>Polled {momentCaption(liveInverter.timestamp, timeZoneId)} · {liveInverter.dataSource}</Text> : <Text style={styles.muted}>Waiting for the latest Deye reading.</Text>}
-    {state?.estimate ? <Text style={styles.muted}>{state.estimate.observation.kind === 1 ? "Weather model" : "Satellite estimate"} for {momentCaption(state.estimate.timestamp, timeZoneId)}. The Deye reading and estimate may refer to different times.</Text> : <Text style={styles.muted}>Waiting for a power estimate.</Text>}
+    {liveInverter ? <Text style={styles.muted}>Polled {momentCaption(liveInverter.timestamp, timeZoneId)} · {liveInverter.dataSource}</Text> : <Text style={styles.muted}>Waiting for the latest inverter reading.</Text>}
+    {state?.estimate ? <Text style={styles.muted}>{state.estimate.observation.kind === 1 ? "Weather model" : "Satellite estimate"} for {momentCaption(state.estimate.timestamp, timeZoneId)}. The inverter reading and estimate may refer to different times.</Text> : <Text style={styles.muted}>Waiting for a power estimate.</Text>}
     {state?.error ? <Text style={styles.warning}>{state.error}</Text> : null}
-    {state?.refreshFailed ? <Text style={styles.warning}>Weather refresh failed. Current Deye power remains separate from the unavailable estimate.</Text> : null}
+    {state?.refreshFailed ? <Text style={styles.warning}>Weather refresh failed. Current inverter power remains separate from the unavailable estimate.</Text> : null}
   </>;
 }
 
@@ -137,7 +137,7 @@ export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today
       {resource.loading && !data ? <LoadingState label="Loading generation..." /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="generation" unit="kW" />}
       <Text style={styles.muted}>Tap the chart or use Previous / Next interval to inspect exact values. These are hourly average power; missing readings remain gaps.</Text>
       {data && detailed ? <GenerationHistoryTable key={`${data.start}:${data.end}`} data={data} /> : null}
-      {!compact ? <View style={styles.divider}><Text style={styles.muted}>Possible power is calculated from weather data. The shaded band shows the estimate range. It is separate from the latest Deye reading.</Text>{!isDemo ? <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://open-meteo.com/en/docs")}><Text style={styles.link}>Open-Meteo weather · CC BY 4.0</Text></Pressable> : null}</View> : null}
+      {!compact ? <View style={styles.divider}><Text style={styles.muted}>Possible power is calculated from weather data. The shaded band shows the estimate range. It is separate from the latest inverter reading.</Text>{!isDemo ? <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://open-meteo.com/en/docs")}><Text style={styles.link}>Open-Meteo weather · CC BY 4.0</Text></Pressable> : null}</View> : null}
     </Card>
   </>;
 }

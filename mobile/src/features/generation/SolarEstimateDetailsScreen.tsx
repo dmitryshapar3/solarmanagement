@@ -40,7 +40,7 @@ export function SolarEstimateDetailsScreen() {
       onRefreshSnapshot={refresh} snapshotLoading={loading} />
     <CurrentSolarSnapshot state={state} liveInverter={inverter.data?.inverter} timeZoneId={timeZone}
       error={estimate.error ?? inverter.error} loading={loading} onRefresh={() => void refresh()} />
-    <Text style={styles.muted}>Deye measurement time is not available in the latest reading; its polling time is shown. The hourly chart and the comparison below use separate historical measurements.</Text>
+    <Text style={styles.muted}>inverter measurement time is not available in the latest reading; its polling time is shown. The hourly chart and the comparison below use separate historical measurements.</Text>
     <Text style={styles.muted}>The source may report zero when a solar reading is unavailable. Zero alone does not confirm that the panels produced no power.</Text>
     {loading && !state ? <LoadingState label="Loading estimate details..." /> : null}
     <Card style={styles.card}>
@@ -69,21 +69,21 @@ export function SolarEstimateDetailsScreen() {
       <StatusPill label={verified ? comparisonStatus[state.comparison.status]! : "Comparison unavailable"} tone={verified ? "info" : "neutral"} />
       <ErrorBanner message={state?.error} />
       {actual ? <>
-        <DetailRow label="Historical Deye power" value={amount(actual.powerKw, "kW")} />
-        <DetailRow label="Historical Deye basis" value={powerBasis[actual.basis]} />
-        <DetailRow label="Deye measurement time" value={momentCaption(actual.timestamp, timeZone)} />
-      </> : <Text style={styles.muted}>No Deye measurement is available for this comparison.</Text>}
+        <DetailRow label="Historical inverter power" value={amount(actual.powerKw, "kW")} />
+        <DetailRow label="Historical inverter basis" value={powerBasis[actual.basis]} />
+        <DetailRow label="inverter measurement time" value={momentCaption(actual.timestamp, timeZone)} />
+      </> : <Text style={styles.muted}>No inverter measurement is available for this comparison.</Text>}
       {actual && matchedEstimate ? <>
         <DetailRow label="Estimate for comparison" value={amount(matchedEstimate.centralKw, "kW")} />
         <DetailRow label="Comparison range" value={`${amount(matchedEstimate.lowerKw, "kW")} – ${amount(matchedEstimate.upperKw, "kW")}`} />
         <DetailRow label="Comparison estimate time" value={momentCaption(matchedEstimate.timestamp, timeZone)} />
       </> : null}
       {verified ? <>
-        <DetailRow label="Deye minus estimate" value={amount(state.comparison.deviationKw, "kW")} />
+        <DetailRow label="inverter minus estimate" value={amount(state.comparison.deviationKw, "kW")} />
         <DetailRow label="Deviation" value={amount(state.comparison.deviationPercent, "%", 1)} />
       </> : <Text style={styles.warning}>{state?.comparison.reason ?? "A verified comparison is not available."}</Text>}
       {state?.refreshFailed ? <Text style={styles.warning}>Weather refresh failed; a verified comparison is unavailable.</Text> : null}
-      <Text style={styles.muted}>The server checks measurement type, age and timestamp alignment. This historical Deye value can differ from the latest reading above. A percentage comparison may be unavailable at night or at very low power.</Text>
+      <Text style={styles.muted}>The server checks measurement type, age and timestamp alignment. This historical inverter value can differ from the latest reading above. A percentage comparison may be unavailable at night or at very low power.</Text>
     </Card>
     <Text style={styles.muted}>Displayed time zone: {timeZone}.</Text>
   </Screen>;

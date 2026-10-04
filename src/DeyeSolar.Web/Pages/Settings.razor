@@ -1,134 +1,18 @@
 @page "/settings"
 @using DeyeSolar.Web.Api
 @using DeyeSolar.Web.Services
+@using DeyeSolar.Web.Integrations
 @inject IIntegrationTestService IntegrationTests
 @inject DeyeSolar.Web.Data.AppSettingsService SettingsService
-@inject DeyeSolar.Infrastructure.DeyeCloud.DeyeCloudClient DeyeClient
-@inject MobileSocketCommandService SocketCommands
-@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventoryService
-@inject DeviceStatusSnapshot DeviceSnapshot
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
 <PageTitle>Settings - DeyeSolar</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-4">Settings</MudText>
-
+<IntegrationSettings />
 <MudGrid>
     <MudItem xs="12"><SiteSettingsEditor /></MudItem>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Inverter (DeyeCloud)</MudText>
-            <MudTextField @bind-Value="_deye.BaseUrl" Immediate="true" Label="Base URL" />
-            <MudTextField @bind-Value="_deye.AppId" Immediate="true" Label="App ID" Class="mt-2" />
-            <MudTextField @bind-Value="_deye.AppSecret" Immediate="true" Label="App Secret" Class="mt-2" InputType="InputType.Password" />
-            <MudTextField @bind-Value="_deye.Email" Immediate="true" Label="Email" Class="mt-2" />
-            <MudTextField @bind-Value="_deye.Password" Immediate="true" Label="Password" Class="mt-2" InputType="InputType.Password" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDeye" Class="mt-3">
-                Save
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("deye"))" Disabled="@(_testing is not null)" Class="mt-3 ml-2">Test connection</MudButton>
-            <MudText Typo="Typo.caption" Class="mt-2">Tests use these fields without saving. No inverter settings are changed.</MudText>
-            @if (_testResults.TryGetValue("deye", out var deyeTest)) { <MudAlert Severity="@(deyeTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@deyeTest.Message</MudAlert> }
-
-            <MudDivider Class="my-3" />
-            <MudText Typo="Typo.caption" Class="mb-2">Device discovery uses the saved account. Save account changes before fetching devices.</MudText>
-
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchStations"
-                       Disabled="_loadingStations" FullWidth="true">
-                @if (_loadingStations) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-                Fetch Stations & Devices
-            </MudButton>
-
-            @if (_stations?.Count > 0)
-            {
-                <MudSelect T="long" @bind-Value="_selectedStationId" Label="Station" Class="mt-2" Variant="Variant.Outlined" Dense="true">
-                    @foreach (var s in _stations)
-                    {
-                        <MudSelectItem T="long" Value="s.Id">@s.Name @(s.Address != null ? $"({s.Address})" : "")</MudSelectItem>
-                    }
-                </MudSelect>
-
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchDevices"
-                           Disabled="_loadingDevices || _selectedStationId == 0" Class="mt-2" FullWidth="true">
-                    @if (_loadingDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-                    Fetch Devices
-                </MudButton>
-            }
-
-            @if (_devices?.Count > 0)
-            {
-                <MudStack Spacing="1" Class="mt-2">
-                    @foreach (var d in _devices)
-                    {
-                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined"
-                                 OnClick="@(() => SelectDevice(d))" Style="cursor:pointer">
-                            @d.DeviceType - SN: @d.SerialNumber
-                        </MudChip>
-                    }
-                </MudStack>
-            }
-
-            @if (!string.IsNullOrEmpty(_deye.DeviceSn))
-            {
-                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                    Active: Station @_deye.StationId, Device SN @_deye.DeviceSn
-                </MudAlert>
-            }
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Smart Socket Cloud</MudText>
-
-            <MudText Typo="Typo.subtitle1" Class="mb-2">Cloud Shelly</MudText>
-            <MudTextField @bind-Value="_shelly.ServerUri" Immediate="true" Label="Server URI" Class="mt-2" />
-            <MudTextField @bind-Value="_shelly.AuthKey" Immediate="true" Label="Authorization Cloud Key" Class="mt-2" InputType="InputType.Password" />
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="SaveShelly" Class="mt-3">
-                Save Shelly Cloud
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("shelly"))" Disabled="@(_testing is not null)" Class="mt-3 ml-2">Test connection</MudButton>
-            <MudText Typo="Typo.caption" Class="mt-2">Tests use these fields without saving or switching a device.</MudText>
-            @if (_testResults.TryGetValue("shelly", out var shellyTest)) { <MudAlert Severity="@(shellyTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@shellyTest.Message</MudAlert> }
-
-            <MudDivider Class="my-3" />
-            <MudText Typo="Typo.caption" Class="mb-2">Device discovery uses the saved account. Save account changes before fetching devices.</MudText>
-
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="FetchSocketDevices"
-                       Disabled="_loadingSocketDevices" FullWidth="true">
-                @if (_loadingSocketDevices) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
-                Fetch Devices
-            </MudButton>
-
-            @if (_socketDevices?.Count > 0)
-            {
-                <MudStack Spacing="1" Class="mt-2">
-                    @foreach (var d in _socketDevices)
-                    {
-                        <MudChip T="string"
-                                 Color="@(d.Online ? Color.Success : Color.Default)"
-                                 Variant="Variant.Outlined"
-                                 OnClick="@(() => SelectSocketDevice(d))"
-                                 Style="cursor:pointer">
-                            @d.Name (@d.Category) @(d.Online ? (d.IsOn ? "- ON" : "- OFF") : "- offline")
-                        </MudChip>
-                    }
-                </MudStack>
-            }
-
-            <MudTextField T="string" Value="@CurrentSocketDeviceId" Label="Default Device ID" Class="mt-2" ReadOnly="true" />
-
-            @if (!string.IsNullOrWhiteSpace(CurrentSocketDeviceId))
-            {
-                <MudStack Row="true" Spacing="2" Class="mt-3">
-                    <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="TestOn" Size="Size.Small">Switch ON</MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="TestOff" Size="Size.Small">Switch OFF</MudButton>
-                </MudStack>
-            }
-        </MudPaper>
-    </MudItem>
-
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" Class="mb-2">Weather (Open-Meteo)</MudText>
@@ -169,31 +53,17 @@
 }
 
 @code {
-    private DeyeSolar.Domain.Options.DeyeCloudOptions _deye = new();
-    private DeyeSolar.Domain.Options.ShellyOptions _shelly = new();
     private DeyeSolar.Domain.Options.PollingOptions _polling = new();
     private DeyeSolar.Domain.Options.DisplayOptions _display = new();
-
-    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeStation>? _stations;
-    private List<DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice>? _devices;
-    private IReadOnlyList<DeyeSolar.Domain.Models.DevicePowerInfo>? _socketDevices;
-    private long _selectedStationId;
-    private bool _loadingStations;
-    private bool _loadingDevices;
-    private bool _loadingSocketDevices;
     private string? _errorMessage;
     private string? _testing;
     private readonly Dictionary<string, IntegrationTestResult> _testResults = new();
-    private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones()
-        .Select(tz => tz.Id).ToArray();
+    private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones().Select(tz => tz.Id).ToArray();
 
     protected override async Task OnInitializedAsync()
     {
-        _deye = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DeyeCloudOptions>("DeyeCloud");
-        _shelly = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.ShellyOptions>("Shelly");
         _polling = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
         _display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        _selectedStationId = _deye.StationId;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -202,48 +72,10 @@
         {
             try
             {
-                var tz = await JS.InvokeAsync<string>("eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
-                if (!string.IsNullOrEmpty(tz))
-                {
-                    _display.TimeZoneId = tz;
-                    await SaveDisplay();
-                    StateHasChanged();
-                }
+                var timezone = await JS.InvokeAsync<string>("eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
+                if (!string.IsNullOrEmpty(timezone)) { _display.TimeZoneId = timezone; await SaveDisplay(); StateHasChanged(); }
             }
-            catch
-            {
-            }
-        }
-    }
-
-    private async Task SaveDeye()
-    {
-        if (!ProviderEndpointPolicy.TryDeye(_deye.BaseUrl, out _)) { _errorMessage = "Use the official EU or US DeyeCloud HTTPS API address."; return; }
-        await SettingsService.SaveSectionAsync("DeyeCloud", _deye);
-        DeyeClient.InvalidateToken();
-        Snackbar.Add("DeyeCloud settings saved", Severity.Success);
-    }
-
-    private async Task FetchStations()
-    {
-        _loadingStations = true;
-        _errorMessage = null;
-        _stations = null;
-        _devices = null;
-
-        try
-        {
-            _stations = await DeyeClient.GetStationsWithDevicesAsync(CancellationToken.None);
-            if (_stations.Count == 1)
-                _selectedStationId = _stations[0].Id;
-        }
-        catch (Exception)
-        {
-            _errorMessage = "Could not fetch stations from the saved DeyeCloud account. Check the configuration or try again.";
-        }
-        finally
-        {
-            _loadingStations = false;
+            catch { }
         }
     }
 
@@ -252,112 +84,9 @@
         if (_testing is not null) return;
         _testing = kind;
         _testResults.Remove(kind);
-        try { _testResults[kind] = await IntegrationTests.TestAsync(kind, new IntegrationTestRequest(_deye.ToDto(), _shelly.ToDto()), CancellationToken.None); }
+        try { _testResults[kind] = await IntegrationTests.TestAsync(kind, new IntegrationTestRequest(), CancellationToken.None); }
         catch (Exception) { _testResults[kind] = new(kind, false, "unavailable", "The provider could not be verified. Please try again.", DateTimeOffset.UtcNow); }
         finally { _testing = null; }
-    }
-
-    private async Task FetchDevices()
-    {
-        _loadingDevices = true;
-        _errorMessage = null;
-        _devices = null;
-
-        try
-        {
-            _devices = await DeyeClient.GetDevicesForStationAsync(_selectedStationId, CancellationToken.None);
-        }
-        catch (Exception)
-        {
-            _errorMessage = "Could not fetch devices from the saved DeyeCloud account. Please try again.";
-        }
-        finally
-        {
-            _loadingDevices = false;
-        }
-    }
-
-    private async Task SelectDevice(DeyeSolar.Infrastructure.DeyeCloud.DeyeDevice device)
-    {
-        if (!ProviderEndpointPolicy.TryDeye(_deye.BaseUrl, out _)) { _errorMessage = "Use the official EU or US DeyeCloud HTTPS API address."; return; }
-        _deye.StationId = _selectedStationId;
-        _deye.DeviceSn = device.SerialNumber;
-        await SaveDeye();
-        Snackbar.Add($"Selected: {device.DeviceType} SN {device.SerialNumber}", Severity.Info);
-    }
-
-    private async Task SaveShelly()
-        => await SaveShelly(showSnackbar: true);
-
-    private async Task SaveShelly(bool showSnackbar)
-    {
-        if (!ProviderEndpointPolicy.TryShelly(_shelly.ServerUri, out _)) { _errorMessage = "Use the HTTPS server address provided by Shelly Cloud."; return; }
-        await SettingsService.SaveSectionAsync("Shelly", _shelly);
-        if (showSnackbar)
-            Snackbar.Add("Shelly settings saved", Severity.Success);
-    }
-
-    private async Task FetchSocketDevices()
-    {
-        _loadingSocketDevices = true;
-        _errorMessage = null;
-        _socketDevices = null;
-
-        try
-        {
-            _socketDevices = await SocketInventoryService.RefreshDevicesAsync(CancellationToken.None);
-            DeviceSnapshot.Update(_socketDevices);
-
-        }
-        catch (Exception)
-        {
-            _errorMessage = "Could not fetch devices from the saved Shelly Cloud account. Please try again.";
-        }
-        finally
-        {
-            _loadingSocketDevices = false;
-        }
-    }
-
-    private async Task SelectSocketDevice(DeyeSolar.Domain.Models.DevicePowerInfo device)
-    {
-        if (!ProviderEndpointPolicy.TryShelly(_shelly.ServerUri, out _)) { _errorMessage = "Use the HTTPS server address provided by Shelly Cloud."; return; }
-        var rawId = DeyeSolar.Domain.Models.SocketEntityIds.RawIdOrSelf(device.Id);
-
-        _shelly.DeviceId = rawId;
-        await SaveShelly(showSnackbar: false);
-
-        Snackbar.Add($"Selected: {device.Name} ({rawId})", Severity.Info);
-    }
-
-    private async Task TestOn()
-    {
-        try
-        {
-            var entityId = CurrentSocketEntityId;
-            await SocketCommands.SetStateAsync(entityId, true, CancellationToken.None);
-            _socketDevices = DeviceSnapshot.Current;
-            Snackbar.Add("ON", Severity.Success);
-        }
-        catch (Exception)
-        {
-            _errorMessage = "Could not switch this device on. Refresh devices and try again.";
-        }
-    }
-
-    private async Task TestOff()
-    {
-        try
-        {
-            var entityId = CurrentSocketEntityId;
-            await SocketCommands.SetStateAsync(entityId, false, CancellationToken.None);
-            _socketDevices = DeviceSnapshot.Current;
-            Snackbar.Add("OFF", Severity.Success);
-        }
-        catch (Exception)
-        {
-            _errorMessage = "Could not switch this device off. Refresh devices and try again.";
-        }
     }
 
     private async Task SavePolling()
@@ -373,28 +102,5 @@
     }
 
     private Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)
-    {
-        if (string.IsNullOrEmpty(value))
-            return Task.FromResult(_allTimeZones.AsEnumerable());
-
-        return Task.FromResult(_allTimeZones
-            .Where(tz => tz.Contains(value, StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private string CurrentSocketDeviceId
-        => _shelly.DeviceId;
-
-    private string CurrentSocketEntityId
-    {
-        get
-        {
-            var rawId = CurrentSocketDeviceId;
-            if (string.IsNullOrWhiteSpace(rawId))
-                return string.Empty;
-
-            return DeyeSolar.Domain.Models.SocketEntityIds.Create(
-                DeyeSolar.Domain.Models.SocketDeviceSources.Shelly, rawId);
-        }
-    }
-
+        => Task.FromResult(_allTimeZones.Where(tz => string.IsNullOrWhiteSpace(value) || tz.Contains(value, StringComparison.OrdinalIgnoreCase)).AsEnumerable());
 }
