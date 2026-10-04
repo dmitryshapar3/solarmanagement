@@ -1,0 +1,183 @@
+{
+  "providerId": "huawei.fusionsolar",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.HuaweiFusionSolar.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://eu5.fusionsolar.huawei.com",
+    "https://intl.fusionsolar.huawei.com"
+  ],
+  "descriptor": {
+    "providerId": "huawei.fusionsolar",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Huawei FusionSolar",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "conditional-fields",
+      "device-selector",
+      "groups",
+      "instructions",
+      "secret",
+      "select",
+      "text",
+      "wizard"
+    ],
+    "fields": [
+      {
+        "key": "baseUrl",
+        "kind": "text",
+        "label": "Regional API URL",
+        "required": true,
+        "defaultValue": "https://eu5.fusionsolar.huawei.com"
+      },
+      {
+        "key": "authMode",
+        "kind": "select",
+        "label": "API authentication",
+        "required": true,
+        "defaultValue": "apiAccount",
+        "options": [
+          {
+            "value": "apiAccount",
+            "label": "Northbound API account"
+          },
+          {
+            "value": "accessToken",
+            "label": "Authorized OAuth access token"
+          }
+        ]
+      },
+      {
+        "key": "username",
+        "kind": "text",
+        "label": "Northbound API username",
+        "required": true,
+        "activeWhen": {
+          "field": "authMode",
+          "operator": "eq",
+          "value": "apiAccount"
+        }
+      },
+      {
+        "key": "systemCode",
+        "kind": "secret",
+        "label": "Northbound API password (system code)",
+        "required": true,
+        "secret": true,
+        "activeWhen": {
+          "field": "authMode",
+          "operator": "eq",
+          "value": "apiAccount"
+        }
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Owner-authorized access token",
+        "required": true,
+        "secret": true,
+        "activeWhen": {
+          "field": "authMode",
+          "operator": "eq",
+          "value": "accessToken"
+        }
+      },
+      {
+        "key": "gridPositiveDirection",
+        "kind": "select",
+        "label": "Positive grid power means",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Verify installation direction first"
+          },
+          {
+            "value": "import",
+            "label": "Import from the grid"
+          },
+          {
+            "value": "export",
+            "label": "Export to the grid"
+          }
+        ]
+      },
+      {
+        "key": "batteryPositiveDirection",
+        "kind": "select",
+        "label": "Positive battery power means",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Verify installation direction first"
+          },
+          {
+            "value": "discharge",
+            "label": "Battery discharging"
+          },
+          {
+            "value": "charge",
+            "label": "Battery charging"
+          }
+        ]
+      },
+      {
+        "key": "batteryDeviceId",
+        "kind": "text",
+        "label": "Battery device ID (optional explicit plant association)",
+        "required": false
+      },
+      {
+        "key": "gridDeviceId",
+        "kind": "text",
+        "label": "Grid meter device ID (optional explicit plant association)",
+        "required": false
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "inverter",
+          "title": "Connection settings",
+          "instructions": null,
+          "groups": [
+            {
+              "id": "connection",
+              "title": "API access",
+              "instructions": "Requires a dedicated Northbound API account created by the installer, or an owner-authorized OAuth token. Ordinary FusionSolar credentials are not API credentials. Battery (type 39) and grid meter (type 17) are automatically associated only in plants with one inverter and one matching device. Verify grid/battery directions before using those powers. Live Northbound data lacks a collection timestamp; historical meter data supplies it.",
+              "fieldKeys": [
+                "baseUrl",
+                "authMode",
+                "username",
+                "systemCode",
+                "accessToken",
+                "gridPositiveDirection",
+                "batteryPositiveDirection",
+                "batteryDeviceId",
+                "gridDeviceId"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

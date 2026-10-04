@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.ShellyCloud/SolarManagement.Providers.ShellyCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.SolisCloud/SolarManagement.Providers.SolisCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.SungrowCloud/SolarManagement.Providers.SungrowCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.HuaweiFusionSolar/SolarManagement.Providers.HuaweiFusionSolar.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.GrowattCloud/SolarManagement.Providers.GrowattCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.TuyaCloud/SolarManagement.Providers.TuyaCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.EWeLinkCloud/SolarManagement.Providers.EWeLinkCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.AqaraCloud/SolarManagement.Providers.AqaraCloud.csproj" />
+    <ProjectReference Include="../../integrations/SolarManagement.Providers.NetatmoControl/SolarManagement.Providers.NetatmoControl.csproj" />
+  </ItemGroup>
+</Project>

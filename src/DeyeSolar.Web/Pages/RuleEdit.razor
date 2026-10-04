@@ -54,7 +54,7 @@
         <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Source Inverter</MudText>
         <MudSelect T="Guid?" @bind-Value="_rule.SourceInverterId" Label="Battery and PV source" Variant="Variant.Outlined"
                    Disabled="_loadingInverters || _saving">
-            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Installation default inverter</MudSelectItem>
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">Socket-linked or installation default inverter</MudSelectItem>
             @foreach (var inverter in _inverters)
             {
                 <MudSelectItem T="Guid?" Value="@((Guid?)inverter.Id.Value)" Disabled="@(!inverter.Capabilities.HasBattery)">
@@ -318,10 +318,9 @@
 
     private bool ValidateRule()
     {
-        if (_rule.Enabled)
+        if (_rule.Enabled && _rule.SourceInverterId is { } source)
         {
-            var source = _rule.SourceInverterId ?? (Guid.TryParse(InverterOptions.CurrentValue.DeviceKey, out var id) ? id : (Guid?)null);
-            if (_inverterError is not null || source is null || !_inverters.Any(inverter => inverter.Id.Value == source && inverter.Capabilities.HasBattery))
+            if (_inverterError is not null || !_inverters.Any(inverter => inverter.Id.Value == source && inverter.Capabilities.HasBattery))
             {
                 _validationError = "Select an available inverter with battery data before enabling this rule.";
                 return false;

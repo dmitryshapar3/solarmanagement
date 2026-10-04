@@ -70,6 +70,7 @@ public static class IntegrationEndpoints
         api.MapGet("/integration-providers/{id}/versions", (string id, IIntegrationProviderCatalog catalog, CancellationToken ct)
             => ReadAsync(() => catalog.GetVersionsAsync(id, ct)));
         api.MapGet("/integrations", (IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.ListAsync(ct)));
+        api.MapGet("/integration-socket-sources", (IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.SocketSourceOptionsAsync(ct)));
         api.MapPost("/integrations", (CreateIntegrationRequest request, IntegrationSetupService service, HttpContext context, IAntiforgery antiforgery, CancellationToken ct)
             => WriteAsync(context, antiforgery, () => service.CreateAsync(request, context.User, ct)));
         api.MapGet("/integrations/{id:guid}/configuration", (Guid id, IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.ReadAsync(id, ct)));
@@ -91,6 +92,9 @@ public static class IntegrationEndpoints
         api.MapPost("/integrations/{id:guid}/discovery", (Guid id, IntegrationConfigurationChange request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.DiscoverAsync(id, request, context.User, ct)));
         api.MapGet("/integrations/{id:guid}/devices", (Guid id, IntegrationSetupService service, CancellationToken ct) => ReadAsync(() => service.DevicesAsync(id, ct)));
+        api.MapPut("/integrations/{id:guid}/devices/{deviceId:guid}/source", (Guid id, Guid deviceId, IntegrationSocketSourceChange request,
+            IntegrationSetupService service, HttpContext context, IAntiforgery antiforgery, CancellationToken ct)
+            => WriteAsync(context, antiforgery, () => service.SetSocketSourceAsync(id, deviceId, request, context.User, ct)));
         api.MapPost("/integrations/{id:guid}/devices/selection", (Guid id, SelectIntegrationDeviceRequest request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SelectDeviceAsync(id, request, context.User, ct)));
         api.MapPost("/integrations/{id:guid}/enable", (Guid id, IntegrationVersionGuard request, IntegrationSetupService service,

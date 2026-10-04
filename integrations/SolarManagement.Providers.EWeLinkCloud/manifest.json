@@ -1,0 +1,85 @@
+{
+  "providerId": "ewelink.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.EWeLinkCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://eu-apia.coolkit.cc",
+    "https://us-apia.coolkit.cc",
+    "https://as-apia.coolkit.cc",
+    "https://cn-apia.coolkit.cn"
+  ],
+  "descriptor": {
+    "providerId": "ewelink.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "SONOFF / eWeLink",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "text",
+      "secret",
+      "wizard",
+      "groups",
+      "instructions",
+      "device-selector"
+    ],
+    "fields": [
+      {
+        "key": "endpoint",
+        "kind": "text",
+        "label": "Account region API origin",
+        "required": true,
+        "defaultValue": "https://eu-apia.coolkit.cc"
+      },
+      {
+        "key": "appId",
+        "kind": "secret",
+        "label": "eWeLink application ID",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Authorized user access token",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "socket",
+          "title": "Connection settings",
+          "instructions": "Enter credentials for your own approved eWeLink developer application and an existing authorized user token. Use the account regional cloud origin. The supported inventory bound is 30 account items. User Profile API access is required to verify the same account when the token is renewed.",
+          "groups": [
+            {
+              "id": "credentials",
+              "title": "Cloud account",
+              "instructions": "Enter credentials for your own approved eWeLink developer application and an existing authorized user token. Use the account regional cloud origin. The supported inventory bound is 30 account items. User Profile API access is required to verify the same account when the token is renewed.",
+              "fieldKeys": [
+                "endpoint",
+                "appId",
+                "accessToken"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

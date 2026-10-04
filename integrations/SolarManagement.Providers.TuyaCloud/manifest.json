@@ -1,0 +1,94 @@
+{
+  "providerId": "tuya.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.TuyaCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://openapi.tuyaeu.com",
+    "https://openapi.tuyaus.com",
+    "https://openapi.tuyacn.com",
+    "https://openapi.tuyain.com",
+    "https://openapi-ueaz.tuyaus.com",
+    "https://openapi-weaz.tuyaeu.com"
+  ],
+  "descriptor": {
+    "providerId": "tuya.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Tuya / Smart Life",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "text",
+      "secret",
+      "wizard",
+      "groups",
+      "instructions",
+      "device-selector"
+    ],
+    "fields": [
+      {
+        "key": "endpoint",
+        "kind": "text",
+        "label": "Cloud API origin",
+        "required": true,
+        "defaultValue": "https://openapi.tuyaeu.com"
+      },
+      {
+        "key": "userId",
+        "kind": "text",
+        "label": "Linked app account UID",
+        "required": true
+      },
+      {
+        "key": "accessId",
+        "kind": "secret",
+        "label": "Cloud project Access ID",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "accessSecret",
+        "kind": "secret",
+        "label": "Cloud project Access Secret",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "socket",
+          "title": "Connection settings",
+          "instructions": "Use a Tuya cloud project linked to your app account. Enter its Access ID, Access Secret, account UID and regional API origin. IoT Core trial cannot be used commercially. The project must also permit the User Information API so the server can verify the same account when credentials are renewed.",
+          "groups": [
+            {
+              "id": "credentials",
+              "title": "Cloud account",
+              "instructions": "Use a Tuya cloud project linked to your app account. Enter its Access ID, Access Secret, account UID and regional API origin. IoT Core trial cannot be used commercially. The project must also permit the User Information API so the server can verify the same account when credentials are renewed.",
+              "fieldKeys": [
+                "endpoint",
+                "userId",
+                "accessId",
+                "accessSecret"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

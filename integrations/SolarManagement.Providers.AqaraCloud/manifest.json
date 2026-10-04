@@ -1,0 +1,103 @@
+{
+  "providerId": "aqara.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.AqaraCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://open-ger.aqara.com",
+    "https://open-usa.aqara.com",
+    "https://open-cn.aqara.com",
+    "https://open-sg.aqara.com",
+    "https://open-kr.aqara.com",
+    "https://open-ru.aqara.com"
+  ],
+  "descriptor": {
+    "providerId": "aqara.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Aqara Cloud",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "text",
+      "secret",
+      "wizard",
+      "groups",
+      "instructions",
+      "device-selector"
+    ],
+    "fields": [
+      {
+        "key": "endpoint",
+        "kind": "text",
+        "label": "Aqara regional API URL",
+        "required": true,
+        "defaultValue": "https://open-ger.aqara.com/v3.0/open/api"
+      },
+      {
+        "key": "appId",
+        "kind": "secret",
+        "label": "Project application ID",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "keyId",
+        "kind": "secret",
+        "label": "Project key ID",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "appKey",
+        "kind": "secret",
+        "label": "Project key",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Authorized user access token",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "socket",
+          "title": "Connection settings",
+          "instructions": "Enter your own Aqara cloud project App ID, Key ID, App Key and authorized user token. Devices must be paired in Aqara Home and resources opened to the project; Zigbee devices need an Aqara hub. This token-only adapter cannot verify a stable account ID. Once devices are registered, replacing a token requires a new integration and selecting its devices again.",
+          "groups": [
+            {
+              "id": "credentials",
+              "title": "Cloud account",
+              "instructions": "Enter your own Aqara cloud project App ID, Key ID, App Key and authorized user token. Devices must be paired in Aqara Home and resources opened to the project; Zigbee devices need an Aqara hub. This token-only adapter cannot verify a stable account ID. Once devices are registered, replacing a token requires a new integration and selecting its devices again.",
+              "fieldKeys": [
+                "endpoint",
+                "appId",
+                "keyId",
+                "appKey",
+                "accessToken"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

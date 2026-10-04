@@ -1,0 +1,74 @@
+{
+  "providerId": "netatmo.control",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.NetatmoControl.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://api.netatmo.com"
+  ],
+  "descriptor": {
+    "providerId": "netatmo.control",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Legrand / Netatmo Control",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "text",
+      "secret",
+      "wizard",
+      "groups",
+      "instructions",
+      "device-selector"
+    ],
+    "fields": [
+      {
+        "key": "endpoint",
+        "kind": "text",
+        "label": "Netatmo API URL",
+        "required": true,
+        "defaultValue": "https://api.netatmo.com/api"
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Token with read_magellan / write_magellan scope",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "socket",
+          "title": "Connection settings",
+          "instructions": "Configure a token from your own Netatmo developer application with read_magellan and write_magellan scopes. Pair Legrand devices through Home + Control and its gateway. This token-only adapter cannot verify a stable account ID. Once devices are registered, replacing a token requires a new integration and selecting its devices again.",
+          "groups": [
+            {
+              "id": "credentials",
+              "title": "Cloud account",
+              "instructions": "Configure a token from your own Netatmo developer application with read_magellan and write_magellan scopes. Pair Legrand devices through Home + Control and its gateway. This token-only adapter cannot verify a stable account ID. Once devices are registered, replacing a token requires a new integration and selecting its devices again.",
+              "fieldKeys": [
+                "endpoint",
+                "accessToken"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

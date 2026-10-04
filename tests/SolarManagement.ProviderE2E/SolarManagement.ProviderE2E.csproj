@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <Using Include="Xunit" />
+    <ProjectReference Include="../SolarManagement.ProviderE2E.Worker/SolarManagement.ProviderE2E.Worker.csproj" />
+    <ProjectReference Include="../../src/SolarManagement.Integrations.Runtime/SolarManagement.Integrations.Runtime.csproj" />
+    <ProjectReference Include="../../tools/SolarManagement.IntegrationPackager/SolarManagement.IntegrationPackager.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyFixtureWorker" AfterTargets="Build">
+    <ItemGroup><FixtureWorkerFiles Include="../SolarManagement.ProviderE2E.Worker/bin/$(Configuration)/net8.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(FixtureWorkerFiles)" DestinationFiles="@(FixtureWorkerFiles->'$(OutDir)worker/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <ItemGroup><FixturePackagerFiles Include="../../tools/SolarManagement.IntegrationPackager/bin/$(Configuration)/net8.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(FixturePackagerFiles)" DestinationFiles="@(FixturePackagerFiles->'$(OutDir)packager/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

@@ -1,8 +1,10 @@
 # Independently installed integration workers
 
+See [supported providers and socket source links](SupportedProviders.md) for the new manufacturer projects, access requirements, setup and protocol verification. The deployment script discovers and separately packages all provider projects.
+
 The Web application references contracts and the runtime, not provider assemblies. Build and sign an adapter independently of the Web image. Only an operator can install executable packages. Never put the publisher private key in the application image, repository, package, or runtime configuration.
 
-For a deployment that already has Deye or Shelly settings, prepare both built-in signed packages before upgrading the Web application. Generate the signing key once outside the repository and deployment output, then retain that publisher identity for subsequent releases:
+For a deployment that already has Deye or Shelly settings, prepare the built-in signed packages before upgrading the Web application. Generate the signing key once outside the repository and deployment output, then retain that publisher identity for subsequent releases:
 
 ```powershell
 dotnet run --project tools/SolarManagement.IntegrationPackager -- --generate-key /secure/publisher-private-key.pem /secure/publisher-public-key.pem
@@ -11,11 +13,13 @@ dotnet run --project tools/SolarManagement.IntegrationPackager -- --generate-key
 
 The output contains `web`, `integration-bundle` and an `integration-bootstrap.json` operator configuration file. Deploy the bundle read-only at `/app/integration-bundle`, the generated configuration alongside the Web application, durable writable artifacts at `/data/integration-packages`, and integration credential protection keys at `/data/keys/integrations`. Docker and Kubernetes mount `/data/keys` persistently and set `Integrations:KeyRingPath` to that integration subdirectory; the authentication keyring also uses the durable parent directory. Override `InstalledBundleDirectory`, `InstalledPackageDirectory` and `InstalledKeyRingDirectory` when preparing a Windows or different container deployment. The signing key is excluded. Trust configuration must come from the deployment file or environment, before editable SQL configuration is loaded.
 
+This release packages Deye and Shelly as `1.0.1`; the eight new providers start at `1.0.0`. Build each release once and retain its exact signed archives and generated bootstrap configuration for later deployments. Re-signing changes the archive digest even when the provider source is unchanged, so rebuilding an already published package requires a new version in both its manifest and descriptor. Keep the installed `1.0.0` artifacts: existing connections remain pinned to them until an integration manager explicitly selects the installed `1.0.1` package for that connection.
+
 At startup the configured archive digests and publisher signatures are verified and installed before importing legacy connections. Legacy import is installation-scoped and transactional: it encrypts the effective credentials, assigns stable internal device identities, maps rule targets and selected-source histories, preserves legacy label keys, and deletes old SQL secret rows only after commit can succeed. Missing packages leave the old settings and marker unchanged so installation can be retried. A completed migration suppresses legacy secret seeding. Setup testing is not required for this upgrade of an existing connection; changing credentials later follows the account identity rules below.
 
 ```powershell
 dotnet publish integrations/SolarManagement.Providers.DeyeCloud -c Release -o ./artifacts/deye-worker
-dotnet run --project tools/SolarManagement.IntegrationPackager -- ./artifacts/deye-worker ./integrations/manifests/deye.cloud.json /secure/publisher-private-key.pem ./artifacts/deye.cloud-1.0.0.zip
+dotnet run --project tools/SolarManagement.IntegrationPackager -- ./artifacts/deye-worker ./integrations/manifests/deye.cloud.json /secure/publisher-private-key.pem ./artifacts/deye.cloud-1.0.1.zip
 ```
 
 The final line is the exact SHA256 authorized by the installation request. Configure `IntegrationRuntime:PackageDirectory` on durable storage, the publisher PEM public key under `TrustedPublisherPublicKeys:solar-management`, and the operator-approved origins separately. Deye uses its EU/US HTTPS origins; Shelly uses `https://*.shelly.cloud`. The signed manifest cannot grant origins absent from host policy. Add no production credential to package templates.

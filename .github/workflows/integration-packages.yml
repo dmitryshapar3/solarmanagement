@@ -44,7 +44,7 @@ jobs:
           assert '- name: Integrations__KeyRingPath\n              value: "/data/keys/integrations"' in deployment
           assert 'mountPath: /data/keys' in deployment
           config = settings['IntegrationRuntime']
-          assert len(config['BootstrapPackages']) == 2
+          assert len(config['BootstrapPackages']) == len(list(Path('integrations').glob('SolarManagement.Providers.*')))
           for entry in config['BootstrapPackages']:
               archive = root / 'integration-bundle' / Path(entry['ArchivePath']).name
               assert hashlib.sha256(archive.read_bytes()).hexdigest().upper() == entry['ExpectedSha256']
@@ -56,5 +56,5 @@ jobs:
           assert 'PRIVATE KEY' not in (root / 'integration-bundle' / 'publisher-public-key.pem').read_text()
           assert not list((root / 'web').glob('SolarManagement.Providers.*'))
           assert not list((root / 'web').glob('SolarManagement.Integrations.WorkerSdk.*'))
-          print('Both signed packages are separate from the Web publish; every declared payload digest matches.')
+          print('All signed provider packages are separate from the Web publish; every declared payload digest matches.')
           PY

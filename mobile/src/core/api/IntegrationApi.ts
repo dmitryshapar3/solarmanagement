@@ -87,6 +87,16 @@ export type IntegrationDeviceBinding = {
   remoteId: string;
   channel?: string | null;
   isDefault: boolean;
+  sourceInverterId?: string | null;
+  phaseCount?: 1 | 3;
+};
+export type IntegrationSourceInverter = { id: string; name: string; isDefault: boolean };
+export type IntegrationSocketSourceChange = {
+  guard: IntegrationVersion;
+  sourceInverterId: string | null;
+  phaseCount: 1 | 3;
+  expectedSourceInverterId: string | null;
+  expectedPhaseCount: 1 | 3;
 };
 export type SocketCommandReceipt = {
   commandId: string;
@@ -159,6 +169,12 @@ export class IntegrationApi {
 
   getDevices(id: string, signal?: AbortSignal): Promise<IntegrationDeviceBinding[]> {
     return this.client.request(`${instancePath(id)}/devices`, { signal });
+  }
+  getSocketSources(signal?: AbortSignal): Promise<IntegrationSourceInverter[]> {
+    return this.client.request("/api/v2/integration-socket-sources", { signal });
+  }
+  setSocketSource(id: string, deviceId: string, body: IntegrationSocketSourceChange, signal?: AbortSignal): Promise<IntegrationDeviceBinding> {
+    return this.client.request(`${instancePath(id)}/devices/${encodeURIComponent(deviceId)}/source`, { method: "PUT", body, signal });
   }
 
   selectDevice(id: string, draft: IntegrationConfigurationChange, selectionToken: string, signal?: AbortSignal): Promise<IntegrationDeviceBinding> {

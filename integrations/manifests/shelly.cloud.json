@@ -1,9 +1,9 @@
 {
-  "providerId": "shelly.cloud", "packageVersion": "1.0.0", "publisherId": "solar-management",
+  "providerId": "shelly.cloud", "packageVersion": "1.0.1", "publisherId": "solar-management",
   "wireVersion": 1, "runtimeIdentifier": "portable", "entryPoint": "SolarManagement.Providers.ShellyCloud.dll", "files": {},
   "allowedOrigins": ["https://*.shelly.cloud"],
   "descriptor": {
-    "providerId": "shelly.cloud", "packageVersion": "1.0.0", "packageDigest": "", "descriptorDigest": "", "displayName": "Shelly Cloud",
+    "providerId": "shelly.cloud", "packageVersion": "1.0.1", "packageDigest": "", "descriptorDigest": "", "displayName": "Shelly Cloud",
     "uiContractVersion": 1, "configurationVersion": 1, "requiredUiFeatures": ["text", "secret", "integer"],
     "fields": [
       {"key": "serverUri", "kind": "text", "label": "Shelly account server URL", "required": true},

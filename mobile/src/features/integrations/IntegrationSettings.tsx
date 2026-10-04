@@ -5,7 +5,7 @@ import { AppButton, Card, EmptyState, ErrorBanner, SectionTitle, StatusPill, Tex
 import { ApiError } from "../../core/api/ApiClient";
 import type {
   IntegrationApi, IntegrationDeviceBinding, IntegrationDiscovery, IntegrationInstance,
-  IntegrationProvider, IntegrationTest, SecretOperation
+  IntegrationProvider, IntegrationSourceInverter, IntegrationTest, SecretOperation
 } from "../../core/api/IntegrationApi";
 import { colors, spacing, typography } from "../../core/theme";
 import {
@@ -14,6 +14,8 @@ import {
 } from "./integrationDraft";
 import { IntegrationFields } from "./IntegrationFields";
 import { authorizeIntegration } from "./integrationOAuth";
+import { IntegrationSelect } from "./IntegrationSelect";
+import { supportsDeviceKind } from "./providerKinds";
 
 export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }: {
   api: IntegrationApi;
@@ -26,6 +28,10 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const [name, setName] = useState("");
   const [draft, setDraft] = useState<IntegrationDraft | null>(null);
   const [bindings, setBindings] = useState<IntegrationDeviceBinding[]>([]);
+  const [sourceInverters, setSourceInverters] = useState<IntegrationSourceInverter[]>([]);
+  const [sourceDrafts, setSourceDrafts] = useState<Record<string, string>>({});
+  const [phaseDrafts, setPhaseDrafts] = useState<Record<string, "1" | "3">>({});
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [versions, setVersions] = useState<IntegrationProvider[]>([]);
   const [targetVersion, setTargetVersion] = useState("");
   const [versionError, setVersionError] = useState<string | null>(null);
@@ -73,6 +79,10 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     setCatalogError(null);
     setDraft(null);
     setBindings([]);
+    setSourceInverters([]);
+    setSourceDrafts({});
+    setPhaseDrafts({});
+    setSourceError(null);
     setVersions([]);
     setTargetVersion("");
     setVersionError(null);
@@ -85,10 +95,12 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const refreshCatalog = useCallback(async (signal?: AbortSignal) => {
     if (isDemo) { setLoading(false); return; }
     try {
-      const [catalog, list] = await Promise.allSettled([api.getCatalog(signal), api.getInstances(signal)]);
+      const [catalog, list, sources] = await Promise.allSettled([api.getCatalog(signal), api.getInstances(signal), api.getSocketSources(signal)]);
       if (signal?.aborted || !mounted.current || activeApi.current !== api) return;
       if (catalog.status === "fulfilled") setProviders(catalog.value.providers);
       if (list.status === "fulfilled") setInstances(list.value);
+      if (sources.status === "fulfilled" && Array.isArray(sources.value)) { setSourceInverters(sources.value); setSourceError(null); }
+      else setSourceError("Inverter links could not be loaded. Refresh the integration catalog before changing links.");
       const failed = catalog.status === "rejected" ? catalog.reason : list.status === "rejected" ? list.reason : null;
       setCatalogError(failed ? failed instanceof ApiError && failed.status === 404
         ? "This server does not support dynamic integrations. Update the server to manage integrations here."
@@ -103,6 +115,18 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
       if (!signal?.aborted && mounted.current && activeApi.current === api) setLoading(false);
     }
   }, [api, isDemo, sessionRevision]);
+
+  async function refreshSources(signal: AbortSignal) {
+    try {
+      const sources = await api.getSocketSources(signal);
+      if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+      if (!Array.isArray(sources)) throw new Error("Invalid inverter sources.");
+      setSourceInverters(sources); setSourceError(null);
+    } catch {
+      if (!signal.aborted && mounted.current && activeApi.current === api)
+        setSourceError("Inverter links could not be loaded. Refresh the integration catalog before changing links.");
+    }
+  }
 
   useFocusEffect(useCallback(() => {
     const controller = new AbortController();
@@ -141,17 +165,21 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     if (!samePackage(provider, configuration.instance)) throw new Error("The integration's installed settings changed. Refresh the catalog before editing it.");
     setDraft(createIntegrationDraft(provider, configuration));
     setBindings([]);
+    setSourceDrafts({});
+    setPhaseDrafts({});
     setDiscovery(null);
     setTestResult(null);
     setOAuthNotice(null);
     setVersions([]);
     setTargetVersion(configuration.instance.packageVersion);
     setVersionError(null);
-    const [devices, packages] = await Promise.allSettled([api.getDevices(instance.id, signal), api.getProviderVersions(instance.providerId, signal)]);
+    const [devices, packages, sources] = await Promise.allSettled([api.getDevices(instance.id, signal), api.getProviderVersions(instance.providerId, signal), api.getSocketSources(signal)]);
     if (signal.aborted || !mounted.current || activeApi.current !== api) return;
     if (devices.status === "fulfilled") setBindings(devices.value);
     if (packages.status === "fulfilled") setVersions(packages.value.filter(item => item.providerId === instance.providerId));
     else setVersionError("Package versions could not be loaded. Current settings can still be edited.");
+    if (sources.status === "fulfilled" && Array.isArray(sources.value)) { setSourceInverters(sources.value); setSourceError(null); }
+    else setSourceError("Inverter links could not be loaded. Refresh the integration catalog before changing links.");
     if (devices.status === "rejected") throw devices.reason;
   }
 
@@ -174,6 +202,13 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const packageAvailable = !draft || samePackage(draft.provider, draft.configuration.instance);
   const formDisabled = Boolean(busy || unsupported || !packageAvailable);
   const changed = draft ? integrationDraftChanged(draft) : false;
+  const providerOptions = (kind: "inverter" | "socket" | "other") => providers
+    .filter(provider => kind === "other" ? !supportsDeviceKind(provider, "inverter") && !supportsDeviceKind(provider, "socket") : supportsDeviceKind(provider, kind))
+    .map(provider => ({ value: provider.providerId, label: provider.displayName, disabled: Boolean(unsupportedProvider(provider)) }));
+  function chooseProvider(id: string) {
+    setProviderId(id);
+    setName(providers.find(provider => provider.providerId === id)?.displayName ?? "");
+  }
 
   function renderAction(action: string) {
     if (!draft) return null;
@@ -239,15 +274,19 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
             setDraft(current => current?.configuration.instance.id === disabled.id
               ? { ...current, configuration: { ...current.configuration, instance: disabled } } : current);
             setDiscovery(null);
+            await refreshSources(signal);
           })} /> : null}
       </Card>)}
       {!loading && !catalogError && !instances.length ? <EmptyState title="Add your first integration." /> : null}
       {providers.length ? <Card style={styles.form}>
         <Text style={styles.title}>Add integration</Text>
-        {providers.map(provider => <AppButton key={`${provider.providerId}:${provider.packageVersion}:${provider.packageDigest}`}
-          label={provider.displayName} variant={providerId === provider.providerId ? "primary" : "secondary"}
-          disabled={Boolean(busy) || Boolean(unsupportedProvider(provider))}
-          onPress={() => { setProviderId(provider.providerId); setName(provider.displayName); }} />)}
+        <IntegrationSelect label="Inverter manufacturer" value={selectedProvider && supportsDeviceKind(selectedProvider, "inverter") ? providerId : ""}
+          options={providerOptions("inverter")} disabled={Boolean(busy)} onChange={chooseProvider} />
+        <IntegrationSelect label="Socket manufacturer" value={selectedProvider && supportsDeviceKind(selectedProvider, "socket") ? providerId : ""}
+          options={providerOptions("socket")} disabled={Boolean(busy)} onChange={chooseProvider} />
+        {providerOptions("other").length ? <IntegrationSelect label="Other provider" value={providerId}
+          options={providerOptions("other")} disabled={Boolean(busy)} onChange={chooseProvider} /> : null}
+        <Text style={styles.detail}>Add another socket integration to connect devices from a different manufacturer.</Text>
         {selectedProvider ? <>
           <TextField label="Integration name" value={name} onChangeText={setName} editable={!busy} />
           <AppButton label="Add integration" disabled={Boolean(busy) || !name.trim()}
@@ -308,9 +347,40 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
           setOAuthNotice("Authorization was canceled. Settings were not saved.");
         }} /> : null}
         <Text style={styles.detail}>Authorization, testing and discovery do not save settings or switch devices. Save settings before selecting a discovered device.</Text>
-        {bindings.map(device => <Text key={device.id} style={styles.detail}>
-          {device.name}{device.isDefault ? " · Selected" : ""}
-        </Text>)}
+        <ErrorBanner message={sourceError} />
+        {bindings.map(device => <View key={device.id} style={styles.form}>
+          <Text style={styles.detail}>{device.name}{device.isDefault ? " · Selected" : ""}</Text>
+          {device.kind === "socket" ? <>
+            <IntegrationSelect label={`Linked inverter for ${device.name}`} value={sourceDrafts[device.id] ?? device.sourceInverterId ?? ""}
+              options={[{ value: "", label: "Installation default inverter" },
+                ...(device.sourceInverterId && !sourceInverters.some(source => source.id === device.sourceInverterId)
+                  ? [{ value: device.sourceInverterId, label: `Unavailable inverter · ${device.sourceInverterId}`, disabled: true }] : []),
+                ...sourceInverters.map(source => ({ value: source.id, label: source.name }))]}
+              disabled={Boolean(busy || sourceError)} onChange={value => setSourceDrafts(current => ({ ...current, [device.id]: value }))} />
+            <IntegrationSelect label={`Circuit type for ${device.name}`} value={phaseDrafts[device.id] ?? String(device.phaseCount ?? 1)}
+              options={[{ value: "1", label: "Single-phase" }, { value: "3", label: "Three-phase" }]}
+              disabled={Boolean(busy)} onChange={value => setPhaseDrafts(current => ({ ...current, [device.id]: value as "1" | "3" }))} />
+            <Text style={styles.detail}>Rules without an explicit source use this inverter. Circuit type describes the installed load.</Text>
+            <AppButton label={`Save link for ${device.name}`} variant="secondary" disabled={Boolean(busy || sourceError)}
+              onPress={() => void run("socket-source", async signal => {
+                const saved = draft.configuration.instance;
+                const updated = await api.setSocketSource(saved.id, device.id, {
+                  guard: { expectedRevision: saved.revision, packageVersion: saved.packageVersion, packageDigest: saved.packageDigest, descriptorDigest: saved.descriptorDigest },
+                  sourceInverterId: (sourceDrafts[device.id] ?? device.sourceInverterId) || null,
+                  phaseCount: Number(phaseDrafts[device.id] ?? device.phaseCount ?? 1) as 1 | 3,
+                  expectedSourceInverterId: device.sourceInverterId ?? null, expectedPhaseCount: device.phaseCount ?? 1
+                }, signal);
+                if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+                setBindings(current => current.map(binding => binding.id === updated.id ? updated : binding));
+                const configuration = await api.getConfiguration(saved.id, signal);
+                if (signal.aborted || !mounted.current || activeApi.current !== api) return;
+                setDraft(current => current?.configuration.instance.id === saved.id ? { ...current,
+                  configuration: { ...current.configuration, instance: configuration.instance } } : current);
+                setInstances(current => current.map(instance => instance.id === saved.id ? configuration.instance : instance));
+                await onSelectionChanged?.();
+              })} />
+          </> : null}
+        </View>)}
         <AppButton label={draft.configuration.instance.status === "enabled" ? "Disable integration" : "Enable integration"}
           variant="secondary" disabled={Boolean(busy) || draft.configuration.instance.status !== "enabled" && (changed || Boolean(unsupported) || !packageAvailable)}
           onPress={() => void run("enabled", async signal => {
@@ -322,6 +392,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
             setDraft(current => current && { ...current, configuration: { ...current.configuration, instance } });
             setInstances(current => current.map(item => item.id === instance.id ? instance : item));
             setDiscovery(null);
+            await refreshSources(signal);
           })} />
         <AppButton label="Reload saved settings (discard draft)" variant="secondary" disabled={Boolean(busy)}
           onPress={() => void run("reload", signal => open(draft.configuration.instance, signal))} />

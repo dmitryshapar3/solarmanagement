@@ -1,0 +1,100 @@
+{
+  "providerId": "sungrow.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.SungrowCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://gateway.isolarcloud.eu",
+    "https://gateway.isolarcloud.com",
+    "https://gateway.isolarcloud.com.hk",
+    "https://augateway.isolarcloud.com",
+    "https://gateway.isolarcloud.in"
+  ],
+  "descriptor": {
+    "providerId": "sungrow.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Sungrow iSolarCloud",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "device-selector",
+      "groups",
+      "instructions",
+      "secret",
+      "text",
+      "wizard"
+    ],
+    "fields": [
+      {
+        "key": "baseUrl",
+        "kind": "text",
+        "label": "Regional API URL",
+        "required": true,
+        "defaultValue": "https://gateway.isolarcloud.eu"
+      },
+      {
+        "key": "appKey",
+        "kind": "text",
+        "label": "Approved developer application key",
+        "required": true
+      },
+      {
+        "key": "accessKey",
+        "kind": "secret",
+        "label": "Approved API access key",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Authorized API access token",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "deviceTimeZone",
+        "kind": "text",
+        "label": "Plant time zone (e.g. Europe/Warsaw)",
+        "required": false
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "inverter",
+          "title": "Connection settings",
+          "instructions": null,
+          "groups": [
+            {
+              "id": "connection",
+              "title": "API access",
+              "instructions": "Requires a Sungrow approved application key and API access key, plus an owner-authorized OAuth access token. Use the plant regional API gateway. Set its IANA time zone for reliable observation times and history. History does not include the current day; supported devices are energy storage inverters (type 14).",
+              "fieldKeys": [
+                "baseUrl",
+                "appKey",
+                "accessKey",
+                "accessToken",
+                "deviceTimeZone"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

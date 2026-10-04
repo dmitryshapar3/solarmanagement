@@ -31,8 +31,9 @@ async function component() {
   return module.exports.RuleEditorScreen;
 }
 
-for (const source of ["battery-inverter", null]) {
-  test(`the real rule editor saves explicit source ${source ?? "installation default"} without changing its socket`, async () => {
+for (const { source, defaultAvailable } of [{ source: "battery-inverter", defaultAvailable: true },
+  { source: null, defaultAvailable: true }, { source: null, defaultAvailable: false }]) {
+  test(`the real rule editor saves source ${source ?? (defaultAvailable ? "installation default" : "socket link without a default")} without changing its socket`, async () => {
     const rule: Rule = {
       id: 4, name: "Heat water", entityId: "socket-a", sourceInverterId: "primary-inverter", enabled: true,
       socTurnOnThreshold: 80, socTurnOffThreshold: 80, useSeparateSocTurnOffThreshold: false,
@@ -47,11 +48,9 @@ for (const source of ["battery-inverter", null]) {
       calls.push({ path: pathname, method: init.method, body });
       const result = pathname === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", online: true, isOn: false }], lastUpdated: null }
         : pathname === "/api/rules/4" ? init.method === "PUT" ? { ...rule, ...body } : rule
-        : pathname === "/api/v2/integrations" ? [{ id: "enabled-site", status: "enabled" }, { id: "disabled-site", status: "disabled" }]
-        : pathname === "/api/v2/integrations/enabled-site/devices" ? [
-          { id: "primary-inverter", kind: "inverter", name: "Primary inverter", isDefault: true },
-          { id: "battery-inverter", kind: "inverter", name: "Battery inverter", isDefault: false },
-          { id: "another-socket", kind: "socket", name: "Neighbor socket", isDefault: false }
+        : pathname === "/api/v2/integration-socket-sources" ? [
+          { id: "primary-inverter", name: "Primary inverter", isDefault: defaultAvailable },
+          { id: "battery-inverter", name: "Battery inverter", isDefault: false }
         ] : [];
       return { status: 200, ok: true, text: async () => JSON.stringify(result) };
     } }));
@@ -66,7 +65,7 @@ for (const source of ["battery-inverter", null]) {
       const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
       assert.equal(button("Neighbor socket"), undefined);
       assert.equal(calls.some(call => call.path.includes("disabled-site/devices")), false);
-      await act(async () => { button(source === null ? "Installation default inverter" : "Battery inverter").props.onPress(); });
+      await act(async () => { button(source === null ? "Socket-linked or installation default inverter" : "Battery inverter").props.onPress(); });
       await act(async () => { renderer!.root.findByProps({ label: "Rule name" }).props.onChangeText("Draft rule name"); });
       await act(async () => { button("Reload inverter sources").props.onPress(); });
       assert.equal(renderer!.root.findByProps({ label: "Rule name" }).props.value, "Draft rule name");
@@ -98,7 +97,7 @@ test("a missing saved source is retained; unavailable sources prevent enabling b
   const api = new DeyeSolarApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url, init) => {
     const route = new URL(url).pathname;
     if (init.method === "PUT") writes.push(JSON.parse(init.body!));
-    const unavailable = route === "/api/v2/integrations";
+    const unavailable = route === "/api/v2/integration-socket-sources";
     const result = unavailable ? { message: "Sources temporarily unavailable." }
       : route === "/api/devices" ? { devices: [{ id: "socket-a", name: "Heater", online: true, isOn: false }], lastUpdated: null }
       : rule;

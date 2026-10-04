@@ -87,6 +87,11 @@ public class ShellyCloudClient : ISocketController
         double? power = null;
         if (TryGetSwitchElement(status, channel, out var switchElement)) power = ReadNumber(switchElement, "apower");
         if (power is null && TryGetMeterElement(status, channel, out var meterElement)) power = ReadNumber(meterElement, "power");
+        // Pro 3EM Output Add-on is an actuator at switch:100, while the
+        // three-phase meter is em:0. Associate them only for this known layout.
+        if (power is null && channel >= 100 && IsPro3Em(raw, status)
+            && status.TryGetProperty("em:0", out var energyMeter) && energyMeter.ValueKind == JsonValueKind.Object)
+            power = ReadNumber(energyMeter, "total_act_power");
         if (power is null && channel == 0) power = ReadNumber(status, "apower") ?? ReadNumber(status, "power");
         var watts = power is { } number && double.IsFinite(number) && number is >= 0 and <= int.MaxValue
             ? (int?)checked((int)Math.Round(number)) : null;
@@ -111,7 +116,7 @@ public class ShellyCloudClient : ISocketController
             var channels = new HashSet<int>();
             foreach (var property in status.EnumerateObject())
                 if (property.Name.StartsWith("switch:", StringComparison.Ordinal)
-                    && int.TryParse(property.Name[7..], out var channel) && channel is >= 0 and <= 63) channels.Add(channel);
+                    && int.TryParse(property.Name[7..], out var channel) && channel is >= 0 and <= 199) channels.Add(channel);
             if (status.TryGetProperty("relays", out var relays) && relays.ValueKind == JsonValueKind.Array)
                 for (var channel = 0; channel < Math.Min(64, relays.GetArrayLength()); channel++) channels.Add(channel);
             if (channels.Count == 0 && IsSwitchLikeDevice(entry.Value, 0, ParseDevice(entry.Value, 0, entry.Name).Category)) channels.Add(0);
@@ -126,7 +131,15 @@ public class ShellyCloudClient : ISocketController
 
     private static void ValidateChannel(int channel)
     {
-        if (channel is < 0 or > 63) throw new ArgumentOutOfRangeException(nameof(channel));
+        if (channel is < 0 or > 199) throw new ArgumentOutOfRangeException(nameof(channel));
+    }
+
+    private static bool IsPro3Em(JsonElement raw, JsonElement status)
+    {
+        var code = ReadString(raw, "code");
+        if (code is null && status.TryGetProperty("_dev_info", out var info) && info.ValueKind == JsonValueKind.Object)
+            code = ReadString(info, "code");
+        return code?.StartsWith("SPEM-003", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     public async Task<List<DevicePowerInfo>> GetDevicesWithStatusAsync(CancellationToken ct)
@@ -161,7 +174,10 @@ public class ShellyCloudClient : ISocketController
             on = isOn
         };
 
-        await RequestJsonAsync(HttpMethod.Post, "/v2/devices/api/set/switch", body, ct);
+        var result = await RequestJsonAsync(HttpMethod.Post, "/v2/devices/api/set/switch", body, ct);
+        if (result.ValueKind == JsonValueKind.Object && (result.TryGetProperty("error", out _)
+            || result.TryGetProperty("isok", out var isOk) && isOk.ValueKind == JsonValueKind.False))
+            throw new InvalidOperationException("Shelly did not acknowledge the switch command.");
     }
 
     private async Task<DevicePowerInfo> GetDeviceAsync(string deviceId, CancellationToken ct, int channel = DefaultSwitchChannel)
@@ -240,7 +256,7 @@ public class ShellyCloudClient : ISocketController
             using var response = await _httpClient.SendAsync(request, ct);
             var content = await response.Content.ReadAsStringAsync(ct);
 
-            if (!response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode || pathAndQuery == "/v2/devices/api/set/switch" && response.StatusCode != HttpStatusCode.OK)
                 throw new InvalidOperationException(
                     $"Shelly API error {(int)response.StatusCode} {response.ReasonPhrase}: {DescribeErrorContent(content)}");
 

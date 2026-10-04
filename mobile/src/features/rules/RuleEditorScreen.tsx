@@ -16,7 +16,7 @@ import {
   TextField
 } from "../../core/components";
 import { Device, Rule, RuleRequest } from "../../core/api/types";
-import type { IntegrationDeviceBinding } from "../../core/api/IntegrationApi";
+import type { IntegrationSourceInverter } from "../../core/api/IntegrationApi";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 import { RulesStackParamList } from "../../application/navigationTypes";
@@ -44,7 +44,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
   const ruleId = route.params?.id;
   const [rule, setRule] = useState<RuleRequest>(defaultRule);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [inverters, setInverters] = useState<IntegrationDeviceBinding[]>([]);
+  const [inverters, setInverters] = useState<IntegrationSourceInverter[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [loadingSources, setLoadingSources] = useState(false);
   const [loading, setLoading] = useState(Boolean(ruleId));
@@ -56,11 +56,10 @@ export function RuleEditorScreen({ route, navigation }: Props) {
     if (isDemo) return;
     setLoadingSources(true);
     try {
-      const instances = await api.integrations.getInstances(signal);
-      const bindings = await Promise.all(instances.filter(instance => instance.status === "enabled")
-        .map(instance => api.integrations.getDevices(instance.id, signal)));
+      const sources = await api.integrations.getSocketSources(signal);
       if (signal?.aborted) return;
-      setInverters(bindings.flat().filter(binding => binding.kind === "inverter"));
+      if (!Array.isArray(sources)) throw new Error("Unable to load inverter sources.");
+      setInverters(sources);
       setSourceError(null);
     } catch (ex) {
       if (!signal?.aborted) setSourceError(ex instanceof Error ? ex.message : "Unable to load inverter sources.");
@@ -115,9 +114,9 @@ export function RuleEditorScreen({ route, navigation }: Props) {
       setError(message);
       return;
     }
-    if (!isDemo && rule.enabled && (sourceError || unknownSource || !rule.sourceInverterId && !inverters.some(inverter => inverter.isDefault))) {
+    if (!isDemo && rule.enabled && rule.sourceInverterId && (sourceError || unknownSource)) {
       setError(sourceError ? "Inverter sources are unavailable. Reload sources before enabling this rule."
-        : "Select an available source inverter, or select an installation default inverter in Integrations.");
+        : "Select an available source inverter.");
       return;
     }
 
@@ -203,7 +202,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
       <SectionTitle title="Source inverter" />
       <Card style={styles.form}>
         <ErrorBanner message={sourceError} />
-        <AppButton label={isDemo ? "Demo inverter" : "Installation default inverter"} variant={!rule.sourceInverterId ? "primary" : "secondary"}
+        <AppButton label={isDemo ? "Demo inverter" : "Socket-linked or installation default inverter"} variant={!rule.sourceInverterId ? "primary" : "secondary"}
           disabled={saving} onPress={() => setField("sourceInverterId", null)} />
         {unknownSource ? <Text style={styles.deviceCategory}>{rule.sourceInverterId}: selected source is unavailable. Its reference is preserved.</Text> : null}
         {inverters.map(inverter => <AppButton key={inverter.id} label={inverter.name}
@@ -211,7 +210,7 @@ export function RuleEditorScreen({ route, navigation }: Props) {
           onPress={() => setField("sourceInverterId", inverter.id)} />)}
         {!isDemo ? <AppButton label="Reload inverter sources" variant="secondary" disabled={saving}
           onPress={() => void loadSources()} loading={loadingSources} /> : null}
-        <Text style={styles.deviceCategory}>Battery and PV conditions use the selected source. Leaving the installation default selected follows its current inverter.</Text>
+        <Text style={styles.deviceCategory}>Battery and PV conditions use the selected source. The default follows this socket's linked inverter, or the installation inverter when no link is set.</Text>
       </Card>
 
       <SectionTitle title="Turn Conditions" />

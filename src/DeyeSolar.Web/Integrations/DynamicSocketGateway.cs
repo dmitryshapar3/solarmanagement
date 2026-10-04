@@ -285,6 +285,7 @@ public sealed class DynamicSocketGateway(IIntegrationRegistry registry, IIntegra
             {
                 if (!await IntegrationPersistenceGuard.LockCurrentAsync(db, binding.Id, session.ConfigurationRevision, session.Generation, ct))
                     throw new InvalidOperationException("The socket connection changed before the command was recorded.");
+                await IntegrationAutomationSourceGuard.ValidateAsync(db, binding.Id, ct);
                 var existing = await db.IntegrationCommands.SingleOrDefaultAsync(c => c.Id == request.CommandId.Value, ct);
                 if (existing is not null)
                 {

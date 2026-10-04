@@ -17,15 +17,29 @@
     @if (!string.IsNullOrWhiteSpace(_error)) { <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert> }
     <MudGrid Class="mt-2">
         <MudItem xs="12" md="5">
-            <MudSelect T="string" Label="Provider" @bind-Value="_newProvider" Disabled="_busy">
-                @foreach (var provider in _providers)
+            <MudSelect T="string" Label="Inverter manufacturer" Value="@_newInverterProvider" ValueChanged="@((string value) => ChooseProvider(value, "inverter"))" Disabled="_busy">
+                @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "inverter")))
                 {
                     <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
                 }
             </MudSelect>
+            <MudSelect T="string" Label="Socket manufacturer" Value="@_newSocketProvider" ValueChanged="@((string value) => ChooseProvider(value, "socket"))" Disabled="_busy">
+                @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "socket")))
+                {
+                    <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+            @if (_providers.Any(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
+            {
+                <MudSelect T="string" Label="Other provider" Value="@_newProvider" ValueChanged="@((string value) => ChooseProvider(value, "other"))" Disabled="_busy">
+                    @foreach (var provider in _providers.Where(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
+                    { <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem> }
+                </MudSelect>
+            }
             <MudTextField T="string" Label="Integration name" @bind-Value="_newName" Immediate="true" Disabled="_busy" />
             <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newProvider))">Add integration</MudButton>
             <MudStack Class="mt-4" Spacing="2">
+                <MudText Typo="Typo.body2">Add another socket integration to connect devices from a different manufacturer.</MudText>
                 @foreach (var instance in _instances)
                 {
                     <MudButton Variant="@(instance.Id == _selected ? Variant.Filled : Variant.Outlined)" OnClick="@(() => Select(instance.Id))" Disabled="_busy">@instance.Name · @instance.Status</MudButton>
@@ -120,6 +134,22 @@
                     @foreach (var binding in form.Bindings)
                     {
                         <MudText Class="mt-2">@binding.Name · @binding.Kind @(binding.IsDefault ? "· selected inverter" : "· connected")</MudText>
+                        @if (binding.Kind == "socket")
+                        {
+                            <MudSelect T="Guid?" Label="Linked inverter" Value="@SourceDraft(binding)" ValueChanged="@((Guid? value) => _sourceDrafts[binding.Id] = value)" Disabled="_busy">
+                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">Installation default inverter</MudSelectItem>
+                                @if (binding.SourceInverterId is { } old && !_sourceInverters.Any(source => source.Id == old))
+                                { <MudSelectItem T="Guid?" Value="@((Guid?)old)">Unavailable inverter · @old</MudSelectItem> }
+                                @foreach (var source in _sourceInverters)
+                                { <MudSelectItem T="Guid?" Value="@((Guid?)source.Id)">@source.Name</MudSelectItem> }
+                            </MudSelect>
+                            <MudSelect T="int" Label="Circuit type" Value="@PhaseDraft(binding)" ValueChanged="@((int value) => _phaseDrafts[binding.Id] = value)" Disabled="_busy">
+                                <MudSelectItem T="int" Value="1">Single-phase</MudSelectItem>
+                                <MudSelectItem T="int" Value="3">Three-phase</MudSelectItem>
+                            </MudSelect>
+                            <MudText Typo="Typo.caption">Rules without an explicit source use this inverter. Circuit type describes the installed load.</MudText>
+                            <MudButton Class="mt-2" Variant="Variant.Outlined" Disabled="_busy" OnClick="@(() => SaveSocketSource(binding))">Save link for @binding.Name</MudButton>
+                        }
                     }
                 }
             }
@@ -132,7 +162,12 @@
     private IReadOnlyList<IntegrationInstanceDto> _instances = [];
     private readonly Dictionary<Guid, FormState> _forms = [];
     private string _newProvider = "";
+    private string _newInverterProvider = "";
+    private string _newSocketProvider = "";
     private string _newName = "";
+    private IReadOnlyList<IntegrationSourceInverterDto> _sourceInverters = [];
+    private readonly Dictionary<Guid, Guid?> _sourceDrafts = [];
+    private readonly Dictionary<Guid, int> _phaseDrafts = [];
     private Guid? _selected;
     private bool _busy;
     private bool _disposed;
@@ -171,6 +206,7 @@
     private async Task LoadCatalog()
     {
         _instances = await Setup.ListAsync(_lifetime.Token);
+        _sourceInverters = await Setup.SocketSourceOptionsAsync(_lifetime.Token);
         _catalogUnavailable = true;
         _providers = await Catalog.GetProvidersAsync(_lifetime.Token);
         _catalogUnavailable = false;
@@ -178,6 +214,28 @@
         var versions = await Task.WhenAll(forms.Select(form => Catalog.GetVersionsAsync(form.Configuration.Instance.ProviderId, _lifetime.Token)));
         for (var index = 0; index < forms.Length; index++) forms[index].Versions = versions[index];
     }
+    private void ChooseProvider(string value, string kind)
+    {
+        _newProvider = value;
+        _newInverterProvider = kind == "inverter" ? value : "";
+        _newSocketProvider = kind == "socket" ? value : "";
+        _newName = _providers.FirstOrDefault(provider => provider.ProviderId == value)?.DisplayName ?? "";
+    }
+    private Guid? SourceDraft(IntegrationBindingDto binding) => _sourceDrafts.TryGetValue(binding.Id, out var value) ? value : binding.SourceInverterId;
+    private int PhaseDraft(IntegrationBindingDto binding) => _phaseDrafts.GetValueOrDefault(binding.Id, binding.PhaseCount);
+    private Task SaveSocketSource(IntegrationBindingDto binding) => Run(async () =>
+    {
+        var form = Current!;
+        var instance = form.Configuration.Instance;
+        var result = await Setup.SetSocketSourceAsync(instance.Id, binding.Id, new(new(instance.Revision, instance.PackageVersion,
+            instance.PackageDigest, instance.DescriptorDigest), SourceDraft(binding), PhaseDraft(binding), binding.SourceInverterId, binding.PhaseCount), _actor, _lifetime.Token);
+        form.Bindings = form.Bindings.Select(device => device.Id == result.Id ? result : device).ToArray();
+        _sourceDrafts.Remove(binding.Id);
+        _phaseDrafts.Remove(binding.Id);
+        form.Configuration = form.Configuration with { Instance = (await Setup.ReadAsync(instance.Id, _lifetime.Token)).Instance };
+        await LoadCatalog();
+        _notice = "Socket inverter link saved.";
+    });
     private Task RefreshCatalog() => Run(async () => { await LoadCatalog(); _notice = "Provider catalog refreshed. Existing drafts are preserved."; });
     private Task Create() => Run(async () =>
     {

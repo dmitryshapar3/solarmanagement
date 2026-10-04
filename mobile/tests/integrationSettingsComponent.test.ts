@@ -9,6 +9,80 @@ import { ApiClient } from "../src/core/api/ApiClient";
 import { IntegrationApi, type IntegrationCatalog, type IntegrationConfigurationChange } from "../src/core/api/IntegrationApi";
 import { integrationFixture } from "./support/integrationFixture";
 
+test("manufacturer dropdowns and mixed socket links use the real form and guarded API without discarding credential drafts", async () => {
+  const { provider, configuration } = integrationFixture();
+  const makeProvider = (id: string, name: string, kind: string) => ({ ...provider, providerId: id, displayName: name,
+    requiredUiFeatures: [...provider.requiredUiFeatures, "wizard", "groups", "instructions"],
+    uiLayout: { version: 1, steps: [{ id: kind, title: "Connect", groups: [{ id: "credentials", title: "Account", fieldKeys: provider.fields.map(field => field.key), actions: ["test", "discover"] }] }] } });
+  const providers = [makeProvider("solis.cloud", "SolisCloud", "inverter"), makeProvider("huawei.fusionsolar", "Huawei", "inverter"),
+    makeProvider("shelly.cloud", "Shelly", "socket"), makeProvider("tuya.cloud", "Tuya", "socket")];
+  const source = "11111111-1111-4111-8111-111111111111";
+  const settings = ["shelly", "tuya"].map((name, index) => ({ ...structuredClone(configuration), instance: {
+    ...configuration.instance, id: `instance-${name}`, name: `${name} account`, providerId: providers[index + 2]!.providerId, status: "enabled"
+  } }));
+  const devices = settings.map((setting, index) => ({ id: `socket-${index}`, instanceId: setting.instance.id, kind: "socket", name: index ? "Desk plug" : "Three-phase heater",
+    remoteId: "same-vendor-id", enabled: true, isDefault: false, sourceInverterId: null as string | null, phaseCount: 1 as 1 | 3 }));
+  const writes: any[] = [];
+  const api = new IntegrationApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url, init) => {
+    const route = new URL(url).pathname;
+    const index = settings.findIndex(setting => route.includes(`/${setting.instance.id}/`));
+    let result: unknown = [];
+    if (route.endsWith("integration-providers")) result = { providers, revision: "1" };
+    else if (route.endsWith("integration-socket-sources")) result = [{ id: source, name: "Battery inverter", isDefault: false }];
+    else if (route === "/api/v2/integrations") result = settings.map(setting => setting.instance);
+    else if (route.endsWith("/versions")) result = providers;
+    else if (route.endsWith("/configuration")) result = settings[index];
+    else if (route.endsWith("/devices")) result = [devices[index]];
+    else if (route.endsWith("/source")) {
+      const body = JSON.parse(init.body!); writes.push({ instance: settings[index]!.instance.id, body });
+      assert.equal(body.expectedSourceInverterId, devices[index]!.sourceInverterId);
+      assert.equal(body.expectedPhaseCount, devices[index]!.phaseCount);
+      devices[index] = { ...devices[index]!, sourceInverterId: body.sourceInverterId, phaseCount: body.phaseCount };
+      settings[index]!.instance.generation++;
+      result = devices[index];
+    } else throw new Error(`Unexpected request: ${route}`);
+    return { status: 200, ok: true, text: async () => JSON.stringify(result) };
+  } }));
+  const globals = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean; __integrationFocus?: unknown };
+  globals.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const IntegrationSettings = await component();
+    await act(async () => { renderer = create(React.createElement(IntegrationSettings, { api })); });
+    const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
+    const dropdown = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.accessibilityLabel === label)!;
+    await act(async () => { dropdown("Inverter manufacturer").props.onPress(); });
+    assert.ok(button("SolisCloud")); assert.ok(button("Huawei")); assert.equal(button("Tuya"), undefined);
+    await act(async () => { button("SolisCloud").props.onPress(); dropdown("Socket manufacturer").props.onPress(); });
+    assert.ok(button("Shelly")); assert.ok(button("Tuya")); assert.equal(button("Huawei"), undefined);
+    await act(async () => { button("Shelly").props.onPress(); button("Configure shelly account").props.onPress(); });
+    await act(async () => { renderer!.root.findByProps({ label: "Region *" }).props.onChangeText("unsaved-region"); });
+    await act(async () => { dropdown("Linked inverter for Three-phase heater").props.onPress(); });
+    await act(async () => { button("Battery inverter").props.onPress(); dropdown("Circuit type for Three-phase heater").props.onPress(); });
+    await act(async () => { button("Three-phase").props.onPress(); });
+    await act(async () => { button("Save link for Three-phase heater").props.onPress(); });
+    assert.equal(renderer!.root.findByProps({ label: "Region *" }).props.value, "unsaved-region");
+    assert.equal(settings[0]!.values.region, "eu");
+    await act(async () => { button("Configure tuya account").props.onPress(); });
+    await act(async () => { dropdown("Linked inverter for Desk plug").props.onPress(); });
+    await act(async () => { button("Battery inverter").props.onPress(); });
+    await act(async () => { button("Save link for Desk plug").props.onPress(); });
+    assert.deepEqual(devices.map(device => [device.sourceInverterId, device.phaseCount]), [[source, 3], [source, 1]]);
+    await act(async () => { button("Configure shelly account").props.onPress(); });
+    await act(async () => { dropdown("Linked inverter for Three-phase heater").props.onPress(); });
+    await act(async () => { button("Installation default inverter").props.onPress(); });
+    await act(async () => { button("Save link for Three-phase heater").props.onPress(); });
+    assert.equal(writes[2].body.sourceInverterId, null);
+    assert.equal(writes[2].body.expectedSourceInverterId, source);
+    assert.equal(writes[2].body.expectedPhaseCount, 3);
+    assert.equal(writes[0].body.guard.packageDigest, configuration.instance.packageDigest);
+    assert.equal(devices[1]!.sourceInverterId, source);
+  } finally {
+    if (renderer) await act(async () => renderer!.unmount());
+    delete globals.IS_REACT_ACT_ENVIRONMENT; delete globals.__integrationFocus;
+  }
+});
+
 async function component() {
   const bundle = await build({
     stdin: { contents: 'export { IntegrationSettings } from "./src/features/integrations/IntegrationSettings";', resolveDir: process.cwd(), loader: "ts" },
@@ -271,6 +345,7 @@ test("a newly cataloged provider uses the real generic form; probes never save a
     // A focus/catalog refresh must expose new providers without replacing an existing unsaved draft.
     catalog.providers.push({ ...provider, providerId: "another-manufacturer", displayName: "Another manufacturer" });
     await act(async () => { globals.__integrationFocus!(); });
+    await act(async () => { renderer!.root.findAllByType("button").find(item => item.props.accessibilityLabel === "Other provider")!.props.onPress(); });
     assert.ok(button("Another manufacturer"));
     assert.equal(field("Region *").props.value, "us");
     assert.equal(field("New API key").props.value, "draft-new-key");

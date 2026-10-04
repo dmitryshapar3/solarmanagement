@@ -1,0 +1,127 @@
+{
+  "providerId": "growatt.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.GrowattCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://openapi.growatt.com",
+    "https://openapi-us.growatt.com",
+    "https://openapi-cn.growatt.com"
+  ],
+  "descriptor": {
+    "providerId": "growatt.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "Growatt ShineServer",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "device-selector",
+      "groups",
+      "instructions",
+      "secret",
+      "select",
+      "text",
+      "wizard"
+    ],
+    "fields": [
+      {
+        "key": "baseUrl",
+        "kind": "text",
+        "label": "Regional API URL",
+        "required": true,
+        "defaultValue": "https://openapi.growatt.com"
+      },
+      {
+        "key": "apiToken",
+        "kind": "secret",
+        "label": "OSS API token",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "username",
+        "kind": "text",
+        "label": "Authorized ShineServer username",
+        "required": true
+      },
+      {
+        "key": "deviceType",
+        "kind": "select",
+        "label": "Documented inverter device type",
+        "required": true,
+        "defaultValue": "7",
+        "options": [
+          {
+            "value": "7",
+            "label": "TLX / MIN (type 7)"
+          }
+        ]
+      },
+      {
+        "key": "deviceTimeZone",
+        "kind": "text",
+        "label": "Device timestamp IANA timezone",
+        "required": false
+      },
+      {
+        "key": "powerUnit",
+        "kind": "select",
+        "label": "Verified real-time power unit",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Unverified"
+          },
+          {
+            "value": "W",
+            "label": "Watts"
+          },
+          {
+            "value": "kW",
+            "label": "Kilowatts"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "inverter",
+          "title": "Connection settings",
+          "instructions": null,
+          "groups": [
+            {
+              "id": "connection",
+              "title": "API access",
+              "instructions": "Requires a Growatt OSS API token assigned to a monitored ShineServer user. The selected inverter must expose a supported, documented device type. Measurements update every five minutes.",
+              "fieldKeys": [
+                "baseUrl",
+                "apiToken",
+                "username",
+                "deviceType",
+                "deviceTimeZone",
+                "powerUnit"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

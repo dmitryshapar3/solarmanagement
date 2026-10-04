@@ -6,6 +6,7 @@ using DeyeSolar.Domain.Services;
 using DeyeSolar.RuleEngine;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Integrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -92,7 +93,10 @@ public class PollingWorker : BackgroundService
         var primaryIdentity = InverterRefreshIdentity.Capture(_inverterOptions.CurrentValue);
         var allRules = await _ruleRepository.GetAllAsync(ct);
         var due = allRules.Where(r => r.Enabled && IsDueForEvaluation(r, now) && !string.IsNullOrEmpty(r.EntityId)).ToList();
-        foreach (var group in due.GroupBy(r => r.SourceInverterId))
+        Dictionary<int, Guid?> effectiveSources;
+        await using (var db = await _dbFactory.CreateDbContextAsync(ct))
+            effectiveSources = await IntegrationSocketAssociation.ResolveSourcesAsync(db, due, ct);
+        foreach (var group in due.GroupBy(r => effectiveSources.GetValueOrDefault(r.Id)))
         {
             try
             {
@@ -105,16 +109,27 @@ public class PollingWorker : BackgroundService
                 }
                 if (data is null) continue;
                 var identity = primaryIdentity;
-                Task<bool> IsCurrent() => group.Key is null && !identity.Matches(_inverterOptions.CurrentValue)
-                    ? Task.FromResult(false) : _sources is IRegisteredInverterDataSource registered
-                        ? registered.IsCurrentAsync(data, ct) : Task.FromResult(identity.Matches(_inverterOptions.CurrentValue));
-                await EvaluateSourceAsync(data, group.ToList(), now, IsCurrent, ct);
+                async Task<bool> IsCurrent()
+                {
+                    if (group.Key is null && !identity.Matches(_inverterOptions.CurrentValue)) return false;
+                    if (_sources is IRegisteredInverterDataSource registered)
+                    { if (!await registered.IsCurrentAsync(data, ct)) return false; }
+                    else if (!identity.Matches(_inverterOptions.CurrentValue)) return false;
+                    await using var db = await _dbFactory.CreateDbContextAsync(ct);
+                    var ids = group.Select(rule => rule.Id).ToArray();
+                    var currentRules = await db.TriggerRules.AsNoTracking().Where(rule => ids.Contains(rule.Id)).ToListAsync(ct);
+                    if (group.Any(rule => !currentRules.Any(current => current.Id == rule.Id
+                        && IntegrationAutomationSourceGuard.SameConfiguration(rule, current)))) return false;
+                    var currentSources = await IntegrationSocketAssociation.ResolveSourcesAsync(db, currentRules, ct);
+                    return currentRules.All(rule => currentSources.GetValueOrDefault(rule.Id) == group.Key);
+                }
+                await EvaluateSourceAsync(data, group.ToList(), group.Key, now, IsCurrent, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { _logger.LogWarning("Inverter rule evaluation is unavailable ({ErrorType})", ex.GetType().Name); }
         }
     }
-    private async Task EvaluateSourceAsync(InverterData data, List<TriggerRule> dueRules, DateTime now,
+    private async Task EvaluateSourceAsync(InverterData data, List<TriggerRule> dueRules, Guid? effectiveSource, DateTime now,
         Func<Task<bool>> isCurrent, CancellationToken ct)
     {
         if (!await isCurrent()) return;
@@ -134,6 +149,7 @@ public class PollingWorker : BackgroundService
             var rule = dueRules.First(r => r.Id == action.RuleId);
             try
             {
+                using var sourceGuard = IntegrationAutomationSourceGuard.Enter(effectiveSource, rule, data);
                 if (action.TurnOn)
                     await _socketController.TurnOnAsync(action.EntityId, ct);
                 else

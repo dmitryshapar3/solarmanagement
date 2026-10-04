@@ -152,7 +152,7 @@ public class ShellyCloudClientTests
         using var body = JsonDocument.Parse(captured!);
         Assert.Equal("shared", body.RootElement.GetProperty("id").GetString());
         Assert.Equal(1, body.RootElement.GetProperty("channel").GetInt32());
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.SetChannelStateAsync("neighbor", 64, true, default));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.SetChannelStateAsync("neighbor", 200, true, default));
         Assert.Equal(1, calls);
     }
 

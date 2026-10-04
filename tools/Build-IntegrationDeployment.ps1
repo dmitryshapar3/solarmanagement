@@ -21,12 +21,26 @@ $bundle = Join-Path $output 'integration-bundle'
 New-Item -ItemType Directory -Path $bundle | Out-Null
 Copy-Item -LiteralPath $PublicKeyPath -Destination (Join-Path $bundle 'publisher-public-key.pem')
 $entries = @()
-foreach ($provider in @(@{ Id = 'deye.cloud'; Project = 'SolarManagement.Providers.DeyeCloud' }, @{ Id = 'shelly.cloud'; Project = 'SolarManagement.Providers.ShellyCloud' })) {
+$origins = @()
+$providers = @(Get-ChildItem -LiteralPath (Join-Path $projectDirectory 'integrations') -Directory -Filter 'SolarManagement.Providers.*' | Sort-Object Name)
+foreach ($project in $providers) {
+    $manifestPath = Join-Path $project.FullName 'manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        $legacyId = switch ($project.Name) {
+            'SolarManagement.Providers.DeyeCloud' { 'deye.cloud' }
+            'SolarManagement.Providers.ShellyCloud' { 'shelly.cloud' }
+            default { throw ('Provider manifest is missing: ' + $project.Name) }
+        }
+        $manifestPath = Join-Path $projectDirectory ('integrations/manifests/' + $legacyId + '.json')
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $provider = @{ Id = $manifest.providerId; Project = $project.Name }
+    $origins += @($manifest.allowedOrigins)
     $published = Join-Path $output ('worker-' + $provider.Id)
     & dotnet publish (Join-Path $projectDirectory ('integrations/' + $provider.Project)) -c Release -o $published
     if ($LASTEXITCODE -ne 0) { throw 'Provider publication failed.' }
-    $archiveName = $provider.Id + '-1.0.0.zip'
-    & dotnet run --project (Join-Path $projectDirectory 'tools/SolarManagement.IntegrationPackager') --configuration Release -- $published (Join-Path $projectDirectory ('integrations/manifests/' + $provider.Id + '.json')) $SigningKeyPath (Join-Path $bundle $archiveName)
+    $archiveName = $provider.Id + '-' + $manifest.packageVersion + '.zip'
+    & dotnet run --project (Join-Path $projectDirectory 'tools/SolarManagement.IntegrationPackager') --configuration Release -- $published $manifestPath $SigningKeyPath (Join-Path $bundle $archiveName)
     if ($LASTEXITCODE -ne 0) { throw 'Provider signing failed.' }
     $digest = (Get-FileHash -LiteralPath (Join-Path $bundle $archiveName) -Algorithm SHA256).Hash
     $entries += @{ ArchivePath = $InstalledBundleDirectory.TrimEnd('/', '\') + '/' + $archiveName; ExpectedSha256 = $digest }
@@ -34,7 +48,7 @@ foreach ($provider in @(@{ Id = 'deye.cloud'; Project = 'SolarManagement.Provide
 $configuration = @{ Integrations = @{ KeyRingPath = $InstalledKeyRingDirectory }; IntegrationRuntime = @{
     PackageDirectory = $InstalledPackageDirectory
     TrustedPublisherPublicKeyFiles = @{ 'solar-management' = $InstalledBundleDirectory.TrimEnd('/', '\') + '/publisher-public-key.pem' }
-    ApprovedOrigins = @('https://eu1-developer.deyecloud.com', 'https://us1-developer.deyecloud.com', 'https://*.shelly.cloud')
+    ApprovedOrigins = @($origins | Sort-Object -Unique)
     BootstrapPackages = $entries
 } }
 $configuration | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'integration-bootstrap.json') -Encoding utf8

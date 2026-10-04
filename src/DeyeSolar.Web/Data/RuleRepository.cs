@@ -79,7 +79,9 @@ public class RuleRepository : IRuleRepository
     private static async Task ValidateSourceAsync(DeyeSolarDbContext db, TriggerRule rule, CancellationToken ct)
     {
         // Disabled drafts retain retired selections so an outage never prevents stopping a rule.
-        if (!rule.Enabled || rule.SourceInverterId is not { } sourceId) return;
+        if (!rule.Enabled) return;
+        var effective = rule.SourceInverterId ?? (await IntegrationSocketAssociation.ResolveSourcesAsync(db, [rule], ct)).GetValueOrDefault(rule.Id);
+        if (effective is not { } sourceId) return;
         var binding = await (from device in db.IntegrationDeviceBindings.AsNoTracking()
             join instance in db.IntegrationInstances.AsNoTracking() on device.InstanceId equals instance.Id
             where device.Id == sourceId && device.Enabled && device.Kind == "inverter" && instance.State == "enabled"

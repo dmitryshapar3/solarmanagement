@@ -1,0 +1,173 @@
+{
+  "providerId": "solis.cloud",
+  "packageVersion": "1.0.0",
+  "publisherId": "solar-management",
+  "wireVersion": 1,
+  "runtimeIdentifier": "portable",
+  "entryPoint": "SolarManagement.Providers.SolisCloud.dll",
+  "files": {},
+  "allowedOrigins": [
+    "https://api-oauth2.soliscloud.com"
+  ],
+  "descriptor": {
+    "providerId": "solis.cloud",
+    "packageVersion": "1.0.0",
+    "packageDigest": "",
+    "descriptorDigest": "",
+    "displayName": "SolisCloud",
+    "uiContractVersion": 1,
+    "configurationVersion": 1,
+    "requiredUiFeatures": [
+      "device-selector",
+      "groups",
+      "instructions",
+      "integer",
+      "secret",
+      "select",
+      "text",
+      "wizard"
+    ],
+    "fields": [
+      {
+        "key": "baseUrl",
+        "kind": "text",
+        "label": "Regional API URL",
+        "required": true,
+        "defaultValue": "https://api-oauth2.soliscloud.com"
+      },
+      {
+        "key": "accessToken",
+        "kind": "secret",
+        "label": "Authorized access token",
+        "required": true,
+        "secret": true
+      },
+      {
+        "key": "gridPositiveDirection",
+        "kind": "select",
+        "label": "Verified positive grid power direction",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Unverified"
+          },
+          {
+            "value": "import",
+            "label": "Grid import"
+          },
+          {
+            "value": "export",
+            "label": "Grid export"
+          }
+        ]
+      },
+      {
+        "key": "batteryPositiveDirection",
+        "kind": "select",
+        "label": "Verified positive battery power direction",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Unverified"
+          },
+          {
+            "value": "discharge",
+            "label": "Discharge"
+          },
+          {
+            "value": "charge",
+            "label": "Charge"
+          }
+        ]
+      },
+      {
+        "key": "historyPowerUnit",
+        "kind": "select",
+        "label": "Verified grid history power unit",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Unverified"
+          },
+          {
+            "value": "W",
+            "label": "Watts"
+          },
+          {
+            "value": "kW",
+            "label": "Kilowatts"
+          }
+        ]
+      },
+      {
+        "key": "plantUtcOffsetHours",
+        "kind": "integer",
+        "label": "Plant UTC offset for day history queries",
+        "required": true,
+        "minimum": -12,
+        "maximum": 14
+      },
+      {
+        "key": "livePowerUnit",
+        "kind": "select",
+        "label": "Verified live power unit when the API omits it",
+        "required": true,
+        "defaultValue": "unknown",
+        "options": [
+          {
+            "value": "unknown",
+            "label": "Verify API scale first"
+          },
+          {
+            "value": "W",
+            "label": "Watts"
+          },
+          {
+            "value": "kW",
+            "label": "Kilowatts"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      "test",
+      "discover"
+    ],
+    "uiLayout": {
+      "version": 1,
+      "steps": [
+        {
+          "id": "inverter",
+          "title": "Connection settings",
+          "instructions": null,
+          "groups": [
+            {
+              "id": "connection",
+              "title": "API access",
+              "instructions": "An owner-authorized access token and approved Solis API access are required. Confirm grid and battery direction using the installed meter before enabling signed power. Data normally updates every five minutes. If live power responses omit unit strings, configure their verified W/kW scale; otherwise signed power stays unavailable.",
+              "fieldKeys": [
+                "baseUrl",
+                "accessToken",
+                "gridPositiveDirection",
+                "batteryPositiveDirection",
+                "historyPowerUnit",
+                "plantUtcOffsetHours",
+                "livePowerUnit"
+              ],
+              "actions": [
+                "test",
+                "discover"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
