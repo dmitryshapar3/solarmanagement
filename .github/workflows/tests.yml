@@ -41,6 +41,9 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      - name: Install the fixed StoreKit simulator runtime
+        run: xcodebuild -downloadPlatform iOS -buildVersion 26.6 -architectureVariant arm64
+
       - name: Test purchases in an isolated iOS simulator
         run: bash mobile/modules/solar-subscriptions/tests/run-ci.sh
 

@@ -18,7 +18,24 @@ runtimes = [runtime for runtime in simctl('list', 'runtimes')['runtimes']
             and int(runtime['version'].split('.')[0]) >= 18]
 if not runtimes:
     raise SystemExit('An installed iOS 18+ simulator runtime is required.')
-runtime = max(runtimes, key=lambda item: tuple(map(int, item['version'].split('.'))))
+def version(runtime):
+    return tuple(map(int, runtime['version'].split('.')))
+
+# These runtimes have documented StoreKitTest regressions; Xcode 26.6 alone
+# still produced SKInternalErrorDomain Code=3 on the iOS 26.5 simulator.
+# https://developer.apple.com/forums/thread/826971
+# https://developer.apple.com/forums/thread/808030
+excluded = [runtime for runtime in runtimes if (26, 2) <= version(runtime) < (26, 6)]
+if excluded:
+    print('Excluded affected StoreKitTest runtimes: ' + json.dumps([
+        {key: runtime[key] for key in ('identifier', 'name', 'version')} for runtime in excluded
+    ]), file=sys.stderr)
+runtimes = [runtime for runtime in runtimes if runtime not in excluded]
+if not runtimes:
+    raise SystemExit('No compatible iOS 18+ StoreKitTest runtime remains. '
+                     'iOS 26.2-26.5 is excluded due to documented simulator regressions. '
+                     'Install the fixed iOS 26.6 runtime; tests must not be skipped.')
+runtime = max(runtimes, key=version)
 version = runtime['version'].split('.')
 runtime_version = sum(int(part) << shift for part, shift in zip(version + ['0'] * (3 - len(version)), (16, 8, 0)))
 devices = [device for device in simctl('list', 'devicetypes')['devicetypes']
