@@ -24,6 +24,7 @@ import type { Device, IntegrationKind, IntegrationTestRequest, IntegrationTestRe
 import type { AuthOptions, VerificationChannel, VerificationPurpose, VerificationResponse } from "./types";
 import type { SolarSiteSettings } from "./types";
 import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "./types";
+import { BillingAccess, readBillingAccess } from "../../features/subscription/billingPolicy";
 
 type DeyeDeviceSelectionRequest = {
   stationId: number;
@@ -100,6 +101,18 @@ export class DeyeSolarApi {
 
   getSession(signal?: AbortSignal): Promise<SessionResponse> {
     return this.client.request<SessionResponse>("/api/auth/session", { signal });
+  }
+
+  async getBillingAccess(signal?: AbortSignal): Promise<BillingAccess> {
+    return readBillingAccess(await this.client.request("/api/billing/access", { signal }));
+  }
+
+  async verifyAppleTransaction(signedTransaction: string, signal?: AbortSignal): Promise<BillingAccess> {
+    return readBillingAccess(await this.client.request("/api/billing/apple/verify", { method: "POST", body: { signedTransaction }, signal }));
+  }
+
+  onBillingDenied(observer: () => void): () => void {
+    return this.client.onBillingDenied(observer);
   }
 
   logout(signal?: AbortSignal): Promise<void> {

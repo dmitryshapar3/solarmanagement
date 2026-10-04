@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Billing;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -30,7 +31,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     IIntegrationProviderCatalog catalog, IIntegrationSetupExecutor executor, IntegrationSecretStore secrets,
     IDataProtectionProvider protection, TimeProvider clock, InstallationMembershipService memberships,
     CurrentInstallation current, IntegrationChangeNotifier changes, IntegrationSetupGate gate,
-    IOptions<IntegrationRuntimeOptions>? runtimeOptions = null, IntegrationOAuthService? oauth = null)
+    IOptions<IntegrationRuntimeOptions>? runtimeOptions = null, IntegrationOAuthService? oauth = null,
+    BillingAccessService? billing = null)
 {
     private int SetupTimeoutSeconds => runtimeOptions?.Value.MaximumNegotiatedRequestTimeoutSeconds ?? 300;
 
@@ -39,6 +41,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var membership = await memberships.ResolveAsync(actor, ct);
         if (membership is null || membership.InstallationId != current.Id || membership.Role is not ("Owner" or "IntegrationManager"))
             throw new IntegrationRequestException("forbidden", "You do not have permission to manage this installation's integrations.", 403);
+        if (billing is not null) await billing.EnsureUserAsync(actor, ct);
     }
     private static IntegrationRequestException Conflict() => new("configuration_conflict", "The integration changed. Reload its settings before continuing.", 409);
     private static void Guard(IntegrationInstanceEntity instance, long revision, string version, string digest, string descriptor)
@@ -327,6 +330,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         var device = proof.Device;
         var channel = device.Channel ?? "";
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (device.Kind == "socket" && billing is not null)
+            await billing.LockSocketSelectionAccountAsync(db, actor, instance.InstallationId, ct);
         var locked = await IntegrationPersistenceGuard.LockInstanceAsync(db, id, ct) ?? throw Conflict();
         db.Entry(instance).CurrentValues.SetValues(locked);
         db.Entry(instance).OriginalValues.SetValues(locked);
@@ -334,6 +339,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         await EnsureNoActiveCommandsAsync(db, id, ct);
         if (instance.AccountIdentity is not null && instance.AccountIdentity != proof.Device.AccountIdentity)
             throw new IntegrationRequestException("account_identity_changed", "The discovered device belongs to a different account. Create a new integration.", 409);
+        if (device.Kind == "socket" && billing is not null)
+            await billing.EnsureSocketSelectionAsync(db, actor, instance.InstallationId, new(id, device.RemoteId, channel), ct);
         var binding = await db.Set<IntegrationDeviceBindingEntity>().SingleOrDefaultAsync(b => b.InstanceId == id && b.Kind == device.Kind && b.RemoteId == device.RemoteId && b.Channel == channel, ct);
         if (binding is null)
         {
@@ -343,6 +350,7 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
                 InstallationId = instance.InstallationId,
                 InstanceId = id,
                 Kind = device.Kind,
+                AddedByUserId = device.Kind == "socket" ? actor.FindFirstValue(ClaimTypes.NameIdentifier) : null,
                 RemoteId = device.RemoteId,
                 Channel = channel,
                 Name = device.Name,

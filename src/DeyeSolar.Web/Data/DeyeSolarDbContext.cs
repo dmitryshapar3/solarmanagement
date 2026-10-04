@@ -29,6 +29,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        ConfigureBilling(modelBuilder);
         ConfigureDynamicIntegrations(modelBuilder);
         modelBuilder.Entity<Installation>(e =>
         {
@@ -125,6 +126,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
 
     private void EnforceInstallationWrites()
     {
+        AddNewBillingAccounts();
         foreach (var entry in ChangeTracker.Entries<IInstallationOwned>()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
         {

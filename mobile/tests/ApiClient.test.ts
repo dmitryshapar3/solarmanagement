@@ -149,3 +149,38 @@ test("an empty 204 response completes a write without requiring a JSON body", as
   const client = new ApiClient({ baseUrl: "https://solar.example" });
   assert.equal(await client.request<void>("/settings", { method: "PUT", body: { interval: 5 } }), undefined);
 });
+
+test("a current server access denial invalidates connected data without signing out; late denial cannot affect a replacement", async () => {
+  let denied = 0;
+  const old = deferred<Response>();
+  let first = true;
+  const client = new ApiClient({ baseUrl: "https://solar.example", token: "old", transport: async () => {
+    if (first) { first = false; return old.promise; }
+    return new Response('{"message":"Subscription required"}', { status: 402 });
+  } });
+  const unsubscribe = client.onBillingDenied(() => denied++);
+  const oldRequest = client.request("/api/devices");
+  const canceled = assert.rejects(oldRequest, { name: "AbortError" });
+  client.setToken("new");
+  await canceled;
+  old.resolve(new Response('{}', { status: 402 }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(denied, 0);
+  await assert.rejects(client.request("/api/devices"), (error: unknown) => error instanceof ApiError && error.status === 402);
+  assert.equal(denied, 1);
+  unsubscribe();
+  await assert.rejects(client.request("/api/devices"));
+  assert.equal(denied, 1);
+});
+
+test("a trial socket quota failure preserves valid account access and its integration form", async () => {
+  let denied = 0;
+  const client = new ApiClient({ baseUrl: "https://solar.example", token: "owner", transport: async (_url, init) => {
+    assert.equal(init.headers.Authorization, "Bearer owner");
+    return new Response('{"code":"trial_socket_limit","message":"The trial allows one socket. Subscribe to add more sockets."}', { status: 402 });
+  } });
+  client.onBillingDenied(() => denied++);
+  await assert.rejects(client.request("/api/integrations/device/selection", { method: "POST" }),
+    (error: unknown) => error instanceof ApiError && error.status === 402 && error.message.includes("one socket"));
+  assert.equal(denied, 0);
+});

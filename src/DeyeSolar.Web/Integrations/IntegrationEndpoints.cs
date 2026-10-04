@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
@@ -100,7 +101,7 @@ public static class IntegrationEndpoints
         api.MapPost("/devices/{id:guid}/commands", (Guid id, IntegrationSocketCommandRequest request, DynamicSocketGateway gateway,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, async () =>
             {
-                var socket = await gateway.GetAsync(new(id), ct);
+                var socket = await gateway.GetForUserAsync(new(id), context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
                 await socket.SetPowerAsync(new(new(request.CommandId), request.IsOn ? SwitchState.On : SwitchState.Off), ct);
                 return await gateway.DescribeResultAsync(id, request.CommandId, ct);
             }));
@@ -148,6 +149,7 @@ public static class IntegrationEndpoints
     private static async Task<IResult> ReadAsync<T>(Func<Task<T>> action)
     {
         try { return Results.Ok(await action()); }
+        catch (DeyeSolar.Web.Billing.BillingAccessException ex) { return Results.Json(new IntegrationApiError("subscription_required", ex.Message), statusCode: 402); }
         catch (IntegrationRequestException ex) { return Results.Json(new IntegrationApiError(ex.Code, ex.Message), statusCode: ex.Status); }
         catch (KeyNotFoundException) { return Results.NotFound(new IntegrationApiError("provider_not_found", "The requested provider package is not installed.")); }
         catch (InvalidDataException) { return Results.BadRequest(new IntegrationApiError("invalid_package", "The provider package could not be verified.")); }

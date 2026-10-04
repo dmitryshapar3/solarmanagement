@@ -93,6 +93,89 @@ namespace DeyeSolar.Web.Migrations
                     b.ToTable("TriggerRules");
                 });
 
+            modelBuilder.Entity("DeyeSolar.Web.Billing.AppleSubscription", b =>
+                {
+                    b.Property<string>("OriginalTransactionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<Guid>("AppAccountToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("GracePeriodExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsFreeTrial")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("ObservationStartedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("SourceSignedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransactionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("OriginalTransactionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("AppleSubscriptions");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Billing.BillingAccount", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("AppAccountToken")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("TrialStartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("AppAccountToken")
+                        .IsUnique();
+
+                    b.ToTable("BillingAccounts");
+                });
+
             modelBuilder.Entity("DeyeSolar.Web.Data.AppSetting", b =>
                 {
                     b.Property<int>("Id")
@@ -456,6 +539,10 @@ namespace DeyeSolar.Web.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("AddedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("Channel")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -498,6 +585,8 @@ namespace DeyeSolar.Web.Migrations
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AddedByUserId", "Kind");
 
                     b.HasIndex("InstallationId", "Kind")
                         .IsUnique()
@@ -878,6 +967,24 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("DeyeSolar.Web.Billing.AppleSubscription", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Billing.BillingAccount", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithOne()
+                        .HasForeignKey("DeyeSolar.Web.Billing.BillingAccount", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("DeyeSolar.Web.Data.AppSetting", b =>
                 {
                     b.HasOne("DeyeSolar.Web.Data.Installation", null)
@@ -983,6 +1090,11 @@ namespace DeyeSolar.Web.Migrations
 
             modelBuilder.Entity("DeyeSolar.Web.Integrations.IntegrationDeviceBindingEntity", b =>
                 {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("AddedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("DeyeSolar.Web.Data.Installation", null)
                         .WithMany()
                         .HasForeignKey("InstallationId")

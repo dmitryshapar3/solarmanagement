@@ -11,6 +11,7 @@ using DeyeSolar.Web.Workers;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using DeyeSolar.Web.Integrations;
+using DeyeSolar.Web.Billing;
 using SolarManagement.Inverters.Contracts;
 
 namespace DeyeSolar.Web.Tenancy;
@@ -165,6 +166,12 @@ public sealed class TenantRuntime : IAsyncDisposable
         try
         {
             ApplySolarReset();
+            if (_provider.GetService<BillingAccessService>() is { } billing
+                && !await billing.InstallationHasAccessAsync(InstallationId, operation.Token).ConfigureAwait(false))
+            {
+                Resolve<DeviceStatusSnapshot>().Clear();
+                return;
+            }
             await Resolve<InverterSelectionMonitor>().RefreshAsync(operation.Token).ConfigureAwait(false);
             var now = _clock.GetUtcNow();
             var interval = TimeSpan.FromSeconds(Math.Clamp(Resolve<IOptionsMonitor<PollingOptions>>().CurrentValue.IntervalSeconds, 1, 3600));

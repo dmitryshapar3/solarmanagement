@@ -6,7 +6,8 @@ type SubscriptionEvents = { entitlementsChanged: (snapshot: BillingSnapshot) => 
 declare class SolarSubscriptionsModule extends NativeModule<SubscriptionEvents> {
   getSnapshotAsync(): Promise<BillingSnapshot>;
   getEntitlementsAsync(): Promise<BillingSnapshot>;
-  purchaseAsync(productId: string, appAccountToken: string | null): Promise<PurchaseResult>;
+  purchaseAsync(productId: string, appAccountToken: string): Promise<PurchaseResult>;
+  finishAsync(transactionId: string, appAccountToken: string): Promise<void>;
   restoreAsync(): Promise<BillingSnapshot>;
   manageAsync(): Promise<void>;
 }

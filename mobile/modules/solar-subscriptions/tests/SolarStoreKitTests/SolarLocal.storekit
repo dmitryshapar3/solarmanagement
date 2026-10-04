@@ -74,12 +74,7 @@
           "familyShareable": false,
           "groupNumber": 1,
           "internalID": "SOLAR001",
-          "introductoryOffer": {
-            "displayPrice": "0",
-            "internalID": "TRIAL001",
-            "paymentMode": "free",
-            "subscriptionPeriod": "P2W"
-          },
+          "introductoryOffer": null,
           "localizations": [
             {
               "description": "Solar monitoring subscription for local tests only",
@@ -101,12 +96,7 @@
           "familyShareable": false,
           "groupNumber": 1,
           "internalID": "SOLAR002",
-          "introductoryOffer": {
-            "displayPrice": "0",
-            "internalID": "TRIAL002",
-            "paymentMode": "free",
-            "subscriptionPeriod": "P2W"
-          },
+          "introductoryOffer": null,
           "localizations": [
             {
               "description": "Solar monitoring subscription for local tests only",

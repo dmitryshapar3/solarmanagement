@@ -1,0 +1,25 @@
+@page "/billing"
+@inject DeyeSolar.Web.Localization.UiText T
+@model DeyeSolar.Web.Pages.BillingModel
+@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = T["Subscription"]; }
+<h1>@T["Subscription"]</h1>
+@if (Model.Access is { HasAccess: true } access)
+{
+    <p>@T[access.Status == "trial" ? "Your one-month trial is active." : "Your subscription is active."]</p>
+    <p>@T["Access until:"] @(access.SubscriptionExpiresAt ?? access.TrialEndsAt)</p>
+    <p><a href="/">@T["Dashboard"]</a></p>
+}
+else
+{
+    <p role="alert">@T["Your trial has ended. Subscribe to read or control your sockets."]</p>
+}
+@if (Model.Access?.Status != "active")
+{
+    <p>@T["The trial allows one socket. Subscribe to add more sockets."]</p>
+}
+<p>@T["Open the Solar iOS app with this account to subscribe or restore an App Store purchase."]</p>
+@if (Model.Access?.AppleSubscriptionsEnabled != true)
+{
+    <p>@T["Subscriptions are not configured yet. Contact support."]</p>
+}
+<p><a href="/account">@T["Account"]</a> · <a href="/support">@T["Support"]</a> · <a href="/logout">@T["Sign out"]</a></p>

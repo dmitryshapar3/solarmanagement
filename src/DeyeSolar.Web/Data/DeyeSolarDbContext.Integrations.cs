@@ -85,6 +85,10 @@ public partial class DeyeSolarDbContext
             e.Property(x => x.RemoteId).HasMaxLength(256).UseCollation("Latin1_General_100_BIN2");
             e.Property(x => x.Channel).HasMaxLength(128).UseCollation("Latin1_General_100_BIN2");
             e.Property(x => x.Kind).HasMaxLength(32);
+            e.Property(x => x.AddedByUserId).HasMaxLength(450);
+            e.HasIndex(x => new { x.AddedByUserId, x.Kind });
+            e.HasOne<Microsoft.AspNetCore.Identity.IdentityUser>().WithMany().HasForeignKey(x => x.AddedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Name).HasMaxLength(128);
             e.Property(x => x.AccountIdentity).HasMaxLength(256);
             e.HasIndex(x => new { x.InstallationId, x.InstanceId, x.Kind, x.RemoteId, x.Channel }).IsUnique();

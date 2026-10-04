@@ -39,6 +39,13 @@ public final class SolarSubscriptionsModule: Module {
         catch { promise.reject("ERR_RESTORE_FAILED", "The App Store could not restore purchases. Please try again.") }
       }
     }
+    AsyncFunction("finishAsync") { [weak self] (transactionID: String, appAccountToken: String, promise: Promise) in
+      Task { @MainActor [weak self] in
+        guard let self else { promise.reject("ERR_MODULE_UNAVAILABLE", "Subscriptions are unavailable."); return }
+        do { try await self.subscriptionStore().finish(transactionID: transactionID, appAccountToken: appAccountToken); promise.resolve() }
+        catch { promise.reject("ERR_FINISH_FAILED", error.localizedDescription) }
+      }
+    }
     AsyncFunction("manageAsync") { [weak self] (promise: Promise) in
       Task { @MainActor [weak self] in
         guard let self else { promise.reject("ERR_MODULE_UNAVAILABLE", "Subscriptions are unavailable."); return }

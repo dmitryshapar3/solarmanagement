@@ -1,4 +1,5 @@
 using DeyeSolar.Web.Integrations;
+using DeyeSolar.Web.Billing;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.Inverters.Contracts;
 using SolarManagement.SmartSockets.Contracts;
@@ -24,7 +25,7 @@ public static class TenantRequestServices
             provider.GetRequiredService<ILoggerFactory>(), provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<IIntegrationRuntimeExecutor>(),
             provider.GetRequiredService<IntegrationSecretStore>(), provider.GetRequiredService<IntegrationChangeNotifier>(), solarApiKey,
-            provider.GetRequiredService<LegacyIntegrationBootstrap>()));
+            provider.GetRequiredService<LegacyIntegrationBootstrap>(), provider.GetRequiredService<BillingAccessService>()));
         services.AddSingleton<TenantRuntimeRegistry>();
         services.AddScoped<IDbContextFactory<DeyeSolarDbContext>, RequestDbContextFactory>();
         Add<AppSettingsService>(services);

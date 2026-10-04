@@ -12,6 +12,11 @@ public sealed class InstallationBindingMiddleware(RequestDelegate next)
         // Cookie and bearer principals both pass the same database membership check.
         if (context.User.Identity?.IsAuthenticated == true)
         {
+            if (IsIdentityPath(context.Request.Path))
+            {
+                await next(context);
+                return;
+            }
             var membership = await memberships.ResolveAsync(context.User, context.RequestAborted);
             if (membership is null)
             {
@@ -25,11 +30,6 @@ public sealed class InstallationBindingMiddleware(RequestDelegate next)
             else
             {
                 current.BindOnce(membership.InstallationId);
-                if (IsIdentityPath(context.Request.Path))
-                {
-                    await next(context);
-                    return;
-                }
                 try { await runtimes.GetAsync(membership.InstallationId, context.RequestAborted); }
                 catch (Exception exception) when (!context.RequestAborted.IsCancellationRequested)
                 {
@@ -48,6 +48,8 @@ public sealed class InstallationBindingMiddleware(RequestDelegate next)
     }
 
     private static bool IsIdentityPath(PathString path) => path.StartsWithSegments("/api/auth")
-        || path.StartsWithSegments("/auth") || path == "/account" || path == "/login"
+        || path.StartsWithSegments("/api/billing") || path == "/billing"
+        || path.StartsWithSegments("/auth") || path == "/account" || path == "/account/language" || path == "/api/account/language"
+        || path == "/login"
         || path == "/logout" || path == "/register" || path == "/verify";
 }
