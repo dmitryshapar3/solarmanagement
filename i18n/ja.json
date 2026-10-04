@@ -248,7 +248,7 @@
   "Choose a generation date within the last 30 local calendar dates.": "過去30日間のローカルカレンダー日付の中から生成日を選択",
   "Choose a password with at least 12 characters.": "12文字以上のパスワードを選択",
   "Choose a supported integration.": "サポートされている統合を選択",
-  "Choose a supported language.": "サポートされている言語を選択",
+  "Choose a supported language.": "サポートされている言語を選択してください。",
   "Choose a supported value for {0}.": "{0} に有効な値を選択してください。",
   "Choose a valid calendar period of at most 366 days.": "最大366日間の有効な暦期間を選択してください。",
   "Choose a valid generation period and date.": "有効な発電期間と日付を選択してください。",
