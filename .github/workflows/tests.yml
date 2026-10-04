@@ -84,6 +84,8 @@ jobs:
           path: |
             mobile/modules/solar-subscriptions/tests/.build/pod-install.log
             mobile/modules/solar-subscriptions/tests/.build/app-build.log
+            mobile/ios/Pods/Local Podspecs/ExpoModulesCore.podspec.json
+            mobile/ios/Podfile.lock
           if-no-files-found: error
           retention-days: 14
           include-hidden-files: true
