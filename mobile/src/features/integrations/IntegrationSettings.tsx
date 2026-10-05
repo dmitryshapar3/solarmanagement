@@ -1,3 +1,4 @@
+import { useScopedAction } from "../../application/useScopedAction";
 import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -40,19 +41,18 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   const [discovery, setDiscovery] = useState<IntegrationDiscovery | null>(null);
   const [testResult, setTestResult] = useState<IntegrationTest | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [oauthNotice, setOAuthNotice] = useState<string | null>(null);
   const [sessionRevision, setSessionRevision] = useState(0);
-  const operation = useRef<AbortController | null>(null);
+  const actions = useScopedAction(api);
+  const busy = actions.busy;
   const activeApi = useRef(api);
   const mounted = useRef(true);
   const savedOAuthFlow = useRef<string | null>(null);
   activeApi.current = api;
 
   useEffect(() => api.onSessionChange(() => {
-    operation.current?.abort();
     setSessionRevision(current => current + 1);
   }), [api]);
 
@@ -68,10 +68,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
   }, [api, draft?.oauth?.flowId]);
 
   useEffect(() => {
-    operation.current?.abort();
-    operation.current = null;
     mounted.current = true;
-    setBusy(null);
     setLoading(true);
     setProviders([]);
     setInstances([]);
@@ -91,7 +88,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     setDiscovery(null);
     setTestResult(null);
     setOAuthNotice(null);
-    return () => { mounted.current = false; operation.current?.abort(); };
+    return () => { mounted.current = false;  };
   }, [api, sessionRevision]);
 
   const refreshCatalog = useCallback(async (signal?: AbortSignal) => {
@@ -136,27 +133,12 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     return () => controller.abort();
   }, [refreshCatalog]));
 
-  async function run(label: string, action: (signal: AbortSignal) => Promise<void>) {
-    if (operation.current) return;
-    const controller = new AbortController();
-    operation.current = controller;
-    Keyboard.dismiss();
-    setBusy(label);
-    setError(null);
-    try { await action(controller.signal); }
-    catch (exception) {
-      if (mounted.current && activeApi.current === api && !controller.signal.aborted) {
-        setError(exception instanceof ApiError && exception.status === 409
-          ? t("{0} Your draft is preserved.", t(exception.message))
-          : exception instanceof Error ? exception.message : "The integration action failed.");
-      }
-    } finally {
-      if (operation.current === controller) {
-        operation.current = null;
-        if (mounted.current && activeApi.current === api) setBusy(null);
-      }
-    }
-  }
+  const run = (label: string, action: (signal: AbortSignal) => Promise<void>) => actions.run(label, context => action(context.signal), {
+    started: () => { Keyboard.dismiss(); setError(null); },
+    failed: exception => setError(exception instanceof ApiError && exception.status === 409
+      ? t("{0} Your draft is preserved.", t(exception.message))
+      : exception instanceof Error ? exception.message : "The integration action failed.")
+  });
 
   async function open(instance: IntegrationInstance, signal: AbortSignal) {
     const configuration = await api.getConfiguration(instance.id, signal);
@@ -345,7 +327,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
         {testResult ? <Text style={styles.detail}>{t(testResult.message)}</Text> : null}
         {oauthNotice ? <Text style={styles.detail}>{t(oauthNotice)}</Text> : null}
         {busy === "oauth" ? <AppButton label={t("Cancel authorization")} variant="secondary" onPress={() => {
-          operation.current?.abort();
+          actions.cancel();
           setOAuthNotice("Authorization was canceled. Settings were not saved.");
         }} /> : null}
         <Text style={styles.detail}>{t("Authorization, testing and discovery do not save settings or switch devices. Save settings before selecting a discovered device.")}</Text>

@@ -12,7 +12,7 @@
 @inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventory
 @inject DeyeSolar.Domain.Interfaces.IConfigurationRules RuleRepo
 @using DeyeSolar.Web.Shared
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>@T["Dashboard - DeyeSolar"]</PageTitle>
 
@@ -171,7 +171,7 @@
     private bool _refreshing;
     private bool _disposed;
     private string? _refreshError;
-    private readonly CancellationTokenSource _lifetime = new();
+    private readonly AsyncQueryScope _queries = new();
     private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.CurrentCulture) : "—";
     private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid == true
         && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == InverterOptions.CurrentValue.DeviceKey
@@ -192,21 +192,7 @@
         if (_disposed) return;
         Snapshot.OnDataUpdated += OnDataUpdated;
         _data = Snapshot.Current;
-        _ = UpdateClockAsync();
-    }
-
-    private async Task UpdateClockAsync()
-    {
-        var token = _lifetime.Token;
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(token))
-                await InvokeAsync(() => { if (!_disposed) StateHasChanged(); });
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (ObjectDisposedException) when (_disposed) { }
-        catch (InvalidOperationException) when (_disposed) { }
+        _queries.StartRefresh(Clock, TimeSpan.FromSeconds(30), () => InvokeAsync(() => { if (!_disposed) StateHasChanged(); }));
     }
 
     private void OnDataUpdated()
@@ -239,10 +225,10 @@
         _refreshError = null;
         try
         {
-            await InverterRefresh.RefreshAsync(_lifetime.Token);
+            await InverterRefresh.RefreshAsync(_queries.LifetimeToken);
             if (!_disposed) _data = Snapshot.Current;
         }
-        catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_disposed || _queries.LifetimeToken.IsCancellationRequested) { }
         catch (Exception)
         {
             if (!_disposed) _refreshError = _data is null
@@ -265,7 +251,7 @@
     private async Task RefreshManualDevicesAsync()
     {
         var epoch = DeviceSnapshot.Epoch;
-        var devices = await SocketInventory.RefreshDevicesAsync(_lifetime.Token);
+        var devices = await SocketInventory.RefreshDevicesAsync(_queries.LifetimeToken);
         if (_disposed) return;
         DeviceSnapshot.TryUpdate(devices, epoch);
         await LoadRulesAndManualDevices();
@@ -302,12 +288,11 @@
             _devices[0].Id;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
         Snapshot.OnDataUpdated -= OnDataUpdated;
-        _lifetime.Cancel();
-        _lifetime.Dispose();
+        await _queries.DisposeAsync();
     }
 }

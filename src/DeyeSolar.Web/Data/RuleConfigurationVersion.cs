@@ -6,13 +6,8 @@ namespace DeyeSolar.Web.Data;
 
 internal static class RuleConfigurationVersion
 {
-    public static string Read(TriggerRule rule) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
-    {
-        rule.Id, rule.InstallationId, rule.Name, rule.EntityId, rule.SourceInverterId, rule.Enabled,
-        rule.SocTurnOnThreshold, rule.UseSeparateSocTurnOffThreshold, rule.SocTurnOffThreshold,
-        rule.UseSolarProductionThreshold, rule.MinAverageSolarProductionWatts, rule.CooldownMinutes,
-        rule.IntervalSeconds, rule.ActiveFrom, rule.ActiveTo
-    })));
+    public static string Read(TriggerRule rule) => Convert.ToHexString(SHA256.HashData(
+        JsonSerializer.SerializeToUtf8Bytes(RuleConfigurationSnapshot.From(rule))));
 
     public static void Check(TriggerRule expected, TriggerRule current)
     {

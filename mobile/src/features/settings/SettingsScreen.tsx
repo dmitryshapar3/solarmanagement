@@ -1,6 +1,8 @@
+import { useScopedAction } from "../../application/useScopedAction";
+import type { ScopedActionContext } from "../../application/ScopedActionScope";
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import { LogOut, MapPin, RefreshCcw, Save } from "lucide-react-native";
 import {
@@ -47,67 +49,64 @@ export function SettingsScreen() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [pollingIntervalText, setPollingIntervalText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Partial<Record<IntegrationKind, IntegrationTestResult>>>({});
-  const actionPending = useRef(false);
   const [site, setSite] = useState<SolarSiteSettings | null>(null);
   const [siteNumbers, setSiteNumbers] = useState<Partial<Record<SiteNumberKey, string>>>({});
 
-  const load = useCallback(async () => {
+  const actions = useScopedAction(api, apiBaseUrl, () => {
+    setSettings(null); setSite(null); setTestResults({}); setError(null); setLoading(true);
+  });
+  const busy = actions.busy;
+  const load = useCallback(async (context?: ScopedActionContext) => {
+    const current = context?.isCurrent ?? actions.capture();
     setError(null);
     try {
-      let next = await api.getSettings();
+      let next = await api.getSettings(context?.signal);
+      if (!current()) return;
 
       // Mirror the web's first-load auto-detect: adopt the device timezone
       // while the stored value is still the "UTC" default.
       if (next.display.timeZoneId === "UTC" && deviceTimeZone && deviceTimeZone !== "UTC") {
         try {
           await api.saveDisplay({ timeZoneId: deviceTimeZone });
+          if (!current()) return;
           next = { ...next, display: { timeZoneId: deviceTimeZone } };
         } catch {
           // keep UTC if the server rejects the detected timezone
         }
       }
 
+      if (!current()) return;
       setSettings(next);
       setPollingIntervalText(String(next.polling.intervalSeconds));
       setDisplayTimeZone(next.display.timeZoneId);
       try {
-        const nextSite = await api.getSiteSettings();
+        const nextSite = await api.getSiteSettings(context?.signal);
+        if (!current()) return;
         setSite(nextSite);
         setSiteNumbers(Object.fromEntries(siteNumberFields.map(([key]) => [key, String(nextSite.solarEstimate[key])])));
       } catch (ex) {
+        if (!current()) return;
         setSite(null);
         setError(ex instanceof Error ? ex.message : t("Settings could not be loaded."));
       }
     } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to load settings.");
+      if (current()) setError(ex instanceof Error ? ex.message : "Unable to load settings.");
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
-  }, [api]);
+  }, [api, actions.capture]);
 
   useEffect(() => {
     setLoading(true);
     void load();
   }, [load]);
 
-  async function runBusy(label: string, action: () => Promise<void>) {
-    if (actionPending.current) return;
-    actionPending.current = true;
-    Keyboard.dismiss();
-    setBusy(label);
-    setError(null);
-    try {
-      await action();
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Action failed.");
-    } finally {
-      actionPending.current = false;
-      setBusy(null);
-    }
-  }
+  const runBusy = (label: string, action: (context: ScopedActionContext) => Promise<void>) => actions.run(label, action, {
+    started: () => { Keyboard.dismiss(); setError(null); },
+    failed: ex => setError(ex instanceof Error ? ex.message : "Action failed.")
+  });
 
   const languageSettings = <Card style={styles.form}>
     <SectionTitle title={t("Language")} />
@@ -147,38 +146,41 @@ export function SettingsScreen() {
     );
   }
 
-  const savePolling = async (): Promise<void> => {
+  const savePolling = async (context: ScopedActionContext): Promise<void> => {
     const parsed = Number.parseInt(pollingIntervalText, 10);
     if (Number.isNaN(parsed) || parsed < 5 || parsed > 300) {
       throw new Error(t("Polling interval must be between 5 and 300 seconds."));
     }
 
     await api.savePolling({ intervalSeconds: parsed });
-    setSettings((current) => current && { ...current, polling: { intervalSeconds: parsed } });
-    setPollingIntervalText(String(parsed));
+    context.publish(() => {
+      setSettings((current) => current && { ...current, polling: { intervalSeconds: parsed } });
+      setPollingIntervalText(String(parsed));
+    });
   };
 
-  const saveDisplay = async (): Promise<void> => {
+  const saveDisplay = async (context: ScopedActionContext): Promise<void> => {
     const timeZoneId = settings.display.timeZoneId.trim();
     await api.saveDisplay({ timeZoneId });
-    setSettings((current) => current && { ...current, display: { timeZoneId } });
-    setDisplayTimeZone(timeZoneId);
+    context.publish(() => { setSettings((current) => current && { ...current, display: { timeZoneId } }); setDisplayTimeZone(timeZoneId); });
   };
 
   async function updateSiteSelection() {
     if (!site) return;
+    const current = actions.capture();
     const saved = await api.getSiteSettings();
+    if (!current()) return;
     setSite(current => current && { ...current, selectedDeviceSn: saved.selectedDeviceSn,
       solarEstimate: { ...current.solarEstimate,
         deyeSolarPowerIsPvDcConfirmed: saved.solarEstimate.deyeSolarPowerIsPvDcConfirmed,
         deyeSolarPowerConfirmedDeviceSn: saved.solarEstimate.deyeSolarPowerConfirmedDeviceSn } });
   }
 
-  const testIntegration = async (kind: IntegrationKind): Promise<void> => {
+  const testIntegration = async (kind: IntegrationKind, context: ScopedActionContext): Promise<void> => {
     setTestResults(current => ({ ...current, [kind]: undefined }));
     const draft = kind === "openmeteo" && site ? { solarEstimate: { latitude: siteNumber("latitude"), longitude: siteNumber("longitude") } } : {};
     const result = await api.testIntegration(kind, draft);
-    setTestResults(current => ({ ...current, [kind]: result }));
+    context.publish(() => setTestResults(current => ({ ...current, [kind]: result })));
   };
 
   function siteNumber(key: SiteNumberKey): number {
@@ -188,18 +190,18 @@ export function SettingsScreen() {
     return value;
   }
 
-  async function saveSite() {
+  async function saveSite(context: ScopedActionContext) {
     if (!site) return;
     const solarEstimate = { ...site.solarEstimate };
     for (const [key] of siteNumberFields) solarEstimate[key] = siteNumber(key);
     const next = { ...site, solarEstimate };
     await api.saveSiteSettings(next);
-    setSite(next);
+    context.publish(() => setSite(next));
   }
 
   const testAction = (kind: IntegrationKind, label: string) => <View style={styles.form}>
     <AppButton label={t("Test {0}", label)} variant="secondary"
-      onPress={() => void runBusy(`test-${kind}`, () => testIntegration(kind))}
+      onPress={() => void runBusy(`test-${kind}`, context => testIntegration(kind, context))}
       loading={busy === `test-${kind}`} disabled={Boolean(busy)} />
     {testResults[kind] ? <View style={styles.form}>
       <StatusPill label={testResults[kind]!.success ? t("Connected") : t("Check failed")} tone={testResults[kind]!.success ? "success" : "warning"} />

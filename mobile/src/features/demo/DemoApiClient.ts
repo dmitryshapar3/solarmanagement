@@ -1,4 +1,5 @@
 import { translate as t } from "../../core/i18n";
+import { normalizeRuleDraft, validateRuleDraft } from "../rules/RuleDraftPolicy";
 import type { SocketCommandReceipt } from "../../core/api/IntegrationApi";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
 import type { DisplaySettings, PollingSettings, Rule, RuleRequest, SolarSiteSettings } from "../../core/api/types";
@@ -100,7 +101,7 @@ export class DemoApiClient extends ApiClient {
       if (!device) throw new ApiError(404, t("Demo device not found."));
       if (typeof body.isOn !== "boolean") throw new ApiError(400, t("Choose an on/off state."));
       device.isOn = body.isOn;
-      device.currentPowerW = body.isOn ? device.id.endsWith("lamp") ? 45 : 850 : 0;
+      device.currentPowerW = body.isOn ? this.state.deviceRatedPowerW[device.id]! : 0;
       for (const rule of this.state.rules.filter(item => item.entityId === device.id)) {
         rule.currentState = body.isOn;
         rule.currentStateChangedAt = now.toISOString();
@@ -135,7 +136,11 @@ export class DemoApiClient extends ApiClient {
       if (method === "GET" && !ruleRoute[2]) return rule;
       if (method === "PUT" && !ruleRoute[2]) {
         this.requireRuleVersion(rule, objectBody(options.body).configurationVersion);
-        this.state.rules[index] = { ...rule, ...this.ruleRequest(options.body), configurationVersion: this.ruleVersion() };
+        const request = this.ruleRequest(options.body);
+        const targetChanged = request.entityId !== rule.entityId;
+        const target = this.state.devices.find(device => device.id === request.entityId)!;
+        this.state.rules[index] = { ...rule, ...request, configurationVersion: this.ruleVersion(),
+          ...(targetChanged ? { currentState: target.isOn, currentStateChangedAt: now.toISOString(), lastEvaluated: null } : {}) };
         return this.state.rules[index];
       }
       if (method === "PATCH" && ruleRoute[2]) {
@@ -206,24 +211,18 @@ export class DemoApiClient extends ApiClient {
     for (const key of ["enabled", "useSeparateSocTurnOffThreshold", "useSolarProductionThreshold"] as const) {
       if (typeof value[key] !== "boolean") throw new ApiError(400, t("Enter valid rule options."));
     }
-    requireNumber(value.socTurnOnThreshold, 0, 100, t("SOC threshold"));
-    requireNumber(value.socTurnOffThreshold, 0, 100, t("SOC threshold"));
-    requireNumber(value.minAverageSolarProductionWatts, 0, 30000, t("solar threshold"));
-    requireNumber(value.cooldownMinutes, 1, 240, "cooldown");
-    requireNumber(value.intervalSeconds, 10, 3600, t("rule interval"));
-    for (const time of [value.activeFrom, value.activeTo]) {
-      if (time !== null && (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) throw new ApiError(400, t("Use HH:mm for the time window."));
+    for (const key of ["socTurnOnThreshold", "socTurnOffThreshold", "minAverageSolarProductionWatts", "cooldownMinutes", "intervalSeconds"] as const) {
+      if (!Number.isInteger(value[key])) throw new ApiError(400, t("Enter valid rule options."));
     }
-    if (Boolean(value.activeFrom) !== Boolean(value.activeTo)) throw new ApiError(400, t("Set both time-window values or leave both empty."));
-    if (value.useSeparateSocTurnOffThreshold && value.socTurnOffThreshold > value.socTurnOnThreshold) throw new ApiError(400, t("Turn OFF SOC cannot exceed turn ON SOC."));
-    // Store only known configuration fields, not caller-provided state or IDs.
-    return {
-      name: value.name.trim(), entityId: value.entityId, sourceInverterId: value.sourceInverterId, enabled: value.enabled,
-      socTurnOnThreshold: value.socTurnOnThreshold, useSeparateSocTurnOffThreshold: value.useSeparateSocTurnOffThreshold,
-      socTurnOffThreshold: value.socTurnOffThreshold, useSolarProductionThreshold: value.useSolarProductionThreshold,
-      minAverageSolarProductionWatts: value.minAverageSolarProductionWatts, cooldownMinutes: value.cooldownMinutes,
-      intervalSeconds: value.intervalSeconds, activeFrom: value.activeFrom, activeTo: value.activeTo
-    };
+    for (const time of [value.activeFrom, value.activeTo]) {
+      if (time !== null && typeof time !== "string") throw new ApiError(400, t("Use HH:mm for the time window."));
+    }
+    const normalized = normalizeRuleDraft(value);
+    const error = validateRuleDraft(normalized);
+    if (error) throw new ApiError(400, t(error.message));
+    // The shared draft projection excludes runtime state and IDs; the token is a request precondition.
+    const { configurationVersion: _version, ...configuration } = normalized;
+    return configuration;
   }
 
   private ruleVersion(): string { return (this.nextRuleRevision++).toString(16).padStart(64, "0"); }

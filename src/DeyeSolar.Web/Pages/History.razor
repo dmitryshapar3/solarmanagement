@@ -2,6 +2,8 @@
 @inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
 @inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 @using Microsoft.EntityFrameworkCore
+@inject TimeProvider Clock
+@implements IAsyncDisposable
 
 <PageTitle>@T["History - DeyeSolar"]</PageTitle>
 
@@ -41,13 +43,13 @@ else
         </HeaderContent>
         <RowTemplate>
             <MudTd>@TimeHelper.ToUserTime(context.Timestamp, _tz).ToString("g", System.Globalization.CultureInfo.CurrentCulture)</MudTd>
-            <MudTd>@context.BatterySoc</MudTd>
-            <MudTd>@context.SolarProduction</MudTd>
-            <MudTd>@context.BatteryPower</MudTd>
-            <MudTd>@context.GridConsumption</MudTd>
-            <MudTd>@context.LoadPower</MudTd>
-            <MudTd>@context.BatteryVoltage.ToString("F1")</MudTd>
-            <MudTd>@context.BatteryTemperature.ToString("F1")</MudTd>
+            <MudTd>@(context.BatterySocValid ? context.BatterySoc.ToString() : "—")</MudTd>
+            <MudTd>@(context.SolarPowerValid ? context.SolarProduction.ToString() : "—")</MudTd>
+            <MudTd>@(context.BatteryPowerValid ? context.BatteryPower.ToString() : "—")</MudTd>
+            <MudTd>@(context.GridPowerValid ? context.GridConsumption.ToString() : "—")</MudTd>
+            <MudTd>@(context.LoadPowerValid ? context.LoadPower.ToString() : "—")</MudTd>
+            <MudTd>@(context.BatteryVoltageValid ? context.BatteryVoltage.ToString("F1") : "—")</MudTd>
+            <MudTd>@(context.BatteryTemperatureValid ? context.BatteryTemperature.ToString("F1") : "—")</MudTd>
             <MudTd>@T.Translate(context.DataSource)</MudTd>
         </RowTemplate>
     </MudTable>
@@ -58,6 +60,7 @@ else
     private List<DeyeSolar.Web.Data.Reading>? _readings;
     private int _hours = 6;
     private string? _tz;
+    private readonly AsyncQueryScope _queries = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,14 +69,16 @@ else
         await LoadData();
     }
 
-    private async Task LoadData()
+    private Task LoadData()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var cutoff = DateTime.UtcNow.AddHours(-_hours);
-        _readings = await db.Readings
-            .Where(r => r.Timestamp >= cutoff)
-            .OrderByDescending(r => r.Timestamp)
-            .Take(1000)
-            .ToListAsync();
+        var range = DeyeSolar.Web.Data.HistoryQueryPolicy.Range(Clock.GetUtcNow(), _hours);
+        return _queries.RunAsync(async ct =>
+        {
+            await using var db = await DbFactory.CreateDbContextAsync(ct);
+            return await DeyeSolar.Web.Data.HistoryQueryPolicy.Readings(db.Readings, range).ToListAsync(ct);
+        }, () => { }, readings => _readings = readings,
+            exception => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw(), () => { });
     }
+
+    public ValueTask DisposeAsync() => _queries.DisposeAsync();
 }

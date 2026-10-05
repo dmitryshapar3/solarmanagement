@@ -4,7 +4,7 @@ Source updated on 2026-10-05; the recorded App Store Connect draft was last chec
 
 The billing implementation gives each newly created Solar account a one-calendar-month trial, limits account-attributed trial socket selection to one, and enforces reading/control access on the server. App Store purchasing requires configured backend Apple credentials and products. The saved draft's two-week introductory offers and local-only entitlement description need synchronization with this release; remove those Apple introductory offers to avoid advertising a second free trial.
 
-On 2026-10-05, the current native StoreKit harness passed **11/11 tests**, the full native Expo app and subscription bridge compiled, and the signed device archive **1.0.0 (9)** was generated. Upload and App Store processing are pending. Live Apple sandbox/TestFlight product and payment verification remain required before submission. Changes to this document update the source draft only; they do not change external App Store Connect metadata or publish the app.
+On 2026-10-05, the current native StoreKit harness passed **11/11 tests**, the full native Expo app and subscription bridge compiled, and the signed device archive **1.0.0 (10)** was generated. Upload and App Store processing are pending. Live Apple sandbox/TestFlight product and payment verification remain required before submission. Changes to this document update the source draft only; they do not change external App Store Connect metadata or publish the app.
 
 ## App information
 
@@ -100,7 +100,7 @@ Connected mode requires an existing Solar server account and configured compatib
 Subscription navigation in connected mode:
 After sign-in, a valid one-calendar-month Solar account trial opens connected access with a limit of one newly selected socket. More > Subscription shows the trial deadline and purchase actions. After expiry without a paid subscription, Solar Premium presents Monthly and Yearly plans, restore, policies and support. Select a plan and tap Subscribe. Purchases are verified by the Solar server and bound to the signed-in account before access starts. Both products provide the same connected features in one group (Solar Premium): com.dshapar.solar.monthly and com.dshapar.solar.yearly. Prices are localized by StoreKit. The Solar trial starts without a purchase; no separate Apple introductory trial is configured for this release.
 
-The offline demo bypasses paid connected access. The native StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and the signed device archive 1.0.0 (9) was generated. Apple sandbox/TestFlight purchase verification is still required before submission; local checks do not establish product-review readiness.
+The offline demo bypasses paid connected access. The native StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and the signed device archive 1.0.0 (10) was generated. Apple sandbox/TestFlight purchase verification is still required before submission; local checks do not establish product-review readiness.
 
 Privacy Policy: https://solar.dshapar.com/privacy
 Support: https://solar.dshapar.com/support
@@ -131,7 +131,7 @@ The public policy URL is saved in ASC, but **the collection questionnaire and Pu
 
 ## Trial and paid access
 
-StoreKit 2 is integrated with authenticated server verification in the current source. The current StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and signed device archive 1.0.0 (9) was generated on macOS. Upload, Apple processing and live sandbox verification remain pending. The monthly/yearly products below were configured in ASC during previous preparation; contract readiness, Apple sandbox verification and review remain separate requirements. Both products belong to **Solar Premium, group ID `22429477`**, with English (U.S.) display name Solar Premium and app name DeyeSolar. They occupy the same level, 1, because they provide equal service. [Subscription setup](https://developer.apple.com/help/app-store-connect/manage-subscriptions/offer-auto-renewable-subscriptions/).
+StoreKit 2 is integrated with authenticated server verification in the current source. The current StoreKit harness passed 11/11 tests, the full native Expo app and subscription bridge compiled, and signed device archive 1.0.0 (10) was generated on macOS. Upload, Apple processing and live sandbox verification remain pending. The monthly/yearly products below were configured in ASC during previous preparation; contract readiness, Apple sandbox verification and review remain separate requirements. Both products belong to **Solar Premium, group ID `22429477`**, with English (U.S.) display name Solar Premium and app name DeyeSolar. They occupy the same level, 1, because they provide equal service. [Subscription setup](https://developer.apple.com/help/app-store-connect/manage-subscriptions/offer-auto-renewable-subscriptions/).
 
 | Subscription field | Monthly plan | Annual plan |
 | --- | --- | --- |

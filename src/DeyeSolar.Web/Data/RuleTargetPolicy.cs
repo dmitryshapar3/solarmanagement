@@ -1,6 +1,6 @@
 using DeyeSolar.Domain.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
+using DeyeSolar.Web.Integrations;
 
 namespace DeyeSolar.Web.Data;
 
@@ -21,11 +21,8 @@ internal static class RuleTargetPolicy
         if (!rule.Enabled) return;
         if (!Guid.TryParse(rule.EntityId, out var id) || id == Guid.Empty)
             throw new ArgumentException("Choose an available socket from this installation.");
-        var metadata = await (from device in db.IntegrationDeviceBindings.AsNoTracking()
-            join instance in db.IntegrationInstances.AsNoTracking() on device.InstanceId equals instance.Id
-            where device.Id == id && device.Enabled && device.Kind == "socket" && instance.State == "enabled"
-            select device.MetadataJson).SingleOrDefaultAsync(ct);
-        if (!CanSwitch(metadata))
+        var device = await IntegrationDeviceEligibility.FindEnabledAsync(db, id, "socket", ct);
+        if (device is null || !IntegrationCapabilities.ReadSocket(device).CanSwitch)
             throw new ArgumentException("Choose an available socket from this installation.");
         var targets = await db.TriggerRules.AsNoTracking().Where(r => r.Enabled && r.Id != rule.Id)
             .Select(r => r.EntityId).ToListAsync(ct);
@@ -34,18 +31,4 @@ internal static class RuleTargetPolicy
                 throw new ArgumentException("This socket already has an enabled automation rule. Disable it before enabling another rule.");
     }
 
-    private static bool CanSwitch(string? metadata)
-    {
-        if (metadata is null) return false;
-        try
-        {
-            using var json = JsonDocument.Parse(metadata);
-            return json.RootElement.ValueKind == JsonValueKind.Object
-                && json.RootElement.TryGetProperty("capabilities", out var capabilities)
-                && capabilities.ValueKind == JsonValueKind.Object
-                && capabilities.TryGetProperty("canSwitch", out var value)
-                && value.ValueKind == JsonValueKind.True;
-        }
-        catch (JsonException) { return false; }
-    }
 }

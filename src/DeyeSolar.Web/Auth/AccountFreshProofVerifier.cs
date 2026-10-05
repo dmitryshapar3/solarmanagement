@@ -7,14 +7,14 @@ public sealed class AccountFreshProofVerifier(UserManager<IdentityUser> users, S
     {
         var id = actor.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = id is null ? null : await users.FindByIdAsync(id);
-        if (actor.Identity?.IsAuthenticated != true || user is null || await users.IsLockedOutAsync(user)
-            || actor.FindFirstValue(InstallationAccessAuthorizer.StampClaim) is not { } stamp || stamp != user.SecurityStamp)
+        if (actor.Identity?.IsAuthenticated != true || !AccountSessionValidator.IsActiveUser(user,
+            actor.FindFirstValue(InstallationAccessAuthorizer.StampClaim), DateTimeOffset.UtcNow))
             throw new AccountSecurityException("session_invalid", "Sign in again.", 401);
         var token = actor.FindFirstValue(InstallationAccessAuthorizer.SessionClaim);
         var session = token is null ? null : await sessions.FindAsync(token, ct);
-        if (session is null || session.UserId != user.Id || session.SecurityStamp != user.SecurityStamp)
+        if (!AccountSessionValidator.MatchesAccount(session, user!.Id, user.SecurityStamp))
             throw new AccountSecurityException("session_invalid", "Sign in again.", 401);
-        return user;
+        return user!;
     }
     public async Task<IdentityUser> ProveAsync(ClaimsPrincipal actor, AccountSecurityProof? proof, CancellationToken ct)
     {

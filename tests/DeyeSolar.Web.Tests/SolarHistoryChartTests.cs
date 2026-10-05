@@ -490,26 +490,7 @@ public class SolarHistoryChartTests
             return output.ToHtmlString();
         });
         Assert.Equal(0, history.Calls);
-        if (scenario is not null && Environment.GetEnvironmentVariable("SOLAR_RENDER_OUTPUT") is { Length: > 0 } folder)
-        {
-            Directory.CreateDirectory(folder);
-            var theme = await renderer.Dispatcher.InvokeAsync(async () =>
-            {
-                var result = await renderer.RenderComponentAsync<MudThemeProvider>(ParameterView.FromDictionary(new Dictionary<string, object?>
-                {
-                    ["IsDarkMode"] = true,
-                    ["Theme"] = new MudTheme { PaletteDark = new PaletteDark {
-                        Primary = "#42a5f5", Secondary = "#ffb74d", Success = "#66bb6a",
-                        Surface = "#1e1e2e", Background = "#121212", AppbarBackground = "#1e1e2e" } }
-                }));
-                return result.ToHtmlString();
-            });
-            var page = "<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                + "<link rel='stylesheet' href='mud.css'><link rel='stylesheet' href='solar.css'>"
-                + "<body style='margin:0;padding:16px;background:#121212'><div style='margin:0 auto;max-width:1100px'>"
-                + theme + html + "</div></body></html>";
-            await File.WriteAllTextAsync(System.IO.Path.Combine(folder, scenario + ".html"), page);
-        }
+        await RenderPreview.ExportAsync(renderer, html, scenario, 1100);
         var decoded = WebUtility.HtmlDecode(html);
         if (CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en")
             Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);

@@ -7,6 +7,7 @@ using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using Microsoft.Extensions.Options;
+using DeyeSolar.Web.Data;
 
 namespace DeyeSolar.Web.Services;
 
@@ -161,8 +162,7 @@ public sealed class SolarEstimateService(ISolarRadiationSource source, ISolarEst
 
     internal static string ConfigurationKey(SolarEstimateOptions config)
     {
-        var values = typeof(SolarEstimateOptions).GetProperties().Where(p => p.Name != nameof(config.ApiKey))
-            .OrderBy(p => p.Name).ToDictionary(p => p.Name, p => p.GetValue(config));
+        var values = SettingsSchema.ConfigurationValues(SolarEstimateOptions.Section, config);
         return "weather-now-v1:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(values))));
     }
 }

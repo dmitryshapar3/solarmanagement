@@ -1,4 +1,4 @@
-namespace DeyeSolar.Infrastructure.DeyeCloud;
+namespace SolarManagement.Providers.DeyeCloud;
 
 public record DeyeStation(long Id, string Name, string? Address);
 

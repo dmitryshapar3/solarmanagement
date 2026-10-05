@@ -160,9 +160,8 @@
     private string DetailsUrl => "/solar-details?returnTo=" + Uri.EscapeDataString(EnergyDetailsNavigation.ReturnPath(ReturnTo));
 
     private static CultureInfo DisplayCulture => CultureInfo.CurrentCulture;
-    private readonly CancellationTokenSource _stop = new();
+    private readonly AsyncQueryScope _queries = new();
     private DateTimeOffset _clock = DateTimeOffset.UtcNow;
-    private Task? _clockTask;
     private bool _disposed;
 
     private SolarEstimateState CurrentState => State ?? EstimateService.Current;
@@ -213,7 +212,7 @@
         _clock = Clock.GetUtcNow();
         EstimateService.OnUpdated += OnUpdated;
         InverterSnapshot.OnDataUpdated += OnUpdated;
-        _clockTask = UpdateClockAsync();
+        _queries.StartRefresh(Clock, TimeSpan.FromSeconds(30), RefreshAsync);
     }
 
     private void OnUpdated() => _ = RefreshAsync();
@@ -225,11 +224,11 @@
         _refreshError = null;
         try
         {
-            var inverter = OnRefreshInverter.HasDelegate ? OnRefreshInverter.InvokeAsync() : InverterRefresh.RefreshAsync(_stop.Token);
+            var inverter = OnRefreshInverter.HasDelegate ? OnRefreshInverter.InvokeAsync() : InverterRefresh.RefreshAsync(_queries.LifetimeToken);
             await Task.WhenAll(inverter, _history?.RefreshDataAsync() ?? Task.CompletedTask);
             await RefreshAsync();
         }
-        catch (OperationCanceledException) when (_disposed || _stop.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_disposed || _queries.LifetimeToken.IsCancellationRequested) { }
         catch (Exception) { if (!_disposed) _refreshError = T["Could not refresh inverter readings. Showing the last available results; please try again."]; }
         finally { if (!_disposed) _refreshing = false; }
     }
@@ -250,16 +249,6 @@
         catch (InvalidOperationException) when (_disposed) { }
     }
 
-    private async Task UpdateClockAsync()
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(_stop.Token)) await RefreshAsync();
-        }
-        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
-    }
-
     private static string Number(double value) => value.ToString("F2", DisplayCulture);
     private static string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
     private string BasisLabel(SolarPowerBasis basis) => basis switch { SolarPowerBasis.PvDc => T["PV DC generation"], SolarPowerBasis.Ac => T["Inverter AC power"], _ => T["Grid export"] };
@@ -272,8 +261,6 @@
         _disposed = true;
         EstimateService.OnUpdated -= OnUpdated;
         InverterSnapshot.OnDataUpdated -= OnUpdated;
-        await _stop.CancelAsync();
-        if (_clockTask is not null) await _clockTask;
-        _stop.Dispose();
+        await _queries.DisposeAsync();
     }
 }

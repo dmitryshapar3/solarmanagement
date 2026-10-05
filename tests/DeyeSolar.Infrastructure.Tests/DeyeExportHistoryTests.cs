@@ -1,8 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using DeyeSolar.Domain.Options;
-using DeyeSolar.Infrastructure.DeyeCloud;
+using SolarManagement.Providers.DeyeCloud;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DeyeSolar.Infrastructure.Tests;

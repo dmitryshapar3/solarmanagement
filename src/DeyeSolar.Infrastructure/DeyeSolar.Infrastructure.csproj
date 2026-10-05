@@ -16,4 +16,5 @@
     <ProjectReference Include="..\DeyeSolar.Domain\DeyeSolar.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup><ProjectReference Include="../SolarManagement.Http/SolarManagement.Http.csproj" /></ItemGroup>
 </Project>

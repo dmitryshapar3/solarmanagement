@@ -5,6 +5,7 @@ using System.Text.Json;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Api;
 using Microsoft.Extensions.Options;
+using SolarManagement.Http;
 
 namespace DeyeSolar.Web.Services;
 
@@ -77,19 +78,12 @@ public sealed class IntegrationTestService(IHttpClientFactory clients,
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) throw new ProbeAuthenticationException();
         if (!response.IsSuccessStatusCode || response.RequestMessage?.RequestUri != request.RequestUri) throw new HttpRequestException("Provider request failed.");
-        const int limit = 256 * 1024;
-        if (response.Content.Headers.ContentLength > limit) throw new InvalidDataException();
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8192];
-        int count;
-        while ((count = await stream.ReadAsync(chunk, ct)) > 0)
+        try
         {
-            if (buffer.Length + count > limit) throw new InvalidDataException();
-            buffer.Write(chunk, 0, count);
+            var body = await BoundedHttpContent.ReadBytesAsync(response.Content, 256 * 1024, ct);
+            return JsonDocument.Parse(body, new JsonDocumentOptions { MaxDepth = 32 });
         }
-        buffer.Position = 0;
-        return await JsonDocument.ParseAsync(buffer, new JsonDocumentOptions { MaxDepth = 32 }, ct);
+        catch (ResponseTooLargeException error) { throw new InvalidDataException("Provider response is too large.", error); }
     }
     private sealed class ProbeConfigurationException : Exception { }
     private sealed class ProbeAuthenticationException : Exception { }

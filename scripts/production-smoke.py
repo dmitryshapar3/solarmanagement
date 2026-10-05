@@ -23,6 +23,7 @@ parser.add_argument("--keep", action="store_true", help="Keep isolated container
 args = parser.parse_args()
 repository = Path(__file__).resolve().parents[1]
 docker = os.environ.get("DOCKER", "docker")
+docker_platform = "linux/amd64"
 prefix = "solar-smoke-" + secrets.token_hex(5)
 root = Path(tempfile.mkdtemp(prefix=prefix + "-", dir=os.environ.get("RUNNER_TEMP")))
 os.chmod(root, 0o700)
@@ -58,7 +59,7 @@ def sql(container, statement):
 
 def start_sql(name):
     containers.append(name)
-    command(docker, "run", "-d", "--name", name, "--platform", "linux/amd64", "--network", network,
+    command(docker, "run", "-d", "--name", name, "--platform", docker_platform, "--network", network,
         "-e", "ACCEPT_EULA=Y", "-e", "MSSQL_PID=Developer", "-e", "MSSQL_MEMORY_LIMIT_MB=2048",
         "-e", "MSSQL_SA_PASSWORD=" + password, "mcr.microsoft.com/mssql/server:2022-latest")
     deadline = time.monotonic() + 150
@@ -130,7 +131,7 @@ def app_arguments(name, sql_name, state_volumes, privileged=False, corrupt=False
         invalid["IntegrationRuntime"]["BootstrapPackages"][0]["ExpectedSha256"] = "A" * 64
         config = root / "invalid-bootstrap.json"
         config.write_text(json.dumps(invalid))
-    return [docker, "run", "--name", name, "--platform", "linux/amd64", "--network", network,
+    return [docker, "run", "--name", name, "--platform", docker_platform, "--network", network,
         "--mount", f"type=bind,source={secret_dir},target=/run/secrets,readonly",
         "--mount", f"type=bind,source={bundle_source},target=/app/integration-bundle,readonly",
         "--mount", f"type=bind,source={config},target=/app/integration-bootstrap.json,readonly",
@@ -188,7 +189,7 @@ def app_address(name):
 try:
     if not args.skip_build:
         print("Building production image", flush=True)
-        command(docker, "build", "--platform", "linux/amd64", "-t", image, ".")
+        command(docker, "build", "--platform", docker_platform, "-t", image, ".")
     print("Preparing signed provider release", flush=True)
     provider_count, package_pin = prepare_bundle()
     command(docker, "network", "create", network)

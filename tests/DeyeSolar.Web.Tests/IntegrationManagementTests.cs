@@ -200,7 +200,7 @@ public class IntegrationManagementTests
         }
         var settings = new AppSettingsService(factory, new ConfigurationBuilder().Build());
         var selected = new InverterConnectionOptions { DeviceKey = Guid.NewGuid().ToString("D") };
-        var service = new SiteSettingsService(settings, settings, new Monitor<InverterConnectionOptions>(selected), new NoInverterSource());
+        var service = new SiteSettingsService(settings, settings, new FixedOptionsMonitor<InverterConnectionOptions>(selected), new NoInverterSource());
         var wrong = Site() with
         {
             SelectedDeviceSn = "forged-inverter",
@@ -237,7 +237,7 @@ public class IntegrationManagementTests
         builder.Services.AddSingleton(new DeviceNameService(new Labels(), Devices()));
         var settings = new AppSettingsService(new NeverFactory(), new ConfigurationBuilder().Build());
         builder.Services.AddSingleton(new SiteSettingsService(settings, settings,
-            new Monitor<InverterConnectionOptions>(new()), new NoInverterSource()));
+            new FixedOptionsMonitor<InverterConnectionOptions>(new()), new NoInverterSource()));
         await using var app = builder.Build(); app.UseAuthentication(); app.UseAuthorization(); app.MapIntegrationManagement();
         app.MapGet("/_fixture/csrf", (HttpContext context, IAntiforgery antiforgery) =>
             Results.Ok(new { requestToken = antiforgery.GetAndStoreTokens(context).RequestToken }))
@@ -272,7 +272,7 @@ public class IntegrationManagementTests
     private static (IntegrationTestService Service, Transport Transport) Probe(Func<HttpRequestMessage, int, HttpResponseMessage>? response = null, string? key = null)
     {
         var transport = new Transport(response ?? ((request, _) => Json(request, "{}")));
-        return (new(new Clients(transport), new Monitor<SolarEstimateOptions>(new() { ApiKey = key }), TimeProvider.System, new()), transport);
+        return (new(new Clients(transport), new FixedOptionsMonitor<SolarEstimateOptions>(new() { ApiKey = key }), TimeProvider.System, new()), transport);
     }
     private sealed class NeverFactory : IDbContextFactory<DeyeSolarDbContext> { public int Calls; public DeyeSolarDbContext CreateDbContext() { Calls++; throw new InvalidOperationException("Draft probes must not access storage."); } }
     private sealed class SiteFactory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
@@ -283,7 +283,6 @@ public class IntegrationManagementTests
         public int Calls; public List<string> Paths = []; public List<string> Bodies = []; public List<Uri> Uris = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) { Calls++; Uris.Add(request.RequestUri!); Paths.Add(request.RequestUri!.AbsolutePath); Bodies.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct)); return response(request, Calls); }
     }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T> { public T CurrentValue => value; public T Get(string? name) => value; public IDisposable? OnChange(Action<T, string?> listener) => null; }
     private sealed class NoInverterSource : IInverterDataSource
     {
         public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => throw new InvalidOperationException("No inverter reads are allowed in site settings tests.");

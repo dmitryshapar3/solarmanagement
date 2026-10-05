@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+using DeyeSolar.Web.Operations;
+
 namespace DeyeSolar.Web.Billing;
 
 public sealed record AppleVerifyRequest(string SignedTransaction);
@@ -44,7 +46,7 @@ public static class AppleBillingEndpoints
             try { return Results.Ok(await access.ReadAsync(userId, ct)); }
             catch (BillingAccessException exception)
             {
-                return Results.Json(new { code = "billing_account_unavailable", message = exception.Message }, statusCode: 409);
+                return ApiProblems.Describe(exception, ApiProblemScope.Billing);
             }
         }).RequireAuthorization(ApiAuthorization.AuthenticatedUser);
 
@@ -58,7 +60,7 @@ public static class AppleBillingEndpoints
             catch (AppleBillingException exception) { return Failure(exception); }
             catch (BillingAccessException exception)
             {
-                return Results.Json(new { code = "billing_account_unavailable", message = exception.Message }, statusCode: 409);
+                return ApiProblems.Describe(exception, ApiProblemScope.Billing);
             }
             catch (Exception exception) when (!ct.IsCancellationRequested)
             {
@@ -87,7 +89,6 @@ public static class AppleBillingEndpoints
             .WithMetadata(new RequestSizeLimitAttribute(98304));
     }
 
-    private static IResult Failure(AppleBillingException exception) => Results.Json(new { exception.Code, Message = exception.Message },
-        statusCode: exception.Retryable ? 503 : exception.Code == "apple_account_mismatch" ? 409 : 400);
-    private static IResult Unavailable() => Results.Json(new { code = "apple_unavailable", message = "Apple subscription verification is temporarily unavailable. Please try again." }, statusCode: 503);
+    private static IResult Failure(AppleBillingException exception) => ApiProblems.Describe(exception, ApiProblemScope.Billing);
+    private static IResult Unavailable() => ApiProblems.Error("Apple subscription verification is temporarily unavailable. Please try again.", 503, "apple_unavailable");
 }

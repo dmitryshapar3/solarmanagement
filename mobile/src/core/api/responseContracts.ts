@@ -16,6 +16,7 @@ const value: Check = v => v === null || str(v) || bool(v) || num(v);
 const strings = (keys: string[]) => Object.fromEntries(keys.map(k => [k, str]));
 const numbers = (keys: string[]) => Object.fromEntries(keys.map(k => [k, num]));
 const energy = numbers(["batterySoc", "batteryTemperature", "batteryVoltage", "batteryPower", "batteryCurrent", "solarProduction", "gridConsumption", "loadPower"]);
+const measurementValidity = Object.fromEntries(["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"].map(k => [k, bool]));
 const device = object({ id: str, name: str, category: nullable(str), online: bool, isOn: bool,
   currentPowerW: nullable(num), stateKnown: bool, cloudName: optional(nullable(str)), localName: optional(nullable(str)) });
 const rule = object({ id: num, name: str, entityId: str, enabled: bool, currentState: bool,
@@ -25,7 +26,7 @@ const rule = object({ id: num, name: str, entityId: str, enabled: bool, currentS
   configurationVersion: v => typeof v === "string" && /^[a-fA-F0-9]{64}$/.test(v) });
 const inverter = object({ ...energy, timestamp: date, dataSource: str,
   inverterId: nullable(str), solarObservedAt: nullable(date), gridObservedAt: nullable(date), solarDeviceSn: nullable(str), gridDeviceSn: nullable(str),
-  ...Object.fromEntries(["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"].map(k => [k, bool])) });
+  ...measurementValidity });
 const dashboard = object({ inverter: nullable(inverter), devicesLoaded: bool, deviceLastUpdated: nullable(date), devices: array(device), manualDevices: array(device), rules: array(rule), timeZoneId: str });
 const auth = object({ token: v => typeof v === "string" && v.length > 0 && v.length <= 4096, username: str, expiresAt: date });
 const verification = object({ verificationId: str, expiresAt: date, retryAfterSeconds: num });
@@ -76,8 +77,9 @@ function contract(path: string, method: string): Check | undefined {
   if (path === "/api/settings" && method === "GET") return settings;
   if (path === "/api/settings/site" && method === "GET") return site;
   if (/^\/api\/settings\/test\/(openmeteo|pse)$/.test(path)) return object({ kind: str, success: bool, code: str, message: str, checkedAt: date });
-  if (path === "/api/readings") return array(object({ id: num, timestamp: date, ...energy, dataSource: str }));
-  if (path === "/api/rule-runs") return array(object({ id: num, timestamp: date, ...strings(["ruleName", "action", "conditionKey", "reason"]), ...numbers(["batterySoc", "solarProduction", "batteryPower"]) }));
+  if (path === "/api/readings") return array(object({ id: num, timestamp: date, ...energy, ...measurementValidity, dataSource: str }));
+  if (path === "/api/rule-runs") return array(object({ id: num, timestamp: date, ...strings(["ruleName", "action", "conditionKey", "reason"]),
+    batterySoc: nullable(num), solarProduction: nullable(num), batteryPower: nullable(num) }));
   if (path === "/api/solar/estimate") return solarState;
   if (path === "/api/solar/history") return object({ ...strings(["start", "end", "timeZoneId", "selectedDate", "today"]), weatherError: nullable(str), actualError: nullable(str),
     points: array(object({ timestamp: date, possible: nullable(object({ lowerKw: num, upperKw: num })), actualKw: nullable(num) })) });

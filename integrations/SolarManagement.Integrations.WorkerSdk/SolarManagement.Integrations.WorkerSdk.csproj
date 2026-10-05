@@ -2,4 +2,5 @@
   <PropertyGroup><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/SolarManagement.Integrations.Contracts/SolarManagement.Integrations.Contracts.csproj" /></ItemGroup>
   <ItemGroup><PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" /><PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/SolarManagement.Http/SolarManagement.Http.csproj" /></ItemGroup>
 </Project>

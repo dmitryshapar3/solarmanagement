@@ -126,6 +126,9 @@
           "SolarManagement.SmartSockets.Contracts": "[1.0.0, )"
         }
       },
+      "solarmanagement.http": {
+        "type": "Project"
+      },
       "solarmanagement.inverters.contracts": {
         "type": "Project"
       },

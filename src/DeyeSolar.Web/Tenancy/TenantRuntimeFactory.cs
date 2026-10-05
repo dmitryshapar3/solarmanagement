@@ -39,11 +39,10 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
                 throw new InvalidOperationException("The installation is unavailable.");
             var existing = await db.AppSettings.AsNoTracking().Select(setting => new { setting.Section, setting.Key }).ToListAsync(ct).ConfigureAwait(false);
             var keys = existing.Select(setting => $"{setting.Section}:{setting.Key}").ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, value) in defaults)
+            foreach (var (section, key, value) in SettingsSchema.RuntimeEntries(defaults))
             {
-                if (key == "SolarEstimate:ApiKey" || keys.Contains(key)) continue;
-                var separator = key.IndexOf(':');
-                db.AppSettings.Add(new AppSetting { Section = key[..separator], Key = key[(separator + 1)..], Value = value ?? "" });
+                if (keys.Contains($"{section}:{key}")) continue;
+                db.AppSettings.Add(new AppSetting { Section = section, Key = key, Value = value });
             }
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }
@@ -85,12 +84,12 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<IAccountSocketControl>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddSingleton<ISmartSocketCatalog>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddSingleton<ISocketCommandTracker>(provider => provider.GetRequiredService<DynamicSocketGateway>());
-        services.AddHttpClient<PseExportPriceClient>(client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers()
-            .ConfigurePrimaryHttpMessageHandler(ProviderHandler).AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
-        services.AddOpenMeteoSolarClients();
-        services.AddHttpClient<OpenMeteoCurrentSolarClient>(client => client.Timeout = TimeSpan.FromSeconds(30)).AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
-        services.AddHttpClient<OpenMeteoSolarHistoryClient>(client => client.Timeout = TimeSpan.FromSeconds(30)).AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
-        services.AddHttpClient<OpenMeteoSolarClient>(client => client.Timeout = TimeSpan.FromSeconds(30)).AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
+        services.AddHttpClient<IPseJsonReader, PseJsonReader>(client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers()
+            .ConfigurePrimaryHttpMessageHandler(SolarManagement.Http.PublicHttpTransport.CreateHandler)
+            .AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
+        services.AddTransient<PseExportPriceClient>();
+        services.AddOpenMeteoSolarClients(transport => transport
+            .AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping)));
         services.AddSingleton<IInverterDataSource>(provider => provider.GetRequiredService<DynamicInverterGateway>());
         services.AddSingleton<IExportGridHistorySource>(provider => provider.GetRequiredService<DynamicInverterGateway>());
         services.AddSingleton<ExportReadingStore>();
@@ -110,15 +109,16 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
         services.AddSingleton<DeviceStatusSnapshot>();
         services.AddSingleton<RuleEvaluator>();
+        services.AddSingleton<IRuleDecisionEvaluator>(provider => provider.GetRequiredService<RuleEvaluator>());
         services.AddSingleton<IRuleRepository, RuleRepository>();
         services.AddSingleton<IRuleRunHistory>(provider => new RuleRunHistory(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
-            provider.GetRequiredService<ILogger<RuleRunHistory>>()));
+            provider.GetRequiredService<ILogger<RuleRunHistory>>(), provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IRuleObservationReconciler>(provider => new RuleObservationReconciler(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
             provider.GetRequiredService<ISocketController>()));
         services.AddSingleton<ISocketReceiptReconciler>(provider => new SocketReceiptReconciler(provider.GetRequiredService<IDbContextFactory<DeyeSolarDbContext>>(),
             provider.GetRequiredService<ISocketCommandTracker>(), provider.GetRequiredService<ILogger<SocketReceiptReconciler>>()));
         services.AddSingleton<IRuleAutomationExecutor>(provider => new RuleAutomationExecutor(provider.GetRequiredService<ISocketController>(),
-            provider.GetRequiredService<IRuleRepository>(), provider.GetRequiredService<RuleEvaluator>(), provider.GetRequiredService<IAppSettingsReader>(),
+            provider.GetRequiredService<IRuleRepository>(), provider.GetRequiredService<IRuleDecisionEvaluator>(), provider.GetRequiredService<IAppSettingsReader>(),
             provider.GetRequiredService<IRuleRunHistory>(), provider.GetRequiredService<IRuleObservationReconciler>(), provider.GetRequiredService<ILogger<RuleAutomationExecutor>>()));
         services.AddSingleton<IRulePollingCycle>(provider => new RulePollingCycle(
             provider.GetRequiredService<IInverterRefreshService>(), provider.GetRequiredService<IOptionsMonitor<InverterConnectionOptions>>(),
@@ -154,11 +154,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
             .Select(installation => installation.Id).OrderBy(id => id).ToListAsync(ct).ConfigureAwait(false);
     }
 
-    private static HttpMessageHandler ProviderHandler() => new SocketsHttpHandler
-    {
-        AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
-        ConnectTimeout = TimeSpan.FromSeconds(5), ConnectCallback = ProviderEndpointPolicy.ConnectAsync
-    };
+    private static HttpMessageHandler ProviderHandler() => SolarManagement.Http.PublicHttpTransport.CreateHandler();
     public void Dispose() => _requests.Dispose();
 }
 

@@ -228,12 +228,7 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
             _ => SocketCommandRejection.DeviceUnavailable
         } : null, null);
     internal static SocketCapabilities Capabilities(IntegrationDeviceBindingEntity binding)
-    {
-        using var json = JsonDocument.Parse(binding.MetadataJson);
-        if (!json.RootElement.TryGetProperty("capabilities", out var value)) return new(false, false);
-        return new(value.TryGetProperty("canSwitch", out var s) && s.ValueKind == JsonValueKind.True,
-            value.TryGetProperty("canMeasurePower", out var p) && p.ValueKind == JsonValueKind.True);
-    }
+        => IntegrationCapabilities.ReadSocket(binding);
     private async Task<SocketCommandResult> SetAsync(IntegrationDeviceBindingEntity binding, IntegrationSession expected,
         SetSocketPowerCommand request, CancellationToken ct, string? userId, Func<CancellationToken, Task>? authorizeCommand)
     {

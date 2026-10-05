@@ -91,13 +91,12 @@ public static class AuthServiceCollectionExtensions
                     return;
                 }
                 var session = await store.FindAsync(token, context.HttpContext.RequestAborted);
-                if (session is null || session.UserId != context.Principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                    || session.SecurityStamp != context.Principal.FindFirstValue(InstallationAccessAuthorizer.StampClaim)) { context.RejectPrincipal(); return; }
+                if (!AccountSessionValidator.MatchesAccount(session, context.Principal)) { context.RejectPrincipal(); return; }
                 var identity = (ClaimsIdentity)context.Principal.Identity;
                 foreach (var claim in identity.FindAll(InstallationIds.ClaimType).Concat(identity.FindAll(InstallationIds.RoleClaimType)).ToArray()) identity.RemoveClaim(claim);
                 // Identity regeneration may choose a different remaining membership. Account
                 // authentication survives membership removal; tenant selection never follows it.
-                identity.AddClaim(new(InstallationIds.ClaimType, session.InstallationId ?? ""));
+                identity.AddClaim(new(InstallationIds.ClaimType, session!.InstallationId ?? ""));
                 var memberships = context.HttpContext.RequestServices.GetRequiredService<InstallationMembershipService>();
                 if (await memberships.ResolveAsync(context.Principal, context.HttpContext.RequestAborted) is { } member)
                     identity.AddClaim(new(InstallationIds.RoleClaimType, member.Role));

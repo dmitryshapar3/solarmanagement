@@ -11,7 +11,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.Inverters.Contracts;
@@ -133,9 +132,9 @@ public sealed class DynamicDeviceGatewayTests
     }
 
     private static PollingWorker Worker(Fixture f, Func<CancellationToken, Task<InverterData>> refresh) => PollingWorkerFixture.Create(new Refresh(refresh),
-        new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), f.Sockets("a"),
+        new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), f.Sockets("a"),
         new RuleRepository(f.Factory("a")), new DeyeSolar.RuleEngine.RuleEvaluator(), f.Factory("a"),
-        new Monitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder()
+        new FixedOptionsMonitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Display:TimeZoneId"] = "UTC" }).Build()), NullLogger<PollingWorker>.Instance);
     [SqlServerFact]
     public async Task AcknowledgementAndReplayChangeOnlyTheOwnedSocketRules()
@@ -504,9 +503,9 @@ public sealed class DynamicDeviceGatewayTests
         {
             var data = await source.ReadDeviceAsync(new(f.InverterA), ct);
             await store.SavePollingAsync(data, ct); return data;
-        }), new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), socket,
+        }), new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = f.InverterA.ToString("D") }), socket,
             new RuleRepository(f.Factory("a")), new DeyeSolar.RuleEngine.RuleEvaluator(), f.Factory("a"),
-            new Monitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder().Build()),
+            new FixedOptionsMonitor<PollingOptions>(new()), new AppSettingsService(f.Factory("a"), new ConfigurationBuilder().Build()),
             NullLogger<PollingWorker>.Instance, source, store);
         await (Task)typeof(PollingWorker).GetMethod("PollAndEvaluateAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(worker, [CancellationToken.None])!;
         await using var check = f.Factory("a").CreateDbContext();
@@ -517,12 +516,6 @@ public sealed class DynamicDeviceGatewayTests
         Assert.False((await check.TriggerRules.IgnoreQueryFilters().SingleAsync(r => r.InstallationId == "b")).CurrentState);
         Assert.Equal(new[] { f.InverterA, secondary }.Order(), (await check.Readings.Select(r => r.InverterId!.Value).ToListAsync()).Order());
         Assert.Empty(await check.Readings.IgnoreQueryFilters().Where(r => r.InstallationId == "b").ToListAsync());
-    }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    {
-        public T CurrentValue => value;
-        public T Get(string? name) => value;
-        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
@@ -567,13 +560,13 @@ public sealed class DynamicDeviceGatewayTests
             return IntegrationJson.Element(new ProviderSocketTelemetry(remote, "0", SocketPower, true, 0, observed, DateTimeOffset.UtcNow));
         }
     }
-    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
+    private sealed class Fixture(SqlServerTestDatabase database) : IAsyncDisposable
     {
         public Guid SocketA = Guid.NewGuid();
         public Guid InverterA = Guid.NewGuid();
         public Executor Executor = new();
         private readonly IntegrationSecretStore _secrets = new(new EphemeralDataProtectionProvider());
-        public Factory Factory(string installation) => new(options, installation);
+        public Factory Factory(string installation) => new(database.Options, installation);
         public DynamicSocketGateway Sockets(string installation, TimeProvider? clock = null) => new(new IntegrationRegistry(Factory(installation), _secrets), Executor, Factory(installation), clock ?? TimeProvider.System);
         public DynamicInverterGateway Inverters(string installation)
         {
@@ -582,46 +575,51 @@ public sealed class DynamicDeviceGatewayTests
         }
         public static async Task<Fixture> CreateAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "DynamicDevices_" + Guid.NewGuid().ToString("N") };
-            var f = new Fixture(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            await using (var db = f.Factory("a").CreateDbContext())
+            var database = await SqlServerTestDatabase.CreateAsync("DynamicDevices", SqlTestSchema.Model, seed: async db =>
             {
-                await db.Database.EnsureCreatedAsync();
                 db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
                 await db.SaveChangesAsync();
-            }
-            foreach (var tenant in new[] { "a", "b" })
+            });
+            var f = new Fixture(database);
+            try
             {
-                await using var db = f.Factory(tenant).CreateDbContext();
-                var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "unknown.vendor", PackageVersion = "1", PackageDigest = "digest", State = "enabled" };
-                db.Add(instance);
-                db.Add(new IntegrationConfigurationEntity { InstanceId = instance.Id, Revision = 1 });
-                var socket = tenant == "a" ? f.SocketA : Guid.NewGuid();
-                db.Add(new IntegrationDeviceBindingEntity
+                foreach (var tenant in new[] { "a", "b" })
                 {
-                    Id = socket,
-                    InstanceId = instance.Id,
-                    RemoteId = "SameOpaqueId",
-                    Channel = "0",
-                    Kind = "socket",
-                    MetadataJson = "{\"capabilities\":{\"canSwitch\":true,\"canMeasurePower\":true}}"
-                });
-                db.Add(new IntegrationDeviceBindingEntity
-                {
-                    Id = tenant == "a" ? f.InverterA : Guid.NewGuid(),
-                    InstanceId = instance.Id,
-                    RemoteId = "CaseSensitiveSn",
-                    Kind = "inverter",
-                    IsDefault = true,
-                    MetadataJson = "{\"capabilities\":{\"hasBattery\":true,\"hasSolarPower\":true,\"hasSignedGridPower\":true}}"
-                });
-                db.TriggerRules.Add(new TriggerRule { EntityId = socket.ToString("D"), Name = "Independent rule" });
-                await db.SaveChangesAsync();
+                    await using var db = f.Factory(tenant).CreateDbContext();
+                    var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "unknown.vendor", PackageVersion = "1", PackageDigest = "digest", State = "enabled" };
+                    db.Add(instance);
+                    db.Add(new IntegrationConfigurationEntity { InstanceId = instance.Id, Revision = 1 });
+                    var socket = tenant == "a" ? f.SocketA : Guid.NewGuid();
+                    db.Add(new IntegrationDeviceBindingEntity
+                    {
+                        Id = socket,
+                        InstanceId = instance.Id,
+                        RemoteId = "SameOpaqueId",
+                        Channel = "0",
+                        Kind = "socket",
+                        MetadataJson = "{\"capabilities\":{\"canSwitch\":true,\"canMeasurePower\":true}}"
+                    });
+                    db.Add(new IntegrationDeviceBindingEntity
+                    {
+                        Id = tenant == "a" ? f.InverterA : Guid.NewGuid(),
+                        InstanceId = instance.Id,
+                        RemoteId = "CaseSensitiveSn",
+                        Kind = "inverter",
+                        IsDefault = true,
+                        MetadataJson = "{\"capabilities\":{\"hasBattery\":true,\"hasSolarPower\":true,\"hasSignedGridPower\":true}}"
+                    });
+                    db.TriggerRules.Add(new TriggerRule { EntityId = socket.ToString("D"), Name = "Independent rule" });
+                    await db.SaveChangesAsync();
+                }
+                return f;
             }
-            return f;
+            catch
+            {
+                await database.DisposeAsync();
+                throw;
+            }
         }
-        public async ValueTask DisposeAsync() { await using var db = Factory("a").CreateDbContext(); await db.Database.EnsureDeletedAsync(); }
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options, string installation) : IDbContextFactory<DeyeSolarDbContext>
     {

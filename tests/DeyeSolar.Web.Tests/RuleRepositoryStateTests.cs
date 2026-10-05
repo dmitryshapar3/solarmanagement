@@ -1,13 +1,34 @@
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Tests;
 
 public class RuleRepositoryStateTests
 {
+    [SqlServerFact]
+    public async Task DirectConfigurationWritesNormalizeDraftsAndCannotPersistInvalidThresholds()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var repository = new RuleRepository(fixture.Factory("site-a"));
+        var draft = await repository.CreateAsync(new()
+        {
+            Name = "Unselected draft", EntityId = "", Enabled = true,
+            SocTurnOnThreshold = 80, UseSeparateSocTurnOffThreshold = false, SocTurnOffThreshold = 101,
+            UseSolarProductionThreshold = true, MinAverageSolarProductionWatts = 0
+        }, default);
+        var saved = (await repository.GetByIdAsync(draft.Id, default))!;
+        Assert.False(saved.Enabled);
+        Assert.Equal(80, saved.SocTurnOffThreshold);
+        Assert.Equal(3000, saved.MinAverageSolarProductionWatts);
+        saved.SocTurnOnThreshold = 101;
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.UpdateAsync(saved, default));
+        Assert.Equal(80, (await repository.GetByIdAsync(draft.Id, default))!.SocTurnOnThreshold);
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.CreateAsync(new()
+        { Name = "", Enabled = false, EntityId = fixture.ReplacementSocket.ToString("D") }, default));
+    }
+
     [SqlServerFact]
     public async Task MissingAndStaleVersionsCannotUpdateOrDeleteAndRuntimeBookkeepingKeepsVersionValid()
     {
@@ -227,7 +248,7 @@ public class RuleRepositoryStateTests
         public DeyeSolarDbContext CreateDbContext() => new(options, installation);
     }
 
-    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
+    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public int TargetId { get; private set; }
         public Guid TargetSocket { get; } = Guid.NewGuid();
@@ -243,58 +264,56 @@ public class RuleRepositoryStateTests
         }
         public static async Task<Fixture> CreateAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "RuleStateTests_" + Guid.NewGuid().ToString("N") };
-            var fixture = new Fixture(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            await using var db = fixture.Factory("site-a").CreateDbContext();
-            await db.Database.MigrateAsync();
-            db.Installations.AddRange(new Installation { Id = "site-a", CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = "site-b", CreatedAt = DateTimeOffset.UtcNow });
-            var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
-            var paused = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "disabled" };
-            db.IntegrationInstances.AddRange(instance, paused);
-            Guid AddBinding(Guid connectionId, Guid? id = null, string kind = "socket", bool enabled = true, string metadata = "{\"capabilities\":{\"canSwitch\":true}}")
+            var database = await SqlServerTestDatabase.CreateAsync("RuleStateTests");
+            var fixture = new Fixture(database.Options, database);
+            try
             {
-                var deviceId = id ?? Guid.NewGuid();
-                db.IntegrationDeviceBindings.Add(new() { Id = deviceId, InstanceId = connectionId, RemoteId = deviceId.ToString("D"),
-                    Kind = kind, Enabled = enabled, MetadataJson = metadata });
-                return deviceId;
+                await using var db = fixture.Factory("site-a").CreateDbContext();
+                db.Installations.AddRange(new Installation { Id = "site-a", CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = "site-b", CreatedAt = DateTimeOffset.UtcNow });
+                var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
+                var paused = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "disabled" };
+                db.IntegrationInstances.AddRange(instance, paused);
+                Guid AddBinding(Guid connectionId, Guid? id = null, string kind = "socket", bool enabled = true, string metadata = "{\"capabilities\":{\"canSwitch\":true}}")
+                {
+                    var deviceId = id ?? Guid.NewGuid();
+                    db.IntegrationDeviceBindings.Add(new() { Id = deviceId, InstanceId = connectionId, RemoteId = deviceId.ToString("D"),
+                        Kind = kind, Enabled = enabled, MetadataJson = metadata });
+                    return deviceId;
+                }
+                AddBinding(instance.Id, fixture.TargetSocket);
+                AddBinding(instance.Id, fixture.ReplacementSocket);
+                AddBinding(instance.Id, fixture.ContendedSocket);
+                var otherSocket = AddBinding(instance.Id);
+                fixture.InvalidTargets = ["raw-provider-id", Guid.Empty.ToString("D"), Guid.NewGuid().ToString("D"),
+                    AddBinding(instance.Id, kind: "inverter").ToString("D"),
+                    AddBinding(instance.Id, enabled: false).ToString("D"),
+                    AddBinding(instance.Id, metadata: "{\"capabilities\":{\"canSwitch\":false}}").ToString("D"),
+                    AddBinding(instance.Id, metadata: "invalid-json").ToString("D"),
+                    AddBinding(paused.Id).ToString("D")];
+                var target = new TriggerRule { Name = "Target", EntityId = fixture.TargetSocket.ToString("D"), SocTurnOnThreshold = 70 };
+                db.TriggerRules.AddRange(target, new TriggerRule
+                {
+                    Name = "Independent neighbour",
+                    EntityId = otherSocket.ToString("D"),
+                    CurrentState = true,
+                    CurrentStateChangedAt = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc),
+                    LastEvaluated = new DateTime(2026, 10, 2, 12, 0, 0, DateTimeKind.Utc)
+                });
+                await db.SaveChangesAsync();
+                fixture.TargetId = target.Id;
+                await using var foreign = fixture.Factory("site-b").CreateDbContext();
+                var foreignInstance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
+                var foreignSocket = Guid.NewGuid();
+                foreign.IntegrationInstances.Add(foreignInstance);
+                foreign.IntegrationDeviceBindings.Add(new() { Id = foreignSocket, InstanceId = foreignInstance.Id, Kind = "socket", RemoteId = "foreign",
+                    MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}" });
+                fixture.InvalidTargets = [.. fixture.InvalidTargets, foreignSocket.ToString("D")];
+                foreign.TriggerRules.Add(new() { Name = "Foreign same socket", EntityId = fixture.TargetSocket.ToString("D"), Enabled = false, SocTurnOnThreshold = 11 });
+                await foreign.SaveChangesAsync();
+                return fixture;
             }
-            AddBinding(instance.Id, fixture.TargetSocket);
-            AddBinding(instance.Id, fixture.ReplacementSocket);
-            AddBinding(instance.Id, fixture.ContendedSocket);
-            var otherSocket = AddBinding(instance.Id);
-            fixture.InvalidTargets = ["raw-provider-id", Guid.Empty.ToString("D"), Guid.NewGuid().ToString("D"),
-                AddBinding(instance.Id, kind: "inverter").ToString("D"),
-                AddBinding(instance.Id, enabled: false).ToString("D"),
-                AddBinding(instance.Id, metadata: "{\"capabilities\":{\"canSwitch\":false}}").ToString("D"),
-                AddBinding(instance.Id, metadata: "invalid-json").ToString("D"),
-                AddBinding(paused.Id).ToString("D")];
-            var target = new TriggerRule { Name = "Target", EntityId = fixture.TargetSocket.ToString("D"), SocTurnOnThreshold = 70 };
-            db.TriggerRules.AddRange(target, new TriggerRule
-            {
-                Name = "Independent neighbour",
-                EntityId = otherSocket.ToString("D"),
-                CurrentState = true,
-                CurrentStateChangedAt = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc),
-                LastEvaluated = new DateTime(2026, 10, 2, 12, 0, 0, DateTimeKind.Utc)
-            });
-            await db.SaveChangesAsync();
-            fixture.TargetId = target.Id;
-            await using var foreign = fixture.Factory("site-b").CreateDbContext();
-            var foreignInstance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
-            var foreignSocket = Guid.NewGuid();
-            foreign.IntegrationInstances.Add(foreignInstance);
-            foreign.IntegrationDeviceBindings.Add(new() { Id = foreignSocket, InstanceId = foreignInstance.Id, Kind = "socket", RemoteId = "foreign",
-                MetadataJson = "{\"capabilities\":{\"canSwitch\":true}}" });
-            fixture.InvalidTargets = [.. fixture.InvalidTargets, foreignSocket.ToString("D")];
-            foreign.TriggerRules.Add(new() { Name = "Foreign same socket", EntityId = fixture.TargetSocket.ToString("D"), Enabled = false, SocTurnOnThreshold = 11 });
-            await foreign.SaveChangesAsync();
-            return fixture;
+            catch { await fixture.DisposeAsync(); throw; }
         }
-        public async ValueTask DisposeAsync()
-        {
-            await using var db = Factory("site-a").CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
-        }
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
 }

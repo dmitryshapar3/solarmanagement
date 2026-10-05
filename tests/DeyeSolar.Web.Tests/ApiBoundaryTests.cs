@@ -1,6 +1,8 @@
 using System.Text.Json;
 using DeyeSolar.Web.Operations;
 using DeyeSolar.Web.Integrations;
+using DeyeSolar.Web.Billing;
+using DeyeSolar.Web.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -58,6 +60,52 @@ public sealed class ApiBoundaryTests
         await new ApiExceptionMiddleware(_ => throw new OperationCanceledException(context.RequestAborted),
             NullLogger<ApiExceptionMiddleware>.Instance).InvokeAsync(context);
         Assert.Equal(0, context.Response.Body.Length);
+    }
+
+    [Theory]
+    [InlineData("apple-mismatch", 409, "apple_account_mismatch")]
+    [InlineData("apple-retry", 503, "apple_unavailable")]
+    [InlineData("rule-version-missing", 428, "rule_precondition_required")]
+    [InlineData("rule-version-stale", 409, "rule_configuration_conflict")]
+    [InlineData("integration-conflict", 409, "configuration_conflict")]
+    public async Task EndpointsAndUncaughtTypedErrorsUseOneStatusAndPublicPayload(string failure, int status, string code)
+    {
+        Exception error = failure switch
+        {
+            "apple-mismatch" => new AppleBillingException("The purchase belongs to another account.", "apple_account_mismatch"),
+            "apple-retry" => new AppleBillingException("Please retry verification.", "apple_unavailable", true),
+            "rule-version-missing" => new RuleConfigurationPreconditionRequiredException(),
+            "rule-version-stale" => new RuleConfigurationConflictException(),
+            _ => new IntegrationRequestException("configuration_conflict", "Reload before saving.", 409)
+        };
+        var endpoint = Context();
+        await ApiProblems.Describe(error).ExecuteAsync(endpoint);
+        var middleware = Context();
+        await new ApiExceptionMiddleware(_ => throw error, NullLogger<ApiExceptionMiddleware>.Instance).InvokeAsync(middleware);
+        foreach (var context in new[] { endpoint, middleware })
+        {
+            var problem = await ReadAsync(context);
+            Assert.Equal(status, context.Response.StatusCode);
+            Assert.Equal(code, problem.GetProperty("code").GetString());
+            Assert.Equal(error.Message, problem.GetProperty("message").GetString());
+            Assert.Equal(error.Message, problem.GetProperty("detail").GetString());
+            Assert.Equal("no-store", context.Response.Headers.CacheControl);
+            Assert.Equal(status == 503 ? "30" : "", context.Response.Headers.RetryAfter.ToString());
+        }
+    }
+
+    [Fact]
+    public void KnownValidationIsPublicOnlyWithinTheOwningApiScope()
+    {
+        var error = new ArgumentException("Private lower-level operation details");
+        Assert.Equal(400, ApiProblems.Describe(error, ApiProblemScope.Rules).Status);
+        Assert.Equal(400, ApiProblems.Describe(error, ApiProblemScope.Integrations).Status);
+        Assert.Equal(500, ApiProblems.Describe(error).Status);
+        Assert.DoesNotContain("Private", ApiProblems.Describe(error).Message);
+        var billing = new BillingAccessException("Account access changed.");
+        Assert.Equal(409, ApiProblems.Describe(billing, ApiProblemScope.Billing).Status);
+        Assert.Equal(402, ApiProblems.Describe(billing, ApiProblemScope.Integrations).Status);
+        Assert.Equal("subscription_required", ApiProblems.Describe(billing, ApiProblemScope.Integrations).Code);
     }
 
     private static DefaultHttpContext Context()

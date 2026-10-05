@@ -1,8 +1,6 @@
-using System.Security.Claims;
 using DeyeSolar.Web.Api;
+using DeyeSolar.Web.Operations;
 using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Identity;
 namespace DeyeSolar.Web.Auth;
 public static class AccountSecurityEndpoints
 {
@@ -30,9 +28,8 @@ public static class AccountSecurityEndpoints
     private static async Task<IResult> WriteAsync<T>(HttpContext context, IAntiforgery csrf, Func<Task<T>> action)
     {
         context.Response.Headers.CacheControl = "no-store";
-        if ((await context.AuthenticateAsync(IdentityConstants.ApplicationScheme)).Succeeded) await csrf.ValidateRequestAsync(context);
+        await AuthenticatedMutationPolicy.EnsureAsync(context, csrf);
         try { return Results.Ok(await action()); }
-        catch (AccountSecurityException error) { return Results.Json(new { error.Code, Message = error.Message }, statusCode: error.Status); }
-        catch (VerificationRateLimitException) { return Results.Json(new { code = "verification_limit", message = "Please wait before requesting another verification code." }, statusCode: 429); }
+        catch (Exception error) when (error is AccountSecurityException or VerificationRateLimitException) { return ApiProblems.Describe(error); }
     }
 }

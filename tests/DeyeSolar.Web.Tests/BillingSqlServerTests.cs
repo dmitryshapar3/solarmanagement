@@ -432,9 +432,8 @@ public class BillingSqlServerTests
     [SqlServerFact]
     public async Task UpgradeBackfillsEachHistoricalAccountOnceAndPreservesExistingSocketsAndData()
     {
-        var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        { InitialCatalog = "SolarBillingUpgrade_" + Guid.NewGuid().ToString("N") };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var database = await SqlServerTestDatabase.CreateAsync("SolarBillingUpgrade", SqlTestSchema.None);
+        var options = database.Options;
         await using var db = new DeyeSolarDbContext(options);
         try
         {
@@ -506,15 +505,14 @@ public class BillingSqlServerTests
             Assert.Equal(accountState, JsonSerializer.Serialize(await db.BillingAccounts.AsNoTracking().OrderBy(a => a.UserId).ToListAsync()));
             Assert.Equal(socketsBefore, JsonSerializer.Serialize(await historicalSockets.ToListAsync()));
         }
-        finally { await db.Database.EnsureDeletedAsync(); }
+        finally { await database.DisposeAsync(); }
     }
 
     [SqlServerFact]
     public async Task EmptyBillingSchemaCanDowngradeAndReapplyWithoutInventingAccounts()
     {
-        var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        { InitialCatalog = "SolarBillingEmptyUpgrade_" + Guid.NewGuid().ToString("N") };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var database = await SqlServerTestDatabase.CreateAsync("SolarBillingEmptyUpgrade", SqlTestSchema.None);
+        var options = database.Options;
         await using var db = new DeyeSolarDbContext(options);
         try
         {
@@ -530,7 +528,7 @@ public class BillingSqlServerTests
             Assert.Empty(await db.BillingAccounts.ToListAsync());
             Assert.Empty(await db.AppleSubscriptions.ToListAsync());
         }
-        finally { await db.Database.EnsureDeletedAsync(); }
+        finally { await database.DisposeAsync(); }
     }
 
     private static IntegrationConfigurationChange Change(IntegrationInstanceDto instance) => new(instance.Revision,
@@ -544,7 +542,7 @@ public class BillingSqlServerTests
 
     private sealed class Host(WebApplication app, HttpClient client, DbContextOptions<DeyeSolarDbContext> options,
         Clock clock, Executor executor, IDataProtectionProvider protection, IntegrationSecretStore secrets,
-        IntegrationChangeNotifier changes, IntegrationSetupGate gate) : IAsyncDisposable
+        IntegrationChangeNotifier changes, IntegrationSetupGate gate, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
         public Clock Clock { get; } = clock;
@@ -704,9 +702,8 @@ public class BillingSqlServerTests
 
         public static async Task<Host> StartAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarBillingTests_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+            var database = await SqlServerTestDatabase.CreateAsync("SolarBillingTests");
+            var options = database.Options;
             var clock = new Clock(); var executor = new Executor(clock);
             var protection = new EphemeralDataProtectionProvider();
             var secrets = new IntegrationSecretStore(new EphemeralDataProtectionProvider());
@@ -717,7 +714,6 @@ public class BillingSqlServerTests
             {
                 await using (var db = new DeyeSolarDbContext(options))
                 {
-                    await db.Database.MigrateAsync();
                     db.Installations.AddRange(new Installation { Id = SiteA, CreatedAt = clock.Now }, new Installation { Id = SiteB, CreatedAt = clock.Now });
                     foreach (var (id, site) in new[] { (OwnerA, SiteA), (OwnerB, SiteB) })
                     {
@@ -811,22 +807,19 @@ public class BillingSqlServerTests
                 Assert.Equal("127.0.0.1", address.Host);
                 var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
                 { BaseAddress = address, Timeout = TimeSpan.FromSeconds(20) };
-                host = new(app, client, options, clock, executor, protection, secrets, changes, gate);
+                host = new(app, client, options, clock, executor, protection, secrets, changes, gate, database);
                 return host;
             }
             catch
             {
-                if (app is not null) await app.DisposeAsync();
-                await using var db = new DeyeSolarDbContext(options);
-                await db.Database.EnsureDeletedAsync();
+                await TestHttpHostCleanup.DisposeAsync(app, database);
                 throw;
             }
         }
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
-            try { await app.StopAsync(); await app.DisposeAsync(); }
-            finally { await using var db = new DeyeSolarDbContext(options); await db.Database.EnsureDeletedAsync(); }
+            await TestHttpHostCleanup.DisposeAsync(app, database, stop: true);
         }
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options, string? installation) : IDbContextFactory<DeyeSolarDbContext>

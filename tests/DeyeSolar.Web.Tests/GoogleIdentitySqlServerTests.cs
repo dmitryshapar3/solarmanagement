@@ -17,7 +17,6 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -285,7 +284,7 @@ public class GoogleIdentitySqlServerTests
     }
     private static string Error(Uri callback) => QueryHelpers.ParseQuery(callback.Query)["error"].ToString();
 
-    private sealed class Host(WebApplication app, HttpClient client, Factory factory, Clock clock, GoogleBackchannel google) : IAsyncDisposable
+    private sealed class Host(WebApplication app, HttpClient client, Factory factory, Clock clock, GoogleBackchannel google, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
         public Factory Factory { get; } = factory;
@@ -378,15 +377,14 @@ public class GoogleIdentitySqlServerTests
         }
         public static async Task<Host> StartAsync(bool? googleRegistration, bool registration = false)
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarGoogleIdentityTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
+            var database = await SqlServerTestDatabase.CreateAsync("SolarGoogleIdentityTests");
+            var factory = new Factory(database.Options);
             WebApplication? app = null;
             try
             {
                 await using (var db = factory.CreateDbContext())
                 {
-                    await db.Database.MigrateAsync(); db.Installations.AddRange(new Installation { Id = FixtureInstallation }, new Installation { Id = Neighbor }); await db.SaveChangesAsync();
+                    db.Installations.AddRange(new Installation { Id = FixtureInstallation }, new Installation { Id = Neighbor }); await db.SaveChangesAsync();
                 }
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory });
                 builder.WebHost.UseUrls("http://127.0.0.1:0"); builder.Logging.ClearProviders();
@@ -420,7 +418,7 @@ public class GoogleIdentitySqlServerTests
                 });
                 await app.StartAsync();
                 var address = Assert.Single(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses);
-                var host = new Host(app, new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new(address) }, factory, clock, google);
+                var host = new Host(app, new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new(address) }, factory, clock, google, database);
                 using (var scope = app.Services.CreateScope())
                 {
                     var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
@@ -447,13 +445,14 @@ public class GoogleIdentitySqlServerTests
             }
             catch
             {
-                if (app is not null) await app.DisposeAsync(); await using var db = factory.CreateDbContext(); await db.Database.EnsureDeletedAsync(); throw;
+                await TestHttpHostCleanup.DisposeAsync(app, database);
+                throw;
             }
         }
         public async ValueTask DisposeAsync()
         {
-            Client.Dispose(); try { await app.StopAsync(); await app.DisposeAsync(); }
-            finally { await using var db = Factory.CreateDbContext(); await db.Database.EnsureDeletedAsync(); }
+            Client.Dispose();
+            await TestHttpHostCleanup.DisposeAsync(app, database, stop: true);
         }
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>

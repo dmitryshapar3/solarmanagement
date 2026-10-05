@@ -1,6 +1,8 @@
 import { useLanguage } from "../../application/LanguageContext";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
+import { useScopedAction } from "../../application/useScopedAction";
+import type { ScopedActionContext } from "../../application/ScopedActionScope";
 import { useAuth } from "../../application/AuthContext";
 import type { AuthOptions, VerificationChannel, VerificationResponse } from "../../core/api/types";
 import { AppButton, Card, ErrorBanner, SectionTitle, TextField } from "../../core/components";
@@ -14,27 +16,23 @@ export function AccountIdentityCard() {
   const [destination, setDestination] = useState("");
   const [verification, setVerification] = useState<VerificationResponse | null>(null);
   const [code, setCode] = useState("");
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const active = useRef(false);
-  const mounted = useRef(true);
+  const actions = useScopedAction(api, username ?? "", () => { setOptions(null); setVerification(null); setCode(""); setDestination(""); setError(null); setMessage(null); });
+  const pending = actions.busy !== null;
   useEffect(() => {
-    mounted.current = true;
+    const current = actions.capture();
     const controller = new AbortController();
     if (!isDemo) void api.getAuthOptions(controller.signal).then(value => {
-      if (!controller.signal.aborted) { setOptions(value); setChannel(value.emailEnabled ? "email" : "phone"); }
+      if (current() && !controller.signal.aborted) { setOptions(value); setChannel(value.emailEnabled ? "email" : "phone"); }
     }).catch(() => {});
-    return () => { mounted.current = false; controller.abort(); };
-  }, [api, isDemo]);
+    return () => controller.abort();
+  }, [api, isDemo, actions.capture]);
 
-  async function run(action: () => Promise<void>) {
-    if (active.current) return;
-    active.current = true; setPending(true); setError(null); setMessage(null);
-    try { await action(); }
-    catch (ex) { if (mounted.current) setError(ex instanceof Error ? ex.message : "Unable to link the account."); }
-    finally { active.current = false; if (mounted.current) setPending(false); }
-  }
+  const run = (action: (context: ScopedActionContext) => Promise<void>) => actions.run("identity", action, {
+    started: () => { setError(null); setMessage(null); },
+    failed: ex => setError(ex instanceof Error ? ex.message : "Unable to link the account.")
+  });
 
   if (isDemo) return null;
   return <>
@@ -45,9 +43,9 @@ export function AccountIdentityCard() {
       <ErrorBanner message={error} />
       {message ? <Text style={{ color: colors.primary }}>{t(message)}</Text> : null}
       <AppButton label={t("Link Google account")} variant="secondary" disabled={pending || !options?.googleEnabled}
-        onPress={() => void run(async () => {
+        onPress={() => void run(async context => {
           const linked = await linkGoogle();
-          if (linked && mounted.current) setMessage("Google is linked to this account.");
+          if (linked) context.publish(() => setMessage("Google is linked to this account."));
         })} />
       {options?.emailEnabled || options?.phoneEnabled ? <>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
@@ -59,15 +57,15 @@ export function AccountIdentityCard() {
         {verification ? <>
           <TextField label={t("Verification code")} value={code} onChangeText={value => setCode(value.replace(/[^0-9]/g, "").slice(0, 8))} keyboardType="number-pad" />
           <AppButton label={t("Verify and link")} disabled={pending || !code.trim()} loading={pending}
-            onPress={() => void run(async () => {
+            onPress={() => void run(async context => {
               await api.linkIdentity(verification.verificationId, code.trim());
-              if (mounted.current) { setVerification(null); setCode(""); setDestination(""); setMessage("Verified contact linked to this account."); }
+              context.publish(() => { setVerification(null); setCode(""); setDestination(""); setMessage("Verified contact linked to this account."); });
             })} />
           <AppButton label={t("Start again")} variant="ghost" disabled={pending} onPress={() => { setVerification(null); setCode(""); }} />
         </> : <AppButton label={t("Send verification code")} variant="secondary" disabled={pending || !destination.trim()} loading={pending}
-          onPress={() => void run(async () => {
-            const result = await api.startVerification(channel, destination.trim(), "link");
-            if (mounted.current) setVerification(result);
+          onPress={() => void run(async context => {
+            const result = await api.startVerification(channel, destination.trim(), "link", context.signal);
+            context.publish(() => setVerification(result));
           })} />}
       </> : <Text style={{ color: colors.muted }}>{t("Contact verification is not available on this server yet.")}</Text>}
     </Card>

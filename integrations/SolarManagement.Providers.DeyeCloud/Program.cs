@@ -1,6 +1,5 @@
 using System.Text.Json;
-using DeyeSolar.Domain.Options;
-using DeyeSolar.Infrastructure.DeyeCloud;
+using SolarManagement.Providers.DeyeCloud;
 using Microsoft.Extensions.Logging.Abstractions;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.Integrations.WorkerSdk;

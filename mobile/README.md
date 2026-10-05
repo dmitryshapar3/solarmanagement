@@ -63,7 +63,7 @@ Install `build/DerivedData/Build/Products/Release-iphonesimulator/DeyeSolar.app`
 4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
 5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
 
-The current billing build is `1.0.0 (9)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
+The current billing build is `1.0.0 (10)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
 
 Client and server use the current contracts together. There are no old-session migrations, permissive old response formats, or unversioned rule mutations. Deploy the matching backend before validating connected features of this build. The complete native harness and Release bridge compilation are required; live Apple sandbox purchases remain a separate acceptance check.
 
@@ -76,3 +76,5 @@ Native compilation, signing and TestFlight upload must be completed on the Mac; 
 The app uses bearer tokens from `POST /api/auth/login`. On iOS the session is stored in Keychain through SecureStore and bound to the exact configured endpoint. Passwords are not persisted. The app reads only the endpoint-bound current secure-session format. Web preview sessions remain in memory only. Native requests use `expo/fetch` to reject redirects before forwarding credentials.
 
 The dashboard uses `/api/dashboard` and `/api/dashboard/refresh`; generation uses `/api/solar/estimate` and `/api/solar/history`; sales uses `/api/sales`. These routes require authenticated access and preserve the web server's time-zone, calculation and accounting rules.
+
+Historical readings require explicit measurement validity flags; rule-run SOC and power can be absent. The connected app and server must be deployed from the same current contract.

@@ -1,8 +1,5 @@
-using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
 using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Identity;
 namespace DeyeSolar.Web.Auth;
 public sealed record InstallationPermissionMetadata(InstallationPermission Permission);
 public sealed class InstallationPermissionMiddleware(RequestDelegate next)
@@ -18,8 +15,7 @@ public sealed class InstallationPermissionMiddleware(RequestDelegate next)
             await security.EnsureAsync(permission, context.RequestAborted);
             if (context.Request.Path.StartsWithSegments("/api") && context.Request.Method is "POST" or "PUT" or "PATCH" or "DELETE")
             {
-                var cookie = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
-                if (cookie.Succeeded) await antiforgery.ValidateRequestAsync(context);
+                await AuthenticatedMutationPolicy.EnsureAsync(context, antiforgery);
             }
         }
         await next(context);

@@ -36,13 +36,11 @@ public sealed partial class IntegrationSetupService
             throw new IntegrationRequestException("association_conflict", "This socket's inverter link changed. Reload its devices before continuing.", 409);
         if (request.SourceInverterId is { } sourceId)
         {
-            var source = await (from binding in db.IntegrationDeviceBindings.AsNoTracking()
-                join connection in db.IntegrationInstances.AsNoTracking() on binding.InstanceId equals connection.Id
-                where binding.Id == sourceId && binding.Kind == "inverter" && binding.Enabled && connection.State == "enabled"
-                select binding).SingleOrDefaultAsync(ct);
-            if (source is null || !IntegrationCapabilities.Read(source).HasBattery)
+            var source = await IntegrationDeviceEligibility.FindEnabledAsync(db, sourceId, "inverter", ct);
+            var capabilities = source is null ? null : IntegrationCapabilities.Read(source);
+            if (capabilities is null || !capabilities.HasBattery)
                 throw new IntegrationRequestException("invalid_source", "Choose an enabled inverter with battery SOC from this installation.");
-            if (!IntegrationCapabilities.Read(source).HasSolarPower)
+            if (!capabilities.HasSolarPower)
             {
                 var identity = deviceId.ToString("D");
                 if (await db.TriggerRules.AnyAsync(r => r.Enabled && r.SourceInverterId == null

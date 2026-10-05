@@ -281,6 +281,20 @@ public sealed class AppleSignedDataVerifierTests
         Assert.Equal(1, calls);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OversizedAuthoritativeBodiesCannotBecomeRetryableOutages(bool declaredLength)
+    {
+        using var fixture = new AppleSignedFixture();
+        using var http = new HttpClient(new OversizedBodyHandler(declaredLength));
+        var client = new AppleAppStoreClient(http, fixture.Options, fixture.Verifier, fixture.Clock);
+        var error = await Assert.ThrowsAsync<AppleStatusInvalidException>(() => client.ReadSubscriptionAsync("1001", default));
+        Assert.False(error.Retryable);
+        Assert.Equal("invalid_apple_status", error.Code);
+        Assert.Equal(fixture.Now, error.ObservationStartedAt);
+    }
+
     [Fact]
     public async Task ResponseBodyDeadlineIsRetryableEvenAfterHeadersHaveAlreadyArrived()
     {
@@ -312,6 +326,19 @@ public sealed class AppleSignedDataVerifierTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledBody()) });
+    }
+    private sealed class OversizedBodyHandler(bool declaredLength) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = declaredLength ? new StringContent(new string('x', 1024 * 1024 + 1))
+                    : new StreamContent(new UnknownLengthBody(new byte[1024 * 1024 + 1]))
+            });
+    }
+    private sealed class UnknownLengthBody(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
     }
     private sealed class StalledBody : Stream
     {

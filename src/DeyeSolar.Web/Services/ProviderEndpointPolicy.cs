@@ -1,20 +1,12 @@
 using System.Net;
-using System.Net.Sockets;
-using SolarManagement.Integrations.Contracts;
+using SolarManagement.Http;
 
 namespace DeyeSolar.Web.Services;
 
 /// <summary>Credential-bearing provider probes can only address the provider's HTTPS hosts.</summary>
 public static class ProviderEndpointPolicy
 {
-    public static SocketsHttpHandler CreateHandler() => new()
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        UseProxy = false,
-        ConnectTimeout = TimeSpan.FromSeconds(5),
-        ConnectCallback = ConnectAsync
-    };
+    public static System.Net.Http.SocketsHttpHandler CreateHandler() => SolarManagement.Http.PublicHttpTransport.CreateHandler();
     public static bool TryDeye(string? value, out Uri uri)
     {
         uri = null!;
@@ -43,22 +35,4 @@ public static class ProviderEndpointPolicy
     public static bool IsPublicAddress(IPAddress value)
         => PublicNetworkAddressPolicy.IsPublic(value);
 
-    internal static async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken ct)
-    {
-        var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct);
-        if (addresses.Length == 0 || addresses.Any(address => !IsPublicAddress(address)))
-            throw new HttpRequestException("Provider address is not public.");
-        foreach (var address in addresses)
-        {
-            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            try
-            {
-                await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), ct);
-                return new NetworkStream(socket, ownsSocket: true);
-            }
-            catch (SocketException) { socket.Dispose(); }
-            catch { socket.Dispose(); throw; }
-        }
-        throw new HttpRequestException("Provider connection failed.");
-    }
 }

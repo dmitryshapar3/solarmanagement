@@ -6,27 +6,9 @@ namespace DeyeSolar.Web.Tenancy;
 public static class TenantRuntimeOptions
 {
     public const string ConfigureSiteMessage = "Configure your solar installation in Settings to estimate generation.";
-    private static readonly (string Section, Type Type)[] Sections =
-    [
-        (PollingOptions.Section, typeof(PollingOptions)), ("Display", typeof(DisplayOptions)),
-        (SolarEstimateOptions.Section, typeof(SolarEstimateOptions)), (SolarSalesOptions.Section, typeof(SolarSalesOptions))
-    ];
-
-    private static Dictionary<string, string?> TypedDefaults()
-    {
-        var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (section, type) in Sections)
-        {
-            var value = Activator.CreateInstance(type)!;
-            foreach (var property in type.GetProperties().Where(property => property.CanRead && property.CanWrite))
-                result[$"{section}:{property.Name}"] = AppSettingsService.ToSettingValue(property.GetValue(value));
-        }
-        return result;
-    }
-
     public static Dictionary<string, string?> Defaults(DateTimeOffset now)
     {
-        var result = TypedDefaults();
+        var result = SettingsSchema.RuntimeDefaults();
         // Explicitly blank these even if an options class gains a deployment-specific default in future.
         // These are installation-specific assumptions, not safe defaults for somebody else's equipment.
         foreach (var key in new[] { "Latitude", "Longitude", "Roof1Kwp", "Roof2Kwp", "Roof1Tilt", "Roof2Tilt", "Roof1Azimuth", "Roof2Azimuth" })
@@ -43,9 +25,7 @@ public static class TenantRuntimeOptions
         return result;
     }
 
-    internal static bool KnownSetting(string section, string key) => Sections.Any(pair => pair.Section == section
-        && pair.Type.GetProperties().Any(property => property.CanWrite && property.Name == key))
-        && !(section == SolarEstimateOptions.Section && key == nameof(SolarEstimateOptions.ApiKey));
+    internal static bool KnownSetting(string section, string key) => SettingsSchema.IsRuntimeSetting(section, key);
 
     public static bool HasSolarConfiguration(SolarEstimateOptions options)
     {

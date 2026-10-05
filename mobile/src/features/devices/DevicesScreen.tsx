@@ -1,6 +1,6 @@
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { CirclePower, RefreshCcw, Zap } from "lucide-react-native";
@@ -12,14 +12,19 @@ import {
   Header,
   LoadingState,
   Screen,
-  StatusPill,
   TextField
 } from "../../core/components";
 import { Device } from "../../core/api/types";
-import { commandUnresolved, socketCommandMessage, type SocketCommandState } from "../../core/api/SocketCommandCoordinator";
+import { commandUnresolved, type SocketCommandState } from "../../core/api/SocketCommandCoordinator";
 import { formatTime, formatWatts } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
+import { useSocketCommandActions } from "./useSocketCommandActions";
+import { SocketCommandNotice } from "./SocketCommandNotice";
+import { listCardHeaderStyles } from "../../core/listCardHeaderStyles";
+import { DeviceStatusPill } from "./DeviceStatusPill";
 import { useAuth } from "../../application/AuthContext";
+import { useScopedAction } from "../../application/useScopedAction";
+import type { ScopedActionContext } from "../../application/ScopedActionScope";
 
 const autoRefreshIntervalMs = 15000;
 
@@ -30,15 +35,9 @@ export function DevicesScreen() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [busyDevice, setBusyDevice] = useState<{ id: string; isOn: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
   const requestSeq = useRef(0);
-  const viewGeneration = useRef(0);
-  const active = useRef(false);
-  const [, setCommandRevision] = useState(0);
-  useEffect(() => api.socketCommands.subscribe(() => setCommandRevision(value => value + 1)), [api]);
-
   const load = useCallback(async (mode: "initial" | "refresh" | "silent", recoverCommands = false) => {
     const requestId = ++requestSeq.current;
     if (mode === "initial") {
@@ -72,59 +71,27 @@ export function DevicesScreen() {
     }
   }, [api, isDemo]);
 
+  const commands = useSocketCommandActions(api.socketCommands, async () => { requestSeq.current++; await load("refresh"); }, setError);
+
   useFocusEffect(
     useCallback(() => {
-      active.current = true;
-      ++viewGeneration.current;
-      setBusyDevice(null);
       void load(hasLoadedRef.current ? "silent" : "initial", true);
       hasLoadedRef.current = true;
 
       const interval = setInterval(() => void load("silent"), autoRefreshIntervalMs);
-      return () => { clearInterval(interval); active.current = false; ++viewGeneration.current; ++requestSeq.current; };
+      return () => { clearInterval(interval); ++requestSeq.current; };
     }, [load])
   );
 
-  async function setDeviceState(device: Device, isOn: boolean) {
-    if (api.socketCommands.isRunning(device.id)) return;
-    const generation = viewGeneration.current;
-    const current = () => active.current && generation === viewGeneration.current;
-    setBusyDevice({ id: device.id, isOn });
-    setError(null);
-    try {
-      let acknowledged: boolean;
-      acknowledged = (await api.socketCommands.send(device.id, isOn)).status === "acknowledged";
-      if (current() && acknowledged) { requestSeq.current++; await load("refresh"); }
-    } catch (ex) {
-      if (current()) setError(ex instanceof Error ? ex.message : "Unable to change socket state.");
-    } finally {
-      if (current()) setBusyDevice(null);
-    }
-  }
+  const setDeviceState = (device: Device, isOn: boolean) => commands.send(device.id, isOn);
+  const checkDeviceCommand = (device: Device, release = false) => commands.check(device.id, release);
 
-  async function checkDeviceCommand(device: Device, release = false) {
-    if (api.socketCommands.isRunning(device.id)) return;
-    const generation = viewGeneration.current;
-    const current = () => active.current && generation === viewGeneration.current;
-    setBusyDevice({ id: device.id, isOn: api.socketCommands.get(device.id)?.isOn ?? false });
-    setError(null);
-    try {
-      const receipt = await api.socketCommands.check(device.id, release);
-      if (current() && receipt.status === "acknowledged") { requestSeq.current++; await load("refresh"); }
-    } catch (ex) { if (current()) setError(ex instanceof Error ? ex.message : "Unable to check the command result."); }
-    finally { if (current()) setBusyDevice(null); }
-  }
-
-  async function renameDevice(device: Device, name: string | null) {
-    setError(null);
-    try {
-      const result = await api.renameDevice(device.id, name);
+  async function renameDevice(device: Device, name: string | null, context: ScopedActionContext) {
+    const result = await api.renameDevice(device.id, name);
+    context.publish(() => {
       requestSeq.current++;
       setDevices(current => current.map(item => item.id === device.id ? result : item));
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to save the device name.");
-      throw ex;
-    }
+    });
   }
 
   if (loading) {
@@ -162,14 +129,16 @@ export function DevicesScreen() {
             <DeviceCard
               key={device.id}
               device={device}
-              busyState={busyDevice?.id === device.id ? busyDevice.isOn : null}
+              busyState={commands.busy(device.id) === null ? null : commands.busy(device.id) === "on"}
               command={api.socketCommands.get(device.id)}
               commandRunning={api.socketCommands.isRunning(device.id)}
               onCheckCommand={() => void checkDeviceCommand(device)}
               onReleaseCommand={() => void checkDeviceCommand(device, true)}
               onTurnOn={() => void setDeviceState(device, true)}
               onTurnOff={() => void setDeviceState(device, false)}
-              onRename={name => renameDevice(device, name)}
+              onRename={(name, context) => renameDevice(device, name, context)}
+              onRenameStarted={() => setError(null)}
+              onRenameFailed={exception => setError(exception instanceof Error ? exception.message : "Unable to save the device name.")}
             />
           ))}
         </View>
@@ -186,6 +155,8 @@ function DeviceCard({
   onTurnOn,
   onTurnOff,
   onRename,
+  onRenameStarted,
+  onRenameFailed,
   command,
   commandRunning,
   onCheckCommand,
@@ -195,7 +166,9 @@ function DeviceCard({
   busyState: boolean | null;
   onTurnOn: () => void;
   onTurnOff: () => void;
-  onRename: (name: string | null) => Promise<void>;
+  onRename: (name: string | null, context: ScopedActionContext) => Promise<void>;
+  onRenameStarted: () => void;
+  onRenameFailed: (exception: unknown) => void;
   command: SocketCommandState | null;
   commandRunning: boolean;
   onCheckCommand: () => void;
@@ -203,31 +176,24 @@ function DeviceCard({
 }) {
   const demoDisplayName = useDemoDisplayName();
   const { t } = useLanguage();
+  const { api } = useAuth();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  async function saveName(value: string | null) {
-    if (savingRef.current) return;
-    savingRef.current = true;
-    Keyboard.dismiss();
-    setSaving(true);
-    try { await onRename(value); setEditing(false); }
-    catch { /* The screen displays the server error and preserves the draft. */ }
-    finally { savingRef.current = false; setSaving(false); }
-  }
+  const actions = useScopedAction(api, device.id, () => { setEditing(false); setName(""); });
+  const saving = actions.busy !== null;
+  const saveName = (value: string | null) => actions.run("rename", async context => {
+    await onRename(value, context);
+    context.publish(() => setEditing(false));
+  }, { started: () => { Keyboard.dismiss(); onRenameStarted(); }, failed: onRenameFailed });
   return (
     <Card style={styles.card}>
-      <View style={styles.topRow}>
-        <View style={styles.titleGroup}>
+      <View style={listCardHeaderStyles.topRow}>
+        <View style={listCardHeaderStyles.titleGroup}>
           <Text style={styles.name} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
           <Text style={styles.category}>{t(device.category ?? "Socket")}</Text>
           <Text style={styles.category}>{device.id}</Text>
         </View>
-        <StatusPill
-          label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}
-          tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"}
-        />
+        <DeviceStatusPill device={device} />
       </View>
 
       {editing ? <View style={styles.nameForm}>
@@ -265,13 +231,8 @@ function DeviceCard({
           compact
         />
       </View>
-      {command ? <Text style={styles.category}>{socketCommandMessage(command)}</Text> : null}
-      {commandUnresolved(command) ? <AppButton label={t("Check command result")} variant="secondary" onPress={onCheckCommand}
-        disabled={commandRunning || busyState !== null} /> : null}
-      {command?.status === "uncertain" ? <>
-        <Text style={styles.category}>{t("The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.")}</Text>
-        <AppButton label={t("Allow another command")} variant="secondary" onPress={onReleaseCommand} disabled={commandRunning || busyState !== null} />
-      </> : null}
+      <SocketCommandNotice command={command} disabled={commandRunning || busyState !== null}
+        onCheck={onCheckCommand} onRelease={onReleaseCommand} textStyle={styles.category} />
     </Card>
   );
 }
@@ -282,16 +243,6 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: spacing.lg
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
-  titleGroup: {
-    flex: 1,
-    gap: spacing.xs
   },
   name: {
     color: colors.text,

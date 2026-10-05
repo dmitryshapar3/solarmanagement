@@ -15,7 +15,7 @@ test("account security keeps a fresh OTP proof and ignores a late credential res
   let deleteCount = 0;
   const state = {
     auth: { username: "owner", apiBaseUrl: "https://solar.example", isDemo: false, logout: async () => { logoutCount++; },
-      api: { accountSecurity: {
+      api: { sessionEpoch: 0, onSessionChange: () => () => {}, accountSecurity: {
         startProof: async (channel: string, destination: string) => { calls.push([channel, destination]); return { verificationId: "one-time-proof", expiresAt: "2026-10-05T12:10:00Z", retryAfterSeconds: 60 }; },
         revokeAll: async (proof: unknown) => { calls.push(proof); await revocation; },
         deleteAccount: async () => { deleteCount++; }

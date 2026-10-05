@@ -5,6 +5,7 @@ using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Tenancy;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -38,13 +39,16 @@ public class SolarEstimateCorrectionTests
                 seed.Readings.Add(Row("selected", Observed.AddMinutes(10), 0));
                 await seed.SaveChangesAsync();
                 seed.Readings.Add(Row("selected", Observed.AddMinutes(10), -1));
+                var unusableCorrection = Row("selected", Observed, 99000);
+                unusableCorrection.SolarPowerValid = false;
+                seed.Readings.Add(unusableCorrection);
                 seed.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
                 seed.RuleRunLogs.Add(new RuleRunLog { Timestamp = Observed, RuleName = "neighbor-rule" });
                 await seed.SaveChangesAsync();
             }
 
             var before = await ReadStateAsync(factory);
-            var comparison = new SolarEstimateStore(factory, new Monitor("selected"));
+            var comparison = new SolarEstimateStore(factory, new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
             var history = new SolarHistoryStore(factory);
             for (var repeat = 0; repeat < 5; repeat++)
             {
@@ -65,10 +69,10 @@ public class SolarEstimateCorrectionTests
                 Assert.Equal(zero, Assert.Single(await history.ReadAsync("selected", new(zeroTime), new(zeroTime.AddMinutes(1)), default)));
             }
 
-            var neighbor = new SolarEstimateStore(factory, new Monitor("neighbor"));
+            var neighbor = new SolarEstimateStore(factory, new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "neighbor" }));
             Assert.Equal(9, (await neighbor.FindActualAsync(new(Observed), 120, new(Observed.AddMinutes(2)), default))!.PowerKw);
             Assert.Equal(9, Assert.Single(await history.ReadAsync("neighbor", new(Observed), new(Observed.AddMinutes(1)), default)).PowerKw);
-            Assert.Null(await new SolarEstimateStore(factory, new Monitor("absent"))
+            Assert.Null(await new SolarEstimateStore(factory, new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "absent" }))
                 .FindActualAsync(new(Observed), 120, new(Observed.AddMinutes(2)), default));
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
@@ -104,7 +108,7 @@ public class SolarEstimateCorrectionTests
             }
 
             var before = await ReadStateAsync(factory);
-            var comparison = new SolarEstimateStore(factory, new Monitor("selected"));
+            var comparison = new SolarEstimateStore(factory, new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
             for (var repeat = 0; repeat < 5; repeat++)
             {
                 // Equal distances retain the earlier measured time, then its latest valid correction.
@@ -132,31 +136,17 @@ public class SolarEstimateCorrectionTests
         SolarDeviceSn = device,
         SolarObservedAt = measured,
         SolarProduction = watts,
+        SolarPowerValid = true,
         DataSource = "DeyeCloud"
     };
 
-    private static async Task WithDatabaseAsync(Func<Factory, Task> scenario)
+    private static async Task WithDatabaseAsync(Func<TenantDbContextFactory, Task> scenario)
     {
-        var builder = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        {
-            InitialCatalog = "SolarEstimateCorrectionTests_" + Guid.NewGuid().ToString("N")
-        };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(builder.ConnectionString).Options;
-        var factory = new Factory(options);
-        await using var owner = factory.CreateDbContext();
-        try
-        {
-            await owner.Database.EnsureCreatedAsync();
-            await TestInstallation.EnsureAsync(owner);
-            await scenario(factory);
-        }
-        finally
-        {
-            await owner.Database.EnsureDeletedAsync();
-        }
+        await using var database = await SqlServerTestDatabase.CreateAsync("SolarEstimateCorrectionTests", SqlTestSchema.Model, seed: TestInstallation.EnsureAsync);
+        await scenario(database.Factory);
     }
 
-    private static async Task<string> ReadStateAsync(Factory factory)
+    private static async Task<string> ReadStateAsync(TenantDbContextFactory factory)
     {
         await using var db = await factory.CreateDbContextAsync();
         return JsonSerializer.Serialize(new
@@ -167,20 +157,4 @@ public class SolarEstimateCorrectionTests
         });
     }
 
-    private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
-    {
-        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
-        public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(CreateDbContext());
-        }
-    }
-
-    private sealed class Monitor(string device) : IOptionsMonitor<InverterConnectionOptions>
-    {
-        public InverterConnectionOptions CurrentValue { get; } = new() { DeviceKey = device };
-        public InverterConnectionOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<InverterConnectionOptions, string?> listener) => null;
-    }
 }

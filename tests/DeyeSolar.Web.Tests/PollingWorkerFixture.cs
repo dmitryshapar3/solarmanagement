@@ -30,7 +30,7 @@ internal static class PollingWorkerFixture
         IRuleRepository repository, RuleEvaluator evaluator, IDbContextFactory<DeyeSolarDbContext> factory,
         IAppSettingsReader settings, ILogger logger, IInverterDataSource? sources, ExportReadingStore? readings)
     {
-        var history = new RuleRunHistory(factory, logger);
+        var history = new RuleRunHistory(factory, logger, TimeProvider.System);
         var executor = new RuleAutomationExecutor(socketController, repository, evaluator, settings, history,
             new RuleObservationReconciler(factory, socketController), logger);
         return new RulePollingCycle(inverterRefresh, inverterOptions, repository, factory, history, executor,

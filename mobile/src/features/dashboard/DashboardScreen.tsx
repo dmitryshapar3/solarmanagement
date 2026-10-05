@@ -1,6 +1,6 @@
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -19,7 +19,7 @@ import {
   StatusPill
 } from "../../core/components";
 import { Device, Rule } from "../../core/api/types";
-import { commandUnresolved, socketCommandMessage } from "../../core/api/SocketCommandCoordinator";
+import { commandUnresolved } from "../../core/api/SocketCommandCoordinator";
 import { formatDateTime, formatTime, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
@@ -30,7 +30,9 @@ import { TileHeader } from "../../core/TileHeader";
 import { GenerationPanel } from "../generation/GenerationScreen";
 import { SalesPanel } from "../sales/SalesScreen";
 import { useFocusedResource } from "../energy/useFocusedResource";
-import { ManualOverrideCommand } from "./ManualOverrideCommand";
+import { useSocketCommandActions } from "../devices/useSocketCommandActions";
+import { SocketCommandNotice } from "../devices/SocketCommandNotice";
+import { DeviceStatusPill } from "../devices/DeviceStatusPill";
 import { batteryFlow } from "./powerBalance";
 
 export function DashboardScreen() {
@@ -42,11 +44,9 @@ export function DashboardScreen() {
   const dashboard = resource.data;
   const battery = batteryFlow(dashboard?.inverter?.batteryPower, dashboard?.inverter?.batteryPowerValid);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [commandBusy, setCommandBusy] = useState<"on" | "off" | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
-  const command = useRef(new ManualOverrideCommand()).current;
-  const [, setCommandRevision] = useState(0);
-  useEffect(() => api.socketCommands.subscribe(() => setCommandRevision(value => value + 1)), [api]);
+  const command = useSocketCommandActions(api.socketCommands, async () => { resource.invalidate(); await resource.refresh(true); }, setCommandError);
+  const commandBusy = command.busy(selectedDeviceId);
   const manualDeviceIds = dashboard?.manualDevices.map(device => device.id).join("|") ?? "";
   useFocusEffect(useCallback(() => {
     let canceled = false;
@@ -62,47 +62,13 @@ export function DashboardScreen() {
     setSelectedDeviceId((current) => pickDeviceId(dashboard.manualDevices, current));
   }, [dashboard]);
 
-  useFocusEffect(useCallback(() => {
-    command.activate();
-    setCommandBusy(command.busy);
-    return () => command.deactivate();
-  }, [command]));
-
   const selectedDevice = useMemo(
     () => dashboard?.manualDevices.find((device) => device.id === selectedDeviceId) ?? null,
     [dashboard?.manualDevices, selectedDeviceId]
   );
 
-  async function setSocketState(isOn: boolean) {
-    if (!selectedDeviceId) return;
-    const deviceId = selectedDeviceId;
-    let acknowledged = false;
-    await command.run(isOn ? "on" : "off", async () => {
-      acknowledged = (await api.socketCommands.send(deviceId, isOn)).status === "acknowledged";
-    }, {
-      busyChanged: (value) => {
-        setCommandBusy(value);
-        if (value !== null) setCommandError(null);
-      },
-      completed: async () => {
-        if (acknowledged) { resource.invalidate(); await resource.refresh(true); }
-      },
-      failed: (error) => setCommandError(error instanceof Error ? error.message : "Unable to change socket state.")
-    });
-  }
-
-  async function checkSocketCommand(release = false) {
-    if (!selectedDeviceId) return;
-    const deviceId = selectedDeviceId;
-    let acknowledged = false;
-    await command.run(api.socketCommands.get(deviceId)?.isOn ? "on" : "off", async () => {
-      acknowledged = (await api.socketCommands.check(deviceId, release)).status === "acknowledged";
-    }, {
-      busyChanged: value => { setCommandBusy(value); if (value !== null) setCommandError(null); },
-      completed: async () => { if (acknowledged) { resource.invalidate(); await resource.refresh(true); } },
-      failed: error => setCommandError(error instanceof Error ? error.message : "Unable to check the command result.")
-    });
-  }
+  const setSocketState = (isOn: boolean) => selectedDeviceId ? command.send(selectedDeviceId, isOn) : Promise.resolve(false);
+  const checkSocketCommand = (release = false) => selectedDeviceId ? command.check(selectedDeviceId, release) : Promise.resolve(false);
   const selectedCommand = selectedDeviceId ? api.socketCommands.get(selectedDeviceId) : null;
   const socketBusy = selectedDeviceId ? api.socketCommands.isRunning(selectedDeviceId) : false;
 
@@ -186,13 +152,8 @@ export function DashboardScreen() {
                 variant="danger"
               />
             </View>
-            {selectedCommand ? <Text style={styles.metaText}>{socketCommandMessage(selectedCommand)}</Text> : null}
-            {commandUnresolved(selectedCommand) ? <AppButton label={t("Check command result")} variant="secondary"
-              onPress={() => void checkSocketCommand()} disabled={commandBusy !== null || socketBusy} /> : null}
-            {selectedCommand?.status === "uncertain" ? <>
-              <Text style={styles.metaText}>{t("The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first.")}</Text>
-              <AppButton label={t("Allow another command")} variant="secondary" onPress={() => void checkSocketCommand(true)} disabled={commandBusy !== null || socketBusy} />
-            </> : null}
+            <SocketCommandNotice command={selectedCommand} disabled={commandBusy !== null || socketBusy}
+              onCheck={() => void checkSocketCommand()} onRelease={() => void checkSocketCommand(true)} textStyle={styles.metaText} />
           </>
         ) : (
           <EmptyState title={t("No sockets configured.")} detail={t("Add and enable a socket integration in Settings.")} />
@@ -226,14 +187,13 @@ export function DashboardScreen() {
 
 function DeviceChoice({ device, selected, onPress }: { device: Device; selected: boolean; onPress: () => void }) {
   const demoDisplayName = useDemoDisplayName();
-  const { t } = useLanguage();
   return (
     <Pressable onPress={onPress} style={[styles.deviceChoice, selected && styles.deviceChoiceSelected]}>
       <View style={styles.deviceChoiceTitle}>
         <PlugZap color={device.online ? colors.primary : colors.subtle} size={16} />
         <Text style={styles.deviceChoiceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
       </View>
-      <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
+      <DeviceStatusPill device={device} />
     </Pressable>
   );
 }
@@ -267,7 +227,7 @@ function DeviceLine({ device }: { device: Device }) {
       </View>
       <View style={styles.rowStatus}>
         <Text style={styles.powerText}>{formatWatts(device.currentPowerW)}</Text>
-        <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
+        <DeviceStatusPill device={device} />
       </View>
     </Card>
   );

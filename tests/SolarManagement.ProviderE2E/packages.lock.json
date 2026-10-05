@@ -136,6 +136,9 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "solarmanagement.http": {
+        "type": "Project"
+      },
       "solarmanagement.integrations.contracts": {
         "type": "Project"
       },
@@ -152,6 +155,7 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
           "Microsoft.Extensions.Options": "[8.0.2, )",
+          "SolarManagement.Http": "[1.0.0, )",
           "SolarManagement.Integrations.Contracts": "[1.0.0, )"
         }
       },

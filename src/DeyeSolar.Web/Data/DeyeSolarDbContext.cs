@@ -65,6 +65,13 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         {
             e.HasKey(r => r.Id);
             e.Property(r => r.BatterySocValid).HasDefaultValue(false);
+            e.Property(r => r.BatteryPowerValid).HasDefaultValue(false);
+            e.Property(r => r.BatteryTemperatureValid).HasDefaultValue(false);
+            e.Property(r => r.BatteryVoltageValid).HasDefaultValue(false);
+            e.Property(r => r.BatteryCurrentValid).HasDefaultValue(false);
+            e.Property(r => r.LoadPowerValid).HasDefaultValue(false);
+            e.Property(r => r.GridPowerValid).HasDefaultValue(false);
+            e.Property(r => r.SolarPowerValid).HasDefaultValue(false);
             e.HasIndex(r => new { r.InstallationId, r.Timestamp });
             e.HasIndex(r => new { r.InstallationId, r.SolarObservedAt });
             e.Property(r => r.SolarDeviceSn).HasMaxLength(128);
@@ -159,6 +166,13 @@ public class Reading : IInstallationOwned
     public int Id { get; set; }
     public Guid? InverterId { get; set; }
     public bool BatterySocValid { get; set; }
+    public bool BatteryPowerValid { get; set; }
+    public bool BatteryTemperatureValid { get; set; }
+    public bool BatteryVoltageValid { get; set; }
+    public bool BatteryCurrentValid { get; set; }
+    public bool LoadPowerValid { get; set; }
+    public bool GridPowerValid { get; set; }
+    public bool SolarPowerValid { get; set; }
     public long ConfigurationRevision { get; set; }
     public long RuntimeGeneration { get; set; }
     public DateTime Timestamp { get; set; }
@@ -184,9 +198,9 @@ public class RuleRunLog : IInstallationOwned
     public string Action { get; set; } = string.Empty;
     public string ConditionKey { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
-    public int BatterySoc { get; set; }
-    public int SolarProduction { get; set; }
-    public int BatteryPower { get; set; }
+    public int? BatterySoc { get; set; }
+    public int? SolarProduction { get; set; }
+    public int? BatteryPower { get; set; }
 }
 
 public class AppSetting : IInstallationOwned

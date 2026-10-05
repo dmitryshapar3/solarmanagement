@@ -9,7 +9,6 @@ using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Tenancy;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -123,7 +122,7 @@ public class BillingRuntimeTests
     }
 
     private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options, Clock clock, Executor executor,
-        IntegrationSecretStore secrets, BillingAccessService access) : IAsyncDisposable
+        IntegrationSecretStore secrets, BillingAccessService access, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public Clock Clock { get; } = clock;
         public Executor Executor { get; } = executor;
@@ -152,18 +151,16 @@ public class BillingRuntimeTests
         }
         public static async Task<Fixture> CreateAsync(bool appleEnabled = false)
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarBillingRuntime_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+            var database = await SqlServerTestDatabase.CreateAsync("SolarBillingRuntime");
+            var options = database.Options;
             var clock = new Clock();
             var executor = new Executor(clock);
             var secrets = new IntegrationSecretStore(new EphemeralDataProtectionProvider());
-            var fixture = new Fixture(options, clock, executor, secrets, new(options, clock, new AppleBillingOptions { Enabled = appleEnabled }));
+            var fixture = new Fixture(options, clock, executor, secrets, new(options, clock, new AppleBillingOptions { Enabled = appleEnabled }), database);
             try
             {
                 await using (var db = fixture.Db())
                 {
-                    await db.Database.MigrateAsync();
                     db.Installations.AddRange(new Installation { Id = ExpiredSite, Name = "Expired runtime", CreatedAt = clock.Now },
                         new Installation { Id = ActiveSite, Name = "Independent runtime", CreatedAt = clock.Now });
                     db.Users.AddRange(new IdentityUser { Id = ExpiredOwner, UserName = "expired-runtime" },
@@ -229,11 +226,7 @@ public class BillingRuntimeTests
             }
             catch { await fixture.DisposeAsync(); throw; }
         }
-        public async ValueTask DisposeAsync()
-        {
-            await using var db = Db();
-            await db.Database.EnsureDeletedAsync();
-        }
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
     private sealed class Clock : TimeProvider
     {

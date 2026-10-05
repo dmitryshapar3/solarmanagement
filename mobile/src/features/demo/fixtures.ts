@@ -9,6 +9,7 @@ export const DEMO_USERNAME = "Demo";
 
 export type DemoState = {
   devices: Device[];
+  deviceRatedPowerW: Record<string, number>;
   rules: Rule[];
   settings: Settings;
   site: SolarSiteSettings;
@@ -38,7 +39,7 @@ export function createDemoState(now: Date): DemoState {
     }
   ];
   return {
-    devices, rules,
+    devices, rules, deviceRatedPowerW: { [devices[0]!.id]: 850, [devices[1]!.id]: 45 },
     settings: {
       polling: { intervalSeconds: 30 }, display: { timeZoneId: "Europe/Warsaw" }
     },

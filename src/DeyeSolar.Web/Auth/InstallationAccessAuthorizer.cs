@@ -23,27 +23,20 @@ public sealed class InstallationAccessAuthorizer(DbContextOptions<DeyeSolarDbCon
         if (actor.Identity?.IsAuthenticated != true || userId is null) throw Denied(401);
         await using var db = new DeyeSolarDbContext(database);
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null || user.LockoutEnabled && user.LockoutEnd > clock.GetUtcNow()) throw Denied(401);
+        if (user is null) throw Denied(401);
         var stamp = actor.FindFirstValue(StampClaim);
         // Real cookie and bearer sessions must carry a stamp. Synthetic test schemes are not production identities.
-        if (stamp is null || stamp != user.SecurityStamp) throw Denied(401);
+        if (!AccountSessionValidator.IsActiveUser(user, stamp, clock.GetUtcNow())) throw Denied(401);
         var token = actor.FindFirstValue(SessionClaim);
         var session = token is null ? null : await sessions.FindAsync(token, ct);
-        if (session is null || session.UserId != userId || session.SecurityStamp != user.SecurityStamp
-            || session.InstallationId != installationId) throw Denied(401);
+        if (!AccountSessionValidator.MatchesInstallation(session, userId, user.SecurityStamp, installationId)) throw Denied(401);
         var membership = await db.InstallationMemberships.AsNoTracking().Include(m => m.Installation)
             .SingleOrDefaultAsync(m => m.UserId == userId && m.InstallationId == installationId && m.Installation.IsEnabled, ct);
         if (membership is null || !Allows(membership.Role, permission)) throw Denied(403);
         return membership;
     }
-    public static bool Allows(string role, InstallationPermission permission) => role switch
-    {
-        "Owner" => true,
-        "IntegrationManager" => permission is InstallationPermission.Read or InstallationPermission.ManageIntegrations,
-        "Operator" => permission is InstallationPermission.Read or InstallationPermission.ManageRules or InstallationPermission.ControlDevices,
-        "Viewer" => permission == InstallationPermission.Read,
-        _ => false
-    };
+    public static bool Allows(string role, InstallationPermission permission)
+        => InstallationPermissionPolicy.Allows(role, permission);
     private static InstallationAccessException Denied(int status) => new("Your access has changed. Sign in again or contact the installation owner.", status);
 }
 // Bound once per request/circuit. Stored claims are rechecked in SQL on every application operation.

@@ -1,0 +1,506 @@
+[
+  {
+    "name": "valid",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "empty_target_disables",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "  ",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": false,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "single_soc_threshold",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": false,
+      "socTurnOffThreshold": 101,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 80,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "zero_pv_default",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 0,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "negative_pv_default",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": -1,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "name_required",
+    "input": {
+      "name": "  ",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "name_required"
+  },
+  {
+    "name": "soc_on_lower",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": -1,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "soc_on_range"
+  },
+  {
+    "name": "soc_on_upper",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 101,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "soc_on_range"
+  },
+  {
+    "name": "soc_off_lower",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": -1,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": -1,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "soc_off_range"
+  },
+  {
+    "name": "soc_off_upper",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 101,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 101,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "soc_off_range"
+  },
+  {
+    "name": "soc_order",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 81,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 81,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "soc_order"
+  },
+  {
+    "name": "pv_upper",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 30001,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 30001
+    },
+    "expectedError": "solar_watts_range"
+  },
+  {
+    "name": "pv_disabled",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": false,
+      "minAverageSolarProductionWatts": 0,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 0
+    },
+    "expectedError": null
+  },
+  {
+    "name": "cooldown_lower",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 0,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "cooldown_range"
+  },
+  {
+    "name": "cooldown_upper",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 241,
+      "intervalSeconds": 30,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "cooldown_range"
+  },
+  {
+    "name": "interval_lower",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 9,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "interval_range"
+  },
+  {
+    "name": "interval_upper",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 3601,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "interval_range"
+  },
+  {
+    "name": "time_window_pair",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": "08:00",
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": "time_window_pair"
+  },
+  {
+    "name": "overnight_window",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 80,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 60,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 3000,
+      "cooldownMinutes": 15,
+      "intervalSeconds": 30,
+      "activeFrom": "22:00",
+      "activeTo": "06:00"
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 60,
+      "minAverageSolarProductionWatts": 3000
+    },
+    "expectedError": null
+  },
+  {
+    "name": "inclusive_lower_bounds",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 0,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 0,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 1,
+      "cooldownMinutes": 1,
+      "intervalSeconds": 10,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 0,
+      "minAverageSolarProductionWatts": 1
+    },
+    "expectedError": null
+  },
+  {
+    "name": "inclusive_upper_bounds",
+    "input": {
+      "name": "Solar surplus",
+      "entityId": "b5dce685-8c30-4d48-b26b-4d267b8bf5a1",
+      "sourceInverterId": null,
+      "enabled": true,
+      "socTurnOnThreshold": 100,
+      "useSeparateSocTurnOffThreshold": true,
+      "socTurnOffThreshold": 100,
+      "useSolarProductionThreshold": true,
+      "minAverageSolarProductionWatts": 30000,
+      "cooldownMinutes": 240,
+      "intervalSeconds": 3600,
+      "activeFrom": null,
+      "activeTo": null
+    },
+    "expectedNormalization": {
+      "enabled": true,
+      "socTurnOffThreshold": 100,
+      "minAverageSolarProductionWatts": 30000
+    },
+    "expectedError": null
+  }
+]

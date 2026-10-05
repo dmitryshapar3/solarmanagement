@@ -3,6 +3,7 @@ using System.Data.Common;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Tenancy;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -87,9 +88,9 @@ public class ExportPriceStoreTests
     {
         await using var database = await Database.CreateAsync();
         var fault = new ReduceDecimalScale();
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>(database.Factory.Options)
+        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>(database.Options)
             .AddInterceptors(fault).Options;
-        var faultyStore = new ExportPriceStore(new Factory(options), new Clock());
+        var faultyStore = new ExportPriceStore(new TenantDbContextFactory(options, TestInstallation.Id), new Clock());
         const decimal exact = 123.456789m;
 
         // Mutate only this test connection's parameter, never the application's source or schema.
@@ -179,9 +180,9 @@ public class ExportPriceStoreTests
         await SeedNeighbours(database);
         using var cancellation = new CancellationTokenSource();
         var interceptor = new CancelAfterFirstPriceWrite(cancellation);
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>(database.Factory.Options)
+        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>(database.Options)
             .AddInterceptors(interceptor).Options;
-        var store = new ExportPriceStore(new Factory(options), new Clock());
+        var store = new ExportPriceStore(new TenantDbContextFactory(options, TestInstallation.Id), new Clock());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.SaveAsync([
             Price(Start, 444m), Price(Start.AddMinutes(15), 555m)], Start.AddHours(2), cancellation.Token));
@@ -250,36 +251,13 @@ public class ExportPriceStoreTests
         }
     }
 
-    private sealed class Database(Factory factory) : IAsyncDisposable
+    private sealed class Database(SqlServerTestDatabase database) : IAsyncDisposable
     {
-        public Factory Factory { get; } = factory;
-        public ExportPriceStore Store { get; } = new(factory, new Clock());
-
-        public static async Task<Database> CreateAsync()
-        {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarPriceTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            var database = new Database(factory);
-            await using var db = factory.CreateDbContext();
-            await db.Database.MigrateAsync();
-            await TestInstallation.EnsureAsync(db);
-            return database;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var db = Factory.CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
-        }
-    }
-
-    private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
-    {
-        public DbContextOptions<DeyeSolarDbContext> Options { get; } = options;
-        public DeyeSolarDbContext CreateDbContext() => new(Options, TestInstallation.Id);
-        public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
-        { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
+        public TenantDbContextFactory Factory => database.Factory;
+        public DbContextOptions<DeyeSolarDbContext> Options => database.Options;
+        public ExportPriceStore Store { get; } = new(database.Factory, new Clock());
+        public static async Task<Database> CreateAsync() => new(await SqlServerTestDatabase.CreateAsync("SolarPriceTests", seed: TestInstallation.EnsureAsync));
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
 
     private sealed class RejectingFactory : IDbContextFactory<DeyeSolarDbContext>

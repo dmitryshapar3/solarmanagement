@@ -17,7 +17,6 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -209,7 +208,7 @@ public class IntegrationOAuthSqlServerTests
         Assert.Equal(neighbour, await f.PrivateStateAsync("b"));
     }
 
-    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
+    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public Executor Executor { get; } = new();
         public OriginManager OriginManager { get; } = new();
@@ -255,101 +254,103 @@ public class IntegrationOAuthSqlServerTests
         public static async Task<Fixture> CreateAsync()
         {
             IntegrationDescriptorValidator.Validate(await new Catalog().GetAsync("oauth.fixture", null, default));
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "IntegrationOAuth_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
-            var f = new Fixture(options);
-            await using (var db = f.Factory("a").CreateDbContext())
+            var database = await SqlServerTestDatabase.CreateAsync("IntegrationOAuth", SqlTestSchema.Model);
+            var options = database.Options;
+            var f = new Fixture(options, database);
+            try
             {
-                await db.Database.EnsureCreatedAsync();
-                db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
-                db.Users.AddRange(new IdentityUser { Id = "a", UserName = "a" }, new IdentityUser { Id = "b", UserName = "b" });
-                db.InstallationMemberships.AddRange(new InstallationMembership { UserId = "a", InstallationId = "a" }, new InstallationMembership { UserId = "b", InstallationId = "b" });
-                await db.SaveChangesAsync();
-            }
-            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory });
-            builder.WebHost.UseUrls("http://127.0.0.1:0");
-            builder.Logging.ClearProviders();
-            builder.Services.AddSingleton(options);
-            builder.Services.AddScoped(_ => new DeyeSolarDbContext(options));
-            builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DeyeSolarDbContext>();
-            builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
-            builder.Services.AddAuthorization(); builder.Services.AddAntiforgery();
-            builder.Services.AddAccountIdentities(new AuthProviderOptions());
-            builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
-            builder.Services.AddSingleton(f.Secrets);
-            builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
-            builder.Services.AddSingleton<MobileSessionStore>();
-            builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
-            builder.Services.AddSingleton<IntegrationSetupGate>();
-            builder.Services.AddSingleton(new IntegrationOAuthOptions { PublicBaseUrl = "https://solar.example" });
-            builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
-            builder.Services.AddSingleton<IntegrationOAuthService>();
-            builder.Services.AddSingleton<IIntegrationProviderCatalog>(new Catalog());
-            builder.Services.AddSingleton<IIntegrationSetupExecutor>(f.Executor);
-            builder.Services.AddSingleton(new IntegrationChangeNotifier(NullLogger<IntegrationChangeNotifier>.Instance));
-            builder.Services.AddScoped<CurrentInstallation>();
-            builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>>(p => new RequestFactory(options, p.GetRequiredService<CurrentInstallation>()));
-            builder.Services.AddScoped<InstallationMembershipService>();
-            builder.Services.AddScoped<DeyeSolar.Web.Auth.IInstallationAccessAuthorizer, DeyeSolar.Web.Auth.InstallationAccessAuthorizer>();
-            builder.Services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
-            builder.Services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
-            builder.Services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
-            builder.Services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
-            builder.Services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
-            builder.Services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
-            builder.Services.AddScoped<IntegrationSetupService>();
-            builder.Services.AddScoped<DynamicSocketGateway>(_ => throw new InvalidOperationException("This OAuth fixture must not execute device commands."));
-            builder.Services.AddSingleton<IIntegrationPackageManager>(f.OriginManager);
-            builder.Services.AddSingleton<TenantRuntimeRegistry>(_ => throw new InvalidOperationException("This OAuth fixture must not start device polling."));
-            f.App = builder.Build();
-            f.App.UseAuthentication(); f.App.UseAuthorization();
-            f.App.Use(async (context, next) =>
-            {
-                var membership = await context.RequestServices.GetRequiredService<InstallationMembershipService>().ResolveAsync(context.User);
-                if (membership is not null) context.RequestServices.GetRequiredService<CurrentInstallation>().BindOnce(membership.InstallationId);
-                await next(context);
-            });
-            f.App.MapDynamicIntegrations();
-            f.App.MapPost("/_fixture/login", async (Login login, UserManager<IdentityUser> users, SignInManager<IdentityUser> signIn,
-                MobileSessionStore sessions, InstallationMembershipService memberships) =>
-            {
-                var user = await users.FindByIdAsync(login.User);
-                if (user is null || !await users.CheckPasswordAsync(user, login.Password)) return Results.Unauthorized();
-                var membership = (await memberships.GetForUserAsync(user.Id))!;
-                if (login.Cookie) await signIn.SignInWithClaimsAsync(user, false, [new Claim(InstallationIds.ClaimType, membership.InstallationId)]);
-                return Results.Ok(new { token = sessions.Create(user.Id, user.UserName!, user.SecurityStamp, membership.InstallationId).Token });
-            });
-            using (var scope = f.App.Services.CreateScope())
-            {
-                var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
-                foreach (var id in new[] { "a", "b" })
+                await using (var db = f.Factory("a").CreateDbContext())
                 {
-                    var user = (await users.FindByIdAsync(id))!;
-                    Assert.True((await users.UpdateAsync(user)).Succeeded);
-                    Assert.True((await users.AddPasswordAsync(user, "LocalOAuth!42")).Succeeded);
+                    db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
+                    db.Users.AddRange(new IdentityUser { Id = "a", UserName = "a" }, new IdentityUser { Id = "b", UserName = "b" });
+                    db.InstallationMemberships.AddRange(new InstallationMembership { UserId = "a", InstallationId = "a" }, new InstallationMembership { UserId = "b", InstallationId = "b" });
+                    await db.SaveChangesAsync();
                 }
+                var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory });
+                builder.WebHost.UseUrls("http://127.0.0.1:0");
+                builder.Logging.ClearProviders();
+                builder.Services.AddSingleton(options);
+                builder.Services.AddScoped(_ => new DeyeSolarDbContext(options));
+                builder.Services.AddIdentity<IdentityUser, IdentityRole>().AddEntityFrameworkStores<DeyeSolarDbContext>();
+                builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, MobileBearerAuthenticationHandler>(MobileBearerAuthenticationHandler.SchemeName, _ => { });
+                builder.Services.AddAuthorization(); builder.Services.AddAntiforgery();
+                builder.Services.AddAccountIdentities(new AuthProviderOptions());
+                builder.Services.AddSingleton<IDataProtectionProvider>(new EphemeralDataProtectionProvider());
+                builder.Services.AddSingleton(f.Secrets);
+                builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+                builder.Services.AddSingleton<MobileSessionStore>();
+                builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
+                builder.Services.AddSingleton<IntegrationSetupGate>();
+                builder.Services.AddSingleton(new IntegrationOAuthOptions { PublicBaseUrl = "https://solar.example" });
+                builder.Services.AddSingleton<IOptions<IntegrationRuntimeOptions>>(Options.Create(new IntegrationRuntimeOptions()));
+                builder.Services.AddSingleton<IntegrationOAuthService>();
+                builder.Services.AddSingleton<IIntegrationProviderCatalog>(new Catalog());
+                builder.Services.AddSingleton<IIntegrationSetupExecutor>(f.Executor);
+                builder.Services.AddSingleton(new IntegrationChangeNotifier(NullLogger<IntegrationChangeNotifier>.Instance));
+                builder.Services.AddScoped<CurrentInstallation>();
+                builder.Services.AddScoped<IDbContextFactory<DeyeSolarDbContext>>(p => new RequestFactory(options, p.GetRequiredService<CurrentInstallation>()));
+                builder.Services.AddScoped<InstallationMembershipService>();
+                builder.Services.AddScoped<DeyeSolar.Web.Auth.IInstallationAccessAuthorizer, DeyeSolar.Web.Auth.InstallationAccessAuthorizer>();
+                builder.Services.AddScoped<IIntegrationManagerAccess, IntegrationManagerAccess>();
+                builder.Services.AddSingleton<IIntegrationConnectionLifecycle, IntegrationConnectionLifecycle>();
+                builder.Services.AddSingleton<IIntegrationConfigurationWriter, IntegrationConfigurationWriter>();
+                builder.Services.AddSingleton<IIntegrationConfigurationResolver, IntegrationConfigurationResolver>();
+                builder.Services.AddSingleton<IIntegrationSelectionTokens, IntegrationSelectionTokens>();
+                builder.Services.AddSingleton<IIntegrationDeviceBindingWriter, IntegrationDeviceBindingWriter>();
+                builder.Services.AddScoped<IntegrationSetupService>();
+                builder.Services.AddScoped<DynamicSocketGateway>(_ => throw new InvalidOperationException("This OAuth fixture must not execute device commands."));
+                builder.Services.AddSingleton<IIntegrationPackageManager>(f.OriginManager);
+                builder.Services.AddSingleton<TenantRuntimeRegistry>(_ => throw new InvalidOperationException("This OAuth fixture must not start device polling."));
+                f.App = builder.Build();
+                f.App.UseAuthentication(); f.App.UseAuthorization();
+                f.App.Use(async (context, next) =>
+                {
+                    var membership = await context.RequestServices.GetRequiredService<InstallationMembershipService>().ResolveAsync(context.User);
+                    if (membership is not null) context.RequestServices.GetRequiredService<CurrentInstallation>().BindOnce(membership.InstallationId);
+                    await next(context);
+                });
+                f.App.MapDynamicIntegrations();
+                f.App.MapPost("/_fixture/login", async (Login login, UserManager<IdentityUser> users, SignInManager<IdentityUser> signIn,
+                    MobileSessionStore sessions, InstallationMembershipService memberships) =>
+                {
+                    var user = await users.FindByIdAsync(login.User);
+                    if (user is null || !await users.CheckPasswordAsync(user, login.Password)) return Results.Unauthorized();
+                    var membership = (await memberships.GetForUserAsync(user.Id))!;
+                    if (login.Cookie) await signIn.SignInWithClaimsAsync(user, false, [new Claim(InstallationIds.ClaimType, membership.InstallationId)]);
+                    return Results.Ok(new { token = sessions.Create(user.Id, user.UserName!, user.SecurityStamp, membership.InstallationId).Token });
+                });
+                using (var scope = f.App.Services.CreateScope())
+                {
+                    var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+                    foreach (var id in new[] { "a", "b" })
+                    {
+                        var user = (await users.FindByIdAsync(id))!;
+                        Assert.True((await users.UpdateAsync(user)).Succeeded);
+                        Assert.True((await users.AddPasswordAsync(user, "LocalOAuth!42")).Succeeded);
+                    }
+                }
+                await f.App.StartAsync();
+                var address = f.App.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+                f.Client = new(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new(address) };
+                f.Anonymous = new(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new(address) };
+                f.Token = await f.LoginAsync("a", false);
+                f.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", f.Token);
+                using var created = await f.Client.PostAsJsonAsync("/api/v2/integrations", new CreateIntegrationRequest("oauth.fixture", "OAuth A"));
+                Assert.True(created.StatusCode == HttpStatusCode.OK, $"{created.StatusCode}: {await created.Content.ReadAsStringAsync()}");
+                f.Instance = (await created.Content.ReadFromJsonAsync<IntegrationInstanceDto>())!;
+                var tokenB = await f.LoginAsync("b", false);
+                f.Client.DefaultRequestHeaders.Authorization = new("Bearer", tokenB);
+                using var other = await f.Client.PostAsJsonAsync("/api/v2/integrations", new CreateIntegrationRequest("oauth.fixture", "OAuth B"));
+                Assert.True(other.StatusCode == HttpStatusCode.OK, await other.Content.ReadAsStringAsync());
+                f.Client.DefaultRequestHeaders.Authorization = new("Bearer", f.Token);
+                return f;
             }
-            await f.App.StartAsync();
-            var address = f.App.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            f.Client = new(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new(address) };
-            f.Anonymous = new(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new(address) };
-            f.Token = await f.LoginAsync("a", false);
-            f.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", f.Token);
-            using var created = await f.Client.PostAsJsonAsync("/api/v2/integrations", new CreateIntegrationRequest("oauth.fixture", "OAuth A"));
-            Assert.True(created.StatusCode == HttpStatusCode.OK, $"{created.StatusCode}: {await created.Content.ReadAsStringAsync()}");
-            f.Instance = (await created.Content.ReadFromJsonAsync<IntegrationInstanceDto>())!;
-            var tokenB = await f.LoginAsync("b", false);
-            f.Client.DefaultRequestHeaders.Authorization = new("Bearer", tokenB);
-            using var other = await f.Client.PostAsJsonAsync("/api/v2/integrations", new CreateIntegrationRequest("oauth.fixture", "OAuth B"));
-            Assert.True(other.StatusCode == HttpStatusCode.OK, await other.Content.ReadAsStringAsync());
-            f.Client.DefaultRequestHeaders.Authorization = new("Bearer", f.Token);
-            return f;
+            catch { await f.DisposeAsync(); throw; }
         }
         public async ValueTask DisposeAsync()
         {
-            Client.Dispose(); Anonymous.Dispose(); await App.DisposeAsync();
-            await using var db = Factory("a").CreateDbContext(); await db.Database.EnsureDeletedAsync();
+            Client?.Dispose(); Anonymous?.Dispose();
+            await TestHttpHostCleanup.DisposeAsync(App, database);
         }
     }
     private sealed record Login(string User, string Password, bool Cookie);

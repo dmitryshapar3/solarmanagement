@@ -108,6 +108,9 @@ export class DeyeSolarApi {
     return this.client.onBillingDenied(observer);
   }
 
+  get sessionEpoch(): number { return this.client.sessionEpoch; }
+  onSessionChange(observer: () => void): () => void { return this.client.onSessionChange(observer); }
+
   logout(signal?: AbortSignal): Promise<void> {
     return this.client.request<void>("/api/auth/logout", { method: "POST", signal });
   }
@@ -185,24 +188,24 @@ export class DeyeSolarApi {
     });
   }
 
-  getReadings(hours: number): Promise<Reading[]> {
+  getReadings(hours: number, signal?: AbortSignal): Promise<Reading[]> {
     return this.client.request<Reading[]>("/api/readings", {
-      query: { hours }
+      query: { hours }, signal
     });
   }
 
-  getRuleRuns(hours: number, filter: string): Promise<RuleRunLog[]> {
+  getRuleRuns(hours: number, filter: string, signal?: AbortSignal): Promise<RuleRunLog[]> {
     return this.client.request<RuleRunLog[]>("/api/rule-runs", {
-      query: { hours, filter }
+      query: { hours, filter }, signal
     });
   }
 
-  getSettings(): Promise<Settings> {
-    return this.client.request<Settings>("/api/settings");
+  getSettings(signal?: AbortSignal): Promise<Settings> {
+    return this.client.request<Settings>("/api/settings", { signal });
   }
 
-  getSiteSettings(): Promise<SolarSiteSettings> {
-    return this.client.request("/api/settings/site");
+  getSiteSettings(signal?: AbortSignal): Promise<SolarSiteSettings> {
+    return this.client.request("/api/settings/site", { signal });
   }
 
   saveSiteSettings(settings: SolarSiteSettings): Promise<void> {

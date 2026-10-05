@@ -59,7 +59,11 @@ public class InventoryRefreshGenerationTests
             }).ToArray() ?? [];
             Assert.Equal(replacement ? [neighbor.Id] : Array.Empty<string>(), ids);
         }
-        finally { ((IDisposable)page).Dispose(); }
+        finally
+        {
+            if (page is IAsyncDisposable asynchronous) await asynchronous.DisposeAsync();
+            else ((IDisposable)page).Dispose();
+        }
     }
 
     [Fact]

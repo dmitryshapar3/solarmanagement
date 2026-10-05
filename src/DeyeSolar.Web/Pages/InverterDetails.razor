@@ -6,7 +6,7 @@
 @inject TimeProvider Clock
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SolarEstimateOptions> EstimateOptions
 @inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>@T["Inverter details - DeyeSolar"]</PageTitle>
 <MudPaper Class="pa-4" Elevation="2">
@@ -31,7 +31,7 @@
     private bool _refreshing;
     private bool _disposed;
     private string? _error;
-    private readonly CancellationTokenSource _lifetime = new();
+    private readonly AsyncQueryScope _queries = new();
     protected override async Task OnInitializedAsync()
     {
         var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
@@ -39,19 +39,7 @@
         _timeZone = display.TimeZoneId;
         _reading = Snapshot.Current;
         Snapshot.OnDataUpdated += Updated;
-        _ = UpdateClockAsync();
-    }
-    private async Task UpdateClockAsync()
-    {
-        var token = _lifetime.Token;
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(token))
-                await InvokeAsync(() => { if (!_disposed) StateHasChanged(); });
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (ObjectDisposedException) when (_disposed) { }
+        _queries.StartRefresh(Clock, TimeSpan.FromSeconds(30), () => InvokeAsync(() => { if (!_disposed) StateHasChanged(); }));
     }
     private void Updated()
     {
@@ -63,17 +51,16 @@
         if (_disposed || _refreshing) return;
         _refreshing = true;
         _error = null;
-        try { await InverterRefresh.RefreshAsync(_lifetime.Token); if (!_disposed) _reading = Snapshot.Current; }
-        catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
+        try { await InverterRefresh.RefreshAsync(_queries.LifetimeToken); if (!_disposed) _reading = Snapshot.Current; }
+        catch (OperationCanceledException) when (_disposed || _queries.LifetimeToken.IsCancellationRequested) { }
         catch (Exception) { if (!_disposed) _error = T["Could not refresh inverter readings. Showing the last available reading; please try again."]; }
         finally { if (!_disposed) _refreshing = false; }
     }
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
         Snapshot.OnDataUpdated -= Updated;
-        _lifetime.Cancel();
-        _lifetime.Dispose();
+        await _queries.DisposeAsync();
     }
 }

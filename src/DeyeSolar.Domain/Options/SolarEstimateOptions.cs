@@ -54,14 +54,13 @@ public sealed class SolarEstimateOptions
 
     public void Validate()
     {
-        double[] numbers = [Latitude, Longitude, Roof1Kwp, Roof2Kwp, Roof1Tilt, Roof2Tilt,
-            Roof1Azimuth, Roof2Azimuth, TemperatureCoefficient, TemperatureCoefficientUncertainty,
+        var geometry = new SolarSiteGeometry(Latitude, Longitude, Roof1Kwp, Roof2Kwp,
+            Roof1Tilt, Roof2Tilt, Roof1Azimuth, Roof2Azimuth);
+        double[] numbers = [TemperatureCoefficient, TemperatureCoefficientUncertainty,
             DcLossFraction, MinimumDcLossFraction, MaximumDcLossFraction, FaimanU0, FaimanU1,
             WindAtModuleFactor, CellTemperatureRiseAt1000, CellTemperatureUncertaintyC,
             ConfigurationUncertaintyFraction, SatelliteUncertaintyFraction, ModelUncertaintyFraction, NearZeroKw, InverterEfficiency];
-        if (numbers.Any(x => !double.IsFinite(x)) || Latitude is < -90 or > 90 || Longitude is < -180 or > 180
-            || Roof1Kwp < 0 || Roof2Kwp < 0 || !double.IsFinite(TotalKwp) || TotalKwp <= 0 || Roof1Tilt is < 0 or > 90 || Roof2Tilt is < 0 or > 90
-            || Roof1Azimuth is < 0 or >= 360 || Roof2Azimuth is < 0 or >= 360
+        if (!geometry.IsValid || numbers.Any(x => !double.IsFinite(x))
             || TemperatureCoefficient is < -0.02 or > 0 || TemperatureCoefficientUncertainty is < 0 or > 0.01
             || MinimumDcLossFraction < 0 || MaximumDcLossFraction >= 1
             || MinimumDcLossFraction > DcLossFraction || DcLossFraction > MaximumDcLossFraction

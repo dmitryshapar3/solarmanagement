@@ -81,6 +81,7 @@ public class AppleBillingException(string message, string code, bool retryable =
 {
     public string Code { get; } = code;
     public bool Retryable { get; } = retryable;
+    public int HttpStatus => Retryable ? 503 : Code == "apple_account_mismatch" ? 409 : 400;
 }
 
 public sealed class AppleStatusInvalidException(DateTimeOffset observationStartedAt)

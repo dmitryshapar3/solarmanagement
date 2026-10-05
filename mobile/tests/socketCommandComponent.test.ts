@@ -50,6 +50,8 @@ for (const lostResponse of [false, true]) {
       return { status: 200, ok: true, text: async () => JSON.stringify(result) };
     } });
     const api = {
+      get sessionEpoch() { return client.sessionEpoch; },
+      onSessionChange: (observer: () => void) => client.onSessionChange(observer),
       socketCommands: new SocketCommandCoordinator(new IntegrationApi(client), () => "fixed-command"),
       getDevices: (force: boolean) => client.request("/api/devices", { query: { refresh: force } }),
       setDeviceState: async () => assert.fail("The v1 command route cannot be used by real sessions.")

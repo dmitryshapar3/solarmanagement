@@ -36,6 +36,7 @@ public class RuleRepository : IRuleRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         await RuleTargetPolicy.LockInstallationAsync(db, ct);
+        ValidateConfiguration(rule);
         await RuleTargetPolicy.ValidateAsync(db, rule, ct);
         await ValidateSourceAsync(db, rule, ct);
         db.TriggerRules.Add(rule);
@@ -54,6 +55,7 @@ public class RuleRepository : IRuleRepository
         var current = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == rule.Id, ct)
             ?? throw new ArgumentException("Rule not found.");
         RuleConfigurationVersion.Check(rule, current);
+        ValidateConfiguration(rule);
         await RuleTargetPolicy.ValidateAsync(db, rule, ct);
         await ValidateSourceAsync(db, rule, ct);
         // Configuration snapshots can predate an acknowledged command or another evaluation.
@@ -65,19 +67,7 @@ public class RuleRepository : IRuleRepository
             current.CurrentStateChangedAt = null;
             current.LastEvaluated = null;
         }
-        current.Name = rule.Name;
-        current.EntityId = rule.EntityId;
-        current.SourceInverterId = rule.SourceInverterId;
-        current.Enabled = rule.Enabled;
-        current.SocTurnOnThreshold = rule.SocTurnOnThreshold;
-        current.UseSeparateSocTurnOffThreshold = rule.UseSeparateSocTurnOffThreshold;
-        current.SocTurnOffThreshold = rule.SocTurnOffThreshold;
-        current.UseSolarProductionThreshold = rule.UseSolarProductionThreshold;
-        current.MinAverageSolarProductionWatts = rule.MinAverageSolarProductionWatts;
-        current.CooldownMinutes = rule.CooldownMinutes;
-        current.IntervalSeconds = rule.IntervalSeconds;
-        current.ActiveFrom = rule.ActiveFrom;
-        current.ActiveTo = rule.ActiveTo;
+        RuleConfigurationSnapshot.From(rule).ApplyTo(current);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         rule.CurrentState = current.CurrentState;
@@ -93,16 +83,19 @@ public class RuleRepository : IRuleRepository
             .ExecuteUpdateAsync(update => update.SetProperty(rule => rule.LastEvaluated, when), ct);
     }
 
+    private static void ValidateConfiguration(TriggerRule rule)
+    {
+        RuleConfigurationPolicy.Normalize(rule);
+        if (RuleConfigurationPolicy.Validate(rule) is { } error) throw new ArgumentException(error.Message);
+    }
+
     private static async Task ValidateSourceAsync(DeyeSolarDbContext db, TriggerRule rule, CancellationToken ct)
     {
         // Disabled drafts retain retired selections so an outage never prevents stopping a rule.
         if (!rule.Enabled) return;
         var effective = rule.SourceInverterId ?? (await IntegrationSocketAssociation.ResolveSourcesAsync(db, [rule], ct)).GetValueOrDefault(rule.Id);
         if (effective is not { } sourceId) return;
-        var binding = await (from device in db.IntegrationDeviceBindings.AsNoTracking()
-            join instance in db.IntegrationInstances.AsNoTracking() on device.InstanceId equals instance.Id
-            where device.Id == sourceId && device.Enabled && device.Kind == "inverter" && instance.State == "enabled"
-            select device).SingleOrDefaultAsync(ct);
+        var binding = await IntegrationDeviceEligibility.FindEnabledAsync(db, sourceId, "inverter", ct);
         if (binding is null) throw new ArgumentException("Select an enabled inverter from this installation.");
         var capabilities = IntegrationCapabilities.Read(binding);
         if (!capabilities.HasBattery) throw new ArgumentException("The selected inverter does not provide battery SOC.");

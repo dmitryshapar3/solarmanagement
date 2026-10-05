@@ -64,7 +64,7 @@ public sealed class SolarEstimateStore(IDbContextFactory<DeyeSolarDbContext> fac
     }
 
     internal static IQueryable<Reading> EligibleReadings(IQueryable<Reading> readings, string deviceSn,
-        DateTime earliest, DateTime latest) => readings.Where(r => r.SolarDeviceSn == deviceSn
+        DateTime earliest, DateTime latest) => readings.Where(r => r.SolarPowerValid && r.SolarDeviceSn == deviceSn
             && r.SolarObservedAt != null && r.SolarObservedAt >= earliest && r.SolarObservedAt <= latest
             && r.SolarProduction >= 0);
 }

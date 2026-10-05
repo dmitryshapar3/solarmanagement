@@ -42,12 +42,9 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
             || solar.DeyeSolarPowerConfirmedDeviceSn.Any(char.IsControl)
             || string.IsNullOrWhiteSpace(solar.TimeZoneId) || !TimeZoneInfo.TryFindSystemTimeZoneById(solar.TimeZoneId, out _)
             || string.IsNullOrWhiteSpace(sales.TimeZoneId) || !TimeZoneInfo.TryFindSystemTimeZoneById(sales.TimeZoneId, out _)) return false;
-        double[] values = [solar.Latitude, solar.Longitude, solar.Roof1Kwp, solar.Roof2Kwp,
-            solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth];
-        if (values.Any(value => !double.IsFinite(value)) || solar.Latitude is < -90 or > 90 || solar.Longitude is < -180 or > 180
-            || solar.Roof1Kwp < 0 || solar.Roof2Kwp < 0 || solar.Roof1Kwp + solar.Roof2Kwp is <= 0 or > 10000
-            || solar.Roof1Tilt is < 0 or > 90 || solar.Roof2Tilt is < 0 or > 90
-            || solar.Roof1Azimuth is < 0 or >= 360 || solar.Roof2Azimuth is < 0 or >= 360) return false;
+        var geometry = new SolarSiteGeometry(solar.Latitude, solar.Longitude, solar.Roof1Kwp, solar.Roof2Kwp,
+            solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth);
+        if (!geometry.IsValid || geometry.TotalKwp > 10000) return false;
         if (!DateOnly.TryParseExact(sales.ContractStartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var date) || date.Year < 2000)
         { message = "Enter a contract start date from 2000 onwards as YYYY-MM-DD."; return false; }

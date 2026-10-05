@@ -1,6 +1,5 @@
 using System.Net;
-using DeyeSolar.Domain.Options;
-using DeyeSolar.Infrastructure.DeyeCloud;
+using SolarManagement.Providers.DeyeCloud;
 using Microsoft.Extensions.Logging;
 
 namespace DeyeSolar.Infrastructure.Tests;

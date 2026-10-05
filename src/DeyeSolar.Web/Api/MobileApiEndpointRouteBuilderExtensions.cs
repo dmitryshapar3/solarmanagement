@@ -7,11 +7,12 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using Microsoft.EntityFrameworkCore;
 
+using DeyeSolar.Web.Operations;
+
 namespace DeyeSolar.Web.Api;
 
 public static class MobileApiEndpointRouteBuilderExtensions
 {
-    private const int MaxHistoryTake = 1000;
 
     public static void MapMobileApi(this WebApplication app)
     {
@@ -142,9 +143,8 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 var created = await rules.CreateAsync(rule!, ct);
                 return Results.Created($"/api/rules/{created.Id}", created.ToDto());
             }
-            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
-            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+            catch (Exception error) when (ApiProblems.IsHandled(error, ApiProblemScope.Rules))
+            { return ApiProblems.Describe(error, ApiProblemScope.Rules); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapPut("/rules/{id:int}", async Task<IResult> (
@@ -166,9 +166,8 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.UpdateAsync(updated!, ct);
                 return Results.Ok(updated!.ToDto());
             }
-            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
-            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+            catch (Exception error) when (ApiProblems.IsHandled(error, ApiProblemScope.Rules))
+            { return ApiProblems.Describe(error, ApiProblemScope.Rules); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapPatch("/rules/{id:int}/enabled", async Task<IResult> (
@@ -188,9 +187,8 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.UpdateAsync(rule, ct);
                 return Results.Ok(rule.ToDto());
             }
-            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
-            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+            catch (Exception error) when (ApiProblems.IsHandled(error, ApiProblemScope.Rules))
+            { return ApiProblems.Describe(error, ApiProblemScope.Rules); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
         authorized.MapDelete("/rules/{id:int}", async Task<IResult> (
@@ -208,61 +206,26 @@ public static class MobileApiEndpointRouteBuilderExtensions
                 await rules.DeleteAsync(id, header[1..^1], ct);
                 return Results.NoContent();
             }
-            catch (RuleConfigurationPreconditionRequiredException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 428); }
-            catch (RuleConfigurationConflictException ex) { return Results.Conflict(new ApiError(ex.Message)); }
-            catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); }
+            catch (Exception error) when (ApiProblems.IsHandled(error, ApiProblemScope.Rules))
+            { return ApiProblems.Describe(error, ApiProblemScope.Rules); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
-        authorized.MapGet("/readings", async (
-            int? hours,
-            int? take,
-            IDbContextFactory<DeyeSolarDbContext> dbFactory,
-            CancellationToken ct) =>
+        authorized.MapGet("/readings", async (int? hours, int? take,
+            IDbContextFactory<DeyeSolarDbContext> dbFactory, TimeProvider clock, CancellationToken ct) =>
         {
-            var safeHours = Math.Clamp(hours.GetValueOrDefault(6), 1, 24 * 7);
-            var safeTake = Math.Clamp(take.GetValueOrDefault(MaxHistoryTake), 1, MaxHistoryTake);
-            var cutoff = DateTime.UtcNow.AddHours(-safeHours);
-
+            var range = HistoryQueryPolicy.Range(clock.GetUtcNow(), hours, take);
             await using var db = await dbFactory.CreateDbContextAsync(ct);
-            var readings = await db.Readings
-                .Where(r => r.Timestamp >= cutoff)
-                .OrderByDescending(r => r.Timestamp)
-                .Take(safeTake)
-                .ToListAsync(ct);
-
-            return Results.Ok(readings.Select(r => r.ToDto()).ToList());
+            var readings = await HistoryQueryPolicy.Readings(db.Readings, range).ToListAsync(ct);
+            return Results.Ok(readings.Select(reading => reading.ToDto()).ToList());
         });
 
-        authorized.MapGet("/rule-runs", async (
-            int? hours,
-            int? take,
-            string? filter,
-            IDbContextFactory<DeyeSolarDbContext> dbFactory,
-            CancellationToken ct) =>
+        authorized.MapGet("/rule-runs", async (int? hours, int? take, string? filter,
+            IDbContextFactory<DeyeSolarDbContext> dbFactory, TimeProvider clock, CancellationToken ct) =>
         {
-            var safeHours = Math.Clamp(hours.GetValueOrDefault(6), 1, 24 * 7);
-            var safeTake = Math.Clamp(take.GetValueOrDefault(MaxHistoryTake), 1, MaxHistoryTake);
-            var normalizedFilter = (filter ?? "ALL").Trim().ToUpperInvariant();
-            var cutoff = DateTime.UtcNow.AddHours(-safeHours);
-
+            var range = HistoryQueryPolicy.Range(clock.GetUtcNow(), hours, take, filter);
             await using var db = await dbFactory.CreateDbContextAsync(ct);
-            IQueryable<RuleRunLog> query = db.RuleRunLogs
-                .Where(r => r.Timestamp >= cutoff);
-
-            query = normalizedFilter switch
-            {
-                "ON" => query.Where(r => r.Action == "ON"),
-                "OFF" => query.Where(r => r.Action == "OFF"),
-                "CHANGES" => query.Where(r => r.Action != "NO_CHANGE"),
-                _ => query
-            };
-
-            var logs = await query
-                .OrderByDescending(r => r.Timestamp)
-                .Take(safeTake)
-                .ToListAsync(ct);
-
-            return Results.Ok(logs.Select(r => r.ToDto()).ToList());
+            var logs = await HistoryQueryPolicy.Runs(db.RuleRunLogs, range).ToListAsync(ct);
+            return Results.Ok(logs.Select(log => log.ToDto()).ToList());
         });
 
         authorized.MapGet("/settings", async (IAppSettingsReader settings) =>
@@ -335,60 +298,14 @@ public static class MobileApiEndpointRouteBuilderExtensions
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new ApiError(ex.Message));
+            return ApiProblems.Error(ex.Message, 400, "validation");
         }
 
-        NormalizeRule(rule);
-        var validationError = ValidateRule(rule);
+        RuleConfigurationPolicy.Normalize(rule);
+        var validationError = RuleConfigurationPolicy.Validate(rule)?.Message;
         return validationError == null
             ? null
-            : Results.BadRequest(new ApiError(validationError));
+            : ApiProblems.Error(validationError, 400, "validation");
     }
 
-    private static void NormalizeRule(TriggerRule rule)
-    {
-        if (string.IsNullOrWhiteSpace(rule.EntityId))
-            rule.Enabled = false;
-
-        if (!rule.UseSeparateSocTurnOffThreshold)
-            rule.SocTurnOffThreshold = rule.SocTurnOnThreshold;
-
-        if (rule.UseSolarProductionThreshold && rule.MinAverageSolarProductionWatts <= 0)
-            rule.MinAverageSolarProductionWatts = 3000;
-    }
-
-    private static string? ValidateRule(TriggerRule rule)
-    {
-        if (string.IsNullOrWhiteSpace(rule.Name))
-            return "Rule name is required.";
-
-        if (rule.SocTurnOnThreshold is < 0 or > 100)
-            return "SOC turn ON must be between 0 and 100%.";
-
-        if (rule.UseSeparateSocTurnOffThreshold)
-        {
-            if (rule.SocTurnOffThreshold is < 0 or > 100)
-                return "SOC turn OFF must be between 0 and 100%.";
-
-            if (rule.SocTurnOffThreshold > rule.SocTurnOnThreshold)
-                return "SOC turn OFF cannot be higher than SOC turn ON.";
-        }
-
-        if (rule.UseSolarProductionThreshold &&
-            rule.MinAverageSolarProductionWatts is < 1 or > 30000)
-        {
-            return "Average PV threshold must be between 1 and 30000 W.";
-        }
-
-        if (rule.CooldownMinutes is < 1 or > 240)
-            return "Cooldown must be between 1 and 240 minutes.";
-
-        if (rule.IntervalSeconds is < 10 or > 3600)
-            return "Evaluation interval must be between 10 and 3600 seconds.";
-
-        if (rule.ActiveFrom.HasValue != rule.ActiveTo.HasValue)
-            return "Set both time-window values or leave both empty.";
-
-        return null;
-    }
 }

@@ -3,6 +3,8 @@ using DeyeSolar.Web.Api;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 
+using DeyeSolar.Web.Operations;
+
 namespace DeyeSolar.Web.Auth;
 
 public sealed record VerificationCompleteRequest(string VerificationId, string Code);
@@ -155,5 +157,5 @@ public static class AccountIdentityEndpoints
     }
 
     private static IResult Error(string message, int status = 400, string? code = null)
-        => Results.Json(new IdentityApiError(message, code), statusCode: status);
+        => ApiProblems.Error(message, status, code);
 }

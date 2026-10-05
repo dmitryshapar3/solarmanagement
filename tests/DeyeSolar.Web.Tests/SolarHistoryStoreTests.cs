@@ -5,6 +5,7 @@ using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Tenancy;
 using DeyeSolar.Web.Workers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -77,135 +78,109 @@ public class SolarHistoryStoreTests
     [SqlServerFact]
     public async Task SqlServerActualHistoryAndCurrentComparisonUseSolarGenerationRatherThanBatteryPower()
     {
-        var builder = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        {
-            InitialCatalog = "SolarPowerSourceTests_" + Guid.NewGuid().ToString("N")
-        };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(builder.ConnectionString).Options;
-        var factory = new Factory(options);
+        await using var database = await SqlServerTestDatabase.CreateAsync("SolarPowerSourceTests", SqlTestSchema.Model, seed: TestInstallation.EnsureAsync);
+        var factory = database.Factory;
         var clock = new FixedClock(new DateTimeOffset(Start.AddHours(4)));
         await using var owner = factory.CreateDbContext();
-        try
+        owner.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
+        await owner.SaveChangesAsync();
+        var polling = new ExportReadingStore(factory, clock);
+        for (var index = 0; index <= 12; index++)
         {
-            await owner.Database.EnsureCreatedAsync();
-            await TestInstallation.EnsureAsync(owner);
-            owner.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
-            await owner.SaveChangesAsync();
-            var polling = new ExportReadingStore(factory, clock);
-            for (var index = 0; index <= 12; index++)
+            var measured = new DateTimeOffset(Start.AddMinutes(index * 5));
+            var battery = index % 2 == 0 ? -2742 : 2742;
+            await polling.SavePollingAsync(ConfirmedInverterReading.Create(new InverterData
             {
-                var measured = new DateTimeOffset(Start.AddMinutes(index * 5));
-                var battery = index % 2 == 0 ? -2742 : 2742;
-                await polling.SavePollingAsync(new InverterData
-                {
-                    Timestamp = measured, SolarObservedAt = measured, SolarDeviceSn = "selected",
-                    SolarProduction = 4100, BatteryPower = battery
-                }, default);
-                await polling.SavePollingAsync(new InverterData
-                {
-                    Timestamp = measured.AddHours(2), SolarObservedAt = measured.AddHours(2), SolarDeviceSn = "selected",
-                    SolarProduction = 0, BatteryPower = battery
-                }, default);
-                await polling.SavePollingAsync(new InverterData
-                {
-                    Timestamp = measured, SolarObservedAt = measured, SolarDeviceSn = "neighbor",
-                    SolarProduction = 9000, BatteryPower = -1111
-                }, default);
-            }
-
-            await using (var check = factory.CreateDbContext())
+                Timestamp = measured, SolarObservedAt = measured, SolarDeviceSn = "selected",
+                SolarProduction = 4100, BatteryPower = battery
+            }), default);
+            await polling.SavePollingAsync(ConfirmedInverterReading.Create(new InverterData
             {
-                var solarRows = await check.Readings.AsNoTracking().Where(row => row.SolarDeviceSn == "selected"
-                    && row.SolarObservedAt < Start.AddHours(2)).OrderBy(row => row.SolarObservedAt).ToArrayAsync();
-                Assert.Equal(13, solarRows.Length);
-                Assert.All(solarRows, row => Assert.Equal(4100, row.SolarProduction));
-                Assert.Equal(Enumerable.Range(0, 13).Select(index => index % 2 == 0 ? -2742 : 2742),
-                    solarRows.Select(row => row.BatteryPower));
-            }
-            var before = await ReadStateAsync(factory);
-            var historyStore = new SolarHistoryStore(factory);
-            var deye = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
-            var config = new Monitor<SolarEstimateOptions>(new()
-                { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "selected" });
-            using var history = new SolarHistoryService(new EmptyWeather(), historyStore, config, deye, clock,
-                NullLogger<SolarHistoryService>.Instance);
-            var chart = await history.ReadAsync(SolarHistoryPeriod.Today, default);
-
-            Assert.Null(chart.ActualError);
-            Assert.Equal(4.1, chart.Points.Single(point => point.Timestamp == new DateTimeOffset(Start)).ActualKw!.Value, 10);
-            Assert.Equal(0, chart.Points.Single(point => point.Timestamp == new DateTimeOffset(Start.AddHours(2))).ActualKw);
-            var comparison = new SolarEstimateStore(factory, deye);
-            Assert.Equal(4.1, (await comparison.FindActualAsync(new(Start), 0, clock.GetUtcNow(), default))!.PowerKw);
-            Assert.Equal(0, (await comparison.FindActualAsync(new(Start.AddHours(2)), 0, clock.GetUtcNow(), default))!.PowerKw);
-            var neighbor = await historyStore.ReadAsync("neighbor", new(Start), new(Start.AddHours(1)), default);
-            Assert.Equal(12, neighbor.Count);
-            Assert.All(neighbor, reading => Assert.Equal(9, reading.PowerKw));
-            Assert.Equal(before, await ReadStateAsync(factory));
-            await using var unchanged = factory.CreateDbContext();
-            Assert.Equal("preserved", (await unchanged.AppSettings.SingleAsync()).Value);
-            Assert.Empty(await unchanged.ExportReadings.ToArrayAsync());
+                Timestamp = measured.AddHours(2), SolarObservedAt = measured.AddHours(2), SolarDeviceSn = "selected",
+                SolarProduction = 0, BatteryPower = battery
+            }), default);
+            await polling.SavePollingAsync(ConfirmedInverterReading.Create(new InverterData
+            {
+                Timestamp = measured, SolarObservedAt = measured, SolarDeviceSn = "neighbor",
+                SolarProduction = 9000, BatteryPower = -1111
+            }), default);
         }
-        finally
+
+        await using (var check = factory.CreateDbContext())
         {
-            await owner.Database.EnsureDeletedAsync();
+            var solarRows = await check.Readings.AsNoTracking().Where(row => row.SolarDeviceSn == "selected"
+                && row.SolarObservedAt < Start.AddHours(2)).OrderBy(row => row.SolarObservedAt).ToArrayAsync();
+            Assert.Equal(13, solarRows.Length);
+            Assert.All(solarRows, row => Assert.Equal(4100, row.SolarProduction));
+            Assert.Equal(Enumerable.Range(0, 13).Select(index => index % 2 == 0 ? -2742 : 2742),
+                solarRows.Select(row => row.BatteryPower));
         }
+        var before = await ReadStateAsync(factory);
+        var historyStore = new SolarHistoryStore(factory);
+        var deye = new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
+        var config = new FixedOptionsMonitor<SolarEstimateOptions>(new()
+            { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "selected" });
+        using var history = new SolarHistoryService(new EmptyWeather(), historyStore, config, deye, clock,
+            NullLogger<SolarHistoryService>.Instance);
+        var chart = await history.ReadAsync(SolarHistoryPeriod.Today, default);
+
+        Assert.Null(chart.ActualError);
+        Assert.Equal(4.1, chart.Points.Single(point => point.Timestamp == new DateTimeOffset(Start)).ActualKw!.Value, 10);
+        Assert.Equal(0, chart.Points.Single(point => point.Timestamp == new DateTimeOffset(Start.AddHours(2))).ActualKw);
+        var comparison = new SolarEstimateStore(factory, deye);
+        Assert.Equal(4.1, (await comparison.FindActualAsync(new(Start), 0, clock.GetUtcNow(), default))!.PowerKw);
+        Assert.Equal(0, (await comparison.FindActualAsync(new(Start.AddHours(2)), 0, clock.GetUtcNow(), default))!.PowerKw);
+        var neighbor = await historyStore.ReadAsync("neighbor", new(Start), new(Start.AddHours(1)), default);
+        Assert.Equal(12, neighbor.Count);
+        Assert.All(neighbor, reading => Assert.Equal(9, reading.PowerKw));
+        Assert.Equal(before, await ReadStateAsync(factory));
+        await using var unchanged = factory.CreateDbContext();
+        Assert.Equal("preserved", (await unchanged.AppSettings.SingleAsync()).Value);
+        Assert.Empty(await unchanged.ExportReadings.ToArrayAsync());
     }
 
     [SqlServerFact]
     public async Task SqlServerHistoryDeduplicatesAndRetentionDeletesOnlyExpiredReadings()
     {
-        var builder = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        {
-            InitialCatalog = "SolarHistoryTests_" + Guid.NewGuid().ToString("N")
-        };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(builder.ConnectionString).Options;
-        var factory = new Factory(options);
-        await using var owner = new DeyeSolarDbContext(options, TestInstallation.Id);
-        try
-        {
-            await owner.Database.EnsureCreatedAsync();
-            await TestInstallation.EnsureAsync(owner);
-            var samples = Samples().Concat(RetentionSamples()).ToArray();
-            foreach (var row in samples) row.Id = 0;
-            owner.Readings.AddRange(samples);
-            owner.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
-            owner.RuleRunLogs.Add(new RuleRunLog { Timestamp = Start.AddDays(-90), RuleName = "neighbor-rule" });
-            await owner.SaveChangesAsync();
-            var before = await ReadStateAsync(factory);
+        await using var database = await SqlServerTestDatabase.CreateAsync("SolarHistoryTests", SqlTestSchema.Model, seed: TestInstallation.EnsureAsync);
+        var factory = database.Factory;
+        await using var owner = factory.CreateDbContext();
+        var samples = Samples().Concat(RetentionSamples()).ToArray();
+        foreach (var row in samples) row.Id = 0;
+        owner.Readings.AddRange(samples);
+        owner.AppSettings.Add(new AppSetting { Section = "Neighbor", Key = "unchanged", Value = "preserved" });
+        owner.RuleRunLogs.Add(new RuleRunLog { Timestamp = Start.AddDays(-90), RuleName = "neighbor-rule" });
+        await owner.SaveChangesAsync();
+        var before = await ReadStateAsync(factory);
 
-            var store = new SolarHistoryStore(factory);
-            var actual = await store.ReadAsync("selected", new(Start), new(Start.AddHours(1)), default);
-            Assert.Equal(new[] { 2.5, 0, 4.0 }, actual.Select(r => r.PowerKw));
-            Assert.Equal(new[] { new DateTimeOffset(Start), new(Start.AddMinutes(5)), new(Start.AddMinutes(10)) },
-                actual.Select(r => r.Timestamp));
-            Assert.All(actual, r => Assert.Equal(SolarPowerBasis.PvDc, r.Basis));
-            Assert.Empty(await store.ReadAsync("absent", new(Start), new(Start.AddHours(1)), default));
-            Assert.Equal(9, Assert.Single(await store.ReadAsync("neighbor", new(Start), new(Start.AddHours(1)), default)).PowerKw);
-            Assert.Equal(before, await ReadStateAsync(factory));
+        var store = new SolarHistoryStore(factory);
+        var actual = await store.ReadAsync("selected", new(Start), new(Start.AddHours(1)), default);
+        Assert.Equal(new[] { 2.5, 0, 4.0 }, actual.Select(r => r.PowerKw));
+        Assert.Equal(new[] { new DateTimeOffset(Start), new(Start.AddMinutes(5)), new(Start.AddMinutes(10)) },
+            actual.Select(r => r.Timestamp));
+        Assert.All(actual, r => Assert.Equal(SolarPowerBasis.PvDc, r.Basis));
+        Assert.Empty(await store.ReadAsync("absent", new(Start), new(Start.AddHours(1)), default));
+        Assert.Equal(9, Assert.Single(await store.ReadAsync("neighbor", new(Start), new(Start.AddHours(1)), default)).PowerKw);
+        Assert.Equal(before, await ReadStateAsync(factory));
 
-            using var cancellation = new CancellationTokenSource();
-            cancellation.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.ReadAsync("selected",
-                new(Start), new(Start.AddHours(1)), cancellation.Token));
-            Assert.Equal(before, await ReadStateAsync(factory));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.ReadAsync("selected",
+            new(Start), new(Start.AddHours(1)), cancellation.Token));
+        Assert.Equal(before, await ReadStateAsync(factory));
 
-            await using (var cleanup = await factory.CreateDbContextAsync())
-                Assert.Equal(2, await PollingWorker.ExpiredReadings(cleanup.Readings, Start).ExecuteDeleteAsync());
+        await using (var cleanup = await factory.CreateDbContextAsync())
+            Assert.Equal(2, await PollingWorker.ExpiredReadings(cleanup.Readings, Start).ExecuteDeleteAsync());
 
-            await using var check = await factory.CreateDbContextAsync();
-            Assert.Equal(samples.Length - 2, await check.Readings.CountAsync());
-            Assert.False(await check.Readings.AnyAsync(r => r.Timestamp < Start.AddDays(-31)));
-            Assert.True(await check.Readings.AnyAsync(r => r.Timestamp == Start.AddDays(-31)));
-            Assert.Equal("preserved", (await check.AppSettings.SingleAsync()).Value);
-            Assert.Equal("neighbor-rule", (await check.RuleRunLogs.SingleAsync()).RuleName);
-            var expectedRemaining = before.Where(r => r.Timestamp >= Start.AddDays(-31)).ToArray();
-            Assert.Equal(expectedRemaining, await ReadStateAsync(factory));
-            Assert.Equal(actual, await store.ReadAsync("selected", new(Start), new(Start.AddHours(1)), default));
-        }
-        finally
-        {
-            await owner.Database.EnsureDeletedAsync();
-        }
+        await using var check = await factory.CreateDbContextAsync();
+        Assert.Equal(samples.Length - 2, await check.Readings.CountAsync());
+        Assert.False(await check.Readings.AnyAsync(r => r.Timestamp < Start.AddDays(-31)));
+        Assert.True(await check.Readings.AnyAsync(r => r.Timestamp == Start.AddDays(-31)));
+        Assert.Equal("preserved", (await check.AppSettings.SingleAsync()).Value);
+        Assert.Equal("neighbor-rule", (await check.RuleRunLogs.SingleAsync()).RuleName);
+        var expectedRemaining = before.Where(r => r.Timestamp >= Start.AddDays(-31)).ToArray();
+        Assert.Equal(expectedRemaining, await ReadStateAsync(factory));
+        Assert.Equal(actual, await store.ReadAsync("selected", new(Start), new(Start.AddHours(1)), default));
     }
 
     private static Reading[] Samples() =>
@@ -237,26 +212,16 @@ public class SolarHistoryStoreTests
     private static Reading Row(int id, string? device, DateTime? observed, int watts, DateTime? polled = null) => new()
     {
         Id = id, Timestamp = polled ?? Start.AddMinutes(id), SolarObservedAt = observed,
-        SolarDeviceSn = device, SolarProduction = watts, DataSource = "DeyeCloud"
+        SolarDeviceSn = device, SolarProduction = watts, SolarPowerValid = true, DataSource = "DeyeCloud"
     };
 
     private sealed record ReadingState(int Id, DateTime Timestamp, DateTime? Observed, string? Device, int Watts, int BatteryWatts);
 
-    private static async Task<ReadingState[]> ReadStateAsync(Factory factory)
+    private static async Task<ReadingState[]> ReadStateAsync(TenantDbContextFactory factory)
     {
         await using var db = await factory.CreateDbContextAsync();
         return await db.Readings.AsNoTracking().OrderBy(r => r.Id)
             .Select(r => new ReadingState(r.Id, r.Timestamp, r.SolarObservedAt, r.SolarDeviceSn, r.SolarProduction, r.BatteryPower)).ToArrayAsync();
-    }
-
-    private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
-    {
-        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
-        public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(CreateDbContext());
-        }
     }
 
     private sealed class RejectingFactory : IDbContextFactory<DeyeSolarDbContext>
@@ -269,12 +234,6 @@ public class SolarHistoryStoreTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    {
-        public T CurrentValue => value;
-        public T Get(string? name) => value;
-        public IDisposable? OnChange(Action<T, string?> listener) => null;
-    }
 
     private sealed class EmptyWeather : ISolarHistoryRadiationSource
     {

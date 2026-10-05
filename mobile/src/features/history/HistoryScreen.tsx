@@ -1,7 +1,7 @@
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { formattingLocale } from "../../core/i18n";
 import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { RefreshCcw } from "lucide-react-native";
 import {
@@ -16,9 +16,11 @@ import {
   StatusPill
 } from "../../core/components";
 import { Reading, RuleRunLog } from "../../core/api/types";
-import { formatDateTime, formatWatts } from "../../core/format";
+import { formatDateTime, formatPercent, formatWatts } from "../../core/format";
+import { listCardHeaderStyles } from "../../core/listCardHeaderStyles";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
+import { useFocusedResource } from "../energy/useFocusedResource";
 
 type HistoryMode = "readings" | "runs";
 type HoursValue = "1" | "6" | "24" | "168";
@@ -30,51 +32,12 @@ export function HistoryScreen() {
   const [mode, setMode] = useState<HistoryMode>("runs");
   const [hours, setHours] = useState<HoursValue>("6");
   const [filter, setFilter] = useState<RunFilter>("ALL");
-  const [readings, setReadings] = useState<Reading[]>([]);
-  const [runs, setRuns] = useState<RuleRunLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const requestSeq = useRef(0);
-
-  const load = useCallback(async (refresh = false) => {
-    const requestId = ++requestSeq.current;
-    setError(null);
-    refresh ? setRefreshing(true) : setLoading(true);
-
-    try {
-      if (mode === "readings") {
-        const result = await api.getReadings(Number(hours));
-        if (requestId === requestSeq.current) {
-          setReadings(result);
-        }
-      } else {
-        const result = await api.getRuleRuns(Number(hours), filter);
-        if (requestId === requestSeq.current) {
-          setRuns(result);
-        }
-      }
-    } catch (ex) {
-      if (requestId === requestSeq.current) {
-        setError(ex instanceof Error ? ex.message : "Unable to load history.");
-      }
-    } finally {
-      if (requestId === requestSeq.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [api, filter, hours, mode]);
-
-  useEffect(() => {
-    void load(false);
-  }, [load]);
-
-  const items: Array<Reading | RuleRunLog> = loading
-    ? []
-    : mode === "readings"
-      ? readings
-      : runs;
+  const resource = useFocusedResource<Array<Reading | RuleRunLog>>(`history:${mode}:${hours}:${mode === "runs" ? filter : "all"}`,
+    useCallback((signal: AbortSignal) => mode === "readings" ? api.getReadings(Number(hours), signal) : api.getRuleRuns(Number(hours), filter, signal),
+      [api, filter, hours, mode]), api);
+  const items = resource.data ?? [];
+  const { loading, error } = resource;
+  const refreshing = loading && resource.data !== null;
 
   return (
     <Screen scroll={false} style={styles.screen}>
@@ -96,7 +59,7 @@ export function HistoryScreen() {
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void load(true)}
+            onRefresh={() => void resource.refresh(true)}
             tintColor={colors.primary}
           />
         )}
@@ -104,8 +67,8 @@ export function HistoryScreen() {
           <View style={styles.controls}>
             <Header
               title={t("History")}
-              subtitle={mode === "readings" ? t("{0} readings", readings.length) : t("{0} rule runs", runs.length)}
-              action={<AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void load(true)} loading={refreshing} disabled={refreshing} variant="secondary" compact />}
+              subtitle={mode === "readings" ? t("{0} readings", items.length) : t("{0} rule runs", items.length)}
+              action={<AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void resource.refresh(true)} loading={refreshing} disabled={loading} variant="secondary" compact />}
             />
             <SegmentedControl
               value={mode}
@@ -154,18 +117,18 @@ function ReadingCard({ reading }: { reading: Reading }) {
   const { t } = useLanguage();
   return (
     <Card style={styles.card}>
-      <View style={styles.topRow}>
+      <View style={listCardHeaderStyles.topRow}>
         <Text style={styles.time}>{formatDateTime(reading.timestamp)}</Text>
         <StatusPill label={reading.dataSource} tone="info" />
       </View>
       <View style={styles.grid}>
-        <DataPoint label="SOC" value={`${reading.batterySoc}%`} />
-        <DataPoint label={t("Solar")} value={formatWatts(reading.solarProduction)} />
-        <DataPoint label={t("Battery")} value={formatWatts(reading.batteryPower)} />
-        <DataPoint label={t("Grid")} value={formatWatts(reading.gridConsumption)} />
-        <DataPoint label={t("Load")} value={formatWatts(reading.loadPower)} />
-        <DataPoint label={t("Voltage")} value={`${reading.batteryVoltage.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} V`} />
-        <DataPoint label={t("Temp")} value={`${reading.batteryTemperature.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} C`} />
+        <DataPoint label="SOC" value={reading.batterySocValid === true ? formatPercent(reading.batterySoc) : "—"} />
+        <DataPoint label={t("Solar")} value={reading.solarPowerValid === true ? formatWatts(reading.solarProduction) : "—"} />
+        <DataPoint label={t("Battery")} value={reading.batteryPowerValid === true ? formatWatts(reading.batteryPower) : "—"} />
+        <DataPoint label={t("Grid")} value={reading.gridPowerValid === true ? formatWatts(reading.gridConsumption) : "—"} />
+        <DataPoint label={t("Load")} value={reading.loadPowerValid === true ? formatWatts(reading.loadPower) : "—"} />
+        <DataPoint label={t("Voltage")} value={reading.batteryVoltageValid === true ? `${reading.batteryVoltage.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} V` : "—"} />
+        <DataPoint label={t("Temp")} value={reading.batteryTemperatureValid === true ? `${reading.batteryTemperature.toLocaleString(formattingLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} C` : "—"} />
       </View>
     </Card>
   );
@@ -176,8 +139,8 @@ function RunCard({ run }: { run: RuleRunLog }) {
   const { t } = useLanguage();
   return (
     <Card style={styles.card}>
-      <View style={styles.topRow}>
-        <View style={styles.titleGroup}>
+      <View style={listCardHeaderStyles.topRow}>
+        <View style={listCardHeaderStyles.titleGroup}>
           <Text style={styles.name} numberOfLines={1}>{demoDisplayName(run.ruleName)}</Text>
           <Text style={styles.time}>{formatDateTime(run.timestamp)}</Text>
         </View>
@@ -187,9 +150,9 @@ function RunCard({ run }: { run: RuleRunLog }) {
         />
       </View>
       <View style={styles.grid}>
-        <DataPoint label="SOC" value={`${run.batterySoc}%`} />
-        <DataPoint label={t("Solar")} value={formatWatts(run.solarProduction)} />
-        <DataPoint label={t("Battery")} value={formatWatts(run.batteryPower)} />
+        <DataPoint label="SOC" value={run.batterySoc === null ? "—" : formatPercent(run.batterySoc)} />
+        <DataPoint label={t("Solar")} value={run.solarProduction === null ? "—" : formatWatts(run.solarProduction)} />
+        <DataPoint label={t("Battery")} value={run.batteryPower === null ? "—" : formatWatts(run.batteryPower)} />
       </View>
       <Text style={styles.reason}>{t(run.reason)}</Text>
     </Card>
@@ -227,16 +190,6 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: spacing.md
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
-  titleGroup: {
-    flex: 1,
-    gap: spacing.xs
   },
   name: {
     color: colors.text,

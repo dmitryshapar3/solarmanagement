@@ -341,7 +341,7 @@ public sealed class PseExportPriceClientTests
     {
         var handler = new TimeoutHandler();
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(20) };
-        await Assert.ThrowsAsync<HttpRequestException>(() => new PseExportPriceClient(http).ReadAsync(Start, Start.AddHours(1), default));
+        await Assert.ThrowsAsync<HttpRequestException>(() => new PseExportPriceClient(new PseJsonReader(http, TimeProvider.System)).ReadAsync(Start, Start.AddHours(1), default));
         Assert.Equal(3, handler.Calls);
     }
 
@@ -364,7 +364,7 @@ public sealed class PseExportPriceClientTests
         return response;
     }
 
-    private static PseExportPriceClient Client(Handler handler) => new(new HttpClient(handler));
+    private static PseExportPriceClient Client(Handler handler) => new(new PseJsonReader(new HttpClient(handler), TimeProvider.System));
 
     private sealed class Handler(Func<Uri, int, HttpResponseMessage> response) : HttpMessageHandler
     {

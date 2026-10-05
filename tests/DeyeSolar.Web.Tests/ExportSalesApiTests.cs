@@ -15,7 +15,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -246,7 +245,7 @@ public class ExportSalesApiTests
         Assert.Equal(0, host.Prices.Calls);
     }
 
-    private sealed class SalesHost(WebApplication application, HttpClient client, CountingFactory factory,
+    private sealed class SalesHost(SqlServerTestDatabase database, WebApplication application, HttpClient client, CountingFactory factory,
         RejectingHistory history, RejectingPrices prices, FixedClock clock, int latestCurrentMinute) : IAsyncDisposable
     {
         public CountingFactory Factory { get; } = factory;
@@ -256,18 +255,13 @@ public class ExportSalesApiTests
 
         public static async Task<SalesHost> StartAsync(int latestCurrentMinute = 10)
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            {
-                InitialCatalog = "ExportSalesHttpTests_" + Guid.NewGuid().ToString("N")
-            };
-            var dbOptions = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
-            var factory = new CountingFactory(dbOptions);
+            var database = await SqlServerTestDatabase.CreateAsync("ExportSalesHttpTests", SqlTestSchema.Model);
+            var factory = new CountingFactory(database.Options);
             await using var owner = factory.CreateDbContext();
             WebApplication? application = null;
             try
             {
-                await owner.Database.EnsureCreatedAsync();
-            await TestInstallation.EnsureAsync(owner);
+                await TestInstallation.EnsureAsync(owner);
                 await SeedAsync(owner, latestCurrentMinute);
                 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
                 {
@@ -288,8 +282,8 @@ public class ExportSalesApiTests
                 builder.Services.AddScoped<InstallationMembershipService>();
                 var clock = new FixedClock();
                 builder.Services.AddSingleton<TimeProvider>(clock);
-                builder.Services.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptions<SolarSalesOptions>(new()));
-                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new FixedOptions<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
+                builder.Services.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptionsMonitor<SolarSalesOptions>(new()));
+                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
                 builder.Services.AddSingleton<IExportReadingStore, ExportReadingStore>();
                 builder.Services.AddSingleton<IExportPriceStore, ExportPriceStore>();
                 var history = new RejectingHistory();
@@ -312,12 +306,11 @@ public class ExportSalesApiTests
                     BaseAddress = address,
                     Timeout = TimeSpan.FromSeconds(20)
                 };
-                return new(application, client, factory, history, prices, clock, latestCurrentMinute);
+                return new(database, application, client, factory, history, prices, clock, latestCurrentMinute);
             }
             catch
             {
-                if (application is not null) await application.DisposeAsync();
-                await owner.Database.EnsureDeletedAsync();
+                await TestHttpHostCleanup.DisposeAsync(application, database);
                 throw;
             }
         }
@@ -367,16 +360,7 @@ public class ExportSalesApiTests
         public async ValueTask DisposeAsync()
         {
             client.Dispose();
-            try
-            {
-                await application.StopAsync();
-                await application.DisposeAsync();
-            }
-            finally
-            {
-                await using var owner = Factory.CreateDbContext();
-                await owner.Database.EnsureDeletedAsync();
-            }
+            await TestHttpHostCleanup.DisposeAsync(application, database, stop: true);
         }
     }
 
@@ -441,12 +425,6 @@ public class ExportSalesApiTests
         public override DateTimeOffset GetUtcNow() => Current;
     }
 
-    private sealed class FixedOptions<T>(T value) : IOptionsMonitor<T>
-    {
-        public T CurrentValue => value;
-        public T Get(string? name) => value;
-        public IDisposable? OnChange(Action<T, string?> listener) => null;
-    }
 
     private sealed class RejectingHistory : IExportGridHistorySource
     {

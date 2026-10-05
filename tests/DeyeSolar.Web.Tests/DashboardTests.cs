@@ -15,7 +15,6 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -377,7 +376,7 @@ public class DashboardTests
         }
     }
 
-    private sealed class Fixture(Factory factory, InverterDataSnapshot snapshot, RefreshService refresh, RuleRepository rules,
+    private sealed class Fixture(SqlServerTestDatabase database, Factory factory, InverterDataSnapshot snapshot, RefreshService refresh, RuleRepository rules,
         SocketController sockets, ServiceProvider services) : IAsyncDisposable
     {
         public InverterDataSnapshot Snapshot { get; } = snapshot;
@@ -387,44 +386,49 @@ public class DashboardTests
         public EventRenderer Renderer() => new(Services, Services.GetRequiredService<ILoggerFactory>());
         public static async Task<Fixture> CreateAsync(InverterData? initial)
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarDashboardTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            await using (var db = factory.CreateDbContext())
+            var database = await SqlServerTestDatabase.CreateAsync("SolarDashboardTests", seed: async db =>
             {
-                await db.Database.MigrateAsync();
                 await TestInstallation.EnsureAsync(db);
                 db.AppSettings.AddRange(new AppSetting { Section = "Display", Key = "TimeZoneId", Value = "Europe/Warsaw" },
                     new AppSetting { Section = "Neighbor", Key = "preserved", Value = "unchanged" });
                 await db.SaveChangesAsync();
+            });
+            var factory = new Factory(database.Options);
+            try
+            {
+                var snapshot = new InverterDataSnapshot();
+                if (initial is not null) snapshot.Update(initial);
+                var refresh = new RefreshService(snapshot);
+                var rules = new RuleRepository();
+                var sockets = new SocketController();
+                var services = ComponentServices();
+                services.AddSingleton(snapshot);
+                services.AddSingleton(new DeviceStatusSnapshot());
+                services.AddSingleton<IInverterRefreshService>(refresh);
+                services.AddSingleton<IConfigurationRules>(rules);
+                services.AddSingleton<ISocketController>(sockets);
+                services.AddSingleton<ISocketInventoryService>(sockets);
+                services.AddSingleton<ISmartSocketCatalog>(sockets);
+                services.AddSingleton<ISocketCommandTracker>(sockets);
+                services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
+                services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+                services.AddSingleton<AppSettingsService>();
+                services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
+                services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
+                services.AddSingleton<ISolarHistoryService, HistoryService>();
+                services.AddSingleton<IExportSalesService, SalesService>();
+                services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
+                services.AddOptions<SolarEstimateOptions>();
+                services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
+                services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
+                services.AddSingleton<SolarEstimateService>();
+                return new(database, factory, snapshot, refresh, rules, sockets, services.BuildServiceProvider());
             }
-            var snapshot = new InverterDataSnapshot();
-            if (initial is not null) snapshot.Update(initial);
-            var refresh = new RefreshService(snapshot);
-            var rules = new RuleRepository();
-            var sockets = new SocketController();
-            var services = ComponentServices();
-            services.AddSingleton(snapshot);
-            services.AddSingleton(new DeviceStatusSnapshot());
-            services.AddSingleton<IInverterRefreshService>(refresh);
-            services.AddSingleton<IConfigurationRules>(rules);
-            services.AddSingleton<ISocketController>(sockets);
-            services.AddSingleton<ISocketInventoryService>(sockets);
-            services.AddSingleton<ISmartSocketCatalog>(sockets);
-            services.AddSingleton<ISocketCommandTracker>(sockets);
-            services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
-            services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-            services.AddSingleton<AppSettingsService>();
-            services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
-            services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
-            services.AddSingleton<ISolarHistoryService, HistoryService>();
-            services.AddSingleton<IExportSalesService, SalesService>();
-            services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
-            services.AddOptions<SolarEstimateOptions>();
-            services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
-            services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
-            services.AddSingleton<SolarEstimateService>();
-            return new(factory, snapshot, refresh, rules, sockets, services.BuildServiceProvider());
+            catch
+            {
+                await database.DisposeAsync();
+                throw;
+            }
         }
         public async Task AssertNoMutationsAsync()
         {
@@ -439,9 +443,8 @@ public class DashboardTests
         }
         public async ValueTask DisposeAsync()
         {
-            await Services.DisposeAsync();
-            await using var db = factory.CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
+            try { await Services.DisposeAsync(); }
+            finally { await database.DisposeAsync(); }
         }
     }
 

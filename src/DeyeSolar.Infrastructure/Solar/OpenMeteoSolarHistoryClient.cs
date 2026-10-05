@@ -1,9 +1,10 @@
-using System.Globalization;
 using System.Text.Json;
+using System.Globalization;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
+using static DeyeSolar.Infrastructure.Solar.OpenMeteoSeries;
 
 namespace DeyeSolar.Infrastructure.Solar;
 
@@ -14,10 +15,9 @@ namespace DeyeSolar.Infrastructure.Solar;
 /// mean; temperature and wind are instantaneous at its end. Data attribution: Open-Meteo,
 /// CC BY 4.0. The free API permits non-commercial use and up to 92 past days.
 /// </summary>
-public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarHistoryRadiationSource
+public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, TimeProvider clock) : ISolarHistoryRadiationSource
 {
     private const string GtiVariable = "global_tilted_irradiance";
-    private readonly OpenMeteoSolarClient _transport = new(httpClient);
 
     public async Task<IReadOnlyList<SolarWeatherSample>> ReadAsync(SolarEstimateOptions options,
         DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
@@ -31,7 +31,7 @@ public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarH
             throw new ArgumentException("Solar history requires whole UTC hours over a positive range of at most 31 days.");
 
         // Capture the boundary before I/O; a forecast value for an unfinished hour is not history.
-        var now = DateTimeOffset.UtcNow;
+        var now = clock.GetUtcNow();
         var completedThrough = new DateTimeOffset(now.Ticks - now.Ticks % TimeSpan.TicksPerHour, TimeSpan.Zero);
         if (end > completedThrough) end = completedThrough;
         if (end <= start) return Array.Empty<SolarWeatherSample>();
@@ -39,14 +39,7 @@ public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarH
         var roofs = await Task.WhenAll(
             ReadRoofAsync(options, options.Roof1Tilt, options.Roof1Azimuth, start, end, ct),
             ReadRoofAsync(options, options.Roof2Tilt, options.Roof2Azimuth, start, end, ct));
-        var samples = roofs[0].Keys.Where(time => roofs[1].ContainsKey(time)).OrderBy(time => time)
-            .Select(time =>
-            {
-                var first = roofs[0][time];
-                var second = roofs[1][time];
-                return new SolarWeatherSample(DateTimeOffset.FromUnixTimeSeconds(time), first.Gti, second.Gti,
-                    first.Temperature ?? second.Temperature, first.Wind ?? second.Wind, first.Cloud ?? second.Cloud);
-            }).ToArray();
+        var samples = CombineRoofs(roofs[0], roofs[1]).ToArray();
         if (samples.Length == 0)
             throw new InvalidDataException("Open-Meteo returned no common valid completed hours for solar history.");
         return Array.AsReadOnly(samples);
@@ -67,17 +60,17 @@ public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarH
             ["end_date"] = end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
         // Recent history uses the Forecast API's date range, preserving the existing source.
-        using var document = await _transport.GetJsonAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
+        using var document = await transport.ReadAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
         var root = document.RootElement;
-        if (!HasUnit(root, "time", "unixtime") || !HasUnit(root, GtiVariable, "W/m²"))
+        if (!HasUnit(root, "hourly", "time", "unixtime") || !HasUnit(root, "hourly", GtiVariable, "W/m²"))
             throw new InvalidDataException("Open-Meteo history returned missing or unexpected radiation units.");
-        var times = ArrayFor(root, "time");
-        var gti = ArrayFor(root, GtiVariable);
+        var times = ArrayFor(root, "hourly", "time");
+        var gti = ArrayFor(root, "hourly", GtiVariable);
         if (times.ValueKind != JsonValueKind.Array || times.GetArrayLength() == 0 || gti.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("Open-Meteo history returned an incomplete timeline.");
-        var temperatures = HasUnit(root, "temperature_2m", "°C") ? ArrayFor(root, "temperature_2m") : default;
-        var winds = HasUnit(root, "wind_speed_10m", "m/s") ? ArrayFor(root, "wind_speed_10m") : default;
-        var clouds = HasUnit(root, "cloud_cover", "%") ? ArrayFor(root, "cloud_cover") : default;
+        var temperatures = HasUnit(root, "hourly", "temperature_2m", "°C") ? ArrayFor(root, "hourly", "temperature_2m") : default;
+        var winds = HasUnit(root, "hourly", "wind_speed_10m", "m/s") ? ArrayFor(root, "hourly", "wind_speed_10m") : default;
+        var clouds = HasUnit(root, "hourly", "cloud_cover", "%") ? ArrayFor(root, "hourly", "cloud_cover") : default;
         var result = new Dictionary<long, RoofWeather>();
         long? previous = null;
         var firstHour = start.ToUnixTimeSeconds();
@@ -101,21 +94,4 @@ public sealed class OpenMeteoSolarHistoryClient(HttpClient httpClient) : ISolarH
         return result;
     }
 
-    private static string Number(double value) => value.ToString("G", CultureInfo.InvariantCulture);
-    private static bool HasUnit(JsonElement root, string variable, string expected) =>
-        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("hourly_units", out var units)
-        && units.ValueKind == JsonValueKind.Object && units.TryGetProperty(variable, out var unit)
-        && unit.ValueKind == JsonValueKind.String && unit.GetString() == expected;
-
-    private static JsonElement ArrayFor(JsonElement root, string variable) =>
-        root.ValueKind == JsonValueKind.Object && root.TryGetProperty("hourly", out var values)
-        && values.ValueKind == JsonValueKind.Object && values.TryGetProperty(variable, out var array)
-        && array.ValueKind == JsonValueKind.Array ? array : default;
-
-    private static double? OptionalNumber(JsonElement array, int index, double minimum, double maximum) =>
-        array.ValueKind == JsonValueKind.Array && index < array.GetArrayLength()
-        && array[index].ValueKind == JsonValueKind.Number && array[index].TryGetDouble(out var value)
-        && double.IsFinite(value) && value >= minimum && value <= maximum ? value : null;
-
-    private sealed record RoofWeather(double Gti, double? Temperature, double? Wind, double? Cloud);
 }

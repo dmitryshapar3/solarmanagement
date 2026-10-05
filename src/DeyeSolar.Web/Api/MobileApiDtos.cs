@@ -135,7 +135,15 @@ public sealed record ReadingDto(
     int SolarProduction,
     int GridConsumption,
     int LoadPower,
-    string DataSource);
+    string DataSource,
+    bool BatterySocValid,
+    bool BatteryPowerValid,
+    bool BatteryTemperatureValid,
+    bool BatteryVoltageValid,
+    bool BatteryCurrentValid,
+    bool LoadPowerValid,
+    bool GridPowerValid,
+    bool SolarPowerValid);
 
 public sealed record RuleRunLogDto(
     int Id,
@@ -144,9 +152,9 @@ public sealed record RuleRunLogDto(
     string Action,
     string ConditionKey,
     string Reason,
-    int BatterySoc,
-    int SolarProduction,
-    int BatteryPower);
+    int? BatterySoc,
+    int? SolarProduction,
+    int? BatteryPower);
 
 public sealed record MobileSettingsDto(
     PollingSettingsDto Polling,
@@ -240,7 +248,9 @@ public static class MobileApiMappings
             reading.SolarProduction,
             reading.GridConsumption,
             reading.LoadPower,
-            reading.DataSource);
+            reading.DataSource,
+            reading.BatterySocValid, reading.BatteryPowerValid, reading.BatteryTemperatureValid, reading.BatteryVoltageValid,
+            reading.BatteryCurrentValid, reading.LoadPowerValid, reading.GridPowerValid, reading.SolarPowerValid);
 
     public static RuleRunLogDto ToDto(this RuleRunLog log)
         => new(

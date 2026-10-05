@@ -176,14 +176,12 @@
     // Null follows today's calendar date across midnight; a historical selection stays fixed.
     private DateOnly? _endDate;
     private TimeZoneInfo? _timeZone;
-    private bool _loading;
-    private bool _disposed;
+    private readonly AsyncQueryScope _queries = new();
+    private bool _loading => _queries.IsLoading;
+    private bool _disposed => _queries.IsDisposed;
     private string? _error;
     private int? _selected;
     private bool _compact;
-    private CancellationTokenSource? _request;
-    private readonly CancellationTokenSource _lifetime = new();
-    private Task? _refreshLoop;
     private static CultureInfo English => CultureInfo.CurrentCulture;
     private DateOnly? Today => Data is { } data ? data.Today == default ? null : data.Today
         : _timeZone is null ? null : DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(), _timeZone).DateTime);
@@ -280,7 +278,7 @@
     {
         if (!firstRender || Data is not null) return;
         await LoadAsync();
-        if (!_disposed) _refreshLoop = RefreshAsync();
+        _queries.StartRefresh(Clock, TimeSpan.FromMinutes(5), () => InvokeAsync(LoadAsync));
     }
 
     private async Task ChangePeriod(SolarHistoryPeriod period)
@@ -325,48 +323,16 @@
             _data = null;
             _selected = null;
         }
-        _request?.Cancel();
-        using var request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        _request = request;
-        _loading = true;
-        _error = null;
-        StateHasChanged();
-        try
-        {
-            var result = await HistoryService.ReadAsync(_period, request.Token, _endDate);
-            if (!request.IsCancellationRequested && !_disposed)
-            {
+        await _queries.RunAsync(ct => HistoryService.ReadAsync(_period, ct, _endDate),
+            started: () => { _error = null; StateHasChanged(); },
+            received: result => {
                 _data = result;
                 _timeZone = TimeZoneInfo.FindSystemTimeZoneById(result.TimeZoneId);
                 UpdateScale();
-            }
-        }
-        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
-        catch (Exception) { if (!_disposed && !request.IsCancellationRequested) _error = T["The chart could not be loaded. Select Refresh to try again."]; }
-        finally
-        {
-            if (ReferenceEquals(_request, request))
-            {
-                _request = null;
-                _loading = false;
-                if (!_disposed) StateHasChanged();
-            }
-        }
+            },
+            failed: _ => _error = T["The chart could not be loaded. Select Refresh to try again."],
+            finished: StateHasChanged);
     }
 
-    private async Task RefreshAsync()
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
-        try { while (await timer.WaitForNextTickAsync(_lifetime.Token)) await InvokeAsync(LoadAsync); }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _disposed = true;
-        _lifetime.Cancel();
-        _request?.Cancel();
-        if (_refreshLoop is not null) await _refreshLoop;
-        _lifetime.Dispose();
-    }
+    public ValueTask DisposeAsync() => _queries.DisposeAsync();
 }

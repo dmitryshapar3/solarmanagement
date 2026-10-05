@@ -16,7 +16,7 @@ public sealed class IntegrationManagerAccess(InstallationMembershipService membe
     public async Task EnsureAsync(ClaimsPrincipal actor, string installationId, CancellationToken ct)
     {
         var membership = await memberships.ResolveAsync(actor, ct);
-        if (membership is null || membership.InstallationId != installationId || membership.Role is not ("Owner" or "IntegrationManager"))
+        if (membership is null || membership.InstallationId != installationId || !InstallationPermissionPolicy.Allows(membership.Role, InstallationPermission.ManageIntegrations))
             throw new IntegrationRequestException("forbidden", "You do not have permission to manage this installation's integrations.", 403);
         await authorizer.CheckAsync(actor, installationId, InstallationPermission.ManageIntegrations, ct);
         if (billing is not null) await billing.EnsureUserAsync(actor, ct);

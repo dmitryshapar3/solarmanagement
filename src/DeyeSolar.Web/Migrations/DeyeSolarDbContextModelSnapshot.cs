@@ -353,8 +353,18 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<double>("BatteryCurrent")
                         .HasColumnType("float");
 
+                    b.Property<bool>("BatteryCurrentValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<int>("BatteryPower")
                         .HasColumnType("int");
+
+                    b.Property<bool>("BatteryPowerValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<int>("BatterySoc")
                         .HasColumnType("int");
@@ -367,8 +377,18 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<double>("BatteryTemperature")
                         .HasColumnType("float");
 
+                    b.Property<bool>("BatteryTemperatureValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<double>("BatteryVoltage")
                         .HasColumnType("float");
+
+                    b.Property<bool>("BatteryVoltageValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<long>("ConfigurationRevision")
                         .HasColumnType("bigint");
@@ -379,6 +399,11 @@ namespace DeyeSolar.Web.Migrations
 
                     b.Property<int>("GridConsumption")
                         .HasColumnType("int");
+
+                    b.Property<bool>("GridPowerValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("InstallationId")
                         .IsConcurrencyToken()
@@ -392,6 +417,11 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<int>("LoadPower")
                         .HasColumnType("int");
 
+                    b.Property<bool>("LoadPowerValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<long>("RuntimeGeneration")
                         .HasColumnType("bigint");
 
@@ -401,6 +431,11 @@ namespace DeyeSolar.Web.Migrations
 
                     b.Property<DateTime?>("SolarObservedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("SolarPowerValid")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<int>("SolarProduction")
                         .HasColumnType("int");
@@ -429,10 +464,10 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("BatteryPower")
+                    b.Property<int?>("BatteryPower")
                         .HasColumnType("int");
 
-                    b.Property<int>("BatterySoc")
+                    b.Property<int?>("BatterySoc")
                         .HasColumnType("int");
 
                     b.Property<string>("ConditionKey")
@@ -454,7 +489,7 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("SolarProduction")
+                    b.Property<int?>("SolarProduction")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("Timestamp")

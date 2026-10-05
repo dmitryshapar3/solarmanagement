@@ -1,8 +1,6 @@
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using SolarManagement.Integrations.Contracts;
-using SolarManagement.Integrations.WorkerSdk;
 
 namespace SolarManagement.Integrations.WorkerSdk;
 
@@ -78,22 +76,14 @@ public abstract class SocketCloudProviderBase : IIntegrationWorkerProvider
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id != id.Trim() || id.Any(char.IsControl)) throw new ArgumentException("Invalid remote identity.");
         return id;
     }
-    protected static string? String(JsonElement element, string key)
-        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-    protected static bool? Boolean(JsonElement element, string key)
-        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var value) ? value.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
-    protected static decimal? Number(JsonElement element, string key)
-        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var value) ? Decimal(value) : null;
-    protected static decimal? Decimal(JsonElement value)
-        => value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number) ? number : value.ValueKind == JsonValueKind.String && decimal.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out number) ? number : null;
+    protected static string? String(JsonElement element, string key) => CloudJson.Text(element, key);
+    protected static bool? Boolean(JsonElement element, string key) => CloudJson.Boolean(element, key);
+    protected static decimal? Number(JsonElement element, string key) => CloudJson.Number(element, key);
+    protected static decimal? Decimal(JsonElement value) => CloudJson.Decimal(value);
     protected static int? Watts(decimal? number)
         => number is >= 0 and <= int.MaxValue ? (int?)decimal.ToInt32(decimal.Round(number.Value, 0, MidpointRounding.AwayFromZero)) : null;
     protected static DateTimeOffset? Timestamp(decimal? value, bool milliseconds = false)
-    {
-        if (value is null || value < 1 || value > (milliseconds ? 253402300799999m : 253402300799m)) return null;
-        try { return milliseconds ? DateTimeOffset.FromUnixTimeMilliseconds((long)value.Value) : DateTimeOffset.FromUnixTimeSeconds((long)value.Value); }
-        catch (ArgumentOutOfRangeException) { return null; }
-    }
+        => CloudJson.Timestamp(value, milliseconds);
     protected static JsonElement Array(JsonElement element, string key)
         => element.TryGetProperty(key, out var array) && array.ValueKind == JsonValueKind.Array ? array : throw new InvalidDataException("Cloud inventory shape is invalid.");
     protected static string Escape(string value) => Uri.EscapeDataString(value);

@@ -62,7 +62,7 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
     public async Task SavePollingAsync(InverterData data, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
-        var validGrid = data.GridObservedAt.HasValue && !string.IsNullOrWhiteSpace(data.GridDeviceSn);
+        var validGrid = data.GridPowerValid && data.GridObservedAt.HasValue && !string.IsNullOrWhiteSpace(data.GridDeviceSn);
         if (validGrid)
         {
             ValidateDevice(data.GridDeviceSn!);
@@ -93,6 +93,13 @@ public sealed class ExportReadingStore(IDbContextFactory<DeyeSolarDbContext> fac
             LoadPower = data.LoadPower,
             InverterId = data.InverterId,
             BatterySocValid = data.BatterySocValid,
+            BatteryPowerValid = data.BatteryPowerValid,
+            BatteryTemperatureValid = data.BatteryTemperatureValid,
+            BatteryVoltageValid = data.BatteryVoltageValid,
+            BatteryCurrentValid = data.BatteryCurrentValid,
+            LoadPowerValid = data.LoadPowerValid,
+            GridPowerValid = data.GridPowerValid,
+            SolarPowerValid = data.SolarPowerValid,
             ConfigurationRevision = data.ConfigurationRevision,
             RuntimeGeneration = data.RuntimeGeneration,
             DataSource = "Integration"

@@ -31,6 +31,7 @@ export class SocketCommandCoordinator {
     return value ? { ...value } : null;
   }
 
+  get sessionEpoch(): number { return this.generation; }
   isRunning(deviceId: string): boolean { return this.running.has(deviceId); }
 
   async recover(deviceId: string): Promise<void> {

@@ -8,10 +8,10 @@ internal interface IRuleRunHistory
 {
     Task CleanupAsync(CancellationToken ct);
     Task<RuleEvaluationContext> BuildContextAsync(DateTime now, string deviceKey, CancellationToken ct);
-    Task RecordAsync(InverterData data, RuleEvaluationContext context, List<TriggerRule> rules,
-        IReadOnlyList<RuleAction> actions, IReadOnlySet<int> successfulActions,
-        IReadOnlyDictionary<int, string> failedActions, CancellationToken ct);
+    Task RecordAsync(InverterData data, IReadOnlyList<RuleRunOutcome> outcomes, CancellationToken ct);
 }
+
+internal sealed record RuleRunOutcome(string RuleName, RuleDecision? Decision, bool ActionSucceeded, string? Failure);
 
 internal interface IRuleObservationReconciler
 {

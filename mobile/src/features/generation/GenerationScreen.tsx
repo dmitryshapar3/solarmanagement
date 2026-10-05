@@ -1,6 +1,6 @@
 import { formattingLocale } from "../../core/i18n";
 import { useLanguage } from "../../application/LanguageContext";
-import { ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useMemo, useState } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -13,6 +13,7 @@ import { EnergyChart } from "../energy/EnergyChart";
 import { addDays, amount, canSelectPreviousHistoryDay, dateCaption, known, momentCaption, tickCaption, validRange, zonedDate } from "../energy/chartPolicy";
 import { energyStyles as styles, PeriodNavigation } from "../energy/EnergyControls";
 import { useFocusedResource } from "../energy/useFocusedResource";
+import { useGroupedRefresh } from "../energy/useGroupedRefresh";
 import { colors, spacing } from "../../core/theme";
 
 export function GenerationScreen() {
@@ -76,15 +77,9 @@ type GenerationPanelProps = {
 
 export function GenerationPanel({ compact = false, onDetails, liveInverter, onRefreshInverter, inverterLoading = false, inverterError, timeZoneId = "Europe/Warsaw" }: GenerationPanelProps) {
   const { api } = useAuth();
-  const refreshPending = useRef(false);
   const estimate = useFocusedResource("solar-estimate", useCallback((signal: AbortSignal) => api.getSolarEstimate(signal), [api]));
   const loading = estimate.loading || inverterLoading;
-  async function refreshSnapshot() {
-    if (loading || refreshPending.current) return;
-    refreshPending.current = true;
-    try { await Promise.all([estimate.refresh(), onRefreshInverter?.()]); }
-    finally { refreshPending.current = false; }
-  }
+  const refreshSnapshot = useGroupedRefresh(loading, [() => estimate.refresh(), () => onRefreshInverter?.()]);
   return <GenerationHistoryPanel compact={compact} onDetails={onDetails} snapshotLoading={loading} onRefreshSnapshot={refreshSnapshot}
     snapshot={(details) => <CurrentSolarSnapshot state={estimate.data} liveInverter={liveInverter} timeZoneId={timeZoneId}
       loading={loading} error={estimate.error ?? inverterError} onRefresh={() => void refreshSnapshot()} onDetails={details} />}
@@ -116,10 +111,7 @@ export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today
   const today = data?.today ?? zonedDate(new Date());
   const selected = data?.selectedDate ?? date ?? today;
   const details = onDetails ? () => onDetails(period, selected) : undefined;
-  async function refresh() {
-    if (loading) return;
-    await Promise.all([resource.refresh(), onRefreshSnapshot?.()]);
-  }
+  const refresh = useGroupedRefresh(loading, [() => resource.refresh(), () => onRefreshSnapshot?.()]);
   const points = useMemo(() => data?.points.map((point) => ({
     timestamp: point.timestamp, label: tickCaption(point.timestamp, data.timeZoneId, period === "Today" ? "Day" : "Month"),
     possible: point.possible, actual: point.actualKw,

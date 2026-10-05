@@ -20,22 +20,23 @@ public sealed class OpenMeteoRegistrationTests
         {
             var handler = factory.CreateHandler(type.Name);
             while (handler is DelegatingHandler delegating) handler = delegating.InnerHandler!;
-            Assert.False(Assert.IsType<HttpClientHandler>(handler).AllowAutoRedirect);
+            var sockets = Assert.IsType<SocketsHttpHandler>(handler);
+            Assert.False(sockets.AllowAutoRedirect);
+            Assert.False(sockets.UseCookies);
+            Assert.False(sockets.UseProxy);
+            Assert.NotNull(sockets.ConnectCallback);
         }
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task FactoryLoggingCannotRecordProviderUrlOrApiKey(int clientIndex)
+    [Fact]
+    public async Task FactoryLoggingCannotRecordProviderUrlOrApiKey()
     {
         const string key = "do-not-log-this-server-key";
         var logger = new RecordingLoggerProvider();
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace).AddProvider(logger));
         services.AddOpenMeteoSolarClients();
-        services.AddHttpClient(ClientTypes[clientIndex].Name)
+        services.AddHttpClient(nameof(IOpenMeteoJsonReader))
             .ConfigurePrimaryHttpMessageHandler(() => new RejectedRequestHandler());
         services.AddHttpClient("unprotected-control")
             .ConfigurePrimaryHttpMessageHandler(() => new RejectedRequestHandler());
@@ -43,7 +44,7 @@ public sealed class OpenMeteoRegistrationTests
         var factory = provider.GetRequiredService<IHttpClientFactory>();
         using var control = await factory.CreateClient("unprotected-control").GetAsync("https://example.test/logging-control");
         Assert.Contains(logger.Messages, message => message.Contains("/logging-control"));
-        var client = factory.CreateClient(ClientTypes[clientIndex].Name);
+        var client = factory.CreateClient(nameof(IOpenMeteoJsonReader));
         using var response = await client.GetAsync("https://customer-api.open-meteo.com/v1/forecast?apikey=" + key);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -52,7 +53,7 @@ public sealed class OpenMeteoRegistrationTests
     }
 
     private static readonly Type[] ClientTypes =
-        [typeof(OpenMeteoCurrentSolarClient), typeof(OpenMeteoSolarHistoryClient), typeof(OpenMeteoSolarClient)];
+        [typeof(IOpenMeteoJsonReader)];
 
     private sealed class RejectedRequestHandler : HttpMessageHandler
     {

@@ -58,15 +58,7 @@ internal static class IntegrationAutomationSourceGuard
     }
 
     public static bool SameConfiguration(TriggerRule expected, TriggerRule current) =>
-        expected.Enabled == current.Enabled && expected.EntityId == current.EntityId
-        && expected.SourceInverterId == current.SourceInverterId
-        && expected.SocTurnOnThreshold == current.SocTurnOnThreshold
-        && expected.UseSeparateSocTurnOffThreshold == current.UseSeparateSocTurnOffThreshold
-        && expected.SocTurnOffThreshold == current.SocTurnOffThreshold
-        && expected.UseSolarProductionThreshold == current.UseSolarProductionThreshold
-        && expected.MinAverageSolarProductionWatts == current.MinAverageSolarProductionWatts
-        && expected.CooldownMinutes == current.CooldownMinutes && expected.IntervalSeconds == current.IntervalSeconds
-        && expected.ActiveFrom == current.ActiveFrom && expected.ActiveTo == current.ActiveTo;
+        RuleConfigurationSnapshot.From(expected).Execution == RuleConfigurationSnapshot.From(current).Execution;
 
     private sealed class Scope(Decision? previous) : IDisposable
     {

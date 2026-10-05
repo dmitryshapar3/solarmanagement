@@ -1,9 +1,7 @@
-namespace DeyeSolar.Domain.Options;
+namespace SolarManagement.Providers.ShellyCloud;
 
-public class ShellyOptions
+public sealed class ShellyOptions
 {
-    public const string Section = "Shelly";
-
     public string ServerUri { get; set; } = string.Empty;
     public string AuthKey { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;

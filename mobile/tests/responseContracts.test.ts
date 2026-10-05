@@ -3,9 +3,27 @@ import { test } from "node:test";
 import { ApiClient, ApiError } from "../src/core/api/ApiClient";
 import { DeyeSolarApi } from "../src/core/api/DeyeSolarApi";
 import { validApiResponse } from "../src/core/api/responseContracts";
-import { demoInverter, createDemoState } from "../src/features/demo/fixtures";
+import { demoInverter, demoReadings, createDemoState } from "../src/features/demo/fixtures";
 import { integrationFixture } from "./support/integrationFixture";
 const invalidMessage = "The server returned an invalid API response. Check the server URL and try again.";
+test("rule-run metrics require explicit numbers or null and preserve measured zero", () => {
+  const run = { id: 1, timestamp: "2026-10-05T11:00:00Z", ruleName: "Rule", action: "NO_CHANGE", conditionKey: "unknown", reason: "No telemetry", batterySoc: null, solarProduction: null, batteryPower: null };
+  assert.equal(validApiResponse("/api/rule-runs", "GET", [run]), true);
+  for (const key of ["batterySoc", "solarProduction", "batteryPower"]) {
+    assert.equal(validApiResponse("/api/rule-runs", "GET", [{ ...run, [key]: 0 }]), true, key);
+    for (const invalid of [undefined, "0", Number.POSITIVE_INFINITY])
+      assert.equal(validApiResponse("/api/rule-runs", "GET", [{ ...run, [key]: invalid }]), false, key);
+  }
+});
+test("historical measurements require point-in-time quality independently of numeric zero", () => {
+  const [reading] = demoReadings(1, new Date("2026-10-05T12:00:00Z"), "UTC");
+  assert.equal(validApiResponse("/api/readings", "GET", [reading]), true);
+  for (const key of ["batterySocValid", "batteryPowerValid", "batteryTemperatureValid", "batteryVoltageValid", "batteryCurrentValid", "loadPowerValid", "gridPowerValid", "solarPowerValid"]) {
+    assert.equal(validApiResponse("/api/readings", "GET", [{ ...reading, [key]: false }]), true, key);
+    for (const invalid of [undefined, null, "false"])
+      assert.equal(validApiResponse("/api/readings", "GET", [{ ...reading, [key]: invalid }]), false, key);
+  }
+});
 for (const [path, payload] of [
   ["/api/auth/login", { token: 7, username: "owner", expiresAt: "2026-11-04T12:00:00Z" }],
   ["/api/auth/session", { authenticated: "true", username: "owner" }],
@@ -76,4 +94,23 @@ test("rule toggle and delete forward the configuration token read by the view", 
   assert.deepEqual(JSON.parse(sent[0]!.body!), { enabled: false, configurationVersion: rule.configurationVersion });
   await api.deleteRule(rule.id, rule.configurationVersion);
   assert.equal(sent[1]!.headers["If-Match"], `"${rule.configurationVersion}"`);
+});
+
+test("history read cancellation reaches the real transport and preserves selection parameters", async () => {
+  for (const kind of ["readings", "runs"]) {
+    const controller = new AbortController();
+    let sentUrl = "", sentSignal: AbortSignal | undefined;
+    let complete!: (response: { status: number; ok: boolean; text: () => Promise<string> }) => void;
+    const api = new DeyeSolarApi(new ApiClient({ baseUrl: "https://solar.example", transport: async (url, init) => {
+      sentUrl = url; sentSignal = init.signal;
+      return new Promise(resolve => { complete = resolve; });
+    } }));
+    const pending = kind === "readings" ? api.getReadings(24, controller.signal) : api.getRuleRuns(6, "CHANGES", controller.signal);
+    if (kind === "readings") assert.ok(sentUrl.endsWith("/api/readings?hours=24"));
+    else assert.ok(sentUrl.includes("hours=6") && sentUrl.includes("filter=CHANGES"));
+    controller.abort();
+    assert.equal(sentSignal?.aborted, true);
+    await assert.rejects(pending, { name: "AbortError" });
+    complete({ status: 200, ok: true, text: async () => "[]" });
+  }
 });

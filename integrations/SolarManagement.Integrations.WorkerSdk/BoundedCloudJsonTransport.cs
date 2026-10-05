@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SolarManagement.Http;
 
 namespace SolarManagement.Integrations.WorkerSdk;
 
@@ -19,17 +20,10 @@ public sealed class BoundedCloudJsonTransport(HttpClient http, bool ownsHttp = f
         {
             if (!response.IsSuccessStatusCode) throw new HttpRequestException("Cloud request failed.", null, response.StatusCode);
             observeResponse?.Invoke(response);
-            if (response.Content.Headers.ContentLength > MaximumResponseBytes) throw new InvalidDataException("Cloud response exceeds its bound.");
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var bytes = new MemoryStream();
-            var buffer = new byte[8192];
-            int count;
-            while ((count = await stream.ReadAsync(buffer, ct)) != 0)
-            {
-                if (bytes.Length + count > MaximumResponseBytes) throw new InvalidDataException("Cloud response exceeds its bound.");
-                await bytes.WriteAsync(buffer.AsMemory(0, count), ct);
-            }
-            using var document = JsonDocument.Parse(bytes.ToArray());
+            byte[] bytes;
+            try { bytes = await BoundedHttpContent.ReadBytesAsync(response.Content, MaximumResponseBytes, ct); }
+            catch (ResponseTooLargeException) { throw new InvalidDataException("Cloud response exceeds its bound."); }
+            using var document = JsonDocument.Parse(bytes);
             return document.RootElement.Clone();
         }
     }

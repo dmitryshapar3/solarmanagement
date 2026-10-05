@@ -4,12 +4,11 @@ using System.Text;
 using System.Text.Json;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
-using DeyeSolar.Domain.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SolarManagement.Integrations.Contracts;
 
-namespace DeyeSolar.Infrastructure.Shelly;
+namespace SolarManagement.Providers.ShellyCloud;
 
 public record ShellyDeviceStatus(bool IsOn, int? CurrentPowerW);
 

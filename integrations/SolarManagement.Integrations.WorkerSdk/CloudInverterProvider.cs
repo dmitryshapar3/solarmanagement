@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using SolarManagement.Integrations.Contracts;
-using SolarManagement.Integrations.WorkerSdk;
 
 namespace SolarManagement.Integrations.WorkerSdk;
 
@@ -38,20 +37,10 @@ public abstract class CloudInverterProvider : IIntegrationWorkerProvider
             throw new ArgumentException("Device identity is invalid.");
         return value;
     }
-    protected static string? Text(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(key, out var field)
-        ? field.ValueKind switch { JsonValueKind.String => field.GetString(), JsonValueKind.Number => field.GetRawText(), _ => null } : null;
-    protected static decimal? Number(JsonElement value, string key)
-    {
-        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(key, out var field)) return null;
-        if (field.ValueKind == JsonValueKind.Number && field.TryGetDecimal(out var number)) return number;
-        return field.ValueKind == JsonValueKind.String && decimal.TryParse(field.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out number) ? number : null;
-    }
+    protected static string? Text(JsonElement value, string key) => CloudJson.Text(value, key, allowNumber: true);
+    protected static decimal? Number(JsonElement value, string key) => CloudJson.Number(value, key);
     protected static DateTimeOffset? EpochMilliseconds(JsonElement value, string key)
-    {
-        var number = Number(value, key);
-        if (number is null || number <= 0 || number != decimal.Truncate(number.Value) || number > 253402300799999m) return null;
-        try { return DateTimeOffset.FromUnixTimeMilliseconds((long)number); } catch (ArgumentOutOfRangeException) { return null; }
-    }
+        => CloudJson.Timestamp(Number(value, key), milliseconds: true, requireWhole: true);
     protected DateTimeOffset? LocalTime(string? text, string format, string zoneField = "deviceTimeZone")
     {
         if (string.IsNullOrWhiteSpace(Value(zoneField)) || !DateTime.TryParseExact(text, format, CultureInfo.InvariantCulture,

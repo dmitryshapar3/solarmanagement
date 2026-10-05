@@ -731,7 +731,8 @@
           "DeyeSolar.Domain": "[1.0.0, )",
           "Microsoft.Extensions.Http": "[8.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
-          "Microsoft.Extensions.Options": "[8.0.2, )"
+          "Microsoft.Extensions.Options": "[8.0.2, )",
+          "SolarManagement.Http": "[1.0.0, )"
         }
       },
       "deyesolar.ruleengine": {
@@ -751,8 +752,12 @@
           "Microsoft.Data.SqlClient": "[6.1.7, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[8.0.31, )",
           "MudBlazor": "[7.6.0, )",
+          "SolarManagement.Http": "[1.0.0, )",
           "SolarManagement.Integrations.Runtime": "[1.0.0, )"
         }
+      },
+      "solarmanagement.http": {
+        "type": "Project"
       },
       "solarmanagement.integrations.contracts": {
         "type": "Project"

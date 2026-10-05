@@ -1,6 +1,6 @@
 {
   "providerId": "growatt.cloud",
-  "packageVersion": "1.0.2",
+  "packageVersion": "1.0.3",
   "publisherId": "solar-management",
   "wireVersion": 1,
   "runtimeIdentifier": "portable",
@@ -13,7 +13,7 @@
   ],
   "descriptor": {
     "providerId": "growatt.cloud",
-    "packageVersion": "1.0.2",
+    "packageVersion": "1.0.3",
     "packageDigest": "",
     "descriptorDigest": "",
     "displayName": "Growatt ShineServer",

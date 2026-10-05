@@ -15,8 +15,7 @@ export type SessionResponse = {
   username: string | null;
 };
 
-export type InverterData = {
-  inverterId: string | null;
+export type MeasurementValidity = {
   batterySocValid: boolean;
   batteryPowerValid: boolean;
   batteryTemperatureValid: boolean;
@@ -25,6 +24,10 @@ export type InverterData = {
   loadPowerValid: boolean;
   gridPowerValid: boolean;
   solarPowerValid: boolean;
+};
+
+export type InverterData = MeasurementValidity & {
+  inverterId: string | null;
   batterySoc: number;
   batteryTemperature: number;
   batteryVoltage: number;
@@ -119,7 +122,7 @@ export type Dashboard = {
   timeZoneId: string;
 };
 
-export type Reading = {
+export type Reading = MeasurementValidity & {
   id: number;
   timestamp: string;
   batterySoc: number;
@@ -140,9 +143,9 @@ export type RuleRunLog = {
   action: string;
   conditionKey: string;
   reason: string;
-  batterySoc: number;
-  solarProduction: number;
-  batteryPower: number;
+  batterySoc: number | null;
+  solarProduction: number | null;
+  batteryPower: number | null;
 };
 
 export type PollingSettings = {

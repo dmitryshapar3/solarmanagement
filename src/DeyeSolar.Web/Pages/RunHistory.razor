@@ -2,6 +2,8 @@
 @inject IDbContextFactory<DeyeSolar.Web.Data.DeyeSolarDbContext> DbFactory
 @inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
 @using Microsoft.EntityFrameworkCore
+@inject TimeProvider Clock
+@implements IAsyncDisposable
 
 <PageTitle>@T["Run History - DeyeSolar"]</PageTitle>
 
@@ -52,9 +54,9 @@ else
                     @context.Action
                 </MudChip>
             </MudTd>
-            <MudTd>@context.BatterySoc</MudTd>
-            <MudTd>@context.SolarProduction</MudTd>
-            <MudTd>@context.BatteryPower</MudTd>
+            <MudTd>@(context.BatterySoc?.ToString(System.Globalization.CultureInfo.CurrentCulture) ?? "—")</MudTd>
+            <MudTd>@(context.SolarProduction?.ToString() ?? "—")</MudTd>
+            <MudTd>@(context.BatteryPower?.ToString() ?? "—")</MudTd>
             <MudTd><MudText Typo="Typo.body2">@T.Translate(context.Reason)</MudText></MudTd>
         </RowTemplate>
     </MudTable>
@@ -66,6 +68,7 @@ else
     private int _hours = 6;
     private string _filter = "ALL";
     private string? _tz;
+    private readonly AsyncQueryScope _queries = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -74,24 +77,16 @@ else
         await LoadData();
     }
 
-    private async Task LoadData()
+    private Task LoadData()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var cutoff = DateTime.UtcNow.AddHours(-_hours);
-
-        IQueryable<DeyeSolar.Web.Data.RuleRunLog> query = db.RuleRunLogs
-            .Where(r => r.Timestamp >= cutoff);
-
-        if (_filter == "ON")
-            query = query.Where(r => r.Action == "ON");
-        else if (_filter == "OFF")
-            query = query.Where(r => r.Action == "OFF");
-        else if (_filter == "CHANGES")
-            query = query.Where(r => r.Action != "NO_CHANGE");
-
-        _logs = await query
-            .OrderByDescending(r => r.Timestamp)
-            .Take(1000)
-            .ToListAsync();
+        var range = DeyeSolar.Web.Data.HistoryQueryPolicy.Range(Clock.GetUtcNow(), _hours, filter: _filter);
+        return _queries.RunAsync(async ct =>
+        {
+            await using var db = await DbFactory.CreateDbContextAsync(ct);
+            return await DeyeSolar.Web.Data.HistoryQueryPolicy.Runs(db.RuleRunLogs, range).ToListAsync(ct);
+        }, () => { }, logs => _logs = logs,
+            exception => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw(), () => { });
     }
+
+    public ValueTask DisposeAsync() => _queries.DisposeAsync();
 }

@@ -732,8 +732,8 @@ public class ExportSalesServiceTests
     private sealed class Fixture
     {
         public Clock Clock { get; } = new();
-        public Monitor<SolarSalesOptions> Options { get; } = new(new());
-        public Monitor<InverterConnectionOptions> Devices { get; } = new(new() { DeviceKey = "selected" });
+        public FixedOptionsMonitor<SolarSalesOptions> Options { get; } = new(new());
+        public FixedOptionsMonitor<InverterConnectionOptions> Devices { get; } = new(new() { DeviceKey = "selected" });
         public ReadingStore Readings { get; } = new();
         public HistorySource History { get; } = new();
         public PriceStore PriceStore { get; } = new();
@@ -746,12 +746,6 @@ public class ExportSalesServiceTests
     {
         public DateTimeOffset Now = Start.AddHours(1).AddMinutes(10);
         public override DateTimeOffset GetUtcNow() => Now;
-    }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    {
-        public T CurrentValue { get; } = value;
-        public T Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
     private sealed record Window(DateTimeOffset Start, DateTimeOffset End);
     private sealed record DeviceWindow(string Device, DateTimeOffset Start, DateTimeOffset End);

@@ -1,5 +1,5 @@
 import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { useAuth } from "../../application/AuthContext";
@@ -10,6 +10,7 @@ import { TileHeader } from "../../core/TileHeader";
 import { energyStyles as styles } from "../energy/EnergyControls";
 import { amount, momentCaption } from "../energy/chartPolicy";
 import { useFocusedResource } from "../energy/useFocusedResource";
+import { useGroupedRefresh } from "../energy/useGroupedRefresh";
 import { CurrentSolarSnapshot, GenerationHistoryPanel } from "./GenerationScreen";
 
 const powerBasis: Record<SolarPowerBasis, string> = { 0: "PV DC generation", 1: "Inverter AC power", 2: "Grid export" };
@@ -19,7 +20,6 @@ export function SolarEstimateDetailsScreen() {
   const { t } = useLanguage();
   const { api, isDemo } = useAuth();
   const route = useRoute<RouteProp<RootStackParamList, "SolarEstimateDetails">>();
-  const refreshPending = useRef(false);
   const estimate = useFocusedResource("solar-estimate-details", useCallback((signal: AbortSignal) => api.getSolarEstimate(signal), [api]));
   const inverter = useFocusedResource("solar-estimate-dashboard", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
@@ -30,12 +30,7 @@ export function SolarEstimateDetailsScreen() {
   const timeZone = inverter.data?.timeZoneId ?? "Europe/Warsaw";
   const loading = estimate.loading || inverter.loading;
   const verified = state && !state.error && !state.refreshFailed && state.comparison.status !== 0;
-  async function refresh() {
-    if (loading || refreshPending.current) return;
-    refreshPending.current = true;
-    try { await Promise.all([estimate.refresh(), inverter.refresh(true)]); }
-    finally { refreshPending.current = false; }
-  }
+  const refresh = useGroupedRefresh(loading, [() => estimate.refresh(), () => inverter.refresh(true)]);
   return <Screen refreshing={loading} onRefresh={() => void refresh()}>
     <Header title={t("Solar estimate details")} subtitle={t("Hourly actual and possible power, weather calculation and measurement comparison")} />
     <GenerationHistoryPanel initialPeriod={route.params?.period} initialDate={route.params?.date} detailed

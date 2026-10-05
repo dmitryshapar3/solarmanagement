@@ -138,17 +138,7 @@
 @code {
     [Parameter] public int? Id { get; set; }
 
-    private TriggerRule _rule = new()
-    {
-        Enabled = false,
-        SocTurnOnThreshold = 80,
-        UseSeparateSocTurnOffThreshold = false,
-        SocTurnOffThreshold = 80,
-        UseSolarProductionThreshold = false,
-        MinAverageSolarProductionWatts = 3000,
-        CooldownMinutes = 15,
-        IntervalSeconds = 30
-    };
+    private TriggerRule _rule = new() { Enabled = false };
     private bool _isNew => Id == null;
     private MudForm? _form;
     private TimeSpan? _activeFrom;
@@ -164,27 +154,14 @@
     private bool _disposed;
     private readonly CancellationTokenSource _lifetime = new();
 
-    private bool IsSocTurnOnInvalid => _rule.SocTurnOnThreshold is < 0 or > 100;
-    private bool IsSocTurnOffInvalid =>
-        _rule.UseSeparateSocTurnOffThreshold &&
-        (_rule.SocTurnOffThreshold is < 0 or > 100 || _rule.SocTurnOffThreshold > _rule.SocTurnOnThreshold);
-    private bool IsSolarProductionThresholdInvalid =>
-        _rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts is (< 1 or > 30000);
-    private bool IsCooldownInvalid => _rule.CooldownMinutes is < 1 or > 240;
-    private bool IsIntervalInvalid => _rule.IntervalSeconds is < 10 or > 3600;
+    private bool IsSocTurnOnInvalid => RuleConfigurationPolicy.HasError(_rule, "soc_on_range");
+    private bool IsSocTurnOffInvalid => RuleConfigurationPolicy.HasError(_rule, "soc_off_range", "soc_order");
+    private bool IsSolarProductionThresholdInvalid => RuleConfigurationPolicy.HasError(_rule, "solar_watts_range");
+    private bool IsCooldownInvalid => RuleConfigurationPolicy.HasError(_rule, "cooldown_range");
+    private bool IsIntervalInvalid => RuleConfigurationPolicy.HasError(_rule, "interval_range");
     private bool IsTimeWindowInvalid => _activeFrom.HasValue != _activeTo.HasValue;
-
-    private string SocTurnOffErrorText
-    {
-        get
-        {
-            if (_rule.SocTurnOffThreshold is < 0 or > 100)
-                return T["SOC turn OFF must be between 0 and 100%"];
-            if (_rule.SocTurnOffThreshold > _rule.SocTurnOnThreshold)
-                return T["SOC turn OFF cannot be higher than SOC turn ON"];
-            return string.Empty;
-        }
-    }
+    private string SocTurnOffErrorText => T.Translate(RuleConfigurationPolicy.Errors(_rule)
+        .FirstOrDefault(error => error.Code is "soc_off_range" or "soc_order")?.Message.TrimEnd('.'));
 
     protected override async Task OnInitializedAsync()
     {
@@ -258,22 +235,19 @@
     private void OnSocTurnOnChanged(int value)
     {
         _rule.SocTurnOnThreshold = value;
-        if (!_rule.UseSeparateSocTurnOffThreshold)
-            _rule.SocTurnOffThreshold = value;
+        RuleConfigurationPolicy.Normalize(_rule);
     }
 
     private void OnUseSeparateSocTurnOffChanged(bool value)
     {
         _rule.UseSeparateSocTurnOffThreshold = value;
-        if (!value)
-            _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
+        RuleConfigurationPolicy.Normalize(_rule);
     }
 
     private void OnUseSolarProductionThresholdChanged(bool value)
     {
         _rule.UseSolarProductionThreshold = value;
-        if (value && _rule.MinAverageSolarProductionWatts <= 0)
-            _rule.MinAverageSolarProductionWatts = 3000;
+        RuleConfigurationPolicy.Normalize(_rule);
     }
 
     private async Task Save()
@@ -284,14 +258,9 @@
         {
             _validationError = null;
 
-            if (string.IsNullOrEmpty(_rule.EntityId))
-                _rule.Enabled = false;
-
-            if (!_rule.UseSeparateSocTurnOffThreshold)
-                _rule.SocTurnOffThreshold = _rule.SocTurnOnThreshold;
-
-            if (_rule.UseSolarProductionThreshold && _rule.MinAverageSolarProductionWatts <= 0)
-                _rule.MinAverageSolarProductionWatts = 3000;
+            _rule.ActiveFrom = _activeFrom.HasValue ? TimeOnly.FromTimeSpan(_activeFrom.Value) : null;
+            _rule.ActiveTo = _activeTo.HasValue ? TimeOnly.FromTimeSpan(_activeTo.Value) : null;
+            RuleConfigurationPolicy.Normalize(_rule);
 
             if (_form != null)
             {
@@ -301,9 +270,6 @@
 
             if (!ValidateRule())
                 return;
-
-            _rule.ActiveFrom = _activeFrom.HasValue ? TimeOnly.FromTimeSpan(_activeFrom.Value) : null;
-            _rule.ActiveTo = _activeTo.HasValue ? TimeOnly.FromTimeSpan(_activeTo.Value) : null;
 
             if (_isNew)
                 await RuleRepo.CreateAsync(_rule, CancellationToken.None);
@@ -327,43 +293,10 @@
                 return false;
             }
         }
-        if (IsSocTurnOnInvalid)
-        {
-            _validationError = T["SOC turn ON must be between 0 and 100%."];
-            return false;
-        }
-
-        if (IsSocTurnOffInvalid)
-        {
-            _validationError = SocTurnOffErrorText;
-            return false;
-        }
-
-        if (IsSolarProductionThresholdInvalid)
-        {
-            _validationError = T["Average PV threshold must be between 1 and 30000 W."];
-            return false;
-        }
-
-        if (IsCooldownInvalid)
-        {
-            _validationError = T["Cooldown must be between 1 and 240 minutes."];
-            return false;
-        }
-
-        if (IsIntervalInvalid)
-        {
-            _validationError = T["Evaluation interval must be between 10 and 3600 seconds."];
-            return false;
-        }
-
-        if (IsTimeWindowInvalid)
-        {
-            _validationError = T["Set both time-window values or leave both empty."];
-            return false;
-        }
-
-        return true;
+        var error = RuleConfigurationPolicy.Validate(_rule);
+        if (error is null) return true;
+        _validationError = error.Message;
+        return false;
     }
 
     public void Dispose()

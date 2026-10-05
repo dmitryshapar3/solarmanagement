@@ -65,6 +65,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarManagement.ProviderE2E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarManagement.ProviderE2E.Worker", "tests\SolarManagement.ProviderE2E.Worker\SolarManagement.ProviderE2E.Worker.csproj", "{CBCE40A4-3F22-4131-BF67-7C4F53B9F27E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolarManagement.Http", "src\SolarManagement.Http\SolarManagement.Http.csproj", "{BE78E1CC-EDF9-4933-8132-C9A6065CC957}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -399,6 +401,18 @@ Global
 		{CBCE40A4-3F22-4131-BF67-7C4F53B9F27E}.Release|x64.Build.0 = Release|Any CPU
 		{CBCE40A4-3F22-4131-BF67-7C4F53B9F27E}.Release|x86.ActiveCfg = Release|Any CPU
 		{CBCE40A4-3F22-4131-BF67-7C4F53B9F27E}.Release|x86.Build.0 = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|x64.Build.0 = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Debug|x86.Build.0 = Debug|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|x64.ActiveCfg = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|x64.Build.0 = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|x86.ActiveCfg = Release|Any CPU
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -431,5 +445,6 @@ Global
 		{266848DB-BBD4-4655-8921-52758FDE7E67} = {4958D7D8-4791-2CCE-6FFA-082B65933577}
 		{7B3EE9E2-3CF7-4D50-9B24-85FF8600BCC9} = {5E9D5C91-496F-41C9-A4ED-F89BE0DBE11A}
 		{CBCE40A4-3F22-4131-BF67-7C4F53B9F27E} = {5E9D5C91-496F-41C9-A4ED-F89BE0DBE11A}
+		{BE78E1CC-EDF9-4933-8132-C9A6065CC957} = {FAD0F089-F049-4C08-B9FD-DC11850EBDEB}
 	EndGlobalSection
 EndGlobal

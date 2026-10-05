@@ -14,7 +14,6 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -324,7 +323,7 @@ public class AppleBillingSqlServerTests
     }
 
     private sealed class Host(WebApplication app, HttpClient appleHttp, DbContextOptions<DeyeSolarDbContext> options,
-        AppleSignedFixture signer, Clock clock, AppleHttp apple, DatabaseFailure databaseFailure, HttpClient client) : IAsyncDisposable
+        AppleSignedFixture signer, Clock clock, AppleHttp apple, DatabaseFailure databaseFailure, HttpClient client, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
         public AppleSignedFixture Signer { get; } = signer;
@@ -381,17 +380,16 @@ public class AppleBillingSqlServerTests
             var signer = new AppleSignedFixture();
             var clock = new Clock(signer.Now);
             var databaseFailure = new DatabaseFailure();
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarAppleBillingTests_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString)
-                .AddInterceptors(databaseFailure).Options;
+            SqlServerTestDatabase? database = null;
             WebApplication? app = null;
             HttpClient? appleHttp = null;
             try
             {
+                database = await SqlServerTestDatabase.CreateAsync("SolarAppleBillingTests",
+                    configureOptions: builder => builder.AddInterceptors(databaseFailure));
+                var options = database.Options;
                 await using (var db = new DeyeSolarDbContext(options))
                 {
-                    await db.Database.MigrateAsync();
                     foreach (var id in new[] { UserA, UserB })
                     {
                         var installationId = id + "-site";
@@ -478,15 +476,17 @@ public class AppleBillingSqlServerTests
                 Assert.Equal("127.0.0.1", address.Host);
                 var client = new HttpClient(new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false })
                 { BaseAddress = address, Timeout = TimeSpan.FromSeconds(30) };
-                return new Host(app, appleHttp, options, signer, clock, apple, databaseFailure, client);
+                return new Host(app, appleHttp, options, signer, clock, apple, databaseFailure, client, database);
             }
             catch
             {
-                if (app is not null) await app.DisposeAsync();
-                appleHttp?.Dispose();
-                signer.Dispose();
-                await using var db = new DeyeSolarDbContext(options);
-                await db.Database.EnsureDeletedAsync();
+                try { await TestHttpHostCleanup.DisposeApplicationAsync(app); }
+                finally
+                {
+                    appleHttp?.Dispose();
+                    signer.Dispose();
+                    if (database is not null) await database.DisposeAsync();
+                }
                 throw;
             }
         }
@@ -494,13 +494,12 @@ public class AppleBillingSqlServerTests
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
-            try { await app.StopAsync(); await app.DisposeAsync(); }
+            try { await TestHttpHostCleanup.DisposeApplicationAsync(app, stop: true); }
             finally
             {
                 appleHttp.Dispose();
                 Signer.Dispose();
-                await using var db = Context();
-                await db.Database.EnsureDeletedAsync();
+                await database.DisposeAsync();
             }
         }
     }

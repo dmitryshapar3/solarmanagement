@@ -31,4 +31,5 @@
     <PackageReference Include="MudBlazor" Version="7.6.0" />
   </ItemGroup>
 
+  <ItemGroup><ProjectReference Include="../SolarManagement.Http/SolarManagement.Http.csproj" /></ItemGroup>
 </Project>

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using SolarManagement.Http;
 
 namespace DeyeSolar.Web.Billing;
 
@@ -35,18 +36,8 @@ public sealed class AppleAppStoreClient(HttpClient http, AppleBillingOptions opt
                 throw InvalidResponse(startedAt);
             if (!response.IsSuccessStatusCode)
                 throw new AppleBillingException("Apple subscription status is temporarily unavailable.", "apple_unavailable", true);
-            if (response.Content.Headers.ContentLength > 1024 * 1024) throw InvalidResponse(startedAt);
-            await using var stream = await response.Content.ReadAsStreamAsync(operation.Token);
-            // Cap the body even when Apple's HTTP response has no Content-Length.
-            using var buffer = new MemoryStream();
-            var chunk = new byte[8192];
-            int read;
-            while ((read = await stream.ReadAsync(chunk, operation.Token)) != 0)
-            {
-                if (buffer.Length + read > 1024 * 1024) throw InvalidResponse(startedAt);
-                buffer.Write(chunk, 0, read);
-            }
-            using var document = JsonDocument.Parse(buffer.ToArray());
+            var body = await BoundedHttpContent.ReadBytesAsync(response.Content, 1024 * 1024, operation.Token);
+            using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
             AppleSignedDataVerifier.RejectDuplicateProperties(root);
             if (AppleSignedDataVerifier.Text(root, "bundleId", 200) != options.BundleId
@@ -73,6 +64,8 @@ public sealed class AppleAppStoreClient(HttpClient http, AppleBillingOptions opt
             return observation ?? throw InvalidResponse(startedAt);
         }
         catch (AppleStatusInvalidException) { throw; }
+        // An oversized authoritative payload is invalid data, not a retryable network outage.
+        catch (ResponseTooLargeException) { throw InvalidResponse(startedAt); }
         catch (AppleBillingException exception) when (!exception.Retryable) { throw InvalidResponse(startedAt); }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException
             or InvalidOperationException or CryptographicException or ArgumentException)

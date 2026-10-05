@@ -47,21 +47,21 @@ public sealed class IntegrationOAuthService(DbContextOptions<DeyeSolarDbContext>
         ClaimsPrincipal? callbackActor, CancellationToken ct, bool requireOwnerActor = false)
     {
         var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == flow.UserId, ct);
-        if (user is null || user.SecurityStamp != flow.SecurityStamp || user.LockoutEnabled && user.LockoutEnd > clock.GetUtcNow()
+        var managerRoles = InstallationPermissionPolicy.AllowedRoles(InstallationPermission.ManageIntegrations);
+        if (!AccountSessionValidator.IsActiveUser(user, flow.SecurityStamp, clock.GetUtcNow())
             || !await db.InstallationMemberships.AnyAsync(m => m.UserId == flow.UserId && m.InstallationId == flow.InstallationId
-                && m.Installation.IsEnabled && (m.Role == "Owner" || m.Role == "IntegrationManager"), ct)) return false;
+                && m.Installation.IsEnabled && managerRoles.Contains(m.Role), ct)) return false;
         if (requireOwnerActor && (callbackActor?.Identity?.IsAuthenticated != true
             || callbackActor.FindFirstValue(ClaimTypes.NameIdentifier) != flow.UserId
-            || callbackActor.FindFirstValue("AspNet.Identity.SecurityStamp") is { } actorStamp && actorStamp != user.SecurityStamp)) return false;
+            || callbackActor.FindFirstValue(InstallationAccessAuthorizer.StampClaim) is { } actorStamp && actorStamp != user.SecurityStamp)) return false;
         if (flow.Client == "mobile")
         {
             var session = envelope.MobileToken is null ? null : await sessions.FindAsync(envelope.MobileToken, ct);
-            return session is not null && session.UserId == flow.UserId && session.SecurityStamp == user.SecurityStamp
-                && session.InstallationId == flow.InstallationId;
+            return AccountSessionValidator.MatchesInstallation(session, flow.UserId, user!.SecurityStamp, flow.InstallationId);
         }
         return callbackActor is null || callbackActor.Identity?.IsAuthenticated == true
             && callbackActor.FindFirstValue(ClaimTypes.NameIdentifier) == flow.UserId
-            && (callbackActor.FindFirstValue("AspNet.Identity.SecurityStamp") is not { } stamp || stamp == user.SecurityStamp);
+            && (callbackActor.FindFirstValue(InstallationAccessAuthorizer.StampClaim) is not { } stamp || stamp == user.SecurityStamp);
     }
     private IntegrationOAuthStatusDto Status(IntegrationOAuthFlowEntity flow)
     {

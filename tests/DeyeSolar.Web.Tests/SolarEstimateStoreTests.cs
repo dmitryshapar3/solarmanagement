@@ -9,7 +9,7 @@ public class SolarEstimateStoreTests
     private static readonly DateTime Observed = new(2026, 9, 18, 11, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void SwitchingDeviceExcludesThePreviousInverterAndLegacyHistory()
+    public void SwitchingDeviceExcludesThePreviousInverterAndUnattributedHistory()
     {
         var rows = new[]
         {
@@ -36,7 +36,9 @@ public class SolarEstimateStoreTests
             Reading(1, "device", Observed.AddSeconds(-121), 4000),
             Reading(2, "device", Observed.AddSeconds(121), 4000),
             Reading(3, "device", Observed, -1),
-            Reading(4, "device", Observed, 0)
+            Reading(4, "device", Observed, 0),
+            Reading(5, "device", Observed, 0, solarValid: false),
+            Reading(6, "device", Observed, 4000, solarValid: false)
         }.AsQueryable();
 
         var result = SolarEstimateStore.EligibleReadings(rows, "device",
@@ -57,13 +59,14 @@ public class SolarEstimateStoreTests
         var sql = SolarEstimateStore.EligibleReadings(db.Readings.AsNoTracking(), "current-device",
             Observed.AddMinutes(-2), Observed.AddMinutes(2)).ToQueryString();
         Assert.Contains("[SolarDeviceSn] =", sql);
+        Assert.Contains("[SolarPowerValid] =", sql);
         Assert.Contains("[SolarObservedAt] IS NOT NULL", sql);
         Assert.False(db.Database.HasPendingModelChanges());
     }
 
-    private static Reading Reading(int id, string? deviceSn, DateTime? observed, int watts) => new()
+    private static Reading Reading(int id, string? deviceSn, DateTime? observed, int watts, bool solarValid = true) => new()
     {
         Id = id, SolarDeviceSn = deviceSn, SolarObservedAt = observed,
-        Timestamp = Observed, SolarProduction = watts, DataSource = "DeyeCloud"
+        Timestamp = Observed, SolarProduction = watts, SolarPowerValid = solarValid, DataSource = "DeyeCloud"
     };
 }

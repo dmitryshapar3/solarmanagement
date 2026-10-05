@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace SolarManagement.Integrations.Contracts;
+namespace SolarManagement.Http;
 
 public static class PublicNetworkAddressPolicy
 {

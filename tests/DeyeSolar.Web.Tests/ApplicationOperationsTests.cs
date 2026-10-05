@@ -174,9 +174,10 @@ public class ApplicationOperationsTests
     [SqlServerFact]
     public async Task FreshSchemaAndBootstrapRequireExplicitIndependentInstallationOwnership()
     {
-        var connection = Connection("SolarFreshOwnership_");
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var database = await SqlServerTestDatabase.CreateAsync("SolarFreshOwnership", SqlTestSchema.None);
+        var options = database.Options;
         await using var db = new DeyeSolarDbContext(options);
+        var connection = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
         try
         {
             await db.Database.MigrateAsync();
@@ -218,7 +219,7 @@ public class ApplicationOperationsTests
             await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlRawAsync(
                 "INSERT AppSettings(Section,[Key],Value) VALUES ('Fixture','MissingOwner','Rejected')"));
         }
-        finally { await db.Database.EnsureDeletedAsync(); }
+        finally { await database.DisposeAsync(); }
 
         async Task ProvisionAsync(string? password)
         {
@@ -243,8 +244,8 @@ public class ApplicationOperationsTests
     [SqlServerFact]
     public async Task ForwardSchemaCleanupDoesNotTreatMissingMeasurementValidityAsUsableData()
     {
-        var connection = Connection("SolarValidityCleanup_");
-        await using var db = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
+        var database = await SqlServerTestDatabase.CreateAsync("SolarValidityCleanup", SqlTestSchema.None);
+        await using var db = new DeyeSolarDbContext(database.Options);
         try
         {
             await db.GetService<IMigrator>().MigrateAsync("20261004215555_RecoverableAccountOffboarding");
@@ -266,14 +267,14 @@ public class ApplicationOperationsTests
                 WHERE c.name='InstallationId'
                 """).SingleAsync());
         }
-        finally { await db.Database.EnsureDeletedAsync(); }
+        finally { await database.DisposeAsync(); }
     }
 
     [SqlServerFact]
     public async Task RuntimeSchemaValidationRejectsUnknownMigrationsAndPhysicalSchemaDrift()
     {
-        var connection = Connection("SolarSchemaDrift_");
-        await using var db = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
+        var database = await SqlServerTestDatabase.CreateAsync("SolarSchemaDrift", SqlTestSchema.None);
+        await using var db = new DeyeSolarDbContext(database.Options);
         try
         {
             await db.Database.MigrateAsync();
@@ -285,15 +286,16 @@ public class ApplicationOperationsTests
             var drift = await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseSchemaVerifier.VerifyAsync(db, false, default));
             Assert.Contains("missing", drift.Message);
         }
-        finally { await db.Database.EnsureDeletedAsync(); }
+        finally { await database.DisposeAsync(); }
     }
 
     [SqlServerFact]
     public async Task UnavailableSignedBootstrapCannotStartExistingUsersBillingTrial()
     {
-        var connection = Connection("SolarPreflight_");
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var database = await SqlServerTestDatabase.CreateAsync("SolarPreflight", SqlTestSchema.None);
+        var options = database.Options;
         await using var db = new DeyeSolarDbContext(options);
+        var connection = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
         var directory = Path.Combine(Path.GetTempPath(), "solar-preflight-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
@@ -322,15 +324,16 @@ public class ApplicationOperationsTests
             Assert.DoesNotContain(await db.Database.GetAppliedMigrationsAsync(), migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
             Assert.Contains(await db.Database.GetPendingMigrationsAsync(), migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
         }
-        finally { await db.Database.EnsureDeletedAsync(); Directory.Delete(directory, true); }
+        finally { await database.DisposeAsync(); Directory.Delete(directory, true); }
     }
 
     [SqlServerFact]
     public async Task RuntimeSchemaValidationRejectsAdministrativeLoginAndAcceptsDmlOnlyPrincipal()
     {
-        var connection = Connection("SolarLeastPrivilege_");
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        var database = await SqlServerTestDatabase.CreateAsync("SolarLeastPrivilege", SqlTestSchema.None);
+        var options = database.Options;
         await using var db = new DeyeSolarDbContext(options);
+        var connection = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
         var login = "solar_test_" + Guid.NewGuid().ToString("N");
         var password = "Runtime!" + Guid.NewGuid().ToString("N") + "Aa1";
         var passwordFile = Path.GetTempFileName();
@@ -349,7 +352,7 @@ public class ApplicationOperationsTests
         }
         finally
         {
-            await db.Database.EnsureDeletedAsync();
+            await database.DisposeAsync();
             var master = new SqlConnectionStringBuilder(connection.ConnectionString) { InitialCatalog = "master" };
             await using var cleanup = new SqlConnection(master.ConnectionString);
             await cleanup.OpenAsync();
@@ -360,8 +363,6 @@ public class ApplicationOperationsTests
         }
     }
 
-    private static SqlConnectionStringBuilder Connection(string prefix) => new(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        { InitialCatalog = prefix + Guid.NewGuid().ToString("N") };
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now = DateTimeOffset.Parse("2026-10-04T12:00:00Z");

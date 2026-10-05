@@ -5,7 +5,6 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SolarManagement.Integrations.Contracts;
@@ -917,8 +916,9 @@ public class DynamicIntegrationSetupTests
         Assert.False((await check.IntegrationDeviceBindings.SingleAsync(b => b.InstanceId == first.Id)).IsDefault);
     }
 
-    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
+    private sealed class Fixture(SqlServerTestDatabase database) : IAsyncDisposable
     {
+        private readonly DbContextOptions<DeyeSolarDbContext> options = database.Options;
         private readonly IDataProtectionProvider _protection = new EphemeralDataProtectionProvider();
         public Executor Executor { get; } = new();
         public IntegrationSecretStore Secrets { get; } = new(new EphemeralDataProtectionProvider());
@@ -1010,7 +1010,7 @@ public class DynamicIntegrationSetupTests
             await app.StartAsync();
             return app;
         }
-        public Factory Factory(string installation) => new(options, installation);
+        public Factory Factory(string installation) => new(database.Options, installation);
         public ClaimsPrincipal Actor(string installation) => new(new ClaimsIdentity([
             new Claim(ClaimTypes.NameIdentifier, installation == "site-a" ? "owner-a" : "owner-b"), new Claim(InstallationIds.ClaimType, installation)], "synthetic-test"));
         public IntegrationSetupService Service(string installation, IntegrationRuntimeOptions? setupLimits = null, IIntegrationProviderCatalog? catalog = null)
@@ -1082,17 +1082,16 @@ public class DynamicIntegrationSetupTests
         }
         public static async Task<Fixture> CreateAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION")) { InitialCatalog = "DynamicIntegrationTests_" + Guid.NewGuid().ToString("N") };
-            var fixture = new Fixture(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            await using var db = fixture.Factory("site-a").CreateDbContext();
-            await db.Database.EnsureCreatedAsync();
-            db.Installations.AddRange(new Installation { Id = "site-a", CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = "site-b", CreatedAt = DateTimeOffset.UtcNow });
-            db.Users.AddRange(new IdentityUser { Id = "owner-a", UserName = "owner-a" }, new IdentityUser { Id = "owner-b", UserName = "owner-b" });
-            db.InstallationMemberships.AddRange(new InstallationMembership { UserId = "owner-a", InstallationId = "site-a", Role = "Owner" }, new InstallationMembership { UserId = "owner-b", InstallationId = "site-b", Role = "Owner" });
-            await db.SaveChangesAsync();
-            return fixture;
+            var database = await SqlServerTestDatabase.CreateAsync("DynamicIntegrationTests", SqlTestSchema.Model, seed: async db =>
+            {
+                db.Installations.AddRange(new Installation { Id = "site-a", CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = "site-b", CreatedAt = DateTimeOffset.UtcNow });
+                db.Users.AddRange(new IdentityUser { Id = "owner-a", UserName = "owner-a" }, new IdentityUser { Id = "owner-b", UserName = "owner-b" });
+                db.InstallationMemberships.AddRange(new InstallationMembership { UserId = "owner-a", InstallationId = "site-a", Role = "Owner" }, new InstallationMembership { UserId = "owner-b", InstallationId = "site-b", Role = "Owner" });
+                await db.SaveChangesAsync();
+            });
+            return new Fixture(database);
         }
-        public async ValueTask DisposeAsync() { await using var db = Factory("site-a").CreateDbContext(); await db.Database.EnsureDeletedAsync(); }
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options, string installation) : IDbContextFactory<DeyeSolarDbContext>
     {

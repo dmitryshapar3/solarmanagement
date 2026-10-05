@@ -45,7 +45,7 @@ public class MobileBearerAuthenticationHandler : AuthenticationHandler<Authentic
             return AuthenticateResult.Fail("Invalid or expired mobile token.");
 
         var user = await _users.FindByIdAsync(session.UserId);
-        if (user == null || await _users.IsLockedOutAsync(user) || session.SecurityStamp != user.SecurityStamp)
+        if (!AccountSessionValidator.IsActiveUser(user, session.SecurityStamp, DateTimeOffset.UtcNow))
         {
             await _sessions.RevokeAsync(token, Context.RequestAborted);
             return AuthenticateResult.Fail("Invalid or expired mobile token.");
@@ -53,7 +53,7 @@ public class MobileBearerAuthenticationHandler : AuthenticationHandler<Authentic
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, session.UserId),
-            new Claim(InstallationAccessAuthorizer.StampClaim, user.SecurityStamp ?? ""),
+            new Claim(InstallationAccessAuthorizer.StampClaim, user!.SecurityStamp ?? ""),
             new Claim(InstallationAccessAuthorizer.SessionClaim, token),
             new Claim(ClaimTypes.Name, session.UserName),
             new Claim(InstallationIds.ClaimType, session.InstallationId ?? "")

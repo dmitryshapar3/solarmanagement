@@ -4,7 +4,6 @@ using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SolarManagement.Integrations.Contracts;
 using SolarManagement.SmartSockets.Contracts;
@@ -18,9 +17,8 @@ public sealed class DeviceGatewayConcurrencyTests
     {
         foreach (var closeRetired in new[] { false, true })
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "GatewayReceiptRace_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+            await using var database = await SqlServerTestDatabase.CreateAsync("GatewayReceiptRace", SqlTestSchema.Model);
+            var options = database.Options;
             var factory = new Factory(options, "a");
             var instanceId = Guid.NewGuid();
             var deviceId = Guid.NewGuid();
@@ -46,7 +44,6 @@ public sealed class DeviceGatewayConcurrencyTests
             {
                 await using (var db = factory.CreateDbContext())
                 {
-                    await db.Database.EnsureCreatedAsync();
                     db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
                     db.IntegrationInstances.Add(new() { Id = instanceId, ProviderId = "test.provider", PackageVersion = "1.0.0", PackageDigest = "fixture", State = "enabled" });
                     db.IntegrationConfigurations.Add(new() { InstanceId = instanceId, Revision = 1 });
@@ -91,8 +88,6 @@ public sealed class DeviceGatewayConcurrencyTests
             finally
             {
                 release.TrySetResult();
-                await using var db = factory.CreateDbContext();
-                await db.Database.EnsureDeletedAsync();
             }
         }
     }
@@ -213,9 +208,8 @@ public sealed class DeviceGatewayConcurrencyTests
     [SqlServerFact]
     public async Task ConcurrentInventoryReadersReturnValidSnapshotsWithoutChangingConnectionsOrNeighborData()
     {
-        var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-        { InitialCatalog = "GatewayInventoryRace_" + Guid.NewGuid().ToString("N") };
-        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+        await using var database = await SqlServerTestDatabase.CreateAsync("GatewayInventoryRace", SqlTestSchema.Model);
+        var options = database.Options;
         var factory = new Factory(options, "a");
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -236,7 +230,6 @@ public sealed class DeviceGatewayConcurrencyTests
         {
             await using (var db = factory.CreateDbContext())
             {
-                await db.Database.EnsureCreatedAsync();
                 db.Installations.AddRange(new Installation { Id = "a" }, new Installation { Id = "b" });
                 await db.SaveChangesAsync();
             }
@@ -281,8 +274,6 @@ public sealed class DeviceGatewayConcurrencyTests
         finally
         {
             release.TrySetResult();
-            await using var db = factory.CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
         }
     }
 

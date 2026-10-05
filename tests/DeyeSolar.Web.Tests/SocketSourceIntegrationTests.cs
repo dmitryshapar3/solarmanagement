@@ -229,8 +229,8 @@ public class SocketSourceIntegrationTests
         var source = new DynamicInverterGateway(registry, f.Executor, new(registry), TimeProvider.System);
         var readings = new ExportReadingStore(f.Factory("a"), TimeProvider.System);
         using var worker = PollingWorkerFixture.Create(new Refresh(ct => source.ReadDeviceAsync(new(f.Primary), ct)),
-            new Monitor<InverterConnectionOptions>(new() { DeviceKey = f.Primary.ToString("D") }), f.Sockets("a"), repository,
-            new RuleEvaluator(), f.Factory("a"), new Monitor<PollingOptions>(new()),
+            new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = f.Primary.ToString("D") }), f.Sockets("a"), repository,
+            new RuleEvaluator(), f.Factory("a"), new FixedOptionsMonitor<PollingOptions>(new()),
             new AppSettingsService(f.Factory("a"), new ConfigurationBuilder().Build()), NullLogger<PollingWorker>.Instance, source, readings);
         await worker.PollAndEvaluateAsync(default);
         await using var check = f.Factory("a").CreateDbContext();
@@ -383,10 +383,6 @@ public class SocketSourceIntegrationTests
         public Task<SolarManagement.Integrations.Contracts.IntegrationTestResult> TestAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft, CancellationToken ct) => throw new InvalidOperationException();
         public Task<IReadOnlyList<IntegrationDiscoveredDevice>> DiscoverAsync(ProviderPackageIdentity package, IntegrationDraftConfiguration draft,
             IntegrationDiscoveryQuery query, CancellationToken ct) => throw new InvalidOperationException();
-    }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    {
-        public T CurrentValue => value; public T Get(string? name) => value; public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
     private sealed class Refresh(Func<CancellationToken, Task<InverterData>> read) : IInverterRefreshService
     {

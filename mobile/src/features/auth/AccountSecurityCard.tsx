@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Alert, Share, Text, View } from "react-native";
+import { useScopedAction } from "../../application/useScopedAction";
+import type { ScopedActionContext } from "../../application/ScopedActionScope";
 import { useAuth } from "../../application/AuthContext";
 import { useLanguage } from "../../application/LanguageContext";
 import type { AccountSecurityProof } from "../../core/api/AccountSecurityApi";
@@ -16,37 +18,23 @@ export function AccountSecurityCard() {
   const [destination, setDestination] = useState("");
   const [challenge, setChallenge] = useState<VerificationResponse | null>(null);
   const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const mounted = useRef(true);
-  const pending = useRef(false);
-  const generation = useRef(0);
-  useEffect(() => {
-    generation.current++;
-    setPassword(""); setNewPassword(""); setCode(""); setChallenge(null); setDestination(""); setError(null); setBusy(false); pending.current = false;
-  }, [username, apiBaseUrl, isDemo]);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; }; }, []);
+  const actions = useScopedAction(api, `${username}:${apiBaseUrl}:${isDemo}`, () => {
+    setPassword(""); setNewPassword(""); setCode(""); setChallenge(null); setDestination(""); setError(null);
+  });
+  const busy = actions.busy !== null;
   if (isDemo) return null;
   const proof = (): AccountSecurityProof => password ? { currentPassword: password }
     : { verificationId: challenge?.verificationId, code };
   const hasProof = Boolean(password || challenge && /^\d{6}$/.test(code));
-  async function run(action: () => Promise<void>, consumeProof = true) {
-    if (pending.current) return;
-    pending.current = true; setBusy(true); setError(null);
-    const current = generation.current;
-    try { await action(); }
-    catch (ex) { if (mounted.current && current === generation.current) setError(ex instanceof Error ? ex.message : t("Action failed.")); }
-    finally {
-      if (mounted.current && current === generation.current) {
-        pending.current = false; setBusy(false);
-        if (consumeProof) { setPassword(""); setNewPassword(""); setCode(""); setChallenge(null); }
-      }
-    }
-  }
-  async function changeSecurity(action: () => Promise<unknown>) {
-    const current = generation.current;
+  const run = (action: (context: ScopedActionContext) => Promise<void>, consumeProof = true) => actions.run("security", action, {
+    started: () => setError(null),
+    failed: ex => setError(ex instanceof Error ? ex.message : t("Action failed.")),
+    finished: () => { if (consumeProof) { setPassword(""); setNewPassword(""); setCode(""); setChallenge(null); } }
+  });
+  async function changeSecurity(context: ScopedActionContext, action: () => Promise<unknown>) {
     await action();
-    if (mounted.current && current === generation.current) await logout();
+    if (context.isCurrent()) await logout();
   }
   return <Card style={{ gap: spacing.lg }}>
     <SectionTitle title={t("Account security")} />
@@ -59,31 +47,29 @@ export function AccountSecurityCard() {
     </View>
     <TextField label={t("Verified email or phone")} value={destination} onChangeText={setDestination} keyboardType={channel === "email" ? "email-address" : "phone-pad"} editable={!busy} />
     <AppButton label={t("Send verification code")} variant="secondary" disabled={busy || !destination.trim()}
-      onPress={() => void run(async () => {
-        const current = generation.current;
+      onPress={() => void run(async context => {
         const issued = await api.accountSecurity.startProof(channel, destination.trim());
-        if (mounted.current && current === generation.current) setChallenge(issued);
+        context.publish(() => setChallenge(issued));
       }, false)} />
     {challenge ? <TextField label={t("Verification code")} value={code} onChangeText={v => setCode(v.replace(/[^0-9]/g, "").slice(0, 6))} keyboardType="number-pad" editable={!busy} /> : null}
     <TextField label={t("New password")} value={newPassword} onChangeText={v => setNewPassword(v.slice(0, 128))} secureTextEntry editable={!busy} />
     <AppButton label={t("Change password")} disabled={busy || !hasProof || newPassword.length < 12}
-      onPress={() => void run(() => changeSecurity(() => api.accountSecurity.changePassword(proof(), newPassword)))} />
+      onPress={() => void run(context => changeSecurity(context, () => api.accountSecurity.changePassword(proof(), newPassword)))} />
     <AppButton label={t("Sign out all devices")} variant="secondary" disabled={busy || !hasProof}
-      onPress={() => void run(() => changeSecurity(() => api.accountSecurity.revokeAll(proof())))} />
+      onPress={() => void run(context => changeSecurity(context, () => api.accountSecurity.revokeAll(proof())))} />
     <AppButton label={t("Export account data")} variant="secondary" disabled={busy || !hasProof}
-      onPress={() => void run(async () => {
-        const current = generation.current;
+      onPress={() => void run(async context => {
         const data = await api.accountSecurity.exportData(proof());
-        if (mounted.current && current === generation.current) await Share.share({ message: JSON.stringify(data, null, 2) });
+        if (context.isCurrent()) await Share.share({ message: JSON.stringify(data, null, 2) });
       })} />
     <AppButton label={t("Delete account and owned installations")} variant="secondary" disabled={busy || !hasProof}
       onPress={() => {
-        const current = generation.current;
+        const current = actions.capture();
         Alert.alert(t("Delete account and owned installations"), t("Confirm your current password or a new verification code before continuing."), [
           { text: t("Cancel"), style: "cancel" },
           { text: t("Delete"), style: "destructive", onPress: () => {
-            if (mounted.current && current === generation.current)
-              void run(() => changeSecurity(() => api.accountSecurity.deleteAccount(proof())));
+            if (current())
+              void run(context => changeSecurity(context, () => api.accountSecurity.deleteAccount(proof())));
           } }
         ]);
       }} />

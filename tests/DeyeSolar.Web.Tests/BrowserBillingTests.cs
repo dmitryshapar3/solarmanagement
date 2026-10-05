@@ -94,7 +94,7 @@ public class BrowserBillingTests
     }
 
     internal sealed class ProductionApp(Process process, DbContextOptions<DeyeSolarDbContext> options, string directory, string address,
-        Task standardOutput, Task standardError, StringBuilder logs, string applicationAssemblyIdentity) : IAsyncDisposable
+        Task standardOutput, Task standardError, StringBuilder logs, string applicationAssemblyIdentity, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public string Address { get; } = address;
         internal DbContextOptions<DeyeSolarDbContext> DatabaseOptions => options;
@@ -136,14 +136,15 @@ public class BrowserBillingTests
 
         public static async Task<ProductionApp> StartAsync(bool enableApple = false)
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarBrowserBilling_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+            var database = await SqlServerTestDatabase.CreateAsync("SolarBrowserBilling");
+            var options = database.Options;
+            using var connectionContext = new DeyeSolarDbContext(options);
+            var connection = new SqlConnectionStringBuilder(connectionContext.Database.GetConnectionString());
             var directory = Path.Combine(Path.GetTempPath(), "solar-browser-billing-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(directory);
             Process? process = null;
             try
             {
+                Directory.CreateDirectory(directory);
                 await SeedAsync(options, connection.ConnectionString);
                 if (enableApple)
                 {
@@ -254,7 +255,7 @@ public class BrowserBillingTests
                     {
                         using var ready = await client.GetAsync(address + "/login");
                         if (ready.StatusCode == HttpStatusCode.OK)
-                            return new(process, options, directory, address, output, error, logs, applicationAssemblyIdentity);
+                            return new(process, options, directory, address, output, error, logs, applicationAssemblyIdentity, database);
                     }
                     catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) { }
                     await Task.Delay(100);
@@ -266,8 +267,8 @@ public class BrowserBillingTests
             }
             catch
             {
-                if (process is not null) { await StopAsync(process); process.Dispose(); }
-                await DeleteResourcesAsync(options, directory);
+                try { if (process is not null) { await StopAsync(process); process.Dispose(); } }
+                finally { await DeleteResourcesAsync(database, directory); }
                 throw;
             }
         }
@@ -276,7 +277,6 @@ public class BrowserBillingTests
         {
             await using (var db = new DeyeSolarDbContext(options))
             {
-                await db.Database.MigrateAsync();
                 db.Installations.AddRange(new Installation { Id = InstallationId, Name = "Browser billing fixture", CreatedAt = DateTimeOffset.UtcNow },
                     new Installation { Id = NeighbourId, Name = "Independent browser neighbour", CreatedAt = DateTimeOffset.UtcNow });
                 await db.SaveChangesAsync();
@@ -345,10 +345,9 @@ public class BrowserBillingTests
             await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         }
 
-        private static async Task DeleteResourcesAsync(DbContextOptions<DeyeSolarDbContext> options, string directory)
+        private static async Task DeleteResourcesAsync(SqlServerTestDatabase database, string directory)
         {
-            await using var db = new DeyeSolarDbContext(options);
-            await db.Database.EnsureDeletedAsync();
+            await database.DisposeAsync();
             var temporaryRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var resolved = Path.GetFullPath(directory);
             if (!resolved.StartsWith(temporaryRoot, StringComparison.OrdinalIgnoreCase)
@@ -367,7 +366,7 @@ public class BrowserBillingTests
             finally
             {
                 process.Dispose();
-                await DeleteResourcesAsync(options, directory);
+                await DeleteResourcesAsync(database, directory);
             }
         }
     }

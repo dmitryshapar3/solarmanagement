@@ -9,7 +9,6 @@ using DeyeSolar.Web.Integrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data.Common;
@@ -219,23 +218,24 @@ public class PersistentSessionSecurityTests
         public DateTimeOffset Now = DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow() => Now;
     }
-    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options) : IAsyncDisposable
+    private sealed class Fixture(DbContextOptions<DeyeSolarDbContext> options, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public DbContextOptions<DeyeSolarDbContext> Options => options;
         public Clock Clock { get; } = new();
         public static async Task<Fixture> StartAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-                { InitialCatalog = "SolarSecurity_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
-            var fixture = new Fixture(options);
-            await using var db = new DeyeSolarDbContext(options);
-            await db.Database.MigrateAsync();
-            db.Users.Add(new IdentityUser { Id = "owner", UserName = "owner", NormalizedUserName = "OWNER", SecurityStamp = "stamp" });
-            db.Installations.Add(new Installation { Id = "installation", CreatedAt = DateTimeOffset.UtcNow });
-            db.InstallationMemberships.Add(new() { UserId = "owner", InstallationId = "installation", Role = "Owner" });
-            await db.SaveChangesAsync();
-            return fixture;
+            var database = await SqlServerTestDatabase.CreateAsync("SolarSecurity");
+            var fixture = new Fixture(database.Options, database);
+            try
+            {
+                await using var db = new DeyeSolarDbContext(database.Options);
+                db.Users.Add(new IdentityUser { Id = "owner", UserName = "owner", NormalizedUserName = "OWNER", SecurityStamp = "stamp" });
+                db.Installations.Add(new Installation { Id = "installation", CreatedAt = DateTimeOffset.UtcNow });
+                db.InstallationMemberships.Add(new() { UserId = "owner", InstallationId = "installation", Role = "Owner" });
+                await db.SaveChangesAsync();
+                return fixture;
+            }
+            catch { await fixture.DisposeAsync(); throw; }
         }
         public ServiceProvider Services(IAccountSessionStore store)
         {
@@ -247,7 +247,6 @@ public class PersistentSessionSecurityTests
             services.AddSingleton<OneTimeVerificationService>(); services.AddSingleton(Registry()); services.AddAccountSecurity();
             return services.BuildServiceProvider();
         }
-        public async ValueTask DisposeAsync()
-        { await using var db = new DeyeSolarDbContext(options); await db.Database.EnsureDeletedAsync(); }
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
 }

@@ -8,6 +8,7 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Workers;
 using DeyeSolar.Web.Integrations;
+using DeyeSolar.Web.Tenancy;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -25,7 +26,7 @@ public class InverterRefreshServiceTests
     public async Task MissingDeviceAndPreCanceledCallsHaveNoExternalEffects()
     {
         var source = new Source(_ => throw new InvalidOperationException("Source must not run."));
-        var options = new Monitor<InverterConnectionOptions>(new());
+        var options = new MutableOptionsMonitor<InverterConnectionOptions>(new());
         await using var service = Create(source, new RejectingFactory(), new(), options);
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RefreshAsync(default));
         options.CurrentValue.DeviceKey = "selected";
@@ -60,7 +61,7 @@ public class InverterRefreshServiceTests
         var old = Data(-100);
         var snapshot = new InverterDataSnapshot();
         snapshot.Update(old);
-        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
+        var options = new MutableOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
         await using var service = Create(source, new RejectingFactory(), snapshot, options);
         var read = service.RefreshAsync(default);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -227,7 +228,7 @@ public class InverterRefreshServiceTests
             seed.Readings.Add(new() { Timestamp = DateTime.UtcNow.AddDays(-32), GridConsumption = 9876 });
             await seed.SaveChangesAsync();
         }
-        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
+        var options = new MutableOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" });
         var source = new Source(_ => Task.FromResult(Data(-2000)));
         await using var refresh = Create(source, database.Factory, new(), options);
         await refresh.RefreshAsync(default);
@@ -273,7 +274,7 @@ public class InverterRefreshServiceTests
                 new() { Name = "Disabled neighbour", EntityId = "neighbour-socket", Enabled = false });
             await seed.SaveChangesAsync();
         }
-        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = deviceA.ToString("D"),
+        var options = new MutableOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = deviceA.ToString("D"),
             ConnectionIdentity = instanceA.ToString("D"), Revision = 1, Generation = 1 });
         var observation = Data(-2000, deviceA.ToString("D")) with { InverterId = deviceA, ConfigurationRevision = 1, RuntimeGeneration = 1 };
         var source = new RegisteredSource(database.Factory, observation);
@@ -289,7 +290,7 @@ public class InverterRefreshServiceTests
         });
         var socket = new Socket();
         using var worker = PollingWorkerFixture.Create(refresh, options, socket, rules, new RuleEvaluator(), database.Factory,
-            new Monitor<PollingOptions>(new()), new AppSettingsService(database.Factory, new ConfigurationBuilder().Build()),
+            new MutableOptionsMonitor<PollingOptions>(new()), new AppSettingsService(database.Factory, new ConfigurationBuilder().Build()),
             NullLogger<PollingWorker>.Instance, source, database.Store);
         await RunOneCycleAsync(worker);
         Assert.True(await source.IsCurrentAsync(observation, default)); // The old registered account remains valid for explicit source rules.
@@ -310,7 +311,7 @@ public class InverterRefreshServiceTests
             seed.TriggerRules.Add(new() { Name = "eligible", EntityId = "socket-selected", SocTurnOnThreshold = 50 });
             await seed.SaveChangesAsync();
         }
-        var options = new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
+        var options = new MutableOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected", ConnectionIdentity = "original-account" });
         var source = new Source(_ => Task.FromResult(Data(-2000)));
         await using var refresh = Create(source, database.Factory, new(), options);
         var rules = new ChangingRules(new RuleRepository(database.Factory), () => options.Change(
@@ -327,15 +328,15 @@ public class InverterRefreshServiceTests
         Assert.Single(await check.Readings.ToListAsync());
     }
 
-    private static PollingWorker Worker(Factory factory, IInverterRefreshService refresh,
-        Monitor<InverterConnectionOptions> options, IRuleRepository rules, ISocketController socket) => PollingWorkerFixture.Create(
+    private static PollingWorker Worker(TenantDbContextFactory factory, IInverterRefreshService refresh,
+        MutableOptionsMonitor<InverterConnectionOptions> options, IRuleRepository rules, ISocketController socket) => PollingWorkerFixture.Create(
             refresh, options, socket, rules, new RuleEvaluator(), factory,
-            new Monitor<PollingOptions>(new()), new AppSettingsService(factory, new ConfigurationBuilder().Build()),
+            new MutableOptionsMonitor<PollingOptions>(new()), new AppSettingsService(factory, new ConfigurationBuilder().Build()),
             NullLogger<PollingWorker>.Instance);
     private static Task RunOneCycleAsync(PollingWorker worker) => (Task)typeof(PollingWorker)
         .GetMethod("PollAndEvaluateAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
         .Invoke(worker, [CancellationToken.None])!;
-    private sealed class Socket(Factory? factory = null) : ISocketController
+    private sealed class Socket(TenantDbContextFactory? factory = null) : ISocketController
     {
         public List<string> TurnedOn { get; } = [];
         public async Task TurnOnAsync(string entityId, CancellationToken ct)
@@ -371,7 +372,7 @@ public class InverterRefreshServiceTests
     });
     private static TaskCompletionSource<T> Gate<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static InverterRefreshService Create(IInverterDataSource source, IDbContextFactory<DeyeSolarDbContext> factory,
-        InverterDataSnapshot snapshot, Monitor<InverterConnectionOptions>? options = null) => new(source,
+        InverterDataSnapshot snapshot, MutableOptionsMonitor<InverterConnectionOptions>? options = null) => new(source,
             new(factory, new Clock()), snapshot, options ?? new(new() { DeviceKey = "selected" }),
             new Lifetime(), NullLogger<InverterRefreshService>.Instance);
     private sealed class Source(Func<CancellationToken, Task<InverterData>> read) : IInverterDataSource
@@ -380,7 +381,7 @@ public class InverterRefreshServiceTests
         public int Calls => _calls;
         public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) { Interlocked.Increment(ref _calls); return read(ct); }
     }
-    private sealed class RegisteredSource(Factory factory, InverterData observation) : IInverterDataSource, IRegisteredInverterDataSource
+    private sealed class RegisteredSource(TenantDbContextFactory factory, InverterData observation) : IInverterDataSource, IRegisteredInverterDataSource
     {
         public Task<InverterData> ReadCurrentDataAsync(CancellationToken ct) => Task.FromResult(observation);
         public Task<InverterData> ReadDeviceAsync(InverterId id, CancellationToken ct) => throw new InvalidOperationException("Only the captured primary is requested by this fixture.");
@@ -409,41 +410,13 @@ public class InverterRefreshServiceTests
         public CancellationToken ApplicationStopped => default;
         public void StopApplication() { }
     }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    {
-        private event Action<T, string?>? Changed;
-        public T CurrentValue { get; private set; } = value;
-        public T Get(string? name) => CurrentValue;
-        public IDisposable OnChange(Action<T, string?> listener) { Changed += listener; return new Subscription(() => Changed -= listener); }
-        public void Change(T value) { CurrentValue = value; Changed?.Invoke(value, null); }
-        private sealed class Subscription(Action remove) : IDisposable { public void Dispose() => remove(); }
-    }
     private sealed class RejectingFactory : IDbContextFactory<DeyeSolarDbContext>
     { public DeyeSolarDbContext CreateDbContext() => throw new InvalidOperationException("Database must not be opened."); }
-    private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
+    private sealed class Database(SqlServerTestDatabase database) : IAsyncDisposable
     {
-        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
-        public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
-        { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
-    }
-    private sealed class Database(Factory factory) : IAsyncDisposable
-    {
-        public Factory Factory { get; } = factory;
-        public ExportReadingStore Store { get; } = new(factory, new Clock());
-        public static async Task<Database> CreateAsync()
-        {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarRefreshTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            await using var db = factory.CreateDbContext();
-            await db.Database.MigrateAsync();
-                await TestInstallation.EnsureAsync(db);
-            return new(factory);
-        }
-        public async ValueTask DisposeAsync()
-        {
-            await using var db = Factory.CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
-        }
+        public TenantDbContextFactory Factory => database.Factory;
+        public ExportReadingStore Store { get; } = new(database.Factory, new Clock());
+        public static async Task<Database> CreateAsync() => new(await SqlServerTestDatabase.CreateAsync("SolarRefreshTests", seed: TestInstallation.EnsureAsync));
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
 }

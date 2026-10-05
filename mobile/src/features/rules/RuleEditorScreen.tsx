@@ -23,6 +23,7 @@ import type { IntegrationSourceInverter } from "../../core/api/IntegrationApi";
 import { colors, spacing, typography } from "../../core/theme";
 import { useAuth } from "../../application/AuthContext";
 import { RulesStackParamList } from "../../application/navigationTypes";
+import { normalizeRuleDraft, validateRuleDraft } from "./RuleDraftPolicy";
 
 type Props = NativeStackScreenProps<RulesStackParamList, "RuleEditor">;
 
@@ -114,9 +115,10 @@ export function RuleEditorScreen({ route, navigation }: Props) {
 
   async function save() {
     if (savingPending.current) return;
-    const message = validate(rule);
+    const payload = normalizeRuleDraft(rule);
+    const message = validateRuleDraft(payload, true)?.message;
     if (message) {
-      setError(message);
+      setError(t(message));
       return;
     }
     if (!isDemo && rule.enabled && rule.sourceInverterId && (sourceError || unknownSource)) {
@@ -129,7 +131,6 @@ export function RuleEditorScreen({ route, navigation }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const payload = normalizeRule(rule);
       if (ruleId) {
         if (!payload.configurationVersion) throw new Error(t("Unable to save rule."));
         await api.updateRule(ruleId, { ...payload, configurationVersion: payload.configurationVersion });
@@ -325,67 +326,6 @@ function toRequest(rule: Rule): RuleRequest {
     activeFrom: rule.activeFrom,
     activeTo: rule.activeTo
   };
-}
-
-function normalizeRule(rule: RuleRequest): RuleRequest {
-  return {
-    ...rule,
-    name: rule.name.trim(),
-    entityId: rule.entityId.trim(),
-    enabled: Boolean(rule.entityId) && rule.enabled,
-    socTurnOffThreshold: rule.useSeparateSocTurnOffThreshold ? rule.socTurnOffThreshold : rule.socTurnOnThreshold,
-    activeFrom: rule.activeFrom?.trim() || null,
-    activeTo: rule.activeTo?.trim() || null
-  };
-}
-
-function validate(rule: RuleRequest): string | null {
-  if (!rule.name.trim()) {
-    return t("Rule name is required.");
-  }
-
-  if (!rule.entityId.trim()) {
-    return t("Select a target device.");
-  }
-
-  if (rule.socTurnOnThreshold < 0 || rule.socTurnOnThreshold > 100) {
-    return t("SOC turn ON must be between 0 and 100%.");
-  }
-
-  if (rule.useSeparateSocTurnOffThreshold) {
-    if (rule.socTurnOffThreshold < 0 || rule.socTurnOffThreshold > 100) {
-      return t("SOC turn OFF must be between 0 and 100%.");
-    }
-
-    if (rule.socTurnOffThreshold > rule.socTurnOnThreshold) {
-      return t("SOC turn OFF cannot be higher than SOC turn ON.");
-    }
-  }
-
-  if (rule.useSolarProductionThreshold &&
-      (rule.minAverageSolarProductionWatts < 1 || rule.minAverageSolarProductionWatts > 30000)) {
-    return t("Average PV threshold must be between 1 and 30000 W.");
-  }
-
-  if (rule.cooldownMinutes < 1 || rule.cooldownMinutes > 240) {
-    return t("Cooldown must be between 1 and 240 minutes.");
-  }
-
-  if (rule.intervalSeconds < 10 || rule.intervalSeconds > 3600) {
-    return t("Interval must be between 10 and 3600 seconds.");
-  }
-
-  if (Boolean(rule.activeFrom) !== Boolean(rule.activeTo)) {
-    return t("Set both time-window values or leave both empty.");
-  }
-
-  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if ((rule.activeFrom && !timePattern.test(rule.activeFrom)) ||
-      (rule.activeTo && !timePattern.test(rule.activeTo))) {
-    return t("Time window values must use HH:mm.");
-  }
-
-  return null;
 }
 
 const styles = StyleSheet.create({

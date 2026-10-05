@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -281,7 +280,7 @@ public class AccountIdentitySqlServerTests
 
     private sealed record Proof(string Id, string Code);
 
-    private sealed class Host(WebApplication app, HttpClient client, Factory factory, Clock clock, Delivery delivery) : IAsyncDisposable
+    private sealed class Host(WebApplication app, HttpClient client, Factory factory, Clock clock, Delivery delivery, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
         public Factory Factory { get; } = factory;
@@ -396,15 +395,13 @@ public class AccountIdentitySqlServerTests
 
         public static async Task<Host> StartAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarAccountIdentityTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
+            var database = await SqlServerTestDatabase.CreateAsync("SolarAccountIdentityTests");
+            var factory = new Factory(database.Options);
             WebApplication? app = null;
             try
             {
                 await using (var db = factory.CreateDbContext())
                 {
-                    await db.Database.MigrateAsync();
                     db.Installations.AddRange(new Installation { Id = FixtureInstallation, CreatedAt = DateTimeOffset.UtcNow }, new Installation { Id = SiblingInstallation, CreatedAt = DateTimeOffset.UtcNow });
                     foreach (var installationId in new[] { FixtureInstallation, SiblingInstallation })
                     {
@@ -477,13 +474,11 @@ public class AccountIdentitySqlServerTests
                 Assert.Equal("127.0.0.1", address.Host);
                 var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
                 { BaseAddress = address, Timeout = TimeSpan.FromSeconds(20) };
-                return new(app, client, factory, clock, delivery);
+                return new(app, client, factory, clock, delivery, database);
             }
             catch
             {
-                if (app is not null) await app.DisposeAsync();
-                await using var db = factory.CreateDbContext();
-                await db.Database.EnsureDeletedAsync();
+                await TestHttpHostCleanup.DisposeAsync(app, database);
                 throw;
             }
         }
@@ -491,8 +486,7 @@ public class AccountIdentitySqlServerTests
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
-            try { await app.StopAsync(); await app.DisposeAsync(); }
-            finally { await using var db = Factory.CreateDbContext(); await db.Database.EnsureDeletedAsync(); }
+            await TestHttpHostCleanup.DisposeAsync(app, database, stop: true);
         }
     }
 

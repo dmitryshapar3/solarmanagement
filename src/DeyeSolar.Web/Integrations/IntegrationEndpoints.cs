@@ -7,11 +7,12 @@ using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using SolarManagement.SmartSockets.Contracts;
 using SolarManagement.Integrations.Contracts;
+
+using DeyeSolar.Web.Operations;
 
 namespace DeyeSolar.Web.Integrations;
 
@@ -131,7 +132,7 @@ public static class IntegrationEndpoints
             HttpContext context, IAntiforgery antiforgery, UserManager<IdentityUser> users,
             IntegrationChangeNotifier changes, CancellationToken ct) =>
         {
-            if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new IntegrationApiError("antiforgery", "A valid request verification token is required."));
+            if (!await AuthenticatedMutationPolicy.IsAllowedAsync(context, antiforgery)) return ApiProblems.InvalidAntiforgery();
             var user = await users.GetUserAsync(context.User);
             if (user is null || !await users.IsInRoleAsync(user, "PlatformOperator"))
                 return Results.Json(new IntegrationApiError("forbidden", "Only a platform operator can install provider packages."), statusCode: 403);
@@ -145,7 +146,7 @@ public static class IntegrationEndpoints
         api.MapPost("/integration-packages/approved-origins", async Task<IResult> (IntegrationOriginApprovalRequest request,
             IIntegrationPackageManager manager, HttpContext context, IAntiforgery antiforgery, UserManager<IdentityUser> users, CancellationToken ct) =>
         {
-            if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new IntegrationApiError("antiforgery", "A valid request verification token is required."));
+            if (!await AuthenticatedMutationPolicy.IsAllowedAsync(context, antiforgery)) return ApiProblems.InvalidAntiforgery();
             var user = await users.GetUserAsync(context.User);
             if (user is null || !await users.IsInRoleAsync(user, "PlatformOperator"))
                 return Results.Json(new IntegrationApiError("forbidden", "Only a platform operator can approve provider network origins."), statusCode: 403);
@@ -160,24 +161,12 @@ public static class IntegrationEndpoints
     private static async Task<IResult> ReadAsync<T>(Func<Task<T>> action)
     {
         try { return Results.Ok(await action()); }
-        catch (DeyeSolar.Web.Billing.BillingAccessException ex) { return Results.Json(new IntegrationApiError("subscription_required", ex.Message), statusCode: 402); }
-        catch (IntegrationRequestException ex) { return Results.Json(new IntegrationApiError(ex.Code, ex.Message), statusCode: ex.Status); }
-        catch (KeyNotFoundException) { return Results.NotFound(new IntegrationApiError("provider_not_found", "The requested provider package is not installed.")); }
-        catch (InvalidDataException) { return Results.BadRequest(new IntegrationApiError("invalid_package", "The provider package could not be verified.")); }
-        catch (ArgumentException ex) { return Results.BadRequest(new IntegrationApiError("validation", ex.Message)); }
-        catch (InvalidOperationException ex) { return Results.Conflict(new IntegrationApiError("operation_conflict", ex.Message)); }
+        catch (Exception error) when (ApiProblems.IsHandled(error, ApiProblemScope.Integrations))
+        { return ApiProblems.Describe(error, ApiProblemScope.Integrations); }
     }
     private static async Task<IResult> WriteAsync<T>(HttpContext context, IAntiforgery antiforgery, Func<Task<T>> action)
     {
-        if (!await AllowedRequestAsync(context, antiforgery)) return Results.BadRequest(new IntegrationApiError("antiforgery", "A valid request verification token is required."));
+        if (!await AuthenticatedMutationPolicy.IsAllowedAsync(context, antiforgery)) return ApiProblems.InvalidAntiforgery();
         return await ReadAsync(action);
-    }
-    private static async Task<bool> AllowedRequestAsync(HttpContext context, IAntiforgery antiforgery)
-    {
-        var bearer = await context.AuthenticateAsync(MobileBearerAuthenticationHandler.SchemeName);
-        var cookie = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
-        if (bearer.Succeeded && !cookie.Succeeded) return true;
-        try { await antiforgery.ValidateRequestAsync(context); return true; }
-        catch (AntiforgeryValidationException) { return false; }
     }
 }

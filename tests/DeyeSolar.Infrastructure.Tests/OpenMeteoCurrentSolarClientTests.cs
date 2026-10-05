@@ -1,7 +1,5 @@
-using System.Collections.Concurrent;
+using static DeyeSolar.Infrastructure.Tests.HttpResponses;
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -19,7 +17,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task UsesInstantModelRadiationForBothTiltsAndInterpolatesToNow()
     {
-        var handler = new Handler((uri, _) => Json(Weather(gti: IsRoof1(uri)
+        var handler = new RoutedHttpHandler((uri, _) => Json(Weather(gti: IsRoof1(uri)
             ? Irradiance : Irradiance.Select(value => value / 2).ToArray())));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
@@ -59,7 +57,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task CloudCoverIsReportedWithoutScalingTheAlreadyCloudAdjustedGti()
     {
-        var handler = new Handler((_, _) => Json(Weather(clouds: Enumerable.Repeat<double?>(100, Times.Length).ToArray())));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(clouds: Enumerable.Repeat<double?>(100, Times.Length).ToArray())));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
         Assert.Equal(100, result.CloudCoverPercent);
@@ -70,7 +68,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task NighttimeModelZeroIsValid()
     {
-        var handler = new Handler((_, _) => Json(Weather(gti: new double?[Times.Length].Select(_ => (double?)0).ToArray())));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(gti: new double?[Times.Length].Select(_ => (double?)0).ToArray())));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
         Assert.Equal(0, result.Roof1Gti);
@@ -87,7 +85,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     {
         var invalid = Irradiance.ToArray();
         invalid[4] = bad;
-        var handler = new Handler((uri, _) => Json(Weather(gti: IsRoof1(uri) ? invalid : Irradiance)));
+        var handler = new RoutedHttpHandler((uri, _) => Json(Weather(gti: IsRoof1(uri) ? invalid : Irradiance)));
 
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
@@ -97,7 +95,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     {
         var invalid = Irradiance.ToArray();
         invalid[6] = null;
-        var handler = new Handler((_, _) => Json(Weather(gti: invalid)));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(gti: invalid)));
 
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
@@ -107,7 +105,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     {
         var invalid = Irradiance.ToArray();
         invalid[1] = null;
-        var handler = new Handler((uri, _) => Json(Weather(gti: IsRoof1(uri) ? invalid : Irradiance)));
+        var handler = new RoutedHttpHandler((uri, _) => Json(Weather(gti: IsRoof1(uri) ? invalid : Irradiance)));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
         Assert.Equal(550, result.Roof1Gti);
@@ -117,21 +115,21 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task FutureOnlyResponseDoesNotPretendToObserveNow()
     {
-        var handler = new Handler((_, _) => Json(Weather(times: [15, 30, 45, 60], gti: [400, 500, 600, 700])));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(times: [15, 30, 45, 60], gti: [400, 500, 600, 700])));
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
 
     [Fact]
     public async Task TruncatedRadiationDoesNotCreateFutureZerosOrPermitExtrapolation()
     {
-        var handler = new Handler((_, _) => Json(Weather(gti: [200, 250, 300, 350, 400])));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(gti: [200, 250, 300, 350, 400])));
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
 
     [Fact]
     public async Task HourlyTimelineCannotMasqueradeAsFifteenMinuteOutput()
     {
-        var handler = new Handler((_, _) => Json(Weather(times: [-60, 0, 60], gti: [200, 400, 600])));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(times: [-60, 0, 60], gti: [200, 400, 600])));
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
 
@@ -141,7 +139,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [InlineData("invalid json")]
     public async Task MissingOrMalformedResponseIsUnavailable(string response)
     {
-        var handler = new Handler((_, _) => Json(response));
+        var handler = new RoutedHttpHandler((_, _) => Json(response));
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
         Assert.Equal(2, handler.Requests.Count);
     }
@@ -149,14 +147,14 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task UnexpectedRadiationUnitIsRejected()
     {
-        var handler = new Handler((_, _) => Json(Weather(gtiUnit: "kW/m²")));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(gtiUnit: "kW/m²")));
         await Assert.ThrowsAsync<InvalidDataException>(() => Client(handler).ReadAsync(new(), Now, default));
     }
 
     [Fact]
     public async Task MissingOrUnexpectedOptionalWeatherDoesNotBecomeInventedWeather()
     {
-        var handler = new Handler((_, _) => Json(Weather(temperatureUnit: "°F", windUnit: "km/h",
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather(temperatureUnit: "°F", windUnit: "km/h",
             clouds: new double?[Times.Length])));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
@@ -169,7 +167,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [Fact]
     public async Task TransientFailuresHaveBoundedRetriesAndCanRecover()
     {
-        var handler = new Handler((uri, attempt) => IsRoof1(uri) && attempt < 3
+        var handler = new RoutedHttpHandler((uri, attempt) => IsRoof1(uri) && attempt < 3
             ? Retry(HttpStatusCode.ServiceUnavailable, TimeSpan.Zero) : Json(Weather()));
         var result = await Client(handler).ReadAsync(new(), Now, default);
 
@@ -181,7 +179,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     public async Task PaidForecastUsesCustomerHostWithTrimmedEscapedServerKey()
     {
         const string key = "server/key?value&other=1";
-        var handler = new Handler((_, _) => Json(Weather()));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather()));
         await Client(handler).ReadAsync(new() { ApiKey = "  " + key + "\n" }, Now, default);
 
         Assert.All(handler.Requests, uri =>
@@ -200,7 +198,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     [InlineData(" \t\n")]
     public async Task MissingKeyKeepsEvaluationEndpointWithoutKeyParameter(string? key)
     {
-        var handler = new Handler((_, _) => Json(Weather()));
+        var handler = new RoutedHttpHandler((_, _) => Json(Weather()));
         await Client(handler).ReadAsync(new() { ApiKey = key }, Now, default);
         Assert.All(handler.Requests, uri =>
         {
@@ -214,7 +212,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     {
         const string key = "server/key?secret";
         using var cancellation = new CancellationTokenSource();
-        var handler = new Handler((uri, _) =>
+        var handler = new RoutedHttpHandler((uri, _) =>
         {
             cancellation.Cancel();
             throw new OperationCanceledException("Canceled URL " + uri, cancellation.Token);
@@ -233,7 +231,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     public async Task LongRetryAfterBlocksLaterRefreshesWithoutLeakingCustomerApiKey()
     {
         const string key = "private/forecast?key";
-        var handler = new Handler((_, _) => Retry(HttpStatusCode.TooManyRequests, TimeSpan.FromHours(1)));
+        var handler = new RoutedHttpHandler((_, _) => Retry(HttpStatusCode.TooManyRequests, TimeSpan.FromHours(1)));
         var client = Client(handler);
         await Assert.ThrowsAsync<HttpRequestException>(() => client.ReadAsync(new() { ApiKey = key }, Now, default));
         var sent = handler.Requests.Count;
@@ -249,7 +247,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     public async Task NetworkErrorsAreBoundedAndSanitized()
     {
         const string key = "private/forecast?key";
-        var handler = new Handler((uri, _) => throw new HttpRequestException("Failed URL " + uri));
+        var handler = new RoutedHttpHandler((uri, _) => throw new HttpRequestException("Failed URL " + uri));
         var error = await Assert.ThrowsAsync<HttpRequestException>(() => Client(handler).ReadAsync(new() { ApiKey = key }, Now, default));
 
         Assert.Equal(6, handler.Requests.Count);
@@ -261,7 +259,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
     public async Task CancellationStopsRequestsWithoutRetry()
     {
         using var cancellation = new CancellationTokenSource();
-        var handler = new Handler((_, _) =>
+        var handler = new RoutedHttpHandler((_, _) =>
         {
             cancellation.Cancel();
             throw new OperationCanceledException(cancellation.Token);
@@ -270,7 +268,7 @@ public sealed class OpenMeteoCurrentSolarClientTests
         Assert.InRange(handler.Requests.Count, 1, 2);
     }
 
-    private static OpenMeteoCurrentSolarClient Client(HttpMessageHandler handler) => new(new HttpClient(handler));
+    private static OpenMeteoCurrentSolarClient Client(HttpMessageHandler handler) => new(new OpenMeteoJsonReader(new HttpClient(handler), TimeProvider.System));
     private static bool IsRoof1(Uri uri) => uri.Query.Contains("azimuth=50");
     private static string Weather(int[]? times = null, double?[]? gti = null, double?[]? clouds = null,
         string gtiUnit = "W/m²", string temperatureUnit = "°C", string windUnit = "m/s")
@@ -291,25 +289,4 @@ public sealed class OpenMeteoCurrentSolarClientTests
         });
     }
 
-    private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
-    { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-    private static HttpResponseMessage Retry(HttpStatusCode status, TimeSpan delay)
-    {
-        var response = new HttpResponseMessage(status);
-        response.Headers.RetryAfter = new RetryConditionHeaderValue(delay);
-        return response;
-    }
-
-    private sealed class Handler(Func<Uri, int, HttpResponseMessage> respond) : HttpMessageHandler
-    {
-        private readonly ConcurrentDictionary<string, int> _attempts = new();
-        public ConcurrentQueue<Uri> Requests { get; } = new();
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var uri = request.RequestUri!;
-            Requests.Enqueue(uri);
-            return Task.FromResult(respond(uri, _attempts.AddOrUpdate(uri.ToString(), 1, (_, count) => count + 1)));
-        }
-    }
 }

@@ -1,9 +1,7 @@
-namespace DeyeSolar.Domain.Options;
+namespace SolarManagement.Providers.DeyeCloud;
 
-public class DeyeCloudOptions
+public sealed class DeyeCloudOptions
 {
-    public const string Section = "DeyeCloud";
-
     public string BaseUrl { get; set; } = "https://eu1-developer.deyecloud.com/v1.0";
     public string AppId { get; set; } = string.Empty;
     public string AppSecret { get; set; } = string.Empty;

@@ -307,16 +307,13 @@
     private string _throughInput = "";
     private bool _followToday = true;
     private bool _showMoney;
-    private bool _loading;
-    private bool _disposed;
+    private readonly AsyncQueryScope _queries = new();
+    private bool _loading => _queries.IsLoading;
+    private bool _disposed => _queries.IsDisposed;
     private bool _compact;
     private int? _selected;
-    private long _version;
-    private CancellationTokenSource? _active;
     private string? _error;
     private string? _validation;
-    private readonly CancellationTokenSource _lifetime = new();
-    private Task? _refreshTask;
     private static CultureInfo English => CultureInfo.CurrentCulture;
     private string TimeZoneId => Result?.TimeZoneId ?? "Europe/Warsaw";
     private DateOnly Today => Data?.Today ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId)).DateTime);
@@ -389,18 +386,9 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || Data is not null) return;
-        _refreshTask = RefreshLoopAsync(_lifetime.Token);
+        _queries.StartRefresh(Clock, TimeSpan.FromMinutes(5),
+            () => InvokeAsync(() => !_loading && Data is null ? RefreshAsync() : Task.CompletedTask));
         await LoadAsync();
-    }
-    private async Task RefreshLoopAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5), Clock);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-                await InvokeAsync(() => !_disposed && !_loading && Data is null ? RefreshAsync() : Task.CompletedTask).WaitAsync(ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
     private void OnBreakpointChanged(Breakpoint breakpoint) => _compact = breakpoint is Breakpoint.Xs or Breakpoint.Sm;
 
@@ -506,25 +494,14 @@
     {
         if (_disposed || Data is not null) return;
         if (_followToday) _selection = _selection with { Date = Today };
-        _active?.Cancel();
-        using var request = new CancellationTokenSource();
-        _active = request;
-        var version = ++_version;
         var selection = _selection;
         var previous = _data;
-        if (!preserveData)
-        {
-            _data = null;
-            _selected = null;
-        }
-        _loading = true;
-        if (!preserveData) _error = null;
-        StateHasChanged();
-        try
-        {
-            var result = await SalesService.ReadAsync(selection, request.Token);
-            if (!_disposed && !request.IsCancellationRequested && version == _version)
-            {
+        await _queries.RunAsync(ct => SalesService.ReadAsync(selection, ct),
+            started: () => {
+                if (!preserveData) { _data = null; _selected = null; _error = null; }
+                StateHasChanged();
+            },
+            received: result => {
                 // The selected interval belongs to the displayed window, never to its replacement day.
                 var selectedStart = preserveData && _selected.HasValue ? Selected?.Start : null;
                 _selected = null;
@@ -536,33 +513,11 @@
                 }
                 _data = result;
                 _error = null;
-            }
-        }
-        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
-        catch (Exception)
-        {
-            if (!_disposed && version == _version) _error = preserveData && _data is not null
+            },
+            failed: _ => _error = preserveData && _data is not null
                 ? T["Refresh failed. Showing previous data; values may be out of date. Please retry."]
-                : T["Sales could not be loaded. Please try again."];
-        }
-        finally
-        {
-            if (version == _version)
-            {
-                _active = null;
-                _loading = false;
-                if (!_disposed) StateHasChanged();
-            }
-        }
+                : T["Sales could not be loaded. Please try again."],
+            finished: StateHasChanged);
     }
-    public async ValueTask DisposeAsync()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _version++;
-        _active?.Cancel();
-        _lifetime.Cancel();
-        if (_refreshTask is not null) await _refreshTask;
-        _lifetime.Dispose();
-    }
+    public ValueTask DisposeAsync() => _queries.DisposeAsync();
 }

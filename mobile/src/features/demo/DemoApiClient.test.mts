@@ -126,3 +126,44 @@ test("demo accepts only current receipt-based socket commands and keeps replay i
   for (const [path, method] of [["/api/devices/state", "POST"], ["/api/settings/deye", "PUT"], ["/api/settings/shelly", "PUT"], ["/api/settings/deye/stations", "GET"]] as const)
     await assert.rejects(client.request(path, { method, body: {} }), httpStatus(404));
 });
+
+test("GUID-bound demo sockets retain their own rated power through switching, rename and idempotent replay", async t => {
+  const network = t.mock.method(globalThis, "fetch", () => { throw new Error("Demo must never use the network."); });
+  const api = new DeyeSolarApi(new DemoApiClient(clock));
+  const [heater, lights] = (await api.getDevices()).devices;
+  assert.ok(heater && lights);
+  assert.match(lights.id, /^[a-f0-9-]{36}$/);
+  await api.renameDevice(lights.id, "Renamed fixture");
+  const onId = "00000000-0000-0000-0000-000000000011";
+  await api.integrations.sendDeviceCommand(lights.id, onId, true);
+  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 45);
+  await api.integrations.sendDeviceCommand(lights.id, "00000000-0000-0000-0000-000000000012", false);
+  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 0);
+  await api.integrations.sendDeviceCommand(lights.id, onId, true);
+  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 0, "Old receipt replay cannot switch the device again");
+  await api.integrations.sendDeviceCommand(lights.id, "00000000-0000-0000-0000-000000000013", true);
+  await api.integrations.sendDeviceCommand(heater.id, "00000000-0000-0000-0000-000000000014", true);
+  const switched = (await api.getDevices()).devices;
+  assert.equal(switched.find(device => device.id === lights.id)!.currentPowerW, 45);
+  assert.equal(switched.find(device => device.id === heater.id)!.currentPowerW, 850);
+  assert.equal(network.mock.callCount(), 0);
+});
+
+test("retargeting a demo rule reconciles its new observed device and clears the prior evaluation", async () => {
+  let now = new Date("2026-10-05T11:00:00Z");
+  const api = new DeyeSolarApi(new DemoApiClient(() => now));
+  const original = (await api.getRules())[0]!;
+  assert.equal(original.currentState, true);
+  const offTarget = (await api.getDevices()).devices.find(device => !device.isOn)!;
+  now = new Date("2026-10-05T12:00:00Z");
+  const moved = await api.updateRule(original.id, { ...original, entityId: offTarget.id, currentState: true } as typeof original);
+  assert.equal(moved.currentState, false);
+  assert.equal(moved.currentStateChangedAt, now.toISOString());
+  assert.equal(moved.lastEvaluated, null);
+  assert.notEqual(moved.configurationVersion, original.configurationVersion);
+  const renamed = await api.updateRule(moved.id, { ...moved, name: "Same target", currentState: true } as typeof moved);
+  assert.equal(renamed.currentState, false, "A same-target config edit cannot accept caller-supplied runtime state");
+  assert.equal(renamed.currentStateChangedAt, moved.currentStateChangedAt);
+  assert.equal(renamed.lastEvaluated, null);
+  assert.equal((await api.getDevices()).devices.find(device => device.id === offTarget.id)!.isOn, false);
+});

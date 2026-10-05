@@ -21,7 +21,6 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -315,6 +314,8 @@ public class MobileSolarApiTests
             var dashboard = (await response.Content.ReadFromJsonAsync<MobileDashboardResponse>())!;
             Assert.Equal(-2500, dashboard.Inverter!.GridConsumption);
             Assert.Equal(90, dashboard.Inverter.BatterySoc);
+            Assert.True(dashboard.Inverter.GridPowerValid);
+            Assert.True(dashboard.Inverter.SolarPowerValid);
             Assert.Equal("Europe/Warsaw", dashboard.TimeZoneId);
             Assert.Single(dashboard.Rules);
             Assert.Single(dashboard.ManualDevices);
@@ -324,6 +325,10 @@ public class MobileSolarApiTests
         Assert.Equal(2, host.Source.Calls);
         await using var db = host.Factory.CreateDbContext();
         Assert.Equal(27, await db.Readings.CountAsync());
+        var refreshed = await db.Readings.SingleAsync(row => row.SolarProduction == 3100);
+        Assert.True(refreshed.BatterySocValid);
+        Assert.True(refreshed.GridPowerValid);
+        Assert.True(refreshed.SolarPowerValid);
         Assert.Equal(-2500, (await db.ExportReadings.SingleAsync(row => row.DeviceSn == "selected")).GridPowerWatts);
         Assert.Equal(8765, (await db.ExportReadings.SingleAsync(row => row.DeviceSn == "neighbor")).GridPowerWatts);
         var rule = await db.TriggerRules.SingleAsync();
@@ -357,7 +362,7 @@ public class MobileSolarApiTests
     }
 
     private sealed class ApiHost(WebApplication application, HttpClient client, Factory factory,
-        Telemetry source, HistoryWeather weather, Sales sales, Socket socket) : IAsyncDisposable
+        Telemetry source, HistoryWeather weather, Sales sales, Socket socket, SqlServerTestDatabase database) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
         public Factory Factory { get; } = factory;
@@ -398,16 +403,14 @@ public class MobileSolarApiTests
         }
         public static async Task<ApiHost> StartAsync()
         {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarMobileApiTests_" + Guid.NewGuid().ToString("N") };
-            var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options;
+            var database = await SqlServerTestDatabase.CreateAsync("SolarMobileApiTests");
+            var options = database.Options;
             var factory = new Factory(options);
             WebApplication? app = null;
             try
             {
                 await using (var db = factory.CreateDbContext())
                 {
-                    await db.Database.MigrateAsync();
                     db.Installations.Add(new Installation { Id = FixtureInstallation, CreatedAt = DateTimeOffset.UtcNow });
                     var instance = new IntegrationInstanceEntity { Id = Guid.NewGuid(), ProviderId = "socket.fixture", State = "enabled" };
                     db.IntegrationInstances.Add(instance);
@@ -417,8 +420,8 @@ public class MobileSolarApiTests
                     {
                         var observed = Now.Date.AddHours(11).AddMinutes(minute);
                         db.Readings.AddRange(
-                            new Reading { Timestamp = Now.UtcDateTime, SolarObservedAt = observed, SolarDeviceSn = "selected", SolarProduction = 2000 },
-                            new Reading { Timestamp = Now.UtcDateTime, SolarObservedAt = observed, SolarDeviceSn = "neighbor", SolarProduction = 9000 });
+                            new Reading { Timestamp = Now.UtcDateTime, SolarObservedAt = observed, SolarDeviceSn = "selected", SolarProduction = 2000, SolarPowerValid = true },
+                            new Reading { Timestamp = Now.UtcDateTime, SolarObservedAt = observed, SolarDeviceSn = "neighbor", SolarProduction = 9000, SolarPowerValid = true });
                     }
                     db.ExportReadings.Add(new() { DeviceSn = "neighbor", ObservedAt = Now.AddMinutes(-1).UtcDateTime, PolledAt = Now.UtcDateTime, GridPowerWatts = 8765 });
                     db.TriggerRules.Add(new() { Name = "independent rule", EntityId = EditableSocket.ToString("D"), SocTurnOnThreshold = 50 });
@@ -439,8 +442,8 @@ public class MobileSolarApiTests
             builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddScoped<MobileAuthService>();
                 builder.Services.AddSingleton<TimeProvider>(new Clock());
-                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new Monitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
-                builder.Services.AddSingleton<IOptionsMonitor<SolarEstimateOptions>>(new Monitor<SolarEstimateOptions>(new()
+                builder.Services.AddSingleton<IOptionsMonitor<InverterConnectionOptions>>(new FixedOptionsMonitor<InverterConnectionOptions>(new() { DeviceKey = "selected" }));
+                builder.Services.AddSingleton<IOptionsMonitor<SolarEstimateOptions>>(new FixedOptionsMonitor<SolarEstimateOptions>(new()
                 { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "selected" }));
                 var source = new Telemetry(); var weather = new HistoryWeather(); var sales = new Sales(); var socket = new Socket();
                 builder.Services.AddSingleton<IInverterDataSource>(source);
@@ -483,21 +486,18 @@ public class MobileSolarApiTests
                 var address = new Uri(Assert.Single(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses));
                 Assert.Equal("127.0.0.1", address.Host);
                 var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = address, Timeout = TimeSpan.FromSeconds(15) };
-                return new(app, client, factory, source, weather, sales, socket);
+                return new(app, client, factory, source, weather, sales, socket, database);
             }
             catch
             {
-                if (app is not null) await app.DisposeAsync();
-                await using var db = factory.CreateDbContext();
-                await db.Database.EnsureDeletedAsync();
+                await TestHttpHostCleanup.DisposeAsync(app, database);
                 throw;
             }
         }
         public async ValueTask DisposeAsync()
         {
             Client.Dispose();
-            try { await application.StopAsync(); await application.DisposeAsync(); }
-            finally { await using var db = Factory.CreateDbContext(); await db.Database.EnsureDeletedAsync(); }
+            await TestHttpHostCleanup.DisposeAsync(application, database, stop: true);
         }
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
@@ -508,8 +508,6 @@ public class MobileSolarApiTests
         public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
         { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
     }
-    private sealed class Monitor<T>(T value) : IOptionsMonitor<T>
-    { public T CurrentValue => value; public T Get(string? name) => value; public IDisposable? OnChange(Action<T, string?> listener) => null; }
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
     private sealed class Telemetry : IInverterDataSource
     {
@@ -526,8 +524,8 @@ public class MobileSolarApiTests
                 try { await Task.Delay(Timeout.Infinite, ct); }
                 catch (OperationCanceledException) { Canceled.TrySetResult(true); throw; }
             }
-            return new() { Timestamp = Now, BatterySoc = 90, GridConsumption = -2500, GridDeviceSn = "selected",
-                GridObservedAt = Now.AddMinutes(-1), SolarProduction = 3100, SolarObservedAt = Now.AddMinutes(-1), SolarDeviceSn = "selected" };
+            return ConfirmedInverterReading.Create(new() { Timestamp = Now, BatterySoc = 90, GridConsumption = -2500, GridDeviceSn = "selected",
+                GridObservedAt = Now.AddMinutes(-1), SolarProduction = 3100, SolarObservedAt = Now.AddMinutes(-1), SolarDeviceSn = "selected" });
         }
     }
     private sealed class HistoryWeather : ISolarHistoryRadiationSource

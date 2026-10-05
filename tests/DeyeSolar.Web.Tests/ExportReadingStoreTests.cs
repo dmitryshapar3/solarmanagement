@@ -1,6 +1,8 @@
 using DeyeSolar.Domain.Models;
+using DeyeSolar.Web.Api;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Services;
+using DeyeSolar.Web.Tenancy;
 using DeyeSolar.Web.Workers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +15,37 @@ public class ExportReadingStoreTests
 {
     private static readonly DateTimeOffset Start = new(2026, 9, 28, 0, 0, 0, TimeSpan.Zero);
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Start.AddDays(1); }
+
+    [SqlServerFact]
+    public async Task PollingPersistsExplicitMetricQualityAndCannotCertifyAnUnverifiedGridValue()
+    {
+        await using var database = await Database.CreateAsync();
+        var measuredZero = ConfirmedInverterReading.Create(new()
+        {
+            Timestamp = Start, SolarObservedAt = Start, SolarDeviceSn = "selected",
+            GridObservedAt = Start, GridDeviceSn = "selected"
+        });
+        await database.Store.SavePollingAsync(measuredZero, default);
+        await database.Store.SavePollingAsync(measuredZero with
+        {
+            Timestamp = Start.AddMinutes(1), BatterySoc = 80, GridConsumption = 9000,
+            SolarProduction = 8000, BatteryPower = -7000, BatterySocValid = false, Telemetry = null
+        }, default);
+        await using var check = database.Factory.CreateDbContext();
+        var rows = await check.Readings.OrderBy(row => row.Id).ToArrayAsync();
+        Assert.Equal(2, rows.Length);
+        var good = rows[0].ToDto();
+        Assert.True(good.BatterySocValid && good.BatteryPowerValid && good.BatteryTemperatureValid
+            && good.BatteryVoltageValid && good.BatteryCurrentValid && good.LoadPowerValid && good.GridPowerValid && good.SolarPowerValid);
+        Assert.Equal(0, good.BatterySoc);
+        Assert.Equal(0, good.SolarProduction);
+        Assert.Equal(0, good.GridConsumption);
+        var unavailable = rows[1].ToDto();
+        Assert.False(unavailable.BatterySocValid || unavailable.BatteryPowerValid || unavailable.BatteryTemperatureValid
+            || unavailable.BatteryVoltageValid || unavailable.BatteryCurrentValid || unavailable.LoadPowerValid || unavailable.GridPowerValid || unavailable.SolarPowerValid);
+        Assert.Equal(9000, unavailable.GridConsumption); // Raw numeric fields do not imply measurement quality.
+        Assert.Equal(0, (await check.ExportReadings.SingleAsync()).GridPowerWatts);
+    }
 
     [Theory]
     [InlineData("")]
@@ -151,39 +184,16 @@ public class ExportReadingStoreTests
         Assert.Contains("20260930160000_AddExportReadings", await check.Database.GetAppliedMigrationsAsync());
     }
 
-    private static InverterData Poll(int watts, DateTimeOffset polledAt) => new()
-    { GridConsumption = watts, GridObservedAt = Start, GridDeviceSn = "selected", Timestamp = polledAt };
+    private static InverterData Poll(int watts, DateTimeOffset polledAt) => ConfirmedInverterReading.Create(new()
+    { GridConsumption = watts, GridObservedAt = Start, GridDeviceSn = "selected", Timestamp = polledAt });
 
-    private sealed class Database(Factory factory) : IAsyncDisposable
+    private sealed class Database(SqlServerTestDatabase database) : IAsyncDisposable
     {
-        public Factory Factory { get; } = factory;
-        public ExportReadingStore Store { get; } = new(factory, new Clock());
-        public static async Task<Database> CreateAsync(bool migrate = true)
-        {
-            var connection = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("SOLAR_TEST_SQL_CONNECTION"))
-            { InitialCatalog = "SolarExportTests_" + Guid.NewGuid().ToString("N") };
-            var factory = new Factory(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(connection.ConnectionString).Options);
-            var database = new Database(factory);
-            if (migrate)
-            {
-                await using var db = factory.CreateDbContext();
-                await db.Database.MigrateAsync();
-                await TestInstallation.EnsureAsync(db);
-            }
-            return database;
-        }
-        public async ValueTask DisposeAsync()
-        {
-            await using var db = Factory.CreateDbContext();
-            await db.Database.EnsureDeletedAsync();
-        }
-    }
-
-    private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
-    {
-        public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id);
-        public Task<DeyeSolarDbContext> CreateDbContextAsync(CancellationToken ct = default)
-        { ct.ThrowIfCancellationRequested(); return Task.FromResult(CreateDbContext()); }
+        public TenantDbContextFactory Factory => database.Factory;
+        public ExportReadingStore Store { get; } = new(database.Factory, new Clock());
+        public static async Task<Database> CreateAsync(bool migrate = true) => new(await SqlServerTestDatabase.CreateAsync("SolarExportTests",
+            migrate ? SqlTestSchema.Migrations : SqlTestSchema.None, seed: migrate ? TestInstallation.EnsureAsync : null));
+        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
     private sealed class RejectingFactory : IDbContextFactory<DeyeSolarDbContext>
     { public DeyeSolarDbContext CreateDbContext() => throw new InvalidOperationException("Database must not be opened."); }

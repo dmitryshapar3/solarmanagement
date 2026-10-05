@@ -14,7 +14,7 @@ namespace DeyeSolar.Web.Workers;
 
 /// <summary>Reconciles observations, plans decisions and executes them through the fenced command coordinator.</summary>
 internal sealed class RuleAutomationExecutor(ISocketController _socketController, IRuleRepository _ruleRepository,
-    RuleEvaluator _ruleEvaluator, IAppSettingsReader _settingsService, IRuleRunHistory _history,
+    IRuleDecisionEvaluator _ruleEvaluator, IAppSettingsReader _settingsService, IRuleRunHistory _history,
     IRuleObservationReconciler _observations, ILogger _logger) : IRuleAutomationExecutor
 {
     public async Task EvaluateAsync(InverterData? data, List<TriggerRule> dueRules, Guid? effectiveSource, DateTime now,
@@ -27,6 +27,7 @@ internal sealed class RuleAutomationExecutor(ISocketController _socketController
         var displayOpts = await _settingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
         if (!await isCurrent()) return;
         var actions = new List<RuleAction>();
+        var decisions = new Dictionary<int, RuleDecision>();
         var successfulActions = new HashSet<int>();
         var failedActions = new Dictionary<int, string>();
         var recordedRules = new HashSet<int>();
@@ -36,7 +37,9 @@ internal sealed class RuleAutomationExecutor(ISocketController _socketController
             {
                 var observed = await _observations.ReconcileAsync(rule, now, ct);
                 // Unknown physical state cannot authorize ON. Time-window OFF may use the last acknowledged ON state.
-                actions.AddRange(_ruleEvaluator.Evaluate(observed ? data : null, [rule], DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext));
+                var decision = _ruleEvaluator.Decide(observed ? data : null, rule, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
+                decisions[rule.Id] = decision;
+                if (decision.Action is { } action) actions.Add(action);
             }
             catch (DeyeSolar.Web.Billing.BillingAccessException error)
             {
@@ -50,13 +53,19 @@ internal sealed class RuleAutomationExecutor(ISocketController _socketController
         {
             if (!await isCurrent()) break;
             var rule = dueRules.First(r => r.Id == action.RuleId);
-            if (!_ruleEvaluator.Evaluate(data, [rule], DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext)
-                .Any(current => current.TurnOn == action.TurnOn)) continue;
+            var dispatchDecision = _ruleEvaluator.Decide(data, rule, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
+            if (dispatchDecision.TurnOn != action.TurnOn) continue;
+            decisions[rule.Id] = dispatchDecision;
             try
             {
                 using var sourceGuard = IntegrationAutomationSourceGuard.Enter(effectiveSource, rule, data, action.TurnOn,
-                    () => _ruleEvaluator.Evaluate(data, [rule], DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext)
-                        .Any(current => current.TurnOn == action.TurnOn));
+                    () =>
+                    {
+                        var current = _ruleEvaluator.Decide(data, rule, DateTimeOffset.Now, displayOpts.TimeZoneId, evaluationContext);
+                        if (current.TurnOn != action.TurnOn) return false;
+                        decisions[rule.Id] = current;
+                        return true;
+                    });
                 if (action.TurnOn)
                     await _socketController.TurnOnAsync(action.EntityId, ct);
                 else
@@ -94,8 +103,10 @@ internal sealed class RuleAutomationExecutor(ISocketController _socketController
         }
 
         if (recordedRules.Count > 0)
-            await _history.RecordAsync(data ?? new InverterData { BatterySocValid = false }, evaluationContext, dueRules.Where(rule => recordedRules.Contains(rule.Id)).ToList(),
-                actions, successfulActions, failedActions, ct);
+            await _history.RecordAsync(data ?? new InverterData { BatterySocValid = false }, dueRules
+                .Where(rule => rule.Enabled && recordedRules.Contains(rule.Id))
+                .Select(rule => new RuleRunOutcome(rule.Name, decisions.GetValueOrDefault(rule.Id), successfulActions.Contains(rule.Id), failedActions.GetValueOrDefault(rule.Id)))
+                .ToArray(), ct);
     }
 
 }

@@ -58,14 +58,8 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
                 || !entries.TryGetValue("manifest.signature", out var signatureEntry) || signatureEntry.Length > 4096)
                 throw new InvalidDataException("Signed package manifest is missing or too large.");
             var bytes = await ReadBytesAsync(manifestEntry, ct);
-            var manifest = JsonSerializer.Deserialize<IntegrationPackageManifest>(bytes, IntegrationJson.Options)
-                ?? throw new InvalidDataException("Package manifest is invalid.");
-            ValidateManifest(manifest);
-            using var rsa = RSA.Create();
-            rsa.ImportFromPem(_publisherKeys[manifest.PublisherId]);
-            var signature = Convert.FromBase64String(System.Text.Encoding.UTF8.GetString(await ReadBytesAsync(signatureEntry, ct)));
-            if (!rsa.VerifyData(bytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss))
-                throw new InvalidDataException("Package publisher signature is invalid.");
+            var signatureBytes = await ReadBytesAsync(signatureEntry, ct);
+            var manifest = ReadVerifiedManifest(bytes, signatureBytes);
             if (manifest.Files.Count != entries.Count - 2 || !manifest.Files.ContainsKey(manifest.EntryPoint))
                 throw new InvalidDataException("Every package payload must be covered by the signed manifest.");
             var catalog = await ReadCatalogAsync(ct);
@@ -80,7 +74,7 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
             staging = Path.Combine(_root, ".staging-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(staging);
             await File.WriteAllBytesAsync(Path.Combine(staging, "manifest.json"), bytes, ct);
-            await File.WriteAllBytesAsync(Path.Combine(staging, "manifest.signature"), await ReadBytesAsync(signatureEntry, ct), ct);
+            await File.WriteAllBytesAsync(Path.Combine(staging, "manifest.signature"), signatureBytes, ct);
             foreach (var (relative, expected) in manifest.Files)
             {
                 ValidateRelative(relative);
@@ -227,13 +221,8 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
         if (Path.GetFullPath(package.ArtifactPath) != Within(_root, package.Identity.PackageDigest))
             throw new InvalidDataException("Package catalog escaped the configured artifact store.");
         var bytes = await File.ReadAllBytesAsync(Within(package.ArtifactPath, "manifest.json"), ct);
-        var signed = JsonSerializer.Deserialize<IntegrationPackageManifest>(bytes, IntegrationJson.Options)
-            ?? throw new InvalidDataException("Installed manifest is invalid.");
-        var signature = Convert.FromBase64String(await File.ReadAllTextAsync(Within(package.ArtifactPath, "manifest.signature"), ct));
-        using var rsa = RSA.Create();
-        rsa.ImportFromPem(_publisherKeys[package.Manifest.PublisherId]);
-        if (!rsa.VerifyData(bytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss)
-            || JsonSerializer.Serialize(signed, IntegrationJson.Options) != JsonSerializer.Serialize(package.Manifest, IntegrationJson.Options))
+        var signed = ReadVerifiedManifest(bytes, await File.ReadAllBytesAsync(Within(package.ArtifactPath, "manifest.signature"), ct));
+        if (JsonSerializer.Serialize(signed, IntegrationJson.Options) != JsonSerializer.Serialize(package.Manifest, IntegrationJson.Options))
             throw new InvalidDataException("Installed manifest authenticity does not match the package catalog.");
         foreach (var (relative, expected) in package.Manifest.Files)
         {
@@ -242,6 +231,20 @@ public sealed class IntegrationPackageStore : IIntegrationPackageManager, IInteg
                 throw new InvalidDataException("An installed package was modified.");
         }
     }
+    // Verification always signs the original bytes; JSON reserialization is only catalog comparison.
+    private IntegrationPackageManifest ReadVerifiedManifest(byte[] bytes, byte[] signatureText)
+    {
+        var manifest = JsonSerializer.Deserialize<IntegrationPackageManifest>(bytes, IntegrationJson.Options)
+            ?? throw new InvalidDataException("Package manifest is invalid.");
+        ValidateManifest(manifest);
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(_publisherKeys[manifest.PublisherId]);
+        var signature = Convert.FromBase64String(System.Text.Encoding.UTF8.GetString(signatureText));
+        if (!rsa.VerifyData(bytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss))
+            throw new InvalidDataException("Package publisher signature is invalid.");
+        return manifest;
+    }
+
     private async Task<List<IntegrationInstalledPackage>> ReadCatalogAsync(CancellationToken ct)
     {
         var path = Path.Combine(_root, "catalog.json");
