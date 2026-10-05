@@ -290,6 +290,83 @@ public class ApplicationOperationsTests
     }
 
     [SqlServerFact]
+    public async Task RecordedHistoricalFailureCounterSupportsUpgradeAndStillRejectsUnknownReleaseHistory()
+    {
+        var database = await SqlServerTestDatabase.CreateAsync("SolarHistoricalCounter", SqlTestSchema.None);
+        await using var db = new DeyeSolarDbContext(database.Options);
+        try
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261004190319_AccountBilling");
+            // Existing deployments record this migration independently of the current assembly.
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE dbo.TriggerRules ADD ConsecutiveFailures int NOT NULL DEFAULT((0))");
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT dbo.__EFMigrationsHistory(MigrationId,ProductVersion)
+                VALUES ('20260418223955_AddRuleConsecutiveFailures','8.0.0');
+                INSERT dbo.Installations(Id,Name,CreatedAt,IsEnabled)
+                VALUES ('historical-counter-neighbor','Independent neighbor',SYSDATETIMEOFFSET(),1);
+                INSERT dbo.TriggerRules(InstallationId,Name,EntityId,Enabled,SocTurnOnThreshold,
+                    CooldownMinutes,IntervalSeconds,CurrentState,SocTurnOffThreshold,
+                    UseSeparateSocTurnOffThreshold,UseSolarProductionThreshold,MinAverageSolarProductionWatts,ConsecutiveFailures)
+                VALUES ('legacy','Historical counter','offline-target',0,80,15,30,0,80,0,0,3000,7),
+                    ('historical-counter-neighbor','Neighbor counter','offline-neighbor',0,80,15,30,0,80,0,0,3000,9);
+                """);
+            await DatabaseSchemaVerifier.EnsureCompatibleMigrationHistoryAsync(db, default);
+            await db.Database.MigrateAsync();
+            await DatabaseSchemaVerifier.VerifyAsync(db, false, default);
+            Assert.Contains("20260418223955_AddRuleConsecutiveFailures", await db.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(1, await db.Database.SqlQueryRaw<int>("""
+                SELECT COUNT(*) AS [Value] FROM sys.columns
+                WHERE object_id=OBJECT_ID('dbo.TriggerRules') AND name='ConsecutiveFailures'
+                    AND system_type_id=56 AND is_nullable=0 AND default_object_id<>0
+                """).SingleAsync());
+            Assert.Equal(7, await db.Database.SqlQueryRaw<int>("""
+                SELECT ConsecutiveFailures AS [Value] FROM dbo.TriggerRules WHERE InstallationId='legacy'
+                """).SingleAsync());
+            Assert.Equal(9, await db.Database.SqlQueryRaw<int>("""
+                SELECT ConsecutiveFailures AS [Value] FROM dbo.TriggerRules WHERE InstallationId='historical-counter-neighbor'
+                """).SingleAsync());
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT dbo.__EFMigrationsHistory(MigrationId,ProductVersion)
+                VALUES ('20991231000000_UnknownRelease','8.0.31');
+                """);
+            var upgrade = await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseSchemaVerifier.EnsureCompatibleMigrationHistoryAsync(db, default));
+            var runtime = await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseSchemaVerifier.VerifyAsync(db, false, default));
+            Assert.Contains("newer release", upgrade.Message);
+            Assert.Contains("newer release", runtime.Message);
+            Assert.Contains("20260418223955_AddRuleConsecutiveFailures", await db.Database.GetAppliedMigrationsAsync());
+            Assert.Contains("20991231000000_UnknownRelease", await db.Database.GetAppliedMigrationsAsync());
+        }
+        finally { await database.DisposeAsync(); }
+    }
+
+    [SqlServerFact]
+    public async Task HistoricalMigrationIdentityRequiresItsRecordedPhysicalCounterSchema()
+    {
+        foreach (var column in new string?[] { null, "ConsecutiveFailures bigint NOT NULL DEFAULT((0))",
+            "ConsecutiveFailures int NULL DEFAULT((0))", "ConsecutiveFailures int NOT NULL DEFAULT((1))",
+            "ConsecutiveFailures int NOT NULL" })
+        {
+            var database = await SqlServerTestDatabase.CreateAsync("SolarHistoricalCounterDrift");
+            await using var db = new DeyeSolarDbContext(database.Options);
+            try
+            {
+                if (column is not null)
+                    await db.Database.ExecuteSqlRawAsync("ALTER TABLE dbo.TriggerRules ADD " + column);
+                await db.Database.ExecuteSqlRawAsync("""
+                    INSERT dbo.__EFMigrationsHistory(MigrationId,ProductVersion)
+                    VALUES ('20260418223955_AddRuleConsecutiveFailures','8.0.0');
+                    """);
+                var upgrade = await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseSchemaVerifier.EnsureCompatibleMigrationHistoryAsync(db, default));
+                var runtime = await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseSchemaVerifier.VerifyAsync(db, false, default));
+                Assert.Contains("recorded schema", upgrade.Message);
+                Assert.Contains("recorded schema", runtime.Message);
+                Assert.Contains("20260418223955_AddRuleConsecutiveFailures", await db.Database.GetAppliedMigrationsAsync());
+            }
+            finally { await database.DisposeAsync(); }
+        }
+    }
+
+    [SqlServerFact]
     public async Task UnavailableSignedBootstrapCannotStartExistingUsersBillingTrial()
     {
         var database = await SqlServerTestDatabase.CreateAsync("SolarPreflight", SqlTestSchema.None);
@@ -347,6 +424,23 @@ public class ApplicationOperationsTests
             await RuntimeDatabaseProvisioner.ProvisionAsync(db, configuration, default);
             var restricted = new SqlConnectionStringBuilder(connection.ConnectionString) { UserID = login, Password = password };
             await using var runtime = new DeyeSolarDbContext(new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlServer(restricted.ConnectionString).Options);
+            await DatabaseSchemaVerifier.VerifyAsync(runtime, true, default);
+            Assert.Equal(1, await runtime.Database.SqlQueryRaw<int>("""
+                SELECT CONVERT(int, CASE WHEN HAS_PERMS_BY_NAME('dbo.TriggerRules','OBJECT','VIEW DEFINITION')=1
+                    AND HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','VIEW DEFINITION')=0
+                    AND HAS_PERMS_BY_NAME('dbo','SCHEMA','VIEW DEFINITION')=0
+                    AND HAS_PERMS_BY_NAME('dbo.AppSettings','OBJECT','VIEW DEFINITION')=0
+                    AND HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','ALTER')=0
+                    AND HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','CONTROL')=0
+                    AND HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','CREATE TABLE')=0
+                    AND HAS_PERMS_BY_NAME('dbo.TriggerRules','OBJECT','ALTER')=0
+                    THEN 1 ELSE 0 END) AS [Value]
+                """).SingleAsync());
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE dbo.TriggerRules ADD ConsecutiveFailures int NOT NULL DEFAULT((0));
+                INSERT dbo.__EFMigrationsHistory(MigrationId,ProductVersion)
+                VALUES ('20260418223955_AddRuleConsecutiveFailures','8.0.0');
+                """);
             await DatabaseSchemaVerifier.VerifyAsync(runtime, true, default);
             await Assert.ThrowsAsync<SqlException>(() => runtime.Database.ExecuteSqlRawAsync("CREATE TABLE ForbiddenSchemaChange (Id int)"));
         }

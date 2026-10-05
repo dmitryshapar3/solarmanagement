@@ -35,6 +35,8 @@ internal static class RuntimeDatabaseProvisioner
             EXEC (@sql);
             SET @sql = N'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::dbo TO ' + @quotedName;
             EXEC (@sql);
+            SET @sql = N'GRANT VIEW DEFINITION ON OBJECT::dbo.TriggerRules TO ' + @quotedName;
+            EXEC (@sql);
             """, [new SqlParameter("runtimeName", user), new SqlParameter("runtimePassword", password)], ct);
     }
 }
