@@ -8,7 +8,7 @@ export class TransactionReceiptSynchronizer {
   private readonly acknowledged = new Set<string>();
   constructor(private readonly api: BillingAccountApi, private readonly native: SubscriptionStore | null) {}
   async synchronize(snapshot: BillingSnapshot, initial: BillingAccess, signal: AbortSignal,
-    current: () => boolean, beforeVerify: () => void): Promise<BillingAccess> {
+    current: () => boolean, beforeVerify: () => void, verifiedAccess?: (access: BillingAccess) => void): Promise<BillingAccess> {
     let access = initial;
     if (!this.native || !initial.appleSubscriptionsEnabled) return access;
     for (const transaction of transactionsForAccount(snapshot, initial.appAccountToken)) {
@@ -18,6 +18,7 @@ export class TransactionReceiptSynchronizer {
         beforeVerify();
         access = await this.api.verifyAppleTransaction(transaction.signedTransaction, signal);
         if (!current()) return access;
+        verifiedAccess?.(access);
         this.verified.add(transaction.signedTransaction);
       }
       // Expired access is still a successful server receipt, not a failed purchase delivery.

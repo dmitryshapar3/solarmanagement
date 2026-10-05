@@ -25,6 +25,15 @@ public static class AccountIdentityEndpoints
             googleEnabled = options.GoogleEnabled
         })).AllowAnonymous();
 
+        api.MapGet("/identities", async Task<IResult> (HttpContext context, AccountIdentityService accounts, CancellationToken ct) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId is null) return Results.Unauthorized();
+            var identities = await accounts.IdentitiesAsync(userId, ct);
+            return identities is null ? Results.Unauthorized() : Results.Ok(identities);
+        }).RequireAuthorization(ApiAuthorization.BearerUser);
+
         api.MapPost("/verification/start", async Task<IResult> (VerificationStartRequest request, HttpContext context,
             OneTimeVerificationService verification, CancellationToken ct) =>
         {

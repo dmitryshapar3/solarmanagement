@@ -151,7 +151,7 @@ test("the generation snapshot preserves the distinction between missing PV and e
   globals.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer: ReturnType<typeof create> | undefined;
   try {
-    const props = { state: null, liveInverter: { ...reading, solarPowerValid: false }, timeZoneId: "UTC", onRefresh() {} };
+    const props = { state: null, liveInverter: { ...reading, solarPowerValid: false }, timeZoneId: "UTC" };
     await act(async () => { renderer = create(React.createElement(Component, props)); });
     const value = () => renderer!.root.findAllByType("View").find(item => {
       const text = item.findAllByType("Text");

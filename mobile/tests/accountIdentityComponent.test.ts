@@ -25,12 +25,17 @@ for (const [language, linkLabel, successMessage, loginMode] of [
   const calls: { path: string; bearer?: string }[] = [];
   let startedFlow: { codeChallenge: string; state: string } | undefined;
   let browserCalls = 0;
+  let googleLinked = false;
+  let identityReads = 0;
+  let finishInitialIdentity!: () => void;
+  const initialIdentity = new Promise<void>(resolve => { finishInitialIdentity = resolve; });
   const ticket = "C".repeat(43);
   const native = {
     preferences: storage(preferences), secure: storage(secure),
     fetch: async (url: string, init: { headers: Record<string, string>; body?: string }) => {
       const pathname = new URL(url).pathname;
       calls.push({ path: pathname, bearer: init.headers.Authorization });
+      if (pathname === "/api/auth/identities" && ++identityReads === 1) await initialIdentity;
       if (pathname === "/api/auth/login") {
         assert.equal(init.headers.Authorization, undefined);
         assert.deepEqual(JSON.parse(init.body!), { username: "owner", password: "local-test-password" });
@@ -45,7 +50,9 @@ for (const [language, linkLabel, successMessage, loginMode] of [
       const validProof = !linking || proof.code === ticket && startedFlow !== undefined
         && createHash("sha256").update(proof.codeVerifier, "ascii").digest("base64url") === startedFlow.codeChallenge;
       const status = linking && (!validProof || init.headers.Authorization !== "Bearer original-owner-token") ? 401 : 200;
+      if (linking && status === 200) googleLinked = true;
       const body = pathname === "/api/auth/options" ? { googleEnabled: true, emailEnabled: false, phoneEnabled: false, registrationEnabled: true }
+        : pathname === "/api/auth/identities" ? { email: "owner@example.test", phone: "+48123456789", googleLinked }
         : pathname === "/api/auth/google/link/start" ? { authorizationUrl: "https://solar.dshapar.com/auth/google?linkTicket=test", expiresAt: "2026-10-04T12:02:00Z" }
         : pathname === "/api/auth/login" ? { token: "original-owner-token", username: "owner", expiresAt: "2026-11-04T12:00:00Z" }
         : linking ? status === 200 ? { token: "unused-replacement-token", username: "owner", expiresAt: "2026-11-04T12:00:00Z" } : { message: "Google sign-in expired. Please start again." }
@@ -75,7 +82,7 @@ for (const [language, linkLabel, successMessage, loginMode] of [
     // Bundle the actual provider and card. Only native platform boundaries are replaced;
     // React, auth state transitions, API client and the card's event handler remain real.
     const bundle = await build({
-      stdin: { contents: 'export { AuthProvider, useAuth } from "./src/application/AuthContext"; export { LanguageProvider } from "./src/application/LanguageContext"; export { AccountIdentityCard } from "./src/features/auth/AccountIdentityCard";', resolveDir: process.cwd(), loader: "ts" },
+      stdin: { contents: 'export { AuthProvider, useAuth } from "./src/application/AuthContext"; export { LanguageProvider } from "./src/application/LanguageContext"; export { AccountIdentityCard } from "./src/features/auth/AccountIdentityCard"; export { ScreenRefreshContext } from "./src/core/ScreenRefreshContext";', resolveDir: process.cwd(), loader: "ts" },
       bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
       plugins: [{ name: "native-boundaries", setup(builder) {
         builder.onResolve({ filter: /^(react-native|expo\/fetch|expo-secure-store|expo-crypto|expo-web-browser|@react-native-async-storage\/async-storage)$/ }, args => ({ path: args.path, namespace: "native-test" }));
@@ -88,19 +95,24 @@ for (const [language, linkLabel, successMessage, loginMode] of [
             : args.path === "expo-secure-store" ? `export const WHEN_UNLOCKED_THIS_DEVICE_ONLY = 1; export const getItemAsync = key => ${state}.secure.getItem(key); export const setItemAsync = (key,value) => ${state}.secure.setItem(key,value); export const deleteItemAsync = key => ${state}.secure.removeItem(key);`
             : args.path === "@react-native-async-storage/async-storage" ? `export default ${state}.preferences;`
             : args.path === "expo-web-browser" ? `export const openAuthSessionAsync = (...args) => ${state}.openAuthSession(...args);`
-            : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card = "Card"; export const SectionTitle = "SectionTitle"; export const ErrorBanner = "ErrorBanner"; export const TextField = "TextField";';
+            : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card = "Card"; export const SectionTitle = "SectionTitle"; export const ErrorBanner = "ErrorBanner"; export const TextField = "TextField"; export const StatusPill = "StatusPill";';
           return { contents, loader: "js" };
         });
       } }]
     });
     const module = { exports: {} as any };
     new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
-    const { AuthProvider, useAuth, LanguageProvider, AccountIdentityCard } = module.exports;
+    const { AuthProvider, useAuth, LanguageProvider, AccountIdentityCard, ScreenRefreshContext } = module.exports;
+    const registered = new Map<symbol, { refresh: () => Promise<unknown>; loading: boolean }>();
+    const registry = { register: (id: symbol, entry: { refresh: () => Promise<unknown>; loading: boolean }) => {
+      registered.set(id, entry); return () => { registered.delete(id); };
+    } };
     let current: { isAuthenticated: boolean; username: string | null; login(input: { baseUrl: string; username: string; password: string }): Promise<void> } | undefined;
     function Probe() { current = useAuth(); return null; }
     await act(async () => {
       renderer = create(React.createElement(AuthProvider, null,
-        React.createElement(LanguageProvider, null, React.createElement(Probe), React.createElement(AccountIdentityCard))));
+        React.createElement(LanguageProvider, null, React.createElement(Probe),
+          React.createElement(ScreenRefreshContext.Provider, { value: registry }, React.createElement(AccountIdentityCard)))));
     });
     if (loginMode === "password") {
       assert.equal(current?.isAuthenticated, false);
@@ -109,6 +121,14 @@ for (const [language, linkLabel, successMessage, loginMode] of [
     }
     assert.equal(current?.isAuthenticated, true);
     assert.equal(current?.username, "owner");
+    assert.equal(identityReads, 1);
+    assert.equal([...registered.values()][0]!.loading, true, "Initial identity reads must block screen pulls");
+    await act(async () => { await [...registered.values()][0]!.refresh(); });
+    assert.equal(identityReads, 1, "A pull cannot overlap the initial identity read or allow its old status to win later");
+    await act(async () => { finishInitialIdentity(); await initialIdentity; });
+    assert.equal([...registered.values()][0]!.loading, false);
+    await act(async () => { await [...registered.values()][0]!.refresh(); });
+    assert.equal(identityReads, 2, "Pull refresh becomes available after the initial request finishes");
     const button = renderer!.root.findAllByType("button").find((item: any) => item.props.label === linkLabel)!;
     assert.equal(button.props.disabled, false);
     await act(async () => { button.props.onPress(); });
@@ -123,6 +143,21 @@ for (const [language, linkLabel, successMessage, loginMode] of [
     assert.equal(secure.get(sessionKeys.secureSession), stored);
     assert.equal(preferences.get(sessionKeys.disabled), undefined);
     assert.ok(JSON.stringify(renderer!.toJSON()).includes(successMessage));
+    assert.ok(JSON.stringify(renderer!.toJSON()).includes("owner@example.test"));
+    assert.ok(JSON.stringify(renderer!.toJSON()).includes("+48123456789"));
+    const linkInstruction = language === "pl" ? "Każda metoda kontaktu wymaga weryfikacji." : "Each contact must be verified.";
+    assert.equal(JSON.stringify(renderer!.toJSON()).includes(linkInstruction), false, "A fully linked account should not be asked to link its identities again");
+    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === linkLabel), false);
+    assert.ok(calls.filter(call => call.path === "/api/auth/identities").every(call => call.bearer === "Bearer original-owner-token"));
+    // The provider binding is read again on opening Settings; its state is not just a transient success message.
+    await act(async () => renderer!.unmount());
+    await act(async () => {
+      renderer = create(React.createElement(AuthProvider, null,
+        React.createElement(LanguageProvider, null, React.createElement(Probe), React.createElement(AccountIdentityCard))));
+    });
+    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === linkLabel), false);
+    assert.equal(renderer!.root.findByType("StatusPill").props.tone, "success");
+    assert.equal(browserCalls, 1);
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
     delete globals.__solarAccountNative;

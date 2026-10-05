@@ -31,17 +31,16 @@ export function SolarEstimateDetailsScreen() {
   const loading = estimate.loading || inverter.loading;
   const verified = state && !state.error && !state.refreshFailed && state.comparison.status !== 0;
   const refresh = useGroupedRefresh(loading, [() => estimate.refresh(), () => inverter.refresh(true)]);
-  return <Screen refreshing={loading} onRefresh={() => void refresh()}>
+  return <Screen refreshing={loading} onRefresh={refresh}>
     <Header title={t("Solar estimate details")} subtitle={t("Hourly actual and possible power, weather calculation and measurement comparison")} />
-    <GenerationHistoryPanel initialPeriod={route.params?.period} initialDate={route.params?.date} detailed
-      onRefreshSnapshot={refresh} snapshotLoading={loading} />
+    <GenerationHistoryPanel initialPeriod={route.params?.period} initialDate={route.params?.date} detailed />
     <CurrentSolarSnapshot state={state} liveInverter={inverter.data?.inverter} timeZoneId={timeZone}
-      error={estimate.error ?? inverter.error} loading={loading} onRefresh={() => void refresh()} />
+      error={estimate.error ?? inverter.error} />
     <Text style={styles.muted}>{t("Polling time may differ from the source measurement time. The hourly chart and comparison use separate saved measurements.")}</Text>
     <Text style={styles.muted}>{t("Unavailable measurements are shown with a dash. A valid measured zero is shown as 0.00.")}</Text>
     {loading && !state ? <LoadingState label={t("Loading estimate details...")} /> : null}
     <Card style={styles.card}>
-      <TileHeader title={t("Weather calculation")} onRefresh={() => void refresh()} loading={loading} />
+      <TileHeader title={t("Weather calculation")} />
       {!currentEstimate ? <Text style={styles.muted}>{t("No weather estimate is available.")}</Text> : <>
         {state?.refreshFailed || state?.error ? <Text style={styles.warning}>{t("This retained estimate is shown with its original time; it is not a fresh reading.")}</Text> : null}
         <DetailRow label={t("Central estimate")} value={amount(currentEstimate.centralKw, "kW")} />

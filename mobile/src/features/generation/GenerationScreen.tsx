@@ -4,7 +4,7 @@ import { ReactNode, useCallback, useMemo, useState } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { AppButton, Card, ErrorBanner, Header, LoadingState, Screen, SegmentedControl } from "../../core/components";
+import { Card, ErrorBanner, Header, LoadingState, Screen, SegmentedControl } from "../../core/components";
 import { InverterData, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "../../core/api/types";
 import { TileHeader } from "../../core/TileHeader";
 import { useAuth } from "../../application/AuthContext";
@@ -13,7 +13,6 @@ import { EnergyChart } from "../energy/EnergyChart";
 import { addDays, amount, canSelectPreviousHistoryDay, dateCaption, known, momentCaption, tickCaption, validRange, zonedDate } from "../energy/chartPolicy";
 import { energyStyles as styles, PeriodNavigation } from "../energy/EnergyControls";
 import { useFocusedResource } from "../energy/useFocusedResource";
-import { useGroupedRefresh } from "../energy/useGroupedRefresh";
 import { colors, spacing } from "../../core/theme";
 
 export function GenerationScreen() {
@@ -22,10 +21,10 @@ export function GenerationScreen() {
   const navigation = useNavigation<CompositeNavigationProp<NavigationProp<RootTabsParamList>, NativeStackNavigationProp<RootStackParamList>>>();
   const inverter = useFocusedResource("generation-dashboard", useCallback((signal: AbortSignal, force: boolean) =>
     force ? api.refreshDashboard(signal) : api.getDashboard(signal), [api]));
-  return <Screen>
+  return <Screen refreshing={inverter.loading} onRefresh={() => inverter.refresh(true)}>
     <Header title={t("Generation")} subtitle={t("Weather estimates and measured solar power")} />
-    <GenerationPanel liveInverter={inverter.data?.inverter} inverterLoading={inverter.loading} inverterError={inverter.error}
-      timeZoneId={inverter.data?.timeZoneId} onRefreshInverter={() => inverter.refresh(true)}
+    <GenerationPanel liveInverter={inverter.data?.inverter} inverterError={inverter.error}
+      timeZoneId={inverter.data?.timeZoneId}
       onDetails={(period, date) => navigation.navigate("SolarEstimateDetails", { period, date })} />
   </Screen>;
 }
@@ -35,15 +34,13 @@ type SolarSnapshotProps = {
   liveInverter?: InverterData | null;
   timeZoneId?: string;
   error?: string | null;
-  loading?: boolean;
-  onRefresh: () => void;
   onDetails?: () => void;
 };
 
-export function CurrentSolarSnapshot({ state, liveInverter, timeZoneId = "Europe/Warsaw", error, loading, onRefresh, onDetails }: SolarSnapshotProps) {
+export function CurrentSolarSnapshot({ state, liveInverter, timeZoneId = "Europe/Warsaw", error, onDetails }: SolarSnapshotProps) {
   const { t } = useLanguage();
   return <Card style={styles.card}>
-    <TileHeader title={t("Latest solar snapshot")} loading={loading} onRefresh={onRefresh} onDetails={onDetails} />
+    <TileHeader title={t("Latest solar snapshot")} onDetails={onDetails} />
     <ErrorBanner message={error} />
     <SolarSnapshotValues state={state} liveInverter={liveInverter} timeZoneId={timeZoneId} />
   </Card>;
@@ -69,20 +66,16 @@ type GenerationPanelProps = {
   compact?: boolean;
   onDetails?: (period: SolarHistoryPeriod, date: string) => void;
   liveInverter?: InverterData | null;
-  onRefreshInverter?: () => Promise<void>;
-  inverterLoading?: boolean;
   inverterError?: string | null;
   timeZoneId?: string;
 };
 
-export function GenerationPanel({ compact = false, onDetails, liveInverter, onRefreshInverter, inverterLoading = false, inverterError, timeZoneId = "Europe/Warsaw" }: GenerationPanelProps) {
+export function GenerationPanel({ compact = false, onDetails, liveInverter, inverterError, timeZoneId = "Europe/Warsaw" }: GenerationPanelProps) {
   const { api } = useAuth();
   const estimate = useFocusedResource("solar-estimate", useCallback((signal: AbortSignal) => api.getSolarEstimate(signal), [api]));
-  const loading = estimate.loading || inverterLoading;
-  const refreshSnapshot = useGroupedRefresh(loading, [() => estimate.refresh(), () => onRefreshInverter?.()]);
-  return <GenerationHistoryPanel compact={compact} onDetails={onDetails} snapshotLoading={loading} onRefreshSnapshot={refreshSnapshot}
+  return <GenerationHistoryPanel compact={compact} onDetails={onDetails}
     snapshot={(details) => <CurrentSolarSnapshot state={estimate.data} liveInverter={liveInverter} timeZoneId={timeZoneId}
-      loading={loading} error={estimate.error ?? inverterError} onRefresh={() => void refreshSnapshot()} onDetails={details} />}
+      error={estimate.error ?? inverterError} onDetails={details} />}
     compactContent={<><ErrorBanner message={estimate.error ?? inverterError} /><SolarSnapshotValues state={estimate.data} liveInverter={liveInverter} timeZoneId={timeZoneId} /></>} />;
 }
 
@@ -93,13 +86,11 @@ type GenerationHistoryPanelProps = {
   onDetails?: (period: SolarHistoryPeriod, date: string) => void;
   snapshot?: (details?: () => void) => ReactNode;
   compactContent?: ReactNode;
-  snapshotLoading?: boolean;
-  onRefreshSnapshot?: () => Promise<void>;
   detailed?: boolean;
 };
 
 // This component owns the selected history window. Its chart and table always read the same response.
-export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today", initialDate, onDetails, snapshot, compactContent, snapshotLoading = false, onRefreshSnapshot, detailed = false }: GenerationHistoryPanelProps) {
+export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today", initialDate, onDetails, snapshot, compactContent, detailed = false }: GenerationHistoryPanelProps) {
   const { t } = useLanguage();
   const { api, isDemo } = useAuth();
   const [period, setPeriod] = useState<SolarHistoryPeriod>(initialPeriod);
@@ -107,11 +98,9 @@ export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today
   const resource = useFocusedResource(`solar-history:${period}:${date ?? "today"}`,
     useCallback((signal: AbortSignal) => api.getSolarHistory(period, date, signal), [api, period, date]));
   const data = resource.data;
-  const loading = resource.loading || snapshotLoading;
   const today = data?.today ?? zonedDate(new Date());
   const selected = data?.selectedDate ?? date ?? today;
   const details = onDetails ? () => onDetails(period, selected) : undefined;
-  const refresh = useGroupedRefresh(loading, [() => resource.refresh(), () => onRefreshSnapshot?.()]);
   const points = useMemo(() => data?.points.map((point) => ({
     timestamp: point.timestamp, label: tickCaption(point.timestamp, data.timeZoneId, period === "Today" ? "Day" : "Month"),
     possible: point.possible, actual: point.actualKw,
@@ -120,7 +109,7 @@ export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today
   return <>
     {!compact ? snapshot?.(details) : null}
     <Card style={styles.card}>
-      <TileHeader title={compact ? t("Possible generation") : t("Generation history")} loading={loading} onRefresh={() => void refresh()} onDetails={details} />
+      <TileHeader title={compact ? t("Possible generation") : t("Generation history")} onDetails={details} />
       {compact ? compactContent : null}
       {!compact ? <>
         <SegmentedControl options={[{ label: t("Day"), value: "Today" }, { label: t("7 days"), value: "Week" }, { label: t("30 days"), value: "Month" }]} value={period} onChange={setPeriod} />
@@ -128,13 +117,12 @@ export function GenerationHistoryPanel({ compact = false, initialPeriod = "Today
           onPrevious={() => setDate(addDays(selected, -1))} onNext={() => setDate(addDays(selected, 1))} onToday={() => { setDate(undefined); setPeriod("Today"); }} />
       </> : <Text style={styles.muted}>{t("{0} · hourly average power", dateCaption(selected))}</Text>}
       <ErrorBanner message={resource.error} />
-      {resource.error ? <AppButton label={t("Retry")} compact variant="ghost" loading={loading} onPress={() => void refresh()} /> : null}
       {data?.weatherError ? <Text style={styles.warning}>{t(data.weatherError)}</Text> : null}
       {data?.actualError ? <Text style={styles.warning}>{t(data.actualError)}</Text> : null}
       <View style={styles.legend}><Text style={[styles.muted, styles.amberValue]}>{t("■ Possible · range")}</Text><Text style={[styles.muted, styles.primaryValue]}>{t("━ Actual")}</Text></View>
-      {resource.loading && !data ? <LoadingState label={t("Loading generation...")} /> : <EnergyChart key={`${data?.start}:${data?.end}`} points={points} mode="generation" unit="kW" />}
+      {resource.loading && !data ? <LoadingState label={t("Loading generation...")} /> : <EnergyChart key={`chart:${data?.start}:${data?.end}`} points={points} mode="generation" unit="kW" />}
       <Text style={styles.muted}>{t("Tap the chart or use Previous / Next interval to inspect exact values. These are hourly average power; missing readings remain gaps.")}</Text>
-      {data && detailed ? <GenerationHistoryTable key={`${data.start}:${data.end}`} data={data} /> : null}
+      {data && detailed ? <GenerationHistoryTable key={`table:${data.start}:${data.end}`} data={data} /> : null}
       {!compact ? <View style={styles.divider}><Text style={styles.muted}>{t("Possible power is calculated from weather data. The shaded band shows the estimate range. It is separate from the latest inverter reading.")}</Text>{!isDemo ? <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://open-meteo.com/en/docs")}><Text style={styles.link}>{t("Open-Meteo weather · CC BY 4.0")}</Text></Pressable> : null}</View> : null}
     </Card>
   </>;

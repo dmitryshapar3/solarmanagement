@@ -3,8 +3,8 @@ import type { ScopedActionContext } from "../../application/ScopedActionScope";
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useState } from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import { LogOut, MapPin, RefreshCcw, Save } from "lucide-react-native";
+import { Keyboard, StyleSheet, Text, View } from "react-native";
+import { LogOut, MapPin, Save } from "lucide-react-native";
 import {
   AppButton,
   Card,
@@ -24,6 +24,7 @@ import { useAuth } from "../../application/AuthContext";
 import { AccountSecurityCard } from "../auth/AccountSecurityCard";
 import { AccountIdentityCard } from "../auth/AccountIdentityCard";
 import { IntegrationSettings } from "../integrations/IntegrationSettings";
+import { LanguageDropdown } from "./LanguageDropdown";
 
 const deviceTimeZone = (() => {
   try {
@@ -42,7 +43,7 @@ type SiteNumberKey = typeof siteNumberFields[number][0];
 
 export function SettingsScreen() {
   const demoDisplayName = useDemoDisplayName();
-  const { t, language, languages, setLanguage } = useLanguage();
+  const { t } = useLanguage();
   const { api, apiBaseUrl, isDemo, updateApiBaseUrl, logout } = useAuth();
   const [languageError, setLanguageError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState(apiBaseUrl);
@@ -100,8 +101,9 @@ export function SettingsScreen() {
 
   useEffect(() => {
     setLoading(true);
-    void load();
-  }, [load]);
+    void actions.run("settings-load", load);
+    return actions.cancel;
+  }, [load, actions.run, actions.cancel]);
 
   const runBusy = (label: string, action: (context: ScopedActionContext) => Promise<void>) => actions.run(label, action, {
     started: () => { Keyboard.dismiss(); setError(null); },
@@ -111,19 +113,13 @@ export function SettingsScreen() {
   const languageSettings = <Card style={styles.form}>
     <SectionTitle title={t("Language")} />
     <Text style={styles.activeInfo}>{t("Choose your language for the app and website.")}</Text>
-    <View style={styles.languageList}>{languages.map(option => <Pressable key={option.code}
-      accessibilityRole="button" accessibilityLabel={option.name} accessibilityState={{ selected: language === option.code }}
-      style={[styles.languageChoice, language === option.code && styles.languageSelected]}
-      onPress={() => { setLanguageError(null); void setLanguage(option.code).catch(exception => setLanguageError(exception instanceof Error ? exception.message : "Unable to save your language.")); }}>
-      <Text style={styles.languageName}>{option.name}</Text>
-      {language === option.code ? <StatusPill label={t("Selected")} tone="success" /> : null}
-    </Pressable>)}</View>
+    <LanguageDropdown onError={setLanguageError} />
     <ErrorBanner message={languageError} />
   </Card>;
 
   if (loading) {
     return (
-      <Screen>
+      <Screen refreshing={loading || Boolean(busy)} onRefresh={() => runBusy("refresh", load)}>
         {languageSettings}
         <LoadingState label={t("Loading settings...")} />
       </Screen>
@@ -132,7 +128,7 @@ export function SettingsScreen() {
 
   if (!settings) {
     return (
-      <Screen>
+      <Screen refreshing={loading || Boolean(busy)} onRefresh={() => runBusy("refresh", load)}>
         <Header
           title={t("Settings")}
           subtitle={t("Account and installation settings")}
@@ -140,7 +136,7 @@ export function SettingsScreen() {
         />
         {languageSettings}
         <ErrorBanner message={error ?? t("Settings could not be loaded.")} />
-        <AppButton label={t("Retry")} icon={RefreshCcw} onPress={() => void load()} variant="secondary" />
+        <AccountIdentityCard />
         <AccountSecurityCard />
       </Screen>
     );
@@ -210,7 +206,7 @@ export function SettingsScreen() {
   </View>;
 
   return (
-    <Screen refreshing={busy === "refresh"} onRefresh={() => void runBusy("refresh", load)}>
+    <Screen refreshing={loading || Boolean(busy)} onRefresh={() => runBusy("refresh", load)}>
       <Header
         title={t("Settings")}
         subtitle={settings.display.timeZoneId}
@@ -311,10 +307,6 @@ export function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  languageList: { gap: spacing.sm },
-  languageChoice: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-  languageSelected: { borderColor: colors.primary },
-  languageName: { color: colors.text, fontSize: typography.body, flexShrink: 1 },
   form: {
     gap: spacing.lg
   },

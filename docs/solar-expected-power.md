@@ -81,13 +81,15 @@ Historical possible power is reconstructed from available Open-Meteo Best Match 
 
 A bounded shared history-weather cache lasts fifteen minutes; source failures are cached for two minutes. Geometry/date-window changes invalidate incompatible cache entries. Missing weather leaves a gap in the possible band while independently available actual readings remain visible. Real nighttime zero remains zero.
 
+Migration `20261005120000_RestoreProvenSolarHistoryQuality` repairs the PV archive hidden by the preceding quality migration. Older Deye/Integration adapters recorded a PV measurement time and device only after validation. The repair restores `SolarPowerValid` only for those nonnegative, nonfuture, attributed records written before the first row with an explicit new metric-quality flag. The cutover uses the global reading ID across installations; if no explicit cutover exists, no records are promoted. Other metric flags and all numeric values remain unchanged. New records marked invalid remain invalid. Run the privileged migration job before restarting the matching server.
+
 Actual history uses confirmed, device-specific measurement times. Duplicate polls at the same measured timestamp are deduplicated, retaining the latest valid persisted reading. Linear integration joins observations at most ten minutes apart, clips them to each hour and divides by covered duration. At least 90% of the hour must be covered. Missing actual coverage remains a gap. No extrapolation fills missing measurements.
 
 Legacy `Readings` are retained for 31 days; rule-run logs remain limited to three days. Historical windows may extend beyond available actual readings, and previously deleted observations cannot be recovered. Export-sales storage has its own retention rules. An older application version may restore a shorter readings-retention policy, so assess that behavior before rollback.
 
 ## Operation and verification
 
-Back up the database before upgrades and preserve existing configuration, credentials and volumes. Startup applies EF Core migrations. After changing geometry or device confirmation, verify the displayed parameters, source/retrieval times, fresh measurements and comparison state; a successful login alone does not establish valid generation data. For Compose deployments, update only the intended application service and preserve adjacent services. Do not automatically restore an old database when rolling back application code: newer observations could be lost.
+Back up the database before upgrades and preserve existing configuration, credentials and volumes. Production requires the privileged migration job before starting the restricted runtime; see [production operations](production-operations.md). Development startup applies EF Core migrations. After changing geometry or device confirmation, verify the displayed parameters, source/retrieval times, fresh measurements and comparison state; a successful login alone does not establish valid generation data. For Compose deployments, update only the intended application service and preserve adjacent services. Do not automatically restore an old database when rolling back application code: newer observations could be lost.
 
 ```powershell
 dotnet test DeyeSolar.sln --configuration Release --logger trx

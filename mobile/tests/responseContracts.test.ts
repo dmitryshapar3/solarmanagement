@@ -27,6 +27,7 @@ test("historical measurements require point-in-time quality independently of num
 for (const [path, payload] of [
   ["/api/auth/login", { token: 7, username: "owner", expiresAt: "2026-11-04T12:00:00Z" }],
   ["/api/auth/session", { authenticated: "true", username: "owner" }],
+  ["/api/auth/identities", { email: null, phone: null, googleLinked: "true" }],
   ["/api/devices", { devices: [{ id: "socket", name: "Socket", category: null, online: true, isOn: "false", currentPowerW: 0 }], lastUpdated: null }],
   ["/api/rules", {}],
   ["/api/settings", { polling: { intervalSeconds: "10" }, display: { timeZoneId: "UTC" } }],
@@ -41,6 +42,13 @@ for (const [path, payload] of [
     assert.equal(expired, 0);
   });
 }
+test("linked identity status requires explicit verified contacts and a boolean Google binding", () => {
+  const status = { email: "owner@example.test", phone: "+48123456789", googleLinked: true };
+  assert.equal(validApiResponse("/api/auth/identities", "GET", status), true);
+  assert.equal(validApiResponse("/api/auth/identities", "GET", { email: null, phone: null, googleLinked: false }), true);
+  for (const field of ["email", "phone", "googleLinked"])
+    assert.equal(validApiResponse("/api/auth/identities", "GET", { ...status, [field]: undefined }), false, field);
+});
 test("malformed token and expiry cannot reach successful sign-in persistence", async () => {
   const api = new DeyeSolarApi(new ApiClient({ baseUrl: "https://solar.example", transport: async () => ({ status: 200, ok: true,
     text: async () => JSON.stringify({ token: "otherwise-valid", username: "owner", expiresAt: "never" }) }) }));

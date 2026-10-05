@@ -62,6 +62,7 @@ function contract(path: string, method: string): Check | undefined {
   if (["/api/auth/login", "/api/auth/register", "/api/auth/verification/login", "/api/auth/google/exchange"].includes(path)) return auth;
   if (path === "/api/auth/session") return object({ authenticated: bool, username: nullable(str) });
   if (path === "/api/auth/options") return object({ registrationEnabled: bool, emailEnabled: bool, phoneEnabled: bool, googleEnabled: bool });
+  if (path === "/api/auth/identities") return object({ email: nullable(str), phone: nullable(str), googleLinked: bool });
   if (path === "/api/auth/verification/start" || path === "/api/auth/security/verification/start") return verification;
   if (path === "/api/auth/google/link/start") return object({ authorizationUrl: str, expiresAt: date });
   if (path === "/api/auth/security/permissions") return object({ role: nullable(str), permissions: array(oneOf("Read", "ManageRules", "ControlDevices", "ManageSettings", "ManageIntegrations")) });

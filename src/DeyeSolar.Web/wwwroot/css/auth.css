@@ -3,3 +3,7 @@
 .auth-form button, .auth-action { background: #17683f; color: white; cursor: pointer; text-decoration: none; }
 .auth-form button:disabled { opacity: .45; cursor: default; }
 .auth-error { padding: .8rem; border: 1px solid #b24c42; border-radius: .45rem; background: #3c211e; }
+.google-signin-wrap { display: flex; justify-content: center; max-width: 30rem; margin: 1.4rem 0; }
+.google-signin { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; border: 1px solid #dadce0; background: #fff; text-decoration: none; }
+.google-signin:hover { background: #f8faff; }
+.google-signin:focus-visible { outline: 3px solid #2fd37a; outline-offset: 3px; }

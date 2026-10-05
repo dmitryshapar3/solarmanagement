@@ -12,9 +12,11 @@ npm start
 
 The default server is `https://solar.dshapar.com`. Sign in with the existing Solar account. A custom server URL can be entered on the login screen.
 
-The Home screen combines battery SOC, solar generation and grid power with a forced refresh button. Both the live generation metric and the generation chart use PV production, independently of battery charging or discharging power. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
+The Home screen combines battery SOC, solar generation and grid power. Pull down to refresh all data on the current screen, including its generation and sales panels; this gesture also works on detail screens, devices, rules, history, settings and subscriptions. Both the live generation metric and the generation chart use PV production, independently of battery charging or discharging power. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
 
 Focused screens refresh every five minutes while the app is in the foreground. Missing values are not displayed as zero. Financial values come from the server; the app does not recalculate settlement prices or revenue.
+
+Backgrounding and foreground access checks retain the current screen while the server-confirmed grant is valid. If access expires, connected screens close and the last navigation state remains in account-scoped memory for restoration after successful verification. Logout and account changes clear that state.
 
 ## Verify
 
@@ -63,7 +65,7 @@ Install `build/DerivedData/Build/Products/Release-iphonesimulator/DeyeSolar.app`
 4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
 5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
 
-The current billing build is `1.0.0 (10)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
+The current billing build is `1.0.0 (11)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
 
 Client and server use the current contracts together. There are no old-session migrations, permissive old response formats, or unversioned rule mutations. Deploy the matching backend before validating connected features of this build. The complete native harness and Release bridge compilation are required; live Apple sandbox purchases remain a separate acceptance check.
 

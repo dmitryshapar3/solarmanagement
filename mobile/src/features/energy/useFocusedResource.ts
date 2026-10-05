@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionSession } from "../../application/ScopedActionScope";
 import { AppState } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { useScreenRefresh } from "../../core/ScreenRefreshContext";
 
 const refreshInterval = 5 * 60 * 1000;
 
@@ -48,6 +49,8 @@ export function useFocusedResource<T>(key: string, fetch: (signal: AbortSignal, 
       }
     }
   }, [key, fetch, session]);
+  const pullRefresh = useCallback(() => run(true), [run]);
+  useScreenRefresh(pullRefresh, loading);
 
   useEffect(() => session?.onSessionChange(() => {
     invalidate(); setStored(null); setError(null);

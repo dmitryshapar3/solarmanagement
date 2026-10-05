@@ -3,9 +3,7 @@ import { formattingLocale } from "../../core/i18n";
 import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useState } from "react";
 import { FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { RefreshCcw } from "lucide-react-native";
 import {
-  AppButton,
   Card,
   EmptyState,
   ErrorBanner,
@@ -56,11 +54,13 @@ export function HistoryScreen() {
         }
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
+        alwaysBounceVertical
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void resource.refresh(true)}
             tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         )}
         ListHeaderComponent={(
@@ -68,7 +68,6 @@ export function HistoryScreen() {
             <Header
               title={t("History")}
               subtitle={mode === "readings" ? t("{0} readings", items.length) : t("{0} rule runs", items.length)}
-              action={<AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void resource.refresh(true)} loading={refreshing} disabled={loading} variant="secondary" compact />}
             />
             <SegmentedControl
               value={mode}

@@ -3,7 +3,7 @@ import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useRef, useState } from "react";
 import { Keyboard, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { CirclePower, RefreshCcw, Zap } from "lucide-react-native";
+import { CirclePower, Zap } from "lucide-react-native";
 import {
   AppButton,
   Card,
@@ -105,21 +105,10 @@ export function DevicesScreen() {
   const countLabel = devices.length === 1 ? t("{0} socket", devices.length) : t("{0} sockets", devices.length);
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void load("refresh")}>
+    <Screen refreshing={refreshing} onRefresh={() => load("refresh")}>
       <Header
         title={t("Devices")}
         subtitle={lastUpdated ? t("{0} | Updated {1}", countLabel, formatTime(lastUpdated)) : countLabel}
-        action={(
-          <AppButton
-            label={t("Refresh")}
-            icon={RefreshCcw}
-            onPress={() => void load("refresh")}
-            loading={refreshing}
-            disabled={refreshing || loading}
-            variant="secondary"
-            compact
-          />
-        )}
       />
       <ErrorBanner message={error} />
 

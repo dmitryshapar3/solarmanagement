@@ -26,6 +26,31 @@ public class AccountIdentitySqlServerTests
     private const string SiblingInstallation = "independent-installation";
 
     [SqlServerFact]
+    public async Task IdentityStatusRequiresBearerAndOnlyReturnsTheSignedInAccountsVerifiedMethods()
+    {
+        await using var host = await Host.StartAsync();
+        var first = await host.RegisterAsync("first-status@example.test");
+        var second = await host.RegisterAsync("second-status@example.test");
+        foreach (var token in new string?[] { null, "forged-bearer" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/identities");
+            if (token is not null) request.Headers.Authorization = new("Bearer", token);
+            using var denied = await host.Client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        }
+        foreach (var session in new[] { first, second })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/identities?userId=another-account");
+            request.Headers.Authorization = new("Bearer", session.Token);
+            using var response = await host.Client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl?.NoStore);
+            var status = await response.Content.ReadFromJsonAsync<AccountIdentitiesResponse>();
+            Assert.Equal(new AccountIdentitiesResponse(session.Username, null, false), status);
+        }
+    }
+
+    [SqlServerFact]
     public async Task VerifiedEmailRegistrationCreatesSeparateEmptyInstallationsAndPreservesExistingData()
     {
         await using var host = await Host.StartAsync();

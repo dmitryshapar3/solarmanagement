@@ -47,6 +47,11 @@ async function harness(platform: "ios" | "android" = "ios", management = false) 
   let accessReply: Promise<BillingAccess> | null = null;
   let outcome = "purchased";
   let purchaseReply: Promise<{ outcome: string; snapshot: BillingSnapshot }> | null = null;
+  let snapshotReply: Promise<BillingSnapshot> | null = null;
+  let finishReply: Promise<void> | null = null;
+  let privateMounts = 0;
+  let privateUnmounts = 0;
+  let selectPrivatePage!: (page: string) => void;
   const calls: string[] = [];
   const finishes: string[] = [];
   const purchases: { id: string; token: string }[] = [];
@@ -67,12 +72,12 @@ async function harness(platform: "ios" | "android" = "ios", management = false) 
   } });
   const api = new DeyeSolarApi(client);
   const store = {
-    getSnapshotAsync: async () => storeSnapshot,
+    getSnapshotAsync: async () => snapshotReply ? await snapshotReply : storeSnapshot,
     getEntitlementsAsync: async () => storeSnapshot,
     purchaseAsync: async (id: string, token: string) => { purchases.push({ id, token }); return purchaseReply ? await purchaseReply : { outcome, snapshot: storeSnapshot }; },
     restoreAsync: async () => storeSnapshot,
     manageAsync: async () => {},
-    finishAsync: async (id: string, _token: string) => { calls.push(`finish-${id}`); finishes.push(id); },
+    finishAsync: async (id: string, _token: string) => { calls.push(`finish-${id}`); if (finishReply) await finishReply; finishes.push(id); },
     addListener: (_event: string, listener: () => void) => { nativeListener = listener; return { remove: () => { nativeListener = null; } }; }
   };
   const native = { api, store, platform, appListeners };
@@ -102,17 +107,27 @@ async function harness(platform: "ios" | "android" = "ios", management = false) 
   new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
   const { SubscriptionProvider, SubscriptionGate, SubscriptionScreen, useSubscription } = module.exports;
   let current: any;
-  function Probe() { current = useSubscription(); return null; }
+  const renderedAccess: boolean[] = [];
+  function Probe() { current = useSubscription(); renderedAccess.push(current.hasAccess); return null; }
+  function PrivatePage() {
+    const [page, setPage] = React.useState("Home");
+    selectPrivatePage = setPage;
+    React.useEffect(() => { privateMounts++; return () => { privateUnmounts++; }; }, []);
+    return React.createElement("private", { page }, `cached-private-socket-data · ${page}`);
+  }
   let renderer: ReturnType<typeof create>;
   const props = { onLogout: async () => {}, privacyUrl: "https://solar.example/privacy", termsUrl: "https://solar.example/terms", supportUrl: "https://solar.example/support" };
-  await act(async () => {
-    renderer = create(React.createElement(SubscriptionProvider, null, React.createElement(Probe),
+  const renderTree = () => React.createElement(SubscriptionProvider, null, React.createElement(Probe),
       management ? React.createElement(SubscriptionScreen, props)
-        : React.createElement(SubscriptionGate, props, React.createElement("private", null, "cached-private-socket-data"))));
+        : React.createElement(SubscriptionGate, props, React.createElement(PrivatePage)));
+  await act(async () => {
+    renderer = create(renderTree());
   });
   return {
-    api, calls, finishes, purchases, get current() { return current; },
+    api, calls, finishes, purchases, renderedAccess, get current() { return current; },
     get tree() { return JSON.stringify(renderer!.toJSON()); },
+    get privateMounts() { return privateMounts; }, get privateUnmounts() { return privateUnmounts; },
+    selectPage: async (page: string) => { await act(async () => selectPrivatePage(page)); },
     press: async (label: string) => { await act(async () => {
       const button = renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
       assert.ok(button, `The ${label} button must be visible`);
@@ -129,6 +144,9 @@ async function harness(platform: "ios" | "android" = "ios", management = false) 
     fail: (value: boolean) => { failure = value; }, failVerification: (value: boolean) => { verificationFailure = value; },
     delayAccess: (value: Promise<BillingAccess> | null) => { accessReply = value; }, setOutcome: (value: string) => { outcome = value; },
     delayPurchase: (value: Promise<{ outcome: string; snapshot: BillingSnapshot }> | null) => { purchaseReply = value; },
+    delaySnapshot: (value: Promise<BillingSnapshot> | null) => { snapshotReply = value; },
+    delayFinish: (value: Promise<void> | null) => { finishReply = value; },
+    replaceSession: async () => { client.setToken("replacement-account-token"); await act(async () => renderer!.update(renderTree())); },
     foreground: async (state: string) => { await act(async () => { for (const listener of appListeners) listener(state); }); },
     nativeChanged: async () => { await act(async () => { nativeListener?.(); }); },
     close: async () => { await act(async () => renderer!.unmount()); delete globals.__solarBillingNative; delete globals.IS_REACT_ACT_ENVIRONMENT; }
@@ -163,7 +181,9 @@ test("native change callbacks during purchase coalesce and acknowledge the recei
     await h.nativeChanged();
     await h.foreground("inactive");
     await h.foreground("active");
-    assert.equal(h.current.hasAccess, false, "The purchase sheet hides previously cached readings");
+    assert.equal(h.current.hasAccess, true, "Native modal lifecycle events retain the still-valid server grant");
+    assert.equal(h.privateMounts, 1);
+    assert.equal(h.privateUnmounts, 0);
     assert.equal(h.current.busy, "purchase", "The native action keeps modal ownership across inactive/active events");
     assert.deepEqual(h.finishes, []);
     await act(async () => { reply.resolve({ outcome: "purchased", snapshot: purchased }); await purchase; });
@@ -200,23 +220,33 @@ test("a 402 during an unfinished purchase fences its late result and releases bu
   } finally { await h.close(); }
 });
 
-test("foreground starts closed and a network failure cannot expose previously cached reads", async () => {
+test("inactive, background and foreground checks preserve the mounted last page within the server grant", async () => {
   const h = await harness("android");
   try {
+    await h.selectPage("Sales details · September");
+    await h.foreground("inactive");
     await h.foreground("background");
-    assert.equal(h.current.hasAccess, false);
+    assert.equal(h.current.hasAccess, true);
+    assert.ok(h.tree.includes("Sales details · September"));
+    assert.ok(!h.tree.includes("Checking your account access"), "The app switcher retains the current page");
     const reply = deferred<BillingAccess>();
     h.delayAccess(reply.promise);
     await h.foreground("active");
-    assert.equal(h.current.hasAccess, false);
-    assert.ok(!h.tree.includes("cached-private-socket-data"));
+    assert.equal(h.current.hasAccess, true);
+    assert.equal(h.current.isChecking, true);
+    assert.ok(h.tree.includes("Sales details · September"));
+    await h.foreground("active");
+    assert.equal(h.privateMounts, 1);
+    assert.equal(h.privateUnmounts, 0);
     await act(async () => { reply.resolve(access()); });
     assert.equal(h.current.hasAccess, true);
     h.delayAccess(null);
     h.fail(true);
     await h.foreground("active");
-    assert.equal(h.current.hasAccess, false);
-    assert.ok(!h.tree.includes("cached-private-socket-data"));
+    assert.equal(h.current.hasAccess, true);
+    assert.ok(h.tree.includes("Sales details · September"));
+    assert.equal(h.privateMounts, 1);
+    assert.equal(h.privateUnmounts, 0);
     assert.ok(!h.tree.includes("Your trial has ended."), "Offline is unknown access, not confirmed trial expiration");
   } finally { await h.close(); }
 });
@@ -244,9 +274,10 @@ test("a rejected signed transaction stays unfinished and restore can recover aft
     const purchased = snapshot(); purchased.entitlements = [transaction()];
     h.setSnapshot(purchased); h.failVerification(true);
     await act(async () => { await h.current.purchase(subscriptionProductIds.monthly); });
-    assert.equal(h.current.hasAccess, false);
+    assert.equal(h.current.hasAccess, true, "A rejected receipt cannot erase a still-valid, separately granted server trial");
+    assert.equal(h.current.access.status, "trial");
     assert.deepEqual(h.finishes, []);
-    assert.ok(!h.tree.includes("cached-private-socket-data"));
+    assert.ok(h.tree.includes("cached-private-socket-data"));
     h.failVerification(false);
     await act(async () => { await h.current.refresh(); });
     assert.equal(h.current.hasAccess, true);
@@ -334,5 +365,60 @@ test("the real paywall selects the yearly plan and activates server access throu
     assert.equal(h.current.access.status, "active");
     assert.deepEqual(h.finishes, ["1"]);
     assert.ok(h.tree.includes("cached-private-socket-data"));
+  } finally { await h.close(); }
+});
+
+test("authoritative denial closes the gate before a slow StoreKit snapshot returns", async () => {
+  const h = await harness();
+  try {
+    const slow = deferred<BillingSnapshot>();
+    h.delaySnapshot(slow.promise);
+    h.setAccess(access({ status: "expired", hasAccess: false, appleSubscriptionsEnabled: true }));
+    let work!: Promise<void>;
+    await act(async () => { work = h.current.refresh(); });
+    assert.equal(h.current.isChecking, true);
+    assert.equal(h.current.hasAccess, false);
+    assert.ok(!h.tree.includes("cached-private-socket-data"));
+    assert.equal(h.privateUnmounts, 1);
+    await act(async () => { slow.resolve(snapshot()); await work; });
+    assert.equal(h.current.hasAccess, false);
+  } finally { await h.close(); }
+});
+
+test("a verified expired receipt closes the gate before native transaction finishing", async () => {
+  const h = await harness();
+  try {
+    const purchased = snapshot(); purchased.entitlements = [transaction()];
+    h.setSnapshot(purchased);
+    h.setVerificationAccess(access({ status: "expired", hasAccess: false, appleSubscriptionsEnabled: true }));
+    const slow = deferred<void>(); h.delayFinish(slow.promise);
+    let work!: Promise<void>;
+    await act(async () => { work = h.current.refresh(); });
+    assert.equal(h.current.hasAccess, false);
+    assert.ok(!h.tree.includes("cached-private-socket-data"));
+    assert.deepEqual(h.finishes, []);
+    await act(async () => { slow.resolve(); await work; });
+    assert.equal(h.current.hasAccess, false);
+    assert.deepEqual(h.finishes, ["1"]);
+  } finally { await h.close(); }
+});
+
+test("a replacement session renders closed immediately and rejects the previous account's late grant", async () => {
+  const h = await harness("android");
+  try {
+    await h.selectPage("Old account device details");
+    const old = deferred<BillingAccess>(); h.delayAccess(old.promise);
+    let work!: Promise<void>;
+    await act(async () => { work = h.current.refresh(); });
+    const next = deferred<BillingAccess>(); h.delayAccess(next.promise);
+    const before = h.renderedAccess.length;
+    await h.replaceSession();
+    assert.equal(h.current.hasAccess, false);
+    assert.ok(h.renderedAccess.slice(before).every(value => value === false), "No render may carry the old controller's grant");
+    assert.ok(!h.tree.includes("Old account device details"));
+    await act(async () => { old.resolve(access()); await work; });
+    assert.equal(h.current.hasAccess, false);
+    await act(async () => { next.resolve(access({ status: "expired", hasAccess: false })); });
+    assert.equal(h.current.hasAccess, false);
   } finally { await h.close(); }
 });

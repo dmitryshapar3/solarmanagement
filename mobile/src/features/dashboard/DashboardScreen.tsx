@@ -77,15 +77,13 @@ export function DashboardScreen() {
   }
 
   return (
-    <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh(true)}>
+    <Screen refreshing={resource.loading} onRefresh={() => resource.refresh(true)}>
       <Header title={t("Dashboard")} subtitle={t("Your energy at a glance")} />
       <ErrorBanner message={commandError ?? resource.error} />
       <Card style={styles.statusCard}>
         <TileHeader
           title={t("Current generation")}
           subtitle={dashboard?.inverter ? t("Latest reported inverter power · polled {0}", formatTime(dashboard.inverter.timestamp)) : t("Waiting for the first inverter reading")}
-          loading={resource.loading}
-          onRefresh={() => void resource.refresh(true)}
           onDetails={() => navigation.navigate("InverterDetails")}
         />
         <View style={styles.statusMetrics}>
@@ -113,10 +111,8 @@ export function DashboardScreen() {
       </Card>
       <GenerationPanel compact
         liveInverter={dashboard?.inverter}
-        inverterLoading={resource.loading}
         inverterError={resource.error}
         timeZoneId={dashboard?.timeZoneId}
-        onRefreshInverter={() => resource.refresh(true)}
         onDetails={(period, date) => navigation.navigate("SolarEstimateDetails", { period, date })}
       />
       <SalesPanel compact onDetails={(period, date) => navigation.navigate("SalesDetails", { period, date })} />

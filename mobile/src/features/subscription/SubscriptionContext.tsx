@@ -15,14 +15,18 @@ const SubscriptionContext = createContext<SubscriptionContextValue | null>(null)
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const { api } = useAuth();
-  const controller = useMemo(() => new SubscriptionController(api, Platform.OS === "ios" ? solarSubscriptions : null), [api]);
-  const [state, setState] = useState(controller.value);
+  const sessionEpoch = api.sessionEpoch;
+  const controller = useMemo(() => new SubscriptionController(api, Platform.OS === "ios" ? solarSubscriptions : null), [api, sessionEpoch]);
+  const [observed, setObserved] = useState({ controller, state: controller.value });
+  // Render the new account's closed gate immediately, before its effect subscribes.
+  const state = observed.controller === controller ? observed.state : controller.value;
   useEffect(() => {
-    const observe = controller.subscribe(setState);
+    const observe = controller.subscribe(state => setObserved({ controller, state }));
     const denied = api.onBillingDenied(() => controller.billingDenied());
     const listener = solarSubscriptions?.addListener("entitlementsChanged", () => { void controller.refresh(); });
     const foreground = AppState.addEventListener("change", value => controller.appStateChanged(value === "active"));
     const timer = setInterval(() => { if (AppState.currentState === "active") void controller.refresh(); }, 60_000);
+    controller.appStateChanged(AppState.currentState === "active");
     controller.start();
     return () => { controller.stop(); observe(); denied(); listener?.remove(); foreground.remove(); clearInterval(timer); };
   }, [api, controller]);

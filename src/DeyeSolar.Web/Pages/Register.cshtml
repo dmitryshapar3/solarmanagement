@@ -31,5 +31,5 @@
     }
 }
 else { <p>@T["Email and phone registration require configured verification providers."]</p> }
-@if (Model.Providers.RegistrationEnabled && Model.Providers.GoogleEnabled) { <p><a class="auth-action" href="/auth/google">@T["Continue with Google"]</a></p> }
+@if (Model.Providers.RegistrationEnabled && Model.Providers.GoogleEnabled) { <p class="google-signin-wrap"><a class="google-signin" href="/auth/google" aria-label="@T["Continue with Google"]" title="@T["Continue with Google"]"><partial name="_GoogleIcon" /></a></p> }
 <p>@T["Already have an account?"] <a href="/login">@T["Sign in"]</a> @T["or"] <a href="/verify">@T["use a verification code"]</a>@T[". To add another sign-in method, sign in first and open"] <a href="/account">@T["Account"]</a>.</p>

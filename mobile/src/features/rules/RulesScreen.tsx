@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Edit3, Plus, RefreshCcw, Trash2 } from "lucide-react-native";
+import { Edit3, Plus, Trash2 } from "lucide-react-native";
 import {
   AppButton,
   Card,
@@ -96,7 +96,7 @@ export function RulesScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => void load(true)}>
+    <Screen refreshing={refreshing} onRefresh={() => load(true)}>
       <Header
         title={t("Rules")}
         subtitle={t("{0} configured", rules.length)}
@@ -120,7 +120,6 @@ export function RulesScreen({ navigation }: Props) {
         <EmptyState title={t("No rules configured.")} />
       )}
 
-      <AppButton label={t("Refresh")} icon={RefreshCcw} onPress={() => void load(true)} variant="secondary" />
     </Screen>
   );
 }

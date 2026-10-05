@@ -1,7 +1,8 @@
 import { useLanguage } from "./LanguageContext";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
+import type { InitialState } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Banknote, CreditCard, History, LayoutDashboard, MoreHorizontal, PlugZap, Settings, SlidersHorizontal, SunMedium } from "lucide-react-native";
@@ -45,7 +46,9 @@ const navigationTheme = {
 
 export function AppNavigator() {
   const { t } = useLanguage();
-  const { isAuthenticated, isBootstrapping, isDemo, apiBaseUrl, username, logout } = useAuth();
+  const { api, isAuthenticated, isBootstrapping, isDemo, apiBaseUrl, username, logout } = useAuth();
+  const navigationMemory = useMemo<{ state?: InitialState }>(() => ({}),
+    [api, api.sessionEpoch, apiBaseUrl, username, isAuthenticated, isDemo]);
 
   if (isBootstrapping) {
     return (
@@ -75,13 +78,13 @@ export function AppNavigator() {
 
   return <SubscriptionProvider key={`${apiBaseUrl}:${username}`}>
     <SubscriptionGate onLogout={logout} privacyUrl={PUBLIC_PRIVACY_URL} termsUrl={PUBLIC_TERMS_URL} supportUrl={PUBLIC_SUPPORT_URL}>
-      <SolarNavigator key="real" />
+      <SolarNavigator key="real" memory={navigationMemory} />
     </SubscriptionGate>
   </SubscriptionProvider>;
 }
 
-function SolarNavigator() {
-  return <NavigationContainer theme={navigationTheme}>
+function SolarNavigator({ memory }: { memory?: { state?: InitialState } }) {
+  return <NavigationContainer theme={navigationTheme} initialState={memory?.state} onStateChange={state => { if (memory) memory.state = state; }}>
     <RootStack.Navigator screenOptions={{
       headerStyle: { backgroundColor: colors.background },
       headerTintColor: colors.text,

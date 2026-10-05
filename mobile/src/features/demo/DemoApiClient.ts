@@ -49,6 +49,9 @@ export class DemoApiClient extends ApiClient {
     if (route === "POST /api/auth/logout") { this.active = false; return; }
     if (!this.active) throw new ApiError(401, t("The demo session has ended."));
 
+    if (route === "GET /api/auth/options") return { registrationEnabled: false, emailEnabled: false, phoneEnabled: false, googleEnabled: false };
+    if (route === "GET /api/auth/identities") return { email: null, phone: null, googleLinked: false };
+
     if (route === "GET /api/dashboard" || route === "POST /api/dashboard/refresh") return {
       inverter: demoInverter(now, timeZone), devicesLoaded: true, deviceLastUpdated: now.toISOString(),
       devices: this.state.devices, manualDevices: this.state.devices, rules: this.state.rules, timeZoneId: timeZone

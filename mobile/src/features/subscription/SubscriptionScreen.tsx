@@ -37,7 +37,7 @@ export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl 
     }
   }
 
-  return <Screen>
+  return <Screen refreshing={billing.isChecking} onRefresh={() => billing.busy === null ? billing.refresh() : undefined}>
     <Header title={billing.hasAccess ? t("Your subscription") : "Solar Premium"}
       subtitle={t("Solar energy monitoring, generation and sales insights")}
       action={<AppButton label={t("Logout")} icon={LogOut} onPress={() => void onLogout()} variant="secondary" compact />} />
@@ -87,8 +87,6 @@ export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl 
       loading={billing.busy === "restore"} onPress={() => void billing.restore()} />
     <AppButton label={t("Manage subscription")} variant="ghost" disabled={!billing.canUseAppStore || billing.busy !== null || billing.isChecking}
       loading={billing.busy === "manage"} onPress={() => void billing.manage()} />
-    <AppButton label={t("Check again")} variant="ghost" disabled={billing.busy !== null || billing.isChecking}
-      onPress={() => void billing.refresh()} />
     <View style={styles.legal}>
       <AppButton label={t("Privacy policy")} variant="ghost" onPress={() => void openLink(privacyUrl)} />
       <AppButton label={t("Terms of use")} variant="ghost" onPress={() => void openLink(termsUrl)} />

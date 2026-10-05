@@ -18,6 +18,7 @@ import { IntegrationFields } from "./IntegrationFields";
 import { authorizeIntegration } from "./integrationOAuth";
 import { IntegrationSelect } from "./IntegrationSelect";
 import { supportsDeviceKind } from "./providerKinds";
+import { useScreenRefresh } from "../../core/ScreenRefreshContext";
 
 export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }: {
   api: IntegrationApi;
@@ -139,6 +140,8 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
       ? t("{0} Your draft is preserved.", t(exception.message))
       : exception instanceof Error ? exception.message : "The integration action failed.")
   });
+  const refreshFromPull = useCallback(() => actions.run("catalog", context => refreshCatalog(context.signal)), [actions.run, refreshCatalog]);
+  useScreenRefresh(refreshFromPull, loading || Boolean(busy));
 
   async function open(instance: IntegrationInstance, signal: AbortSignal) {
     const configuration = await api.getConfiguration(instance.id, signal);
@@ -242,8 +245,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
     {isDemo ? <Card><Text style={styles.detail}>{t("Integration setup is available after connecting to your server. Demo mode uses sample devices.")}</Text></Card> : <>
       <ErrorBanner message={catalogError} />
       <ErrorBanner message={error} />
-      <AppButton label={loading ? t("Loading integrations...") : t("Refresh integration catalog")} variant="secondary"
-        disabled={Boolean(busy) || loading} onPress={() => void run("catalog", refreshCatalog)} />
+      {loading ? <Text style={styles.detail}>{t("Loading integrations...")}</Text> : null}
       {instances.map(instance => <Card key={instance.id} style={styles.form}>
         <Text style={styles.title}>{instance.name}</Text>
         <StatusPill label={instance.status === "enabled" ? t("Enabled") : instance.status === "disabled" ? t("Disabled") : t(instance.status)} tone={instance.status === "enabled" ? "success" : "neutral"} />

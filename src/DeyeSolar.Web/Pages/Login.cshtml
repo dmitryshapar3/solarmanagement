@@ -9,6 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@T["Login - DeyeSolar"]</title>
+    <link rel="stylesheet" href="/css/auth.css" asp-append-version="true" />
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Roboto', sans-serif; background: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -49,7 +50,7 @@
             @Html.AntiForgeryToken()
         </form>
         @if (Model.Providers.GoogleEnabled)
-        { <p style="margin-top:24px"><a href="/auth/google" style="color:#90caf9">@T["Continue with Google"]</a></p> }
+        { <p class="google-signin-wrap" style="margin-top:24px"><a href="/auth/google" class="google-signin" aria-label="@T["Continue with Google"]" title="@T["Continue with Google"]"><partial name="_GoogleIcon" /></a></p> }
         <nav class="public-links" aria-label="@T["Account options"]">
             <a href="/register">@T["Create account"]</a>
             <a href="/verify">@T["Sign in with an email or SMS code"]</a>

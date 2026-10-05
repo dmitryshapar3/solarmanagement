@@ -1,5 +1,5 @@
 import { useLanguage } from "../application/LanguageContext";
-import { ReactNode } from "react";
+import { ReactNode, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardTypeOptions,
@@ -18,6 +18,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LucideIcon } from "lucide-react-native";
 import { colors, radius, spacing, typography } from "./theme";
+import { ScreenRefreshContext, ScreenRefreshEntry, ScreenRefreshOperation } from "./ScreenRefreshContext";
+import { RefreshGroup } from "../features/energy/RefreshGroup";
 
 export function Screen({
   children,
@@ -29,12 +31,35 @@ export function Screen({
   children: ReactNode;
   scroll?: boolean;
   refreshing?: boolean;
-  onRefresh?: () => void;
+  onRefresh?: ScreenRefreshOperation;
   style?: StyleProp<ViewStyle>;
 }) {
+  const [entries, setEntries] = useState(new Map<symbol, ScreenRefreshEntry>());
+  const [pullPending, setPullPending] = useState(false);
+  const pullActive = useRef(false);
+  const group = useRef(new RefreshGroup()).current;
+  const registry = useMemo(() => ({
+    register: (id: symbol, entry: ScreenRefreshEntry) => {
+      setEntries(current => new Map(current).set(id, entry));
+      return () => setEntries(current => { const next = new Map(current); next.delete(id); return next; });
+    }
+  }), []);
+  const loading = Boolean(refreshing) || [...entries.values()].some(entry => entry.loading);
+  const canRefresh = Boolean(onRefresh) || entries.size > 0;
+  const refresh = async () => {
+    if (loading || pullActive.current) return;
+    pullActive.current = true;
+    setPullPending(true);
+    try {
+      await group.run(false, [...(onRefresh ? [onRefresh] : []), ...[...entries.values()].map(entry => entry.refresh)]);
+    } catch {
+      // Each resource retains its data and exposes its own refresh error.
+    } finally { pullActive.current = false; setPullPending(false); }
+  };
   const content = <View style={[styles.content, style]}>{children}</View>;
 
   return (
+    <ScreenRefreshContext.Provider value={registry}>
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
       {scroll ? (
         <ScrollView
@@ -42,13 +67,15 @@ export function Screen({
           automaticallyAdjustKeyboardInsets
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
+          alwaysBounceVertical={canRefresh}
           refreshControl={
-            onRefresh
+            canRefresh
               ? (
                   <RefreshControl
-                    refreshing={Boolean(refreshing)}
-                    onRefresh={onRefresh}
+                    refreshing={pullPending || loading}
+                    onRefresh={() => void refresh()}
                     tintColor={colors.primary}
+                    colors={[colors.primary]}
                   />
                 )
               : undefined
@@ -60,6 +87,7 @@ export function Screen({
         content
       )}
     </SafeAreaView>
+    </ScreenRefreshContext.Provider>
   );
 }
 

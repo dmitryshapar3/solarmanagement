@@ -6,6 +6,7 @@ export type AuthResponse = {
 };
 
 export type AuthOptions = { registrationEnabled: boolean; emailEnabled: boolean; phoneEnabled: boolean; googleEnabled: boolean };
+export type AccountIdentities = { email: string | null; phone: string | null; googleLinked: boolean };
 export type VerificationChannel = "email" | "phone";
 export type VerificationPurpose = "register" | "login" | "link";
 export type VerificationResponse = { verificationId: string; expiresAt: string; retryAfterSeconds: number };

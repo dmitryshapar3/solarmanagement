@@ -18,6 +18,7 @@ export type SubscriptionState = {
   access: BillingAccess | null; snapshot: BillingSnapshot | null; isChecking: boolean;
   busy: BillingAction | null; error: string | null; notice: string | null;
 };
+type AccessCheckedAt = { elapsed: number; wall: number };
 
 /** Account-scoped orchestration. React and native lifecycle events are adapters. */
 export class SubscriptionController {
@@ -29,11 +30,11 @@ export class SubscriptionController {
   private active = false;
   private foreground = true;
   private requested = false;
-  private checkedAt = 0;
+  private checkedAt: AccessCheckedAt = { elapsed: 0, wall: 0 };
   private deadline: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly api: BillingAccountApi, private readonly native: SubscriptionStore | null,
-    private readonly elapsedNow: () => number = () => performance.now()) {
+    private readonly elapsedNow: () => number = () => performance.now(), private readonly wallNow: () => number = () => Date.now()) {
     this.receipts = new TransactionReceiptSynchronizer(api, native);
   }
   get value(): SubscriptionState { return this.state; }
@@ -53,17 +54,34 @@ export class SubscriptionController {
   private publish(next: Partial<SubscriptionState>): void {
     if (!this.active) return;
     this.state = { ...this.state, ...next };
-    if ("access" in next) this.scheduleDeadline();
+    if ("access" in next || hasServerAccess(this.state.access) && this.accessRemaining() <= 0) this.scheduleDeadline();
     for (const observer of this.observers) observer(this.state);
   }
   private clearDeadline(): void { if (this.deadline !== null) clearTimeout(this.deadline); this.deadline = null; }
+  private now(): AccessCheckedAt { return { elapsed: this.elapsedNow(), wall: this.wallNow() }; }
+  private retainedAccess(): BillingAccess | null {
+    return this.state.access?.hasAccess === false || this.accessRemaining() > 0 ? this.state.access : null;
+  }
+  private accessRemaining(): number {
+    const access = this.state.access;
+    if (!hasServerAccess(access) || !access?.accessValidUntil) return 0;
+    const elapsedAge = this.elapsedNow() - this.checkedAt.elapsed;
+    const wallAge = this.wallNow() - this.checkedAt.wall;
+    // iOS monotonic time excludes phone sleep. Wall time must age the same grant too;
+    // a clock moving backwards cannot make an old grant younger.
+    if (!Number.isFinite(elapsedAge) || !Number.isFinite(wallAge) || elapsedAge < 0 || wallAge < 0) return 0;
+    return Date.parse(access.accessValidUntil) - Date.parse(access.serverNow) - Math.max(elapsedAge, wallAge);
+  }
   private scheduleDeadline(): void {
     this.clearDeadline();
     const access = this.state.access;
     if (!hasServerAccess(access) || !access?.accessValidUntil) return;
-    const remaining = Date.parse(access.accessValidUntil) - Date.parse(access.serverNow) - (this.elapsedNow() - this.checkedAt);
-    if (!Number.isFinite(remaining)) { this.state = { ...this.state, access: null }; return; }
-    this.deadline = setTimeout(() => { this.publish({ access: null }); void this.refresh(); }, Math.max(0, Math.min(remaining, 2_147_483_647)));
+    const remaining = this.accessRemaining();
+    if (!Number.isFinite(remaining) || remaining <= 0) { this.state = { ...this.state, access: null }; return; }
+    this.deadline = setTimeout(() => {
+      if (this.accessRemaining() > 0) { this.scheduleDeadline(); return; }
+      this.publish({ access: null }); void this.refresh();
+    }, Math.max(0, Math.min(remaining, 2_147_483_647)));
   }
   invalidate(): void {
     this.pending?.abort(); this.pending = null; this.requested = false;
@@ -72,38 +90,56 @@ export class SubscriptionController {
   billingDenied(): void { this.invalidate(); void this.refresh(); }
   appStateChanged(isForeground: boolean): void {
     this.foreground = isForeground;
-    if (this.action) { this.publish({ access: null }); this.requested = true; }
-    else this.invalidate();
-    if (isForeground) void this.refresh();
+    if (hasServerAccess(this.state.access) && this.accessRemaining() <= 0) this.publish({ access: null });
+    if (!isForeground) {
+      this.requested = true;
+      if (!this.action) {
+        this.pending?.abort(); this.pending = null;
+        this.publish({ isChecking: false });
+      }
+      return;
+    }
+    void this.refresh();
   }
   private retryRequested(): void {
     if (this.active && this.requested && this.foreground) { this.requested = false; void this.refresh(); }
   }
   refresh = async (): Promise<void> => {
     if (!this.active) return;
+    if (!this.foreground) { this.requested = true; return; }
     if (this.pending || this.action) { this.requested = true; return; }
+    this.requested = false;
     const controller = new AbortController(); this.pending = controller;
     this.publish({ isChecking: true });
     try {
-      this.checkedAt = this.elapsedNow();
+      let checkedAt = this.now();
       let access = await this.api.getBillingAccess(controller.signal);
+      this.acceptServerAccess(access, checkedAt, controller);
       if (this.native && access.appleSubscriptionsEnabled) {
         const snapshot = await this.native.getSnapshotAsync();
         if (!this.current(controller)) return;
         this.publish({ snapshot });
-        access = await this.synchronize(snapshot, access, controller);
+        const synchronized = await this.synchronize(snapshot, access, controller, checkedAt);
+        access = synchronized.access; checkedAt = synchronized.checkedAt;
       }
-      if (this.current(controller)) this.publish({ access, error: null });
+      if (this.current(controller)) { this.checkedAt = checkedAt; this.publish({ access, error: null }); }
     } catch {
-      if (this.current(controller)) this.publish({ access: null, error: "Your account access could not be checked. Connect to the server and try again." });
+      if (this.current(controller)) this.publish({ access: this.retainedAccess(),
+        error: "Your account access could not be checked. Connect to the server and try again." });
     } finally {
       if (this.pending === controller) this.pending = null;
       if (this.active && !controller.signal.aborted) this.publish({ isChecking: false });
       this.retryRequested();
     }
   };
-  private synchronize(snapshot: BillingSnapshot, access: BillingAccess, controller: AbortController): Promise<BillingAccess> {
-    return this.receipts.synchronize(snapshot, access, controller.signal, () => this.current(controller), () => { this.checkedAt = this.elapsedNow(); });
+  private async synchronize(snapshot: BillingSnapshot, access: BillingAccess, controller: AbortController, checkedAt: AccessCheckedAt) {
+    let candidateCheckedAt = checkedAt;
+    const next = await this.receipts.synchronize(snapshot, access, controller.signal, () => this.current(controller),
+      () => { candidateCheckedAt = this.now(); }, verified => this.acceptServerAccess(verified, candidateCheckedAt, controller));
+    return { access: next, checkedAt: candidateCheckedAt };
+  }
+  private acceptServerAccess(access: BillingAccess, checkedAt: AccessCheckedAt, controller: AbortController) {
+    if (this.current(controller)) { this.checkedAt = checkedAt; this.publish({ access, error: null }); }
   }
   private async run(name: BillingAction, operation: (controller: AbortController) => Promise<void>): Promise<void> {
     if (this.pending || this.action || !this.active) return;
@@ -111,7 +147,7 @@ export class SubscriptionController {
     this.publish({ busy: name, error: null, notice: null });
     try { await operation(controller); }
     catch (error) {
-      if (this.current(controller)) this.publish({ access: null, error: error instanceof Error ? error.message : "The App Store action could not be completed." });
+      if (this.current(controller)) this.publish({ access: this.retainedAccess(), error: error instanceof Error ? error.message : "The App Store action could not be completed." });
     } finally {
       this.action = null;
       if (this.pending === controller) this.pending = null;
@@ -128,13 +164,15 @@ export class SubscriptionController {
     await this.run("purchase", async controller => {
       const result = await native.purchaseAsync(productId, access.appAccountToken);
       if (!this.current(controller)) return;
-      this.publish({ snapshot: result.snapshot }); this.checkedAt = this.elapsedNow();
+      this.publish({ snapshot: result.snapshot });
+      const checkedAt = this.now();
       const authoritative = await this.api.getBillingAccess(controller.signal);
-      const next = await this.synchronize(result.snapshot, authoritative, controller);
+      this.acceptServerAccess(authoritative, checkedAt, controller);
+      const next = await this.synchronize(result.snapshot, authoritative, controller, checkedAt);
       if (!this.current(controller)) return;
-      this.publish({ access: next });
+      this.checkedAt = next.checkedAt; this.publish({ access: next.access });
       if (result.outcome === "pending") this.publish({ notice: "Your purchase is awaiting App Store approval. Access starts after server verification." });
-      else if (result.outcome === "purchased" && next.status !== "active") this.publish({ notice: "The purchase has not activated this account. Restore purchases or contact support." });
+      else if (result.outcome === "purchased" && next.access.status !== "active") this.publish({ notice: "The purchase has not activated this account. Restore purchases or contact support." });
     });
   };
   restore = async (): Promise<void> => {
@@ -143,10 +181,13 @@ export class SubscriptionController {
     await this.run("restore", async controller => {
       const snapshot = await native.restoreAsync();
       if (!this.current(controller)) return;
-      this.publish({ snapshot }); this.checkedAt = this.elapsedNow();
+      this.publish({ snapshot });
+      const checkedAt = this.now();
       const authoritative = await this.api.getBillingAccess(controller.signal);
-      const access = await this.synchronize(snapshot, authoritative, controller);
+      this.acceptServerAccess(authoritative, checkedAt, controller);
+      const next = await this.synchronize(snapshot, authoritative, controller, checkedAt);
       if (!this.current(controller)) return;
+      const access = next.access; this.checkedAt = next.checkedAt;
       this.publish({ access, notice: access.status === "active" ? "Your subscription has been restored."
         : "No active subscription was found for this Solar account. Use the account that made the purchase." });
     });

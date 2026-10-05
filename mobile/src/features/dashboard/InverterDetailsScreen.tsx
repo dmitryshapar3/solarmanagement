@@ -2,9 +2,8 @@ import { formattingLocale } from "../../core/i18n";
 import { useLanguage } from "../../application/LanguageContext";
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { RefreshCcw } from "lucide-react-native";
 import { useAuth } from "../../application/AuthContext";
-import { AppButton, Card, EmptyState, ErrorBanner, Header, LoadingState, ProgressBar, Screen, SectionTitle } from "../../core/components";
+import { Card, EmptyState, ErrorBanner, Header, LoadingState, ProgressBar, Screen, SectionTitle } from "../../core/components";
 import { batteryModeLabel, formatDateTime, formatPercent, formatSignedWatts, formatWatts, gridModeLabel, setDisplayTimeZone } from "../../core/format";
 import { colors, spacing, typography } from "../../core/theme";
 import { useFocusedResource } from "../energy/useFocusedResource";
@@ -24,9 +23,8 @@ export function InverterDetailsScreen() {
   const battery = batteryFlow(inverter?.batteryPower, inverter?.batteryPowerValid);
   const balance = reportedPowerBalance(inverter);
   useEffect(() => { if (resource.data) setDisplayTimeZone(resource.data.timeZoneId); }, [resource.data]);
-  return <Screen refreshing={resource.loading} onRefresh={() => void resource.refresh(true)}>
+  return <Screen refreshing={resource.loading} onRefresh={() => resource.refresh(true)}>
     <Header title={t("Inverter details")} subtitle={t("Solar generation, battery and energy flows")} />
-    <AppButton label={t("Refresh")} accessibilityLabel={t("Inverter details refresh")} icon={RefreshCcw} loading={resource.loading} onPress={() => void resource.refresh(true)} variant="secondary" compact />
     <ErrorBanner message={resource.error} />
     {resource.loading && !resource.data ? <LoadingState label={t("Loading inverter readings...")} /> : !inverter ?
       <EmptyState title={t("No inverter reading available.")} detail={t("Refresh to request the latest inverter data.")} /> : <>

@@ -90,6 +90,26 @@ public class AccountIdentityTests
     }
 
     [Fact]
+    public async Task LinkedIdentityStatusUsesVerifiedContactsAndProviderBindingsForTheCurrentAccount()
+    {
+        await using var fixture = new Fixture(); await fixture.InitializeAsync(); using var scope = fixture.Provider.CreateScope();
+        var accounts = scope.ServiceProvider.GetRequiredService<AccountIdentityService>();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+        var user = await accounts.RegisterAsync(new("email", "owner@example.test"), "long-local-test-password", default);
+        user.PhoneNumber = "+48123456789";
+        Assert.True((await users.UpdateAsync(user)).Succeeded);
+        Assert.Equal(new AccountIdentitiesResponse("owner@example.test", null, false), await accounts.IdentitiesAsync(user.Id, default));
+        await accounts.GoogleAsync("google-subject", "owner@example.test", true, user.Id, default);
+        await accounts.LinkAsync(user.Id, new("phone", "+48123456789"), default);
+        Assert.Equal(new AccountIdentitiesResponse("owner@example.test", "+48123456789", true), await accounts.IdentitiesAsync(user.Id, default));
+        var second = await accounts.RegisterAsync(new("phone", "+48987654321"), "long-local-test-password", default);
+        second.Email = "unverified@example.test";
+        Assert.True((await users.UpdateAsync(second)).Succeeded);
+        Assert.Equal(new AccountIdentitiesResponse(null, "+48987654321", false), await accounts.IdentitiesAsync(second.Id, default));
+        Assert.Null(await accounts.IdentitiesAsync("missing-account", default));
+    }
+
+    [Fact]
     public async Task FailedGoogleProviderBindingRollsBackAccountAndInstallationTogether()
     {
         await using var fixture = new Fixture(); await fixture.InitializeAsync();

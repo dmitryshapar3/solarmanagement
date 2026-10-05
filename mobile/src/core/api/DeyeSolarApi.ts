@@ -17,7 +17,7 @@ import {
   Settings
 } from "./types";
 import type { Device, IntegrationKind, IntegrationTestRequest, IntegrationTestResult } from "./types";
-import type { AuthOptions, VerificationChannel, VerificationPurpose, VerificationResponse } from "./types";
+import type { AccountIdentities, AuthOptions, VerificationChannel, VerificationPurpose, VerificationResponse } from "./types";
 import type { SolarSiteSettings } from "./types";
 import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryPeriod, SolarHistoryResult } from "./types";
 import { BillingAccess, readBillingAccess } from "../../features/subscription/billingPolicy";
@@ -42,6 +42,10 @@ export class DeyeSolarApi {
 
   getAuthOptions(signal?: AbortSignal): Promise<AuthOptions> {
     return this.client.request("/api/auth/options", { signal, skipUnauthorizedHandler: true });
+  }
+
+  getAccountIdentities(signal?: AbortSignal): Promise<AccountIdentities> {
+    return this.client.request("/api/auth/identities", { signal });
   }
 
   startVerification(channel: VerificationChannel, destination: string, purpose: VerificationPurpose, signal?: AbortSignal): Promise<VerificationResponse> {

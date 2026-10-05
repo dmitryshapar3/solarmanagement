@@ -283,7 +283,8 @@ test("explicit OAuth cancel and a same-client account switch release busy state 
     assert.equal(button("Cancel authorization"), undefined);
     assert.equal(button("Save integration settings"), undefined);
     assert.equal(button("Configure My equipment"), undefined);
-    assert.equal(button("Refresh integration catalog")!.props.disabled, false);
+    assert.equal(button("Refresh integration catalog"), undefined);
+    assert.equal(renderer!.root.findAllByType("button").find(item => item.props.accessibilityLabel === "Inverter manufacturer")!.props.disabled, false);
     await act(async () => { finish({ type: "success", url: "deyesolar://integration-oauth?flowId=flow-one&returnNonce=nonce" }); });
     assert.equal(dismissals, 2);
     assert.equal(calls.filter(call => call.route.endsWith("/cancel")).length, 1);
@@ -530,7 +531,7 @@ test("changing accounts clears the previous form and busy operation before the n
     assert.equal(firstProbeSignal!.aborted, true);
     assert.equal(Boolean(button("Configure My equipment")), false);
     assert.equal(renderer!.root.findAllByType("TextField").some(item => item.props.value === "private-account-a-draft"), false);
-    assert.ok(button("Loading integrations..."));
+    assert.ok(renderer!.root.findAllByType("Text").some(item => item.props.children === "Loading integrations..."));
     await act(async () => { finishCatalog(); });
     assert.equal(button("Configure Second account equipment").props.disabled, false);
     await act(async () => { button("Configure Second account equipment").props.onPress(); });

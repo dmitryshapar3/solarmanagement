@@ -3,7 +3,7 @@ import { ReactNode, useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { CompositeNavigationProp, NavigationProp, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { AppButton, Card, ErrorBanner, Header, LoadingState, Screen, SegmentedControl, StatusPill } from "../../core/components";
+import { Card, ErrorBanner, Header, LoadingState, Screen, SegmentedControl, StatusPill } from "../../core/components";
 import { TileHeader } from "../../core/TileHeader";
 import { useAuth } from "../../application/AuthContext";
 import { RootStackParamList, RootTabsParamList } from "../../application/navigationTypes";
@@ -54,7 +54,7 @@ export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", 
     {!compact ? <Text style={styles.muted}>{t("Tap the chart or use Previous / Next interval to inspect exact values. Energy and Value use the same selected reporting window.")}</Text> : null}
   </>;
   return <><Card style={styles.card}>
-    <TileHeader title={t("Electricity sales")} loading={resource.loading} onRefresh={() => void resource.refresh()}
+    <TileHeader title={t("Electricity sales")}
       onDetails={showDetails ? () => onDetails ? onDetails(period, selected) : navigation.navigate("SalesDetails", { period, date: selected }) : undefined} />
     <StatusPill label={t("inverter estimate")} tone="info" />
     {!compact ? <>
@@ -63,7 +63,6 @@ export function SalesPanel({ compact = false, onDetails, initialPeriod = "Day", 
         onPrevious={() => setDate(movePeriod(selected, period, -1))} onNext={() => setDate(movePeriod(selected, period, 1))} onToday={() => { setDate(undefined); setPeriod("Day"); }} />
     </> : <Text style={styles.muted}>{dateCaption(selected)}</Text>}
     <ErrorBanner message={resource.error} />
-    {resource.error ? <AppButton label={t("Retry")} compact variant="ghost" loading={resource.loading} onPress={() => void resource.refresh()} /> : null}
     {chartFirst ? chart : null}
     <View style={styles.metrics}>
       <View style={styles.metric}><Text style={styles.muted}>{compact && selected === today && selected === zonedDate(new Date(), data?.timeZoneId) ? t("Exported today") : t("Exported to grid")}</Text><Text style={[styles.metricValue, styles.primaryValue]}>{amount(hasElapsed ? data?.exportKwh : null, "kWh")}</Text></View>

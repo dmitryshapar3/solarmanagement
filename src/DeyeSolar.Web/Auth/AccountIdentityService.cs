@@ -5,9 +5,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Auth;
 
+public sealed record AccountIdentitiesResponse(string? Email, string? Phone, bool GoogleLinked);
+
 public sealed class AccountIdentityService(UserManager<IdentityUser> users, DeyeSolarDbContext db,
     InstallationMembershipService memberships, IAccountSessionStore sessions, AuthProviderOptions providers)
 {
+    public async Task<AccountIdentitiesResponse?> IdentitiesAsync(string userId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var user = await users.FindByIdAsync(userId);
+        if (user is null) return null;
+        var logins = await users.GetLoginsAsync(user);
+        return new(user.EmailConfirmed ? user.Email : null, user.PhoneNumberConfirmed ? user.PhoneNumber : null,
+            logins.Any(login => login.LoginProvider == "Google"));
+    }
+
     public async Task<MobileAuthResponse?> SessionAsync(string userId, CancellationToken ct)
     {
         var user = await users.FindByIdAsync(userId);

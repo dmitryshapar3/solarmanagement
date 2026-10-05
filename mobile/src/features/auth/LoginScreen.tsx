@@ -12,6 +12,7 @@ import { DeyeSolarApi } from "../../core/api/DeyeSolarApi";
 import type { AuthOptions, VerificationChannel, VerificationResponse } from "../../core/api/types";
 import { googleSignIn } from "./googleSignIn";
 import { VerificationRequests } from "./identityOperations";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 
 export function LoginScreen() {
   const { t } = useLanguage();
@@ -200,7 +201,7 @@ export function LoginScreen() {
         />}
         <ErrorBanner message={error ?? authError} />
         <AppButton label={mode === "register" ? t("Create account") : t("Sign in")} icon={LogIn} onPress={handleLogin} loading={pending === "login"} disabled={Boolean(pending) || (mode !== "password" && !verification)} />
-        <AppButton label={t("Continue with Google")} variant="secondary" onPress={() => void handleGoogle()} loading={pending === "google"} disabled={Boolean(pending) || !options?.googleEnabled} />
+        <GoogleSignInButton onPress={() => void handleGoogle()} loading={pending === "google"} disabled={Boolean(pending) || !options?.googleEnabled} />
         {options?.googleEnabled ? <Text style={styles.warning}>{t("To connect Google to an existing account, sign in first and link it in Settings.")}</Text> : <Text style={styles.warning}>{t("Google sign-in and registration are available when enabled by your Solar server.")}</Text>}
         <AppButton label={t("Try demo")} onPress={handleDemo} variant="secondary" loading={pending === "demo"} disabled={Boolean(pending)} />
         <Text style={styles.warning}>{t("Explore sample data. Demo changes stay in this session and never affect real devices.")}</Text>
