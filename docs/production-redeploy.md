@@ -10,6 +10,8 @@ Use the existing checkout, pull current remote `main`, and retain the shared Com
 
 Release receipts bind the tested Git revision, immutable image ID, backup, old build-11 response-contract validation and preservation checks. Acceptance includes public health/readiness, a fresh Google login for the existing owner, actual inverter observations, unchanged recovered settings/API keys/billing, both disabled rules and unchanged neighboring containers. No test session or hardware command is injected into production.
 
+The writable-mount preflight also inspects stopped containers. A retained successful migration job can therefore block the next release. After verifying its exact completed cutover receipt, image, sole `--migrate-only` command, exit code 0 and disabled restart policy, save its private inspect metadata and remove only that owned container, without volumes or force. Retain its work directory, persistent files and backup; prove every other container unchanged. Never weaken the writer guard or remove an unrelated container to proceed.
+
 The private helper uses strict supplied SSH known-hosts verification and sends the sudo password over standard input. SQL credentials are loaded privately rather than passed on command arguments. The disposable localhost SQL container is `solar-redesign-sql-20261006`; its test/QA environment files live in the same private scratch directory. Coordinate cleanup after tests and restore rehearsals finish.
 
 Account authentication via Apple was absent from live configuration at audit time. Configure its distinct Sign in with Apple key and native/web capabilities according to [accounts-deployment.md](accounts-deployment.md). Availability stays false while that setup is missing.

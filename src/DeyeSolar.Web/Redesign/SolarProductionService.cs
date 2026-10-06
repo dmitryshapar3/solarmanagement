@@ -63,10 +63,13 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
             }
         if (device != inverter.CurrentValue.DeviceKey || key != SolarEstimateService.ConfigurationKey(options.CurrentValue))
             throw new InvalidOperationException("Installation settings changed. Reload the chart.");
+        // The model may be retrieved after request entry. Validate/evaluate it against the
+        // current clock while retaining the entry timestamp for all measured-data boundaries.
+        var evaluationNow = clock.GetUtcNow();
         var expected = (model?.Samples ?? []).ToDictionary(s => s.Timestamp, s =>
             SolarPowerCalculator.CalculateForecast(new(s.Timestamp, s.Roof1Gti, s.Roof2Gti,
                 s.AirTemperatureC, s.WindSpeedMs, s.Timestamp.AddHours(1), 0)
-                { Kind = SolarRadiationKind.WeatherModel, RetrievedAt = model!.RetrievedAt }, config, now));
+                { Kind = SolarRadiationKind.WeatherModel, RetrievedAt = model!.RetrievedAt }, config, evaluationNow));
         var hours = new List<ProductionHourDto>();
         var firstHour = new DateTimeOffset(start.UtcTicks - start.UtcTicks % TimeSpan.TicksPerHour, TimeSpan.Zero);
         ProductionHourDto Hour(DateTimeOffset at, DateTimeOffset through, bool progress)
