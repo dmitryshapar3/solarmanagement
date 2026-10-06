@@ -76,9 +76,10 @@ public sealed class UserLanguageTests
             var collection = new ServiceCollection();
             collection.AddLogging(); collection.AddAntiforgery(); collection.AddHttpContextAccessor(); collection.AddScoped<UiText>();
             using var services = collection.BuildServiceProvider();
-            var text = services.GetRequiredService<UiText>();
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru");
             CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ru");
+            using var russianScope = services.CreateScope();
+            var text = russianScope.ServiceProvider.GetRequiredService<UiText>();
             Assert.Equal("Настройки", text["Settings"]);
             var translated = text.Translate("Request failed with HTTP 503.");
             Assert.Contains("503", translated);
@@ -86,7 +87,12 @@ public sealed class UserLanguageTests
             Assert.Equal("Owner's custom device", text.Translate("Owner's custom device"));
             Assert.Equal("", text.Translate(null));
             CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ja");
-            Assert.NotEqual("Settings", text["Settings"]);
+            Assert.Equal("Настройки", text["Settings"]);
+            using var japaneseScope = services.CreateScope();
+            var japaneseText = japaneseScope.ServiceProvider.GetRequiredService<UiText>();
+            Assert.Equal("ja", japaneseText.Language);
+            Assert.NotEqual(text["Settings"], japaneseText["Settings"]);
+            Assert.NotEqual("Settings", japaneseText["Settings"]);
         }
         finally { CultureInfo.CurrentCulture = oldCulture; CultureInfo.CurrentUICulture = oldUiCulture; }
     }

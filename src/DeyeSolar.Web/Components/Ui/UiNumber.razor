@@ -14,11 +14,11 @@
     private string _text = "";
     private string? _error;
     private double? _last;
-    protected override void OnParametersSet() { if (_last != Value) { _text = Value.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture); _last = Value; _error = null; Form?.Mark(_id, true); } }
+    protected override void OnParametersSet() { if (_last != Value) { _text = Value.ToString("0.###", T.Culture); _last = Value; _error = null; Form?.Mark(_id, true); } }
     private async Task Changed(ChangeEventArgs args)
     {
         _text = args.Value?.ToString() ?? "";
-        if (!UiInputParser.TryNumber(_text, System.Globalization.CultureInfo.CurrentCulture, out var number) || Integer && number != Math.Truncate(number)) { _error = T["Enter a valid number."]; Form?.Mark(_id, false); return; }
+        if (!UiInputParser.TryNumber(_text, T.Culture, out var number) || Integer && number != Math.Truncate(number)) { _error = T["Enter a valid number."]; Form?.Mark(_id, false); return; }
         if (number < Min || number > Max) { _error = T.Format("Enter a value between {0} and {1}.", Min, Max); Form?.Mark(_id, false); return; }
         _error = null; _last = number; Form?.Mark(_id, true); await ValueChanged.InvokeAsync(number);
     }

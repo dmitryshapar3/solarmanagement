@@ -1,5 +1,5 @@
 <div class="bearing-control">
-    <svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="@($"{Label} · {UiFormat.Number(Value, "0")}°")">
+    <svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="@($"{Label} · {T.Number(Value, "0")}°")">
         <circle cx="60" cy="60" r="54" class="bearing-face" />
         @for (var angle = 0; angle < 360; angle += 30)
         {

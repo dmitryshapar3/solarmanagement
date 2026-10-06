@@ -34,6 +34,10 @@
 </CascadingAuthenticationState>
 
 @code {
+    // _Host serializes the request locale into the interactive circuit's initial component parameters.
+    [Parameter] public string? CultureName { get; set; }
+    [Parameter] public string? UiCultureName { get; set; }
+    protected override void OnInitialized() => T.InitializeCircuit(CultureName, UiCultureName);
     private void ReloadApplication() => NavigationManager.NavigateTo("/", true);
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
 

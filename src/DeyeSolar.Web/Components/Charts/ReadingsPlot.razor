@@ -1,9 +1,9 @@
 @using DeyeSolar.Web.Redesign
 <div class="toolbar"><h3>@T["Solar and battery"]</h3><span class="legend"><i style="background:var(--solar)"></i>@T["Solar · kW"]<i style="background:var(--battery)"></i>@T["Battery · %"]</span></div><svg class="data-plot" viewBox="0 0 920 260" role="img" aria-label="@T["Recorded solar power and battery charge; gaps stay empty"]">
-@for(var i=0;i<=4;i++){var y=224-i*48;<line class="plot-grid" x1="48" x2="876" y1="@y" y2="@y"/><g><text class="plot-axis" x="40" y="@(y+4)" text-anchor="end">@UiFormat.Number(_solarMax*i/4,"0.##")</text><text class="plot-axis" x="884" y="@(y+4)">@(i*25)%</text></g>}
+@for(var i=0;i<=4;i++){var y=224-i*48;<line class="plot-grid" x1="48" x2="876" y1="@y" y2="@y"/><g><text class="plot-axis" x="40" y="@(y+4)" text-anchor="end">@T.Number(_solarMax*i/4,"0.##")</text><text class="plot-axis" x="884" y="@(y+4)">@(i*25)%</text></g>}
 @foreach(var gap in Data.Gaps){var left=X(gap.From);var right=X(gap.To);<rect x="@N(left)" y="32" width="@N(Math.Max(0,right-left))" height="192" fill="var(--fill)" opacity=".8"><title>@T[ActivityPresentation.Reason(gap.ReasonCode)]</title></rect>}
 @foreach(var segment in Segments(row=>row.SolarProduction/1000d)){<path d="@Path(segment,_solarMax)" fill="none" stroke="var(--solar)" stroke-width="2.5"/>@if(segment.Count==1){<circle cx="@N(X(segment[0].At))" cy="@N(224-segment[0].Value/_solarMax*192)" r="3" fill="var(--solar)"/>}}@foreach(var segment in Segments(row=>row.BatterySoc)){<path d="@Path(segment,100)" fill="none" stroke="var(--battery)" stroke-width="2.5"/>@if(segment.Count==1){<circle cx="@N(X(segment[0].At))" cy="@N(224-segment[0].Value/100*192)" r="3" fill="var(--battery)"/>}}
-@for(var i=0;i<=4;i++){var time=Data.Start.AddSeconds((Data.End-Data.Start).TotalSeconds*i/4);<g><text class="plot-axis" x="@N(X(time))" y="250" text-anchor="middle">@UiFormat.Time(time,TimeZoneId,"HH:mm")</text></g>}
+@for(var i=0;i<=4;i++){var time=Data.Start.AddSeconds((Data.End-Data.Start).TotalSeconds*i/4);<g><text class="plot-axis" x="@N(X(time))" y="250" text-anchor="middle">@T.Time(time,TimeZoneId,"HH:mm")</text></g>}
 </svg>
 @code{
  [Parameter,EditorRequired]public ReadingsViewDto Data{get;set;}=default!;[Parameter]public string TimeZoneId{get;set;}="UTC";

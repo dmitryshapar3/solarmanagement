@@ -11,7 +11,7 @@
 @implements IAsyncDisposable
 
 <section class="solar-snapshot @(Hero?IsNight?"solar-night":"solar-hero":null)" aria-labelledby="solar-card-title"><div class="hero-header"><div><h2 id="solar-card-title">@(Hero?T["Solar now"]:T["Latest solar snapshot"])</h2><p class="caption">@CurrentOptions.LocationLabel</p></div><StatusPill Dot="false">@(HasUsableActual?T["Inverter reading"]:T["Awaiting reading"])</StatusPill></div>
-@if(IsNight){<h3>@T[HomeRunsOnBattery?"The sun has set. Home runs on battery.":"The sun has set."]</h3><p class="caption">@T.Format("Next sunrise {0}",UiFormat.Time(NightSunrise!.Value,ProductionData!.TimeZoneId,"d MMM HH:mm"))</p>}
+@if(IsNight){<h3>@T[HomeRunsOnBattery?"The sun has set. Home runs on battery.":"The sun has set."]</h3><p class="caption">@T.Format("Next sunrise {0}",T.Time(NightSunrise!.Value,ProductionData!.TimeZoneId,"d MMM HH:mm"))</p>}
 <div class="solar-reading" data-testid="solar-actual"><strong class="@(Hero?"hero-number":"metric")">@(HasUsableActual&&CurrentActual is {} actual?Number(actual.SolarProduction/1000d):"—")<small class="unit"> kW</small></strong></div><p class="caption">@ActualInfo</p>
 <div class="toolbar"><span>@T["Expected now"] <strong data-testid="solar-possible">@(HasUsableEstimate&&Estimate is {} estimate?Number(estimate.CentralKw):"—") kW</strong></span>@if(Estimate is {} range&&HasUsableEstimate){<span class="caption">@Number(range.LowerKw)–@Number(range.UpperKw) kW</span>}</div>
 @if(Hero&&!IsNight){<p class="caption" role="status" data-testid="hero-comparison">@HeroComparisonLabel</p>}
@@ -38,7 +38,7 @@
     private string? _refreshError;
     private string DetailsUrl => "/energy";
 
-    private static CultureInfo DisplayCulture => CultureInfo.CurrentCulture;
+    private CultureInfo DisplayCulture => T.Culture;
     private readonly AsyncQueryScope _queries = new();
     private DateTimeOffset _clock = DateTimeOffset.UtcNow;
     private bool _disposed;
@@ -135,8 +135,8 @@
         catch (InvalidOperationException) when (_disposed) { }
     }
 
-    private static string Number(double value) => value.ToString("F2", DisplayCulture);
-    private static string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
+    private string Number(double value) => value.ToString("F2", DisplayCulture);
+    private string OptionalNumber(double? value) => value.HasValue && double.IsFinite(value.Value) ? Number(value.Value) : "—";
     private string BasisLabel(SolarPowerBasis basis) => basis switch { SolarPowerBasis.PvDc => T["PV DC generation"], SolarPowerBasis.Ac => T["Inverter AC power"], _ => T["Grid export"] };
     private string FormatTime(DateTimeOffset timestamp) => TimeZoneInfo.ConvertTime(timestamp,
         TimeZoneInfo.FindSystemTimeZoneById(CurrentOptions.TimeZoneId)).ToString("d MMM yyyy HH:mm:ss 'UTC'zzz", DisplayCulture);

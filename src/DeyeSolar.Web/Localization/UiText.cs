@@ -23,11 +23,37 @@ public sealed class UiText(IHttpContextAccessor context, IAntiforgery antiforger
                 .Select(part => Regex.IsMatch(part, @"^\{\d+\}$") ? $"(?<p{part[1..^1]}>.+?)" : Regex.Escape(part))) + "$", RegexOptions.CultureInvariant,
                 TimeSpan.FromMilliseconds(50)))).ToArray());
     private string? token;
-    public string Language => Normalize(CultureInfo.CurrentUICulture.Name) ?? "en";
+    private bool circuitInitialized;
+    private CultureInfo culture = CultureInfo.ReadOnly((CultureInfo)CultureInfo.CurrentCulture.Clone());
+    private CultureInfo uiCulture = CultureInfo.ReadOnly((CultureInfo)CultureInfo.CurrentUICulture.Clone());
+    // A request or circuit owns its locale. Background telemetry must not select a user's language.
+    public CultureInfo Culture => culture;
+    public CultureInfo UICulture => uiCulture;
+    public string Language => Normalize(uiCulture.Name) ?? "en";
+    public void InitializeCircuit(string? cultureName, string? uiCultureName)
+    {
+        if (circuitInitialized) return;
+        circuitInitialized = true;
+        if (Normalize(cultureName) is null || Normalize(uiCultureName) is null) return;
+        try
+        {
+            var formatCulture = CultureInfo.GetCultureInfo(cultureName!);
+            var translationCulture = CultureInfo.GetCultureInfo(uiCultureName!);
+            culture = formatCulture;
+            uiCulture = translationCulture;
+        }
+        catch (CultureNotFoundException) { }
+    }
+    public string Number(int? value, string format = "0") => Components.Ui.UiFormat.Number(value, format, culture);
+    public string Number(double? value, string format = "0.00") => Components.Ui.UiFormat.Number(value, format, culture);
+    public string Number(decimal? value, string format = "0.00") => Components.Ui.UiFormat.Number(value, format, culture);
+    public string Signed(double? value, string format = "0") => Components.Ui.UiFormat.Signed(value, format, culture);
+    public string Time(DateTimeOffset value, string zone, string format = "d MMM · HH:mm zzz")
+        => Components.Ui.UiFormat.Time(value, zone, format, culture);
     public IReadOnlyList<UiLanguage> Languages => SupportedLanguages;
     public string this[string phrase] => Translate(phrase);
     public string Format(string phrase, params object?[] args)
-        => string.Format(CultureInfo.CurrentCulture, Lookup(phrase), args);
+        => string.Format(culture, Lookup(phrase), args);
     public string Translate(string? phrase)
     {
         if (string.IsNullOrEmpty(phrase)) return phrase ?? "";

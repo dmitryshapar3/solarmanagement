@@ -20,7 +20,7 @@
     <component type="typeof(HeadOutlet)" render-mode="ServerPrerendered" />
 </head>
 <body>
-    <component type="typeof(App)" render-mode="ServerPrerendered" />
+    <component type="typeof(App)" render-mode="ServerPrerendered" param-CultureName="@T.Culture.Name" param-UiCultureName="@T.UICulture.Name" />
 
     <div id="blazor-error-ui">
         <environment include="Staging,Production">
