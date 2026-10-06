@@ -1,0 +1,21 @@
+<div class="ui-field"><label for="@_id">@Label</label>
+@if (Searchable)
+{
+    <input id="@_id" list="@(_id + "-options")" value="@Value" @onchange="Changed" disabled="@Disabled" autocomplete="off" /><datalist id="@(_id + "-options")">@foreach (var option in Options) { <option value="@option.Key">@option.Value</option> }</datalist>
+}
+else
+{
+    <select id="@_id" value="@Value" @onchange="Changed" disabled="@Disabled">@foreach (var option in Options) { <option value="@option.Key">@option.Value</option> }</select>
+}
+@if (Error is not null) { <p class="field-error" role="alert">@Error</p> }</div>
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public IEnumerable<KeyValuePair<string, string>> Options { get; set; } = [];
+    [Parameter] public bool Searchable { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Error { get; set; }
+    private readonly string _id = "select-" + Guid.NewGuid().ToString("N");
+    private Task Changed(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? "");
+}

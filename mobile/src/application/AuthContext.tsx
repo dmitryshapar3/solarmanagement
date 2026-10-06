@@ -12,6 +12,7 @@ import { DemoApiClient } from "../features/demo/DemoApiClient";
 import { DEMO_API_BASE_URL, DEMO_USERNAME } from "../features/demo/fixtures";
 import { googleSignIn } from "../features/auth/googleSignIn";
 import { linkGoogleIdentity } from "../features/auth/identityOperations";
+import { appleIdentity } from "../features/auth/appleSignIn";
 import { SessionOperations, SessionStorage } from "./sessionStorage";
 
 type LoginInput = { baseUrl: string; username: string; password: string };
@@ -27,6 +28,7 @@ type AuthContextValue = {
   login: (input: LoginInput) => Promise<void>;
   finishSignIn: (baseUrl: string, request: (api: DeyeSolarApi, signal: AbortSignal) => Promise<AuthResponse>) => Promise<void>;
   linkGoogle: () => Promise<boolean>;
+  signInWithApple: (baseUrl: string) => Promise<void>;
   enterDemo: () => Promise<void>;
   logout: () => Promise<void>;
   updateApiBaseUrl: (baseUrl: string) => Promise<void>;
@@ -178,6 +180,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return linkGoogleIdentity(realApi, signal, () => googleSignIn(session.baseUrl,
       (challenge, state) => realApi.startGoogleLink(challenge, state, signal)));
   }, [operations, realApi]);
+  const signInWithApple = useCallback(async (baseUrl: string) => {
+    const initiatingSession = operations.capture();
+    const identity = await appleIdentity();
+    if (!identity) return;
+    if (!mounted.current || !operations.isCurrent(initiatingSession)) {
+      const error = new Error(t("Sign-in was canceled.")); error.name = "AbortError"; throw error;
+    }
+    await finishSignIn(baseUrl, (api, signal) => api.request<AuthResponse>("/api/auth/apple/exchange", {
+      method: "POST", body: identity, signal, skipUnauthorizedHandler: true
+    }));
+  }, [finishSignIn, operations]);
 
   const enterDemo = useCallback(async () => {
     const signal = beginSessionChange();
@@ -238,7 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiBaseUrl: demoApi ? DEMO_API_BASE_URL : apiBaseUrl,
     username: demoApi ? DEMO_USERNAME : username,
     isAuthenticated: Boolean(token) || Boolean(demoApi), isDemo: Boolean(demoApi), isBootstrapping, authError,
-    login, finishSignIn, linkGoogle, enterDemo, logout, updateApiBaseUrl
+    login, finishSignIn, linkGoogle, signInWithApple, enterDemo, logout, updateApiBaseUrl
   }}>{children}</AuthContext.Provider>;
 }
 

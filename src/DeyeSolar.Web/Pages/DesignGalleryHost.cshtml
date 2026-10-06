@@ -1,0 +1,7 @@
+@page "/_design"
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@using DeyeSolar.Web.Components.Ui
+@using Microsoft.AspNetCore.Components.Web
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{ Layout = null; }
+<!doctype html><html lang="en" data-theme="@WebAppearance.CookieTheme(HttpContext)"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><base href="~/" /><title>SmartSolar · Component gallery</title><link rel="stylesheet" href="/css/fonts.css" /><link rel="stylesheet" href="/css/tokens.css" /><link rel="stylesheet" href="/css/smartsolar.css" /><link rel="stylesheet" href="/DeyeSolar.Web.styles.css" /></head><body><component type="typeof(DesignGallery)" render-mode="ServerPrerendered" /><script src="/js/smartsolar.js"></script><script src="/_framework/blazor.server.js"></script></body></html>

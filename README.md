@@ -1,16 +1,19 @@
-# SolarManagement (DeyeSolar)
+# SmartSolar (SolarManagement)
 
-DeyeSolar monitors a Deye solar inverter, battery and grid connection, and controls Shelly sockets using configurable automation rules. It includes an authenticated web dashboard and an Expo mobile client for Android and iOS.
+SmartSolar monitors solar inverters, batteries and grid connections, and controls smart plugs through signed provider integrations and configurable automations. It includes an authenticated web dashboard and an Expo mobile client for Android and iOS. Existing assembly names, database objects, bundle identifiers and API routes retain their SolarManagement/DeyeSolar identities.
 
 The dashboard separates measured energy data, modeled solar generation and estimated electricity export value. Export estimates are based on inverter observations and Polish PSE RCE prices; they are not invoice reconciliation or a statement of payment due.
 
 ## Features
 
 - Live battery state of charge, solar production, battery power, grid exchange and household load from DeyeCloud.
-- Shelly device discovery, manual switching and rules with battery, solar-production, schedule, cooldown and evaluation-interval settings.
+- Descriptor-driven device discovery and manual switching, with a choice to pause enabled automations or switch once. Automations keep their battery, solar-production, schedule, cooldown and evaluation-interval settings.
 - Historical readings and generation charts, with weather-based possible-power ranges from Open-Meteo.
 - Electricity export estimates with retained observations and quarter-hour prices, coverage indicators and separate provisional current-hour progress.
-- Verified email/phone registration, Google sign-in, linked identities, isolated installations and an authenticated API for the mobile client.
+- Unified verified email/phone sign-in and registration, Google sign-in, optional Sign in with Apple, linked identities, isolated installations and an authenticated API for the mobile client.
+- Recorded device-state timelines, grouped automation checks, evaluation snapshots, five-minute readings and CSV exports; unknown intervals remain unknown.
+- Light, dark and system appearance, locally bundled fonts, four mobile tabs and responsive web navigation.
+- Account profile and display preferences, individual session revocation, fresh confirmation for sensitive changes and ZIP data export.
 - User-selectable interface language with 15 shared offline translations on web and mobile, including localized dates and numbers.
 
 ## Project layout
@@ -20,7 +23,7 @@ The dashboard separates measured energy data, modeled solar generation and estim
 | `src/DeyeSolar.Domain` | Models, integration contracts, typed options and calculation helpers |
 | `src/DeyeSolar.Infrastructure` | DeyeCloud, Shelly, Open-Meteo and PSE clients |
 | `src/DeyeSolar.RuleEngine` | Socket automation rule evaluation |
-| `src/DeyeSolar.Web` | ASP.NET Core 8, Blazor Server, MudBlazor, API, background workers and EF Core migrations |
+| `src/DeyeSolar.Web` | ASP.NET Core 8, Blazor Server, native Razor/CSS components, API, background workers and EF Core migrations |
 | `mobile` | Expo / React Native / TypeScript mobile application |
 | `tests` | Rule-engine, infrastructure and web tests |
 | `docs` | Solar-model and electricity-export behavior documentation |
@@ -46,7 +49,7 @@ The tracked configuration includes development database defaults and installatio
 
 | Section | Main settings |
 | --- | --- |
-| `Auth` | Public HTTPS origin, registration switch, Google OAuth, Resend email, Twilio Verify SMS and optional bootstrap password |
+| `Auth` | Public HTTPS origin, registration switch, Google OAuth, optional Apple identity configuration, Resend email, Twilio Verify SMS and optional bootstrap password |
 | `ConnectionStrings` | `DefaultConnection` for SQL Server |
 | `Polling` | Inverter polling interval |
 | `Display` | User-facing timezone |
@@ -68,9 +71,17 @@ npm run typecheck
 npm start
 ```
 
-The default backend address is `https://solar.dshapar.com`. Sign in with the existing Solar account, or enter a custom backend URL on the login screen.
+The default backend address is `https://solar.dshapar.com`. Sign in with your existing account or a verified code. The sign-in screen also offers a custom server; changing it ends the current session.
 
-The client signs in with `POST /api/auth/login` and uses bearer tokens for the remaining API calls. On a Mac, run `bash mobile/prepare-xcode.command` to prepare and open the iOS workspace. See [mobile/README.md](mobile/README.md) for Xcode signing and TestFlight instructions; no Expo account is required for this workflow.
+The client uses bearer tokens. Password sign-in remains `POST /api/auth/login`; unified code sign-in uses `/api/auth/code/start` and `/api/auth/code/complete`. Existing App Store API requests retain their payloads and behavior. On a Mac, run `bash mobile/prepare-xcode.command` to prepare and open the iOS workspace. See [mobile/README.md](mobile/README.md) for Xcode signing and TestFlight instructions; no Expo account is required for this workflow.
+
+## Navigation and appearance
+
+Web routes are `/` (Home), `/energy`, `/energy/export`, `/devices`, `/automations`, `/automations/new`, `/automations/{id}`, `/activity`, `/activity/readings`, `/settings`, `/settings/connections` and `/settings/account`. `/signin` combines registration and sign-in. Old login, registration, verification, generation, sales, rules, history, account and billing URLs permanently redirect to their replacements, preserving query strings.
+
+Mobile has Home, Energy, Devices and Automations tabs; the avatar opens Settings. Navigation is retained when the app leaves and regains focus, and is scoped to the current server and session. Pull down to refresh data. Appearance is stored on the device; language and personal display time zone belong to the account. Installation, automation and settlement time zones retain their separate meanings.
+
+The shared design source is [docs/redesign/tokens.json](docs/redesign/tokens.json). Run `node scripts/generate-design-tokens.mjs` after changing it. The web component gallery at `/_design` and the mobile development gallery are unavailable in production builds. Both platforms load Onest and Unbounded locally.
 
 ## Build and test
 
@@ -92,6 +103,8 @@ Production startup validates the migrated schema and uses a restricted SQL login
 ## More detail
 
 - [Accounts, delivery providers and deployment](docs/accounts-deployment.md)
+- [Existing production server redeployment](docs/production-redeploy.md)
+- [Redesign specification and acceptance criteria](docs/redesign/DESIGN_SPEC.md)
 - [Solar generation model and history](docs/solar-expected-power.md)
 - [Open-Meteo commercial API setup](docs/open-meteo-commercial.md)
 - [Electricity export estimates, storage and upgrades](docs/solar-sales.md)

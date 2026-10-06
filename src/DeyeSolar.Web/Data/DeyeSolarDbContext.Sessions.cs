@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace DeyeSolar.Web.Data;
 public sealed class AccountSessionEntity
 {
+    public Guid SessionId { get; set; } = Guid.NewGuid();
     public string TokenHash { get; set; } = "";
     public string UserId { get; set; } = "";
     public string UserName { get; set; } = "";
@@ -10,6 +11,9 @@ public sealed class AccountSessionEntity
     public string? InstallationId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
+    public DateTime? LastSeenAt { get; set; }
+    public string? Platform { get; set; }
+    public string? Client { get; set; }
 }
 public partial class DeyeSolarDbContext
 {
@@ -19,6 +23,9 @@ public partial class DeyeSolarDbContext
         modelBuilder.Entity<AccountSessionEntity>(e =>
         {
             e.HasKey(s => s.TokenHash);
+            e.HasIndex(s => s.SessionId).IsUnique();
+            e.Property(s => s.Platform).HasMaxLength(40);
+            e.Property(s => s.Client).HasMaxLength(80);
             e.Property(s => s.TokenHash).HasMaxLength(64).UseCollation("Latin1_General_100_BIN2");
             e.Property(s => s.UserName).HasMaxLength(256);
             e.Property(s => s.SecurityStamp).HasMaxLength(256);

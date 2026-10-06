@@ -1,0 +1,7 @@
+<div class="ui-state @Kind" role="@(Kind == "error" ? "alert" : "status")" aria-live="polite">@if (Kind == "loading") { <div class="skeleton" aria-hidden="true"></div> } else { <UiIcon Name="@(Kind == "error" ? "info" : "energy")" Size="32" /> }<h2>@Title</h2>@if (Message is not null) { <p>@Message</p> }@ChildContent</div>
+@code {
+    [Parameter] public string Kind { get; set; } = "empty";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -3,30 +3,19 @@
 @inject ISocketCommandTracker CommandTracker
 @implements IDisposable
 
-<MudStack Row="true" Spacing="1">
-    <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="@(() => SendAsync(true))" Disabled="@CannotSend">@T["Socket ON"]</MudButton>
-    <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="@(() => SendAsync(false))" Disabled="@CannotSend">@T["Socket OFF"]</MudButton>
-</MudStack>
-@if (_receipt is { } receipt)
-{
-    <MudAlert Severity="Severity.Info" Class="mt-2">@ReceiptMessage(receipt.Status)</MudAlert>
-    @if (Unresolved(receipt.Status))
-    {
-        <MudButton Variant="Variant.Outlined" OnClick="@(() => CheckAsync(false))" Disabled="@_busy" Class="mt-2">@T["Check command result"]</MudButton>
-    }
-    @if (receipt.Status == SocketCommandStatus.Uncertain)
-    {
-        <MudText Typo="Typo.caption" Class="mt-2">@T["The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first."]</MudText>
-        <MudButton Variant="Variant.Outlined" OnClick="@(() => CheckAsync(true))" Disabled="@_busy" Class="mt-2">@T["Allow another command"]</MudButton>
-    }
-}
-@if (_error is not null)
-{
-    <MudAlert Severity="Severity.Warning" Class="mt-2">@T.Translate(_error)</MudAlert>
-    <MudButton Variant="Variant.Text" OnClick="RecoverAsync" Disabled="@_busy">@T["Reload command results"]</MudButton>
-}
+@if (!HideButtons) { <div class="form-actions"><UiButton Variant="outline" OnClick="()=>SendAsync(true)" Disabled="CannotSend">@T["Socket ON"]</UiButton><UiButton Variant="outline" OnClick="()=>SendAsync(false)" Disabled="CannotSend">@T["Socket OFF"]</UiButton></div> }
+@if (_ready && !_canSwitch) { <p class="caption">@T["This device does not support switching."]</p> }
+@if (_receipt is {} receipt) { <p class="caption" role="status">@ReceiptMessage(receipt.Status)</p>@if(Unresolved(receipt.Status)){<UiButton Variant="outline" OnClick="()=>CheckAsync(false)" Disabled="_busy">@T["Check command result"]</UiButton>}@if(receipt.Status==SocketCommandStatus.Uncertain){<p class="caption">@T["The earlier operation may still finish; allowing another command does not cancel it. Its result remains unknown. The server must obtain an online device observation first."]</p><UiButton Variant="outline" OnClick="()=>CheckAsync(true)" Disabled="_busy">@T["Allow another command"]</UiButton>} }
+@if(_error is not null){<div class="banner critical" role="alert">@T.Translate(_error)</div><UiButton Variant="quiet" OnClick="RecoverAsync" Disabled="_busy">@T["Reload command results"]</UiButton>}
 
 @code {
+    [Parameter] public EventCallback<bool> OnAvailabilityChanged { get; set; }
+    private bool? _reportedBlocked;
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (_reportedBlocked != CannotSend) { _reportedBlocked = CannotSend; await OnAvailabilityChanged.InvokeAsync(CannotSend); } }
+    [Parameter] public bool HideButtons { get; set; }
+    [Parameter] public Func<Guid, Guid, bool, CancellationToken, Task<SocketCommandResult>>? CommandSender { get; set; }
+    public bool IsBlocked => CannotSend;
+    public Task RequestAsync(bool value) => SendAsync(value);
     [Parameter] public string? DeviceId { get; set; }
     [Parameter] public bool Online { get; set; }
     [Parameter] public EventCallback OnAcknowledged { get; set; }
@@ -34,11 +23,12 @@
     private SocketCommandReceipt? _receipt;
     private bool _busy;
     private bool _ready;
+    private bool _canSwitch;
     private bool _disposed;
     private int _generation;
     private string? _error;
     private readonly CancellationTokenSource _stop = new();
-    private bool CannotSend => _busy || !_ready || !Online || !Guid.TryParse(DeviceId, out _) || _receipt is { } receipt && Unresolved(receipt.Status);
+    private bool CannotSend => _busy || !_ready || !_canSwitch || !Online || !Guid.TryParse(DeviceId, out _) || _receipt is { } receipt && Unresolved(receipt.Status);
     private static bool Unresolved(SocketCommandStatus status) => status is SocketCommandStatus.Pending or SocketCommandStatus.Uncertain;
 
     protected override async Task OnParametersSetAsync()
@@ -48,6 +38,7 @@
         ++_generation;
         _receipt = null;
         _ready = false;
+        _canSwitch = false;
         _busy = false;
         _error = null;
         await RecoverAsync();
@@ -65,6 +56,10 @@
             if (receipts.Any(receipt => receipt.DeviceId.Value != id)) throw new InvalidDataException(T["Mismatched command receipt."]);
             if (_receipt is null || !Unresolved(_receipt.Status))
                 _receipt = receipts.OrderBy(receipt => receipt.CreatedAt).FirstOrDefault();
+            var socket = await SocketCatalog.GetAsync(new(id), _stop.Token);
+            if (!Current(generation)) return;
+            if (socket.Id.Value != id) throw new InvalidDataException(T["Mismatched command receipt."]);
+            _canSwitch = socket.Capabilities.CanSwitch;
             _ready = true;
             _error = null;
         }
@@ -88,11 +83,12 @@
             if (unresolved.Count > 0) { _receipt = unresolved.OrderBy(receipt => receipt.CreatedAt).First(); return; }
             var socket = await SocketCatalog.GetAsync(new(id), _stop.Token);
             if (!Current(generation)) return;
-            if (!socket.Capabilities.CanSwitch) { _error = T["This device does not support switching."]; return; }
+            if (socket.Id.Value != id) throw new InvalidDataException(T["Mismatched command receipt."]);
+            if (!socket.Capabilities.CanSwitch) { _canSwitch = false; _error = T["This device does not support switching."]; return; }
             var commandId = new SocketCommandId(Guid.NewGuid());
             pending = new(new(id), commandId, isOn ? SwitchState.On : SwitchState.Off, SocketCommandStatus.Pending, DateTimeOffset.UtcNow, null);
             _receipt = pending;
-            var result = await socket.SetPowerAsync(new(commandId, pending.DesiredState), _stop.Token);
+            var result = CommandSender is null ? await socket.SetPowerAsync(new(commandId, pending.DesiredState), _stop.Token) : await CommandSender(id, commandId.Value, isOn, _stop.Token);
             if (!Current(generation)) return;
             if (result.CommandId != commandId) throw new InvalidDataException(T["Mismatched command receipt."]);
             _receipt = pending with { Status = result.Status };

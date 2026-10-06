@@ -1,5 +1,6 @@
 import { AccountSecurityApi } from "./AccountSecurityApi";
-import { ApiClient, ApiError } from "./ApiClient";
+import { ApiClient, ApiError, type RequestOptions } from "./ApiClient";
+import type { ActivityChecks, ActivityFeed, DeviceDetails, DeviceHistory, ProductionView, ReadingsView, RuleEvaluation } from "./redesignTypes";
 import { translate as t } from "../i18n";
 import { IntegrationApi } from "./IntegrationApi";
 import { SocketCommandCoordinator } from "./SocketCommandCoordinator";
@@ -23,6 +24,37 @@ import { ExportSalesPeriod, ExportSalesResult, SolarEstimateState, SolarHistoryP
 import { BillingAccess, readBillingAccess } from "../../features/subscription/billingPolicy";
 
 export class DeyeSolarApi {
+  request<T>(path: string, options?: RequestOptions): Promise<T> { return this.client.request(path, options); }
+  exportZip(proof: import("./AccountSecurityApi").AccountSecurityProof, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.client.request("/api/account/export", { method: "POST", body: { proof }, signal, responseType: "zip", skipUnauthorizedHandler: true, timeoutMs: 60000 });
+  }
+  startCodeSignIn(channel: VerificationChannel, destination: string, signal?: AbortSignal): Promise<VerificationResponse> {
+    return this.client.request("/api/auth/code/start", { method: "POST", body: { channel, destination }, signal, skipUnauthorizedHandler: true });
+  }
+  completeCodeSignIn(verificationId: string, code: string, signal?: AbortSignal): Promise<AuthResponse> {
+    return this.client.request("/api/auth/code/complete", { method: "POST", body: { verificationId, code }, signal, skipUnauthorizedHandler: true });
+  }
+  getProduction(period: SolarHistoryPeriod, date?: string, signal?: AbortSignal): Promise<ProductionView> {
+    return this.client.request("/api/solar/production", { query: { period, date }, signal });
+  }
+  getActivity(options: { from?: string; to?: string; ruleId?: number; changesOnly?: boolean; cursor?: string } = {}, signal?: AbortSignal): Promise<ActivityFeed> {
+    return this.client.request("/api/activity", { query: options, signal });
+  }
+  getDeviceHistory(id: string, hours = 24, signal?: AbortSignal): Promise<DeviceHistory> {
+    return this.client.request(`/api/v2/devices/${encodeURIComponent(id)}/history`, { query: { hours }, signal });
+  }
+  getDeviceDetails(id: string, signal?: AbortSignal): Promise<DeviceDetails> {
+    return this.client.request(`/api/v2/devices/${encodeURIComponent(id)}/details`, { signal });
+  }
+  getActivityChecks(id: number, cursor?: string, signal?: AbortSignal): Promise<ActivityChecks> {
+    return this.client.request(`/api/activity/groups/${id}/checks`, { query: { cursor }, signal });
+  }
+  getRuleEvaluation(id: number, signal?: AbortSignal): Promise<RuleEvaluation> {
+    return this.client.request(`/api/rules/${id}/evaluation`, { signal });
+  }
+  getReadingsView(hours: number, aggregate: "raw" | "5m", cursor?: string, signal?: AbortSignal): Promise<ReadingsView> {
+    return this.client.request("/api/readings", { query: { hours, view: "details", aggregate, cursor }, signal });
+  }
   getLanguage(signal?: AbortSignal): Promise<{ language: string | null }> {
     return this.client.request("/api/account/language", { signal });
   }
@@ -135,13 +167,19 @@ export class DeyeSolarApi {
     return this.client.request<SolarHistoryResult>("/api/solar/history", { query: { period, date }, signal });
   }
 
-  getSales(period: ExportSalesPeriod, date: string, signal?: AbortSignal): Promise<ExportSalesResult> {
-    return this.client.request<ExportSalesResult>("/api/sales", { query: { period, date }, signal });
+  getSales(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }): Promise<ExportSalesResult> {
+    return this.client.request<ExportSalesResult>("/api/sales", { query: { period, date, ...range }, signal });
+  }
+  getSalesDetails(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }): Promise<ExportSalesResult> {
+    return this.client.request("/api/sales", { query: { period, date, ...range, details: true }, signal });
+  }
+  recheckSalesPrices(period: ExportSalesPeriod, date: string, range?: { from: string; through: string }, signal?: AbortSignal): Promise<ExportSalesResult> {
+    return this.client.request("/api/sales/prices/recheck", { method: "POST", body: { period, date, ...range }, signal, timeoutMs: 60000 });
   }
 
-  getDevices(refresh = false): Promise<DeviceList> {
+  getDevices(refresh = false, signal?: AbortSignal): Promise<DeviceList> {
     return this.client.request<DeviceList>("/api/devices", {
-      query: { refresh }
+      query: { refresh }, signal
     });
   }
 

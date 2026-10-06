@@ -45,8 +45,22 @@ const literalArgumentTemplates = new Set([
   "Provider name: {0}. This changes the display name in Solar; device IDs and rules stay connected.",
   "Test {0}", "PV source: {0}", "{0}: selected source is unavailable. Its reference is preserved.",
   "Installed package version: {0}", "Version {0}",
-  "Linked inverter for {0}", "Circuit type for {0}", "Save link for {0}", "Unavailable inverter · {0}"
+  "Linked inverter for {0}", "Circuit type for {0}", "Save link for {0}", "Unavailable inverter · {0}",
+  "Disconnect {0}", "Link {0}", "Open {0}", "Switch {0}", "Switch {0} by hand?", "Pause {0}", "Edit automation {0}",
+  "Provider name: {0}. Renaming changes only its display name; rules stay connected."
 ]);
+const literalArgumentSlots: Record<string, readonly number[]> = {
+  "Switch {0} {1}?": [0],
+  "When the battery reaches {0}%, turn on {1}. Turn it off below {2}%.": [1],
+  "{0}: on {1}% · off {2}%": [0]
+};
+function literalArgument(key: string, slot: number) {
+  return literalArgumentTemplates.has(key) || literalArgumentSlots[key]?.includes(slot);
+}
+// Two actions can have the same wording in a language. Remember formatted labels so
+// a subsequent render does not guess a different action or translate a device name.
+const formattedPhrases = new Map<string, { key: string | null; args: unknown[] }>();
+const formattedPhraseLimit = 512;
 function templatePattern(key: string) {
   const slots: number[] = [];
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{(\d+)\\\}/g, (_, slot: string) => {
@@ -66,10 +80,24 @@ const reverseTemplates = Object.entries(catalogs).filter(([language]) => languag
   .sort((a, b) => b.key.replace(/\{\d+\}/g, "").length - a.key.replace(/\{\d+\}/g, "").length);
 export function translate(phrase?: string | null, ...args: unknown[]): string {
   if (!phrase) return phrase ?? "";
+  if (args.length === 0 && !Object.hasOwn(en, phrase)) {
+    const formatted = formattedPhrases.get(phrase);
+    if (formatted) {
+      if (formatted.key === null) return phrase;
+      const key = formatted.key;
+      return translate(key, ...formatted.args.map((argument, slot) =>
+        typeof argument === "string" && !literalArgument(key, slot) ? translate(argument) : argument));
+    }
+  }
   phrase = Object.hasOwn(en, phrase) ? phrase : canonicalPhrases.get(phrase) ?? phrase;
   let recoveredTemplate: string | undefined;
   if (!Object.hasOwn(en, phrase)) {
-    for (const template of reverseTemplates) {
+    // A bare translated string cannot identify which of two identically worded
+    // actions created it. Keep its wording rather than inventing another action.
+    const renderedPhrase = phrase;
+    const matches = reverseTemplates.filter(template => template.pattern.test(renderedPhrase));
+    if (new Set(matches.map(template => template.source)).size > 1) return phrase;
+    for (const template of matches) {
       const match = template.pattern.exec(phrase);
       if (!match) continue;
       const values: Record<number, string> = {};
@@ -89,16 +117,24 @@ export function translate(phrase?: string | null, ...args: unknown[]): string {
       const values: Record<number, string> = {};
       template.slots.forEach((slot, index) => {
         const part = match[index + 1] ?? "";
-        values[slot] = literalArgumentTemplates.has(template.key) || part === phrase ? part : translate(part);
+        values[slot] = literalArgument(template.key, slot) || part === phrase ? part : translate(part);
       });
       result = (catalogs[locale][template.key] ?? template.key).replace(/\{(\d+)\}/g, (_, slot: string) => values[Number(slot)] ?? "");
       break;
     }
   }
   result ??= phrase;
-  return args.length === 0 ? result : result.replace(/\{(\d+)\}/g, (token, slot: string) => {
+  if (args.length === 0) return result;
+  const formatted = result.replace(/\{(\d+)\}/g, (token, slot: string) => {
     const value = args[Number(slot)];
     if (value === undefined) return token;
     return typeof value === "number" ? value.toLocaleString(formattingLocale()) : String(value ?? "");
   });
+  if (Object.hasOwn(en, phrase) && /\{\d+\}/.test(phrase)) {
+    const previous = formattedPhrases.get(formatted);
+    formattedPhrases.delete(formatted);
+    formattedPhrases.set(formatted, previous && previous.key !== phrase ? { key: null, args: [] } : { key: phrase, args });
+    if (formattedPhrases.size > formattedPhraseLimit) formattedPhrases.delete(formattedPhrases.keys().next().value!);
+  }
+  return formatted;
 }

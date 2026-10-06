@@ -7,4 +7,8 @@ public record DevicePowerInfo(
     bool Online,
     bool IsOn,
     int? CurrentPowerW,
-    bool StateKnown = false);
+    bool StateKnown = false)
+{
+    // An additive property preserves the existing constructor used by provider packages.
+    public string? CloudName { get; init; }
+}

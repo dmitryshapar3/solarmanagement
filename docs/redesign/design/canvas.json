@@ -1,0 +1,649 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Activity.dc.html": {
+      "h": 980,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Automations · Activity",
+      "w": 390,
+      "x": 1880,
+      "y": 3190
+    },
+    "Automation-Editor.dc.html": {
+      "h": 1340,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Automation · editor",
+      "w": 390,
+      "x": 1410,
+      "y": 3190
+    },
+    "Automations.dc.html": {
+      "h": 920,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Automations · Rules",
+      "w": 390,
+      "x": 940,
+      "y": 3190
+    },
+    "Before-Devices.dc.html": {
+      "h": 860,
+      "page": "audit",
+      "title": "Сейчас · Devices",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "Before-Generation.dc.html": {
+      "h": 1300,
+      "page": "audit",
+      "title": "Сейчас · Generation",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Before-Home.dc.html": {
+      "h": 2860,
+      "page": "audit",
+      "title": "Сейчас · Dashboard",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Before-Settings.dc.html": {
+      "h": 1800,
+      "page": "audit",
+      "title": "Сейчас · Settings",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "Before-SignIn.dc.html": {
+      "h": 1100,
+      "page": "audit",
+      "title": "Сейчас · Sign in",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "Brand-Components.dc.html": {
+      "h": 1760,
+      "page": "system",
+      "title": "Components",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Brand-Foundations.dc.html": {
+      "h": 2080,
+      "page": "system",
+      "title": "Brand & foundations",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Connect.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Connect · step 1, inverter",
+      "w": 390,
+      "x": 470,
+      "y": 4930
+    },
+    "Device-Sheet.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Device · sheet",
+      "w": 390,
+      "x": 470,
+      "y": 3190
+    },
+    "Devices.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Devices",
+      "w": 390,
+      "x": 0,
+      "y": 3190
+    },
+    "Email-Code.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Sign in · email code",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "Energy-Export.dc.html": {
+      "h": 1390,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Energy · Export",
+      "w": 390,
+      "x": 1410,
+      "y": 1240
+    },
+    "Energy.dc.html": {
+      "h": 1200,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Energy · Production",
+      "w": 390,
+      "x": 940,
+      "y": 1240
+    },
+    "First-Run.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "First run · setup",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Home-Night.dc.html": {
+      "h": 1530,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Home · night, dark mode",
+      "w": 390,
+      "x": 470,
+      "y": 1240
+    },
+    "Live-Readings.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Live readings",
+      "w": 390,
+      "x": 1880,
+      "y": 1240
+    },
+    "Main.dc.html": {
+      "h": 1550,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Home · day",
+      "w": 390,
+      "x": 0,
+      "y": 1240
+    },
+    "Paywall.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "SmartSolar Premium · paywall",
+      "w": 390,
+      "x": 2350,
+      "y": 4930
+    },
+    "Settings.dc.html": {
+      "h": 1540,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Settings",
+      "w": 390,
+      "x": 0,
+      "y": 4930
+    },
+    "Welcome.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Welcome",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "Web-SignIn.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Sign in",
+      "w": 1440,
+      "x": 0,
+      "y": 0,
+      "expand": "fill"
+    },
+    "Web-Dashboard.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Home",
+      "w": 1440,
+      "x": 1520,
+      "y": 0,
+      "expand": "fill"
+    },
+    "Web-Energy.dc.html": {
+      "h": 1700,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Energy · production",
+      "w": 1440,
+      "x": 0,
+      "y": 1500,
+      "expand": "fill"
+    },
+    "Web-Energy-Export.dc.html": {
+      "h": 1690,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Energy · export, custom range",
+      "w": 1440,
+      "x": 1520,
+      "y": 1500,
+      "expand": "fill"
+    },
+    "Web-Devices.dc.html": {
+      "h": 1150,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Devices",
+      "w": 1440,
+      "x": 0,
+      "y": 3620,
+      "expand": "fill"
+    },
+    "Web-Automations.dc.html": {
+      "h": 1390,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Automations · list + editor",
+      "w": 1440,
+      "x": 1520,
+      "y": 3620,
+      "expand": "fill"
+    },
+    "Web-Activity.dc.html": {
+      "h": 1100,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Activity · automation runs",
+      "w": 1440,
+      "x": 3040,
+      "y": 3620,
+      "expand": "fill"
+    },
+    "Web-Readings.dc.html": {
+      "h": 1300,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Activity · readings",
+      "w": 1440,
+      "x": 4560,
+      "y": 3620,
+      "expand": "fill"
+    },
+    "Web-Settings.dc.html": {
+      "h": 2000,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Settings · installation",
+      "w": 1440,
+      "x": 0,
+      "y": 5430,
+      "expand": "fill"
+    },
+    "Web-Connected.dc.html": {
+      "h": 1290,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Settings · connected services",
+      "w": 1440,
+      "x": 1520,
+      "y": 5430,
+      "expand": "fill"
+    },
+    "Web-Account.dc.html": {
+      "h": 1360,
+      "is_interactive": true,
+      "page": "web",
+      "title": "Web · Settings · account",
+      "w": 1440,
+      "x": 3040,
+      "y": 5430,
+      "expand": "fill"
+    },
+    "Demo-Home.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Home · sample data",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "Hourly-Table.dc.html": {
+      "h": 930,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Energy · hourly table",
+      "w": 390,
+      "x": 2350,
+      "y": 1240
+    },
+    "Connect-Plugs.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Connect · step 1, smart plug",
+      "w": 390,
+      "x": 940,
+      "y": 4930
+    },
+    "Connect-Shelly.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Connect · step 2, Shelly Cloud",
+      "w": 390,
+      "x": 1410,
+      "y": 4930
+    },
+    "Connect-Choose.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Connect · step 3, choose plugs",
+      "w": 390,
+      "x": 1880,
+      "y": 4930
+    },
+    "Solar-Site.dc.html": {
+      "h": 1360,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Settings · Solar site",
+      "w": 390,
+      "x": 0,
+      "y": 6870
+    },
+    "Tariff.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Settings · Tariff & export",
+      "w": 390,
+      "x": 470,
+      "y": 6870
+    },
+    "Security.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "redesign",
+      "title": "Settings · Sign-in & security",
+      "w": 390,
+      "x": 940,
+      "y": 6870
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-05T12:22:19Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "page": "redesign",
+    "view": "canvas"
+  },
+  "notes": {
+    "audit-devices": {
+      "fill": "orange",
+      "page": "audit",
+      "text": "Devices\n• Пользователю показан UUID устройства.\n• «Edit name» во всю ширину визуально сильнее главного действия — вкл/выкл.\n• Вкл/выкл — две кнопки вместо одного переключателя; состояние видно только по маленькой плашке.\n• Не видно, какая автоматизация управляет розеткой и почему она сейчас включена.",
+      "w": 390,
+      "x": 1410,
+      "y": 920
+    },
+    "audit-findings": {
+      "fill": "orange",
+      "page": "audit",
+      "text": "Ключевые выводы\n\n1. Бренд. «DeyeSolar» — чужая торговая марка (Deye), а приложение уже работает с 10 производителями. Риск для App Review (5.2) и для позиционирования.\n\n2. Навигация. 5 вкладок, но Generation и Sales целиком повторяются на Home, а главная ценность — автоматизации — спрятана в More (2 тапа).\n\n3. Иерархия. Всё — одинаковые карточки с рамкой 0,5 px; нет главного числа и нет схемы потоков «солнце → дом / батарея / сеть».\n\n4. Текст вместо интерфейса. Десятки абзацев-пояснений 12 px и инженерный жаргон прямо в основном потоке.\n\n5. Управление. Вкл/выкл — две кнопки, «OFF» красная, как опасное действие; у «OFF» три разных цвета на разных экранах.\n\n6. Настройки. Один экран на ~40 полей: язык, аккаунт, безопасность, API, интеграции с версиями пакетов, координаты, тариф, опрос.\n\n7. Тема. Только тёмная (userInterfaceStyle: dark) — хуже читается на солнце, а солнечное приложение чаще всего открывают днём.\n\n8. Доступность. #6f7e72 на #171d1a = 3,9:1 (< 4,5:1), подписи 9–12 px, кнопка Google без текста, нет Dynamic Type.",
+      "w": 520,
+      "x": -600,
+      "y": 0
+    },
+    "audit-generation": {
+      "fill": "orange",
+      "page": "audit",
+      "text": "Generation\n• Два блока подряд показывают одно и то же текущее значение (snapshot и history).\n• Легенда из символов ■ ━, подписи осей 9 px, инспектор — абзац текста между стрелками ‹ ›.\n• 4 дисклеймера в основном потоке — им место в info-листе.\n• «Possible» и «Actual» различаются в основном оттенком (жёлтый / зелёный) — плохо для дальтоников.\n• Таблица часов спрятана за кнопкой Details.",
+      "w": 390,
+      "x": 940,
+      "y": 1360
+    },
+    "audit-home": {
+      "fill": "red",
+      "page": "audit",
+      "text": "Dashboard\n• Лента ~2700 px из 7 блоков: мощность, прогноз, продажи, ручное управление, правила, розетки — без приоритета.\n• 4 числа одного веса; под каждым повторяется «Latest inverter reading».\n• Кнопка «Details» в каждой карточке — шум; карточка сама должна быть ссылкой.\n• Инспектор графика по умолчанию стоит на 23:00 — будущем пустом часе.\n• Manual Override дублирует вкладку Devices; «Socket OFF» красная, хотя выключение не разрушительно.\n• Время с секундами (05/10, 11:24:03) — шум; хватит «в 11:24» или «2 мин назад».",
+      "w": 390,
+      "x": 470,
+      "y": 2920
+    },
+    "audit-settings": {
+      "fill": "red",
+      "page": "audit",
+      "text": "Settings\n• Один скролл на ~40 контролов; удаление аккаунта соседствует с выбором языка.\n• Переключатели сделаны кнопками, меняющими свой текст («Negative sales prices: paid»).\n• Интеграции показывают внутреннюю кухню: версии и digest пакетов, draft, discover.\n• Адрес сервера — в общем потоке; это настройка для «Дополнительно».\n• Числовые поля без единиц и диапазонов (азимут, наклон, kWp).",
+      "w": 390,
+      "x": 1880,
+      "y": 1860
+    },
+    "audit-signin": {
+      "fill": "red",
+      "page": "audit",
+      "text": "Вход\n• Первое поле — API URL: человек должен знать адрес сервера ещё до входа. Это настройка для продвинутых.\n• Три способа входа выглядят одинаково; Google — круглая иконка без подписи; демо — внизу второстепенной кнопкой.\n• Логотип — иконка «Server», не совпадает с иконкой приложения.\n• Есть вход через Google → по правилу App Review 4.8 нужен равноценный приватный вход (обычно Sign in with Apple).",
+      "w": 390,
+      "x": 0,
+      "y": 1160
+    },
+    "audit-title": {
+      "kind": "title1",
+      "maxW": 2870,
+      "page": "audit",
+      "text": "Аудит: текущее приложение, восстановленное из исходников",
+      "w": 240,
+      "x": -600,
+      "y": -320
+    },
+    "redesign-play": {
+      "fill": "blue",
+      "page": "redesign",
+      "text": "Это кликабельный прототип: нажмите Play на любом экране. Таб-бар, карточки на Home, строки устройств и правил, сегменты Production / Export и Rules / Activity ведут на соседние экраны.",
+      "w": 400,
+      "x": -480,
+      "y": 1240
+    },
+    "redesign-row1": {
+      "kind": "title1",
+      "maxW": 1800,
+      "page": "redesign",
+      "text": "1 · Вход и первый запуск",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "redesign-row2": {
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "redesign",
+      "text": "2 · Главная и энергия",
+      "w": 240,
+      "x": 0,
+      "y": 940
+    },
+    "redesign-row3": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "redesign",
+      "text": "3 · Устройства и автоматизации",
+      "w": 240,
+      "x": 0,
+      "y": 2890
+    },
+    "redesign-row4": {
+      "kind": "title1",
+      "maxW": 2740,
+      "page": "redesign",
+      "text": "4 · Настройки, подключение, подписка",
+      "w": 240,
+      "x": 0,
+      "y": 4630
+    },
+    "system-title": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "system",
+      "text": "Бренд SmartSolar: фундамент и компоненты",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "web-row1": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "web",
+      "text": "1 · Вход и главная",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "web-row2": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "web",
+      "text": "2 · Энергия: производство и экспорт",
+      "w": 240,
+      "x": 0,
+      "y": 1200
+    },
+    "web-row3": {
+      "kind": "title1",
+      "maxW": 6000,
+      "page": "web",
+      "text": "3 · Устройства, автоматизации, история",
+      "w": 240,
+      "x": 0,
+      "y": 3320
+    },
+    "web-row4": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "web",
+      "text": "4 · Настройки",
+      "w": 240,
+      "x": 0,
+      "y": 5130
+    },
+    "web-audit": {
+      "fill": "red",
+      "page": "web",
+      "w": 520,
+      "x": -640,
+      "y": 0,
+      "text": "Веб-версия сейчас (DeyeSolar.Web, Blazor + MudBlazor)\n• Другой продукт на вид: синий MudBlazor #42a5f5 и только тёмная тема, а у мобильного приложения свой стиль.\n• Вход разбит на Login / Register / Verify со своим CSS. Есть Google, но нет Apple: после добавления Sign in with Apple в iOS-приложение (App Review 4.8) такие пользователи не смогут войти на вебе.\n• Dashboard: «Manual override» — выпадающий список розеток и кнопки без контекста, какое правило ими управляет.\n• Rules: таблица из 12 колонок, вместо имени розетки — обрезанный ID «3c6105e4a1b2…», удаление — иконкой прямо в строке.\n• Run History и Readings — две «сырые» таблицы (SOC %, Solar W, Battery W) без группировки и объяснений.\n• Settings — одна длинная страница: язык, интеграции с версиями пакетов, координаты, панели, контракт, опрос, часовой пояс; у каждого блока своя кнопка Save.\n• 11 пунктов меню; Billing — отдельная страница вне меню."
+    },
+    "web-decisions": {
+      "fill": "blue",
+      "page": "web",
+      "w": 520,
+      "x": -640,
+      "y": 780,
+      "text": "Что меняем\n1. Один бренд и одни токены с мобильным: светлая тема по умолчанию, тёмная — по системе (Account → Appearance).\n2. Меню: 5 разделов + Settings. Energy = Generation + Sales, Activity = Run History + Readings.\n3. Правила — карточки с фразой «когда… тогда…» и редактор рядом; блок «Right now» объясняет, почему розетка сейчас включена.\n4. Ручное переключение — в карточке устройства, рядом с правилом, которое им управляет, и историей за 24 часа.\n5. Activity группирует проверки без изменений и пишет причины по-человечески; в Readings видны пропуски и проверка баланса.\n6. Settings: Installation / Connected services / Account. У Installation — оглавление и одна панель сохранения.\n7. Вход: Apple, Google и код на email/телефон на одном экране; новый email = регистрация."
+    },
+    "web-play": {
+      "fill": "blue",
+      "page": "web",
+      "w": 520,
+      "x": -640,
+      "y": 1500,
+      "text": "Веб — тоже кликабельный прототип: боковое меню, Production / Export, Automation runs / Readings и вкладки настроек ведут на соседние экраны. Макеты нарисованы на 1440 px, но вёрстка резиновая: на узком окне меню уходит наверх, колонки переносятся, широкие таблицы прокручиваются."
+    },
+    "redesign-row5": {
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "redesign",
+      "text": "5 · Установка и безопасность",
+      "w": 240,
+      "x": 0,
+      "y": 6570
+    },
+    "redesign-scenarios": {
+      "fill": "blue",
+      "page": "redesign",
+      "w": 400,
+      "x": -480,
+      "y": 4930,
+      "text": "Сценарии. Основной пользователь — Alex, Premium (годовая подписка, 2 розетки): Home, Devices, Automations, Settings.\nШаги подключения (1–3) и Paywall — сценарий нового пользователя на пробном месяце: в триале доступна 1 розетка, поэтому на шаге 3 вторая отмечена «Premium».\n«Explore with sample data» ведёт на Home с плашкой демо-данных."
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Home-Night.dc.html",
+    "Energy.dc.html",
+    "Energy-Export.dc.html",
+    "Live-Readings.dc.html",
+    "Welcome.dc.html",
+    "Email-Code.dc.html",
+    "First-Run.dc.html",
+    "Devices.dc.html",
+    "Device-Sheet.dc.html",
+    "Automations.dc.html",
+    "Automation-Editor.dc.html",
+    "Activity.dc.html",
+    "Settings.dc.html",
+    "Connect.dc.html",
+    "Paywall.dc.html",
+    "Brand-Foundations.dc.html",
+    "Brand-Components.dc.html",
+    "Before-SignIn.dc.html",
+    "Before-Home.dc.html",
+    "Before-Generation.dc.html",
+    "Before-Devices.dc.html",
+    "Before-Settings.dc.html",
+    "Web-SignIn.dc.html",
+    "Web-Dashboard.dc.html",
+    "Web-Energy.dc.html",
+    "Web-Energy-Export.dc.html",
+    "Web-Devices.dc.html",
+    "Web-Automations.dc.html",
+    "Web-Activity.dc.html",
+    "Web-Readings.dc.html",
+    "Web-Settings.dc.html",
+    "Web-Connected.dc.html",
+    "Web-Account.dc.html",
+    "Demo-Home.dc.html",
+    "Hourly-Table.dc.html",
+    "Connect-Plugs.dc.html",
+    "Connect-Shelly.dc.html",
+    "Connect-Choose.dc.html",
+    "Solar-Site.dc.html",
+    "Tariff.dc.html",
+    "Security.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "audit",
+      "name": "1 · Аудит текущего приложения"
+    },
+    {
+      "id": "system",
+      "name": "2 · Бренд и дизайн-система"
+    },
+    {
+      "id": "redesign",
+      "name": "3 · Редизайн экранов"
+    },
+    {
+      "id": "web",
+      "name": "4 · Веб-версия"
+    }
+  ],
+  "title": "SmartSolar redesign"
+}

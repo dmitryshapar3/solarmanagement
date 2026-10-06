@@ -21,15 +21,15 @@ public class BrowserBillingDeadlineTests(ITestOutputHelper output)
         output.WriteLine("Child application assembly: " + app.ApplicationAssemblyIdentity);
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
-        await using var context = await browser.NewContextAsync(new() { Locale = "en-US" });
+        await using var context = await browser.NewContextAsync(new() { Locale = "en-US", ViewportSize=new(){Width=900,Height=800} });
         await context.RouteAsync("**/*", route => route.Request.Url.StartsWith(app.Address, StringComparison.Ordinal)
             ? route.ContinueAsync() : route.AbortAsync());
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(20_000);
-        await page.GotoAsync(app.Address + "/login");
+        await page.GotoAsync(app.Address + "/signin?mode=password");
         await page.Locator("#username").FillAsync("billing-browser@example.test");
         await page.Locator("#password").FillAsync("Browser billing password 42!");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign In", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await page.WaitForURLAsync(app.Address + "/");
 
         // A persisted trust lease can end in twenty seconds on every calendar date,
@@ -47,21 +47,17 @@ public class BrowserBillingDeadlineTests(ITestOutputHelper output)
         var privateState = await app.ReadPrivateStateAsync();
         var ownBillingState = await ReadOwnBillingStateAsync(app.DatabaseOptions);
         await page.GotoAsync(app.Address + "/devices");
-        var refresh = page.GetByRole(AriaRole.Button, new() { Name = "Refresh devices", Exact = true });
-        await Assertions.Expect(refresh).ToBeVisibleAsync();
+        var privateContent = page.GetByRole(AriaRole.Heading, new() { Name = "No smart plugs yet", Exact = true });
+        await Assertions.Expect(privateContent).ToBeVisibleAsync();
         // Server-rendered child content can precede the interactive gate's initialization.
         // A reflected layout event proves this circuit has rendered through that gate.
-        var drawer = page.Locator(".mud-drawer");
-        await Assertions.Expect(drawer).ToHaveClassAsync(new Regex(@"\bmud-drawer--open\b"));
+        var drawer = page.GetByRole(AriaRole.Button, new(){Name="Open navigation",Exact=true});
         await AssertLiveDrawerEventAsync(page, drawer);
         output.WriteLine($"Live production circuit before account lock: UTC={DateTimeOffset.UtcNow:O}; AccessValidUntil={deadline:O}");
 
         await using (var stalled = await BillingAccountLock.AcquireAsync(app.DatabaseOptions))
         {
-            await refresh.ClickAsync();
-            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Refreshing…", Exact = true }))
-                .ToBeVisibleAsync(new() { Timeout = (float)Math.Max(1, (deadline - DateTimeOffset.UtcNow).TotalMilliseconds) });
-            // Observe the real production SQL reader waiting on our lock before expiry.
+                // Observe the real production SQL reader waiting on our lock before expiry.
             // Holding a lock without this assertion would not prove a stalled refresh.
             var blockedSql = await stalled.WaitForBlockedBillingReadAsync(deadline, app.DiagnosticLogTail);
             output.WriteLine($"Production personal billing read blocked: UTC={DateTimeOffset.UtcNow:O}; AccessValidUntil={deadline:O}; SQL={blockedSql}");
@@ -70,11 +66,9 @@ public class BrowserBillingDeadlineTests(ITestOutputHelper output)
             Assert.True(timeout > 0);
             await Assertions.Expect(page.GetByText("Your trial has ended. Subscribe to read or control your sockets.",
                 new() { Exact = true })).ToBeVisibleAsync(new() { Timeout = (float)timeout });
-            await Assertions.Expect(refresh).ToHaveCountAsync(0, new() { Timeout = 500 });
-            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Refreshing…", Exact = true }))
-                .ToHaveCountAsync(0, new() { Timeout = 500 });
+            await Assertions.Expect(privateContent).ToHaveCountAsync(0, new() { Timeout = 500 });
             Assert.Equal(app.Address + "/devices", page.Url);
-            await Assertions.Expect(page.Locator("a[href='/billing']")).ToBeVisibleAsync(new() { Timeout = 500 });
+            await Assertions.Expect(page.Locator("a[href='/settings/account#premium']")).ToBeVisibleAsync(new() { Timeout = 500 });
             output.WriteLine($"Expired access rendered and socket controls hidden: UTC={DateTimeOffset.UtcNow:O}; AccessValidUntil={deadline:O}");
             Assert.True(DateTimeOffset.UtcNow <= deadline.AddSeconds(2), "Socket controls stayed visible beyond the verified lease deadline.");
             await stalled.AssertExclusiveLockHeldAsync();
@@ -115,21 +109,20 @@ public class BrowserBillingDeadlineTests(ITestOutputHelper output)
         return deadline;
     }
 
-    private static async Task AssertLiveDrawerEventAsync(IPage page, ILocator drawer)
+    internal static async Task AssertLiveDrawerEventAsync(IPage page, ILocator toggle)
     {
         var timeout = DateTimeOffset.UtcNow.AddSeconds(20);
         while (DateTimeOffset.UtcNow < timeout)
         {
-            if (Regex.IsMatch(await drawer.GetAttributeAsync("class") ?? string.Empty, @"\bmud-drawer--closed\b")) return;
-            await page.Locator(".mud-appbar button").First.ClickAsync();
+            await toggle.ClickAsync();
             try
             {
-                await Assertions.Expect(drawer).ToHaveClassAsync(new Regex(@"\bmud-drawer--closed\b"), new() { Timeout = 500 });
+                await Assertions.Expect(page.Locator(".app-shell")).ToHaveClassAsync(new Regex(@"\bdrawer-open\b"), new(){Timeout=500});
                 return;
             }
-            catch (PlaywrightException) when (DateTimeOffset.UtcNow < timeout) { }
+            catch(PlaywrightException) when(DateTimeOffset.UtcNow<timeout){}
         }
-        Assert.Fail("The production Blazor circuit did not reflect the drawer event before the billing lock.");
+        Assert.Fail("The production Blazor circuit did not reflect navigation before the billing lock.");
     }
 
     private static async Task<string> ReadOwnBillingStateAsync(DbContextOptions<DeyeSolarDbContext> options)
@@ -193,12 +186,19 @@ public class BrowserBillingDeadlineTests(ITestOutputHelper output)
             await using var command = observer.CreateCommand();
             command.CommandTimeout = 2;
             command.CommandText = """
+                WITH blocking_chain AS (
+                    SELECT session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @sessionId
+                    UNION ALL
+                    SELECT request.session_id FROM sys.dm_exec_requests AS request
+                    JOIN blocking_chain AS parent ON request.blocking_session_id = parent.session_id
+                )
                 SELECT TOP (1) statement.text FROM sys.dm_exec_requests AS request
+                JOIN blocking_chain AS blocked ON blocked.session_id = request.session_id
                 CROSS APPLY sys.dm_exec_sql_text(request.sql_handle) AS statement
-                WHERE request.blocking_session_id = @sessionId
-                    AND request.wait_type LIKE N'LCK_M_%'
+                WHERE request.wait_type LIKE N'LCK_M_%'
                     AND CHARINDEX(N'FROM [BillingAccounts] AS [b]', statement.text) > 0
                     AND CHARINDEX(N'WHERE [b].[UserId] = @', statement.text) > 0
+                OPTION (MAXRECURSION 16)
                 """;
             command.Parameters.Add("@sessionId", SqlDbType.Int).Value = sessionId;
             while (DateTimeOffset.UtcNow < deadline)

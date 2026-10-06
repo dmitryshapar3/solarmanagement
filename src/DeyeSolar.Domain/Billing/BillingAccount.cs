@@ -17,4 +17,12 @@ public sealed class BillingAccount
 
 public sealed record BillingAccess(string Status, bool HasAccess, DateTimeOffset TrialEndsAt,
     DateTimeOffset? SubscriptionExpiresAt, Guid AppAccountToken, int? SocketLimit, bool AppleSubscriptionsEnabled,
-    DateTimeOffset ServerNow, DateTimeOffset? AccessValidUntil);
+    DateTimeOffset ServerNow, DateTimeOffset? AccessValidUntil)
+{
+    public string? ProductId { get; init; }
+    public string? PlanPeriod { get; init; }
+    public bool? AutoRenewEnabled { get; init; }
+    public DateTimeOffset? RenewalAt { get; init; }
+    public int TrialDaysRemaining { get; init; }
+    public int SocketUsage { get; init; }
+}

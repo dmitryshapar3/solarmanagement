@@ -12,6 +12,36 @@ public sealed class OpenMeteoSolarHistoryClientTests
     private static readonly DateTimeOffset Start = new(2026, 9, 18, 11, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task FullDayForecastKeepsUpcomingHoursAndUsesVerifiedAstronomyWithoutChangingCompletedHistory()
+    {
+        var now = Start.AddMinutes(30);
+        var sunrise = Start.AddHours(-6); var sunset = Start.AddHours(7);
+        var handler = new RoutedHttpHandler((uri, _) => Json(uri.Query.Contains("daily=")
+            ? JsonSerializer.Serialize(new { daily_units = new { sunrise="unixtime", sunset="unixtime" },
+                daily = new { sunrise=new long?[] {sunrise.ToUnixTimeSeconds(),sunrise.AddDays(1).ToUnixTimeSeconds()},
+                    sunset=new long?[] {sunset.ToUnixTimeSeconds(),sunset.AddDays(1).ToUnixTimeSeconds()} } }) : Weather()));
+        var clock = new ForecastClock(now);
+        var client = new OpenMeteoSolarHistoryClient(new OpenMeteoJsonReader(new HttpClient(handler),clock),clock);
+        var forecast=await client.ReadAsync(new() {TimeZoneId="UTC"},Start,Start.AddHours(3),new DateOnly(2026,9,18),default);
+        Assert.Equal(3,forecast.Samples.Count);Assert.Contains(forecast.Samples,p=>p.Timestamp>now);
+        Assert.Equal(sunrise,forecast.Sunrise);Assert.Equal(sunset,forecast.Sunset);Assert.Equal(sunrise.AddDays(1),forecast.NextSunrise);Assert.Equal(now,forecast.RetrievedAt);
+        var history=await client.ReadAsync(new(),Start,Start.AddHours(3),default);
+        Assert.Empty(history); // 11:00–12:00 is still unfinished at 11:30.
+    }
+    [Theory]
+    [InlineData("iso8601", 1726635600L)]
+    [InlineData("unixtime", 0L)]
+    [InlineData("unixtime", 1726635600L)]
+    public async Task UnsupportedPolarOrForeignDateAstronomyIsHiddenRatherThanInvented(string unit,long seconds)
+    {
+        var handler=new RoutedHttpHandler((uri,_)=>Json(uri.Query.Contains("daily=")
+            ? JsonSerializer.Serialize(new {daily_units=new {sunrise=unit,sunset=unit},daily=new {sunrise=new long?[] {seconds,null},sunset=new long?[] {seconds,null}}}) : Weather()));
+        var result=await Client(handler).ReadAsync(new(),Start,Start.AddHours(1),new DateOnly(2026,9,18),default);
+        Assert.Null(result.Sunrise);Assert.Null(result.Sunset);Assert.Null(result.NextSunrise);Assert.NotEmpty(result.Samples);
+    }
+    private sealed class ForecastClock(DateTimeOffset now):TimeProvider {public override DateTimeOffset GetUtcNow()=>now;}
+
+    [Fact]
     public async Task MeanRadiationTimestampBecomesPreviousHourStartWithMatchingEndpointWeather()
     {
         var handler = new RoutedHttpHandler((uri, _) => Json(Weather(gti: IsRoof1(uri)

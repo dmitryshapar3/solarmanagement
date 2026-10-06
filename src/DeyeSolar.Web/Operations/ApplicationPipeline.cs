@@ -3,6 +3,7 @@ using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Billing;
 using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Localization;
+using DeyeSolar.Web.Redesign;
 using DeyeSolar.Web.Tenancy;
 
 namespace DeyeSolar.Web.Operations;
@@ -17,6 +18,7 @@ public static class ApplicationPipeline
         if (!string.IsNullOrWhiteSpace(deployment.TrustedProxyAddresses)) app.UseForwardedHeaders();
         app.UseMiddleware<ResponseSecurityHeaders>();
         app.UseMiddleware<ApiExceptionMiddleware>();
+        app.UseMiddleware<LegacyUiRedirects>();
         app.UseStaticFiles();
         app.UseRouting();
         // Unmapped API paths must never reach the page fallback or resolve account/tenant services.
@@ -42,10 +44,13 @@ public static class ApplicationPipeline
         app.MapDynamicIntegrations();
         app.MapAccountIdentityApi();
         app.MapAccountSecurityApi();
+        app.MapAccountManagementApi();
+        app.MapAppleIdentity();
         app.MapUserLanguage();
         app.MapGoogleIdentity();
         app.MapExportSalesApi();
         app.MapIntegrationManagement();
+        app.MapRedesignApi();
         app.MapBlazorHub();
         app.MapRazorPages();
         app.Map("/api/{**path}", UnknownApiAsync)

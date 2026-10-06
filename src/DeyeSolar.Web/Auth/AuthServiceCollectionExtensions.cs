@@ -19,7 +19,7 @@ public static class AuthServiceCollectionExtensions
         var origin = new Uri(app.ApplicationServices.GetRequiredService<AuthProviderOptions>().PublicBaseUrl);
         return app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments("/auth/google") || context.Request.Path == "/signin-google"
+            if (context.Request.Path.StartsWithSegments("/auth/google") || context.Request.Path.StartsWithSegments("/auth/apple") || context.Request.Path == "/signin-google"
                 || context.Request.Path == "/account")
             {
                 context.Request.Scheme = origin.Scheme;
@@ -37,11 +37,27 @@ public static class AuthServiceCollectionExtensions
         services.AddScoped<AccountDataExporter>();
         services.AddScoped<AccountDeletionService>();
         services.AddScoped<AccountOffboardingRecovery>();
+        services.AddScoped<AccountManagementService>();
+        services.AddScoped<AccountZipExporter>();
+        services.AddSingleton<ContactChangeStore>();
+        services.AddSingleton<ExternalAccountProofStore>();
+        services.AddSingleton<ExternalProofCompletionStore>();
+        services.AddScoped<ExternalAccountProofService>();
+        services.AddSingleton<AppleIdentityFlowStore>();
+        services.AddSingleton<AppleIdentityCredentialStore>();
+        services.AddSingleton<IAppleIdentityVerifier, AppleIdentityVerifier>();
+        services.AddSingleton<IAppleIdentityTokenClient, AppleIdentityTokenClient>();
+        services.AddHostedService<AppleIdentityRevocationWorker>();
+        services.AddHttpClient(AppleIdentityVerifier.ClientName, client => client.Timeout = TimeSpan.FromSeconds(15))
+            .RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         return services;
     }
 
     public static IServiceCollection AddAccountIdentities(this IServiceCollection services, AuthProviderOptions providers)
     {
+        services.AddRateLimiter(options => options.AddPolicy("price-check", context => RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+            { PermitLimit = 6, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })));
         if (!Uri.TryCreate(providers.PublicBaseUrl, UriKind.Absolute, out var publicUri) || publicUri.Scheme != "https"
             || publicUri.UserInfo.Length != 0 || publicUri.Query.Length != 0 || publicUri.Fragment.Length != 0 || publicUri.AbsolutePath != "/")
             throw new InvalidOperationException("Auth:PublicBaseUrl must be an HTTPS origin.");
@@ -50,6 +66,7 @@ public static class AuthServiceCollectionExtensions
         services.AddScoped<InstallationMembershipService>();
         services.AddScoped<IUserClaimsPrincipalFactory<IdentityUser>, InstallationClaimsPrincipalFactory>();
         services.AddScoped<AccountIdentityService>();
+        services.AddScoped<UnifiedCodeSignIn>();
         services.TryAddSingleton<IAccountSessionStore>(provider => provider.GetRequiredService<MobileSessionStore>());
         services.AddScoped<IInstallationAccessAuthorizer, InstallationAccessAuthorizer>();
         services.AddScoped<InteractiveSecurityContext>();

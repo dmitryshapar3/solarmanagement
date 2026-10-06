@@ -14,14 +14,52 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using MudBlazor;
-using MudBlazor.Services;
 
 namespace DeyeSolar.Web.Tests;
 
 public class SolarEstimateCardTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 29, 11, 20, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task HomeHeroComparesFreshCurrentPvAndAlwaysAttributesItsForecast()
+    {
+        var html = await RenderAsync(CreateFixture(), hero: true);
+        Assert.Equal("Within estimate range", ReadValue(html,"hero-comparison"));
+        Assert.DoesNotContain("Above estimate range", html);
+        Assert.Contains("Weather data by Open-Meteo.com, CC BY 4.0", html);
+        Assert.Contains("href=\"https://open-meteo.com/\"", html);
+    }
+
+    [Theory]
+    [InlineData("unconfirmed")]
+    [InlineData("stale")]
+    [InlineData("ac")]
+    public async Task HomeHeroCannotCompareUnconfirmedStaleOrAcObservations(string scenario)
+    {
+        var fixture = CreateFixture();
+        if (scenario == "unconfirmed") fixture.Options.DeyeSolarPowerIsPvDcConfirmed = false;
+        fixture = scenario switch
+        {
+            "stale" => fixture with { Actual = fixture.Actual! with { SolarObservedAt = Now.AddMinutes(-11) } },
+            "ac" => fixture with { State = fixture.State with { Estimate = fixture.State.Estimate! with { Basis = SolarPowerBasis.Ac } } },
+            _ => fixture
+        };
+        Assert.Equal("Comparison unavailable", ReadValue(await RenderAsync(fixture, hero: true),"hero-comparison"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HomeNightKeepsAstronomySeparateFromVerifiedBatterySupply(bool batterySupply)
+    {
+        var fixture = CreateFixture(new(2026, 10, 6, 2, 0, 0, TimeSpan.Zero));
+        var html = await RenderAsync(fixture, hero: true, production: HomePresentationTests.Day(), batterySupply: batterySupply);
+        Assert.Contains("solar-night", html);
+        Assert.Contains("Next sunrise 6 Oct 06:00", html);
+        Assert.Equal(batterySupply, html.Contains("The sun has set. Home runs on battery.", StringComparison.Ordinal));
+        Assert.Contains("CC BY 4.0", html);
+    }
 
     [Theory]
     [InlineData("normal")]
@@ -54,11 +92,11 @@ public class SolarEstimateCardTests
             Assert.DoesNotMatch("[\\u0400-\\u04FF]", html);
             Assert.Contains("Latest solar snapshot", html);
             Assert.Contains("Data sources and timestamps", html);
-            Assert.Contains("Possible", html);
-            Assert.Contains("Latest inverter generation", html);
+            Assert.Contains("Expected now", html);
+            Assert.Contains(scenario == "empty" ? "Awaiting reading" : "Inverter reading", html);
             if (scenario == "empty")
             {
-                Assert.Contains("Estimate unavailable", html);
+                Assert.Contains("The estimate is unavailable", html);
                 Assert.Equal("—", ReadValue(html, "solar-actual"));
             }
             else
@@ -81,24 +119,24 @@ public class SolarEstimateCardTests
         var fixture = CreateFixture();
         var html = await RenderAsync(fixture, "compact-now");
 
-        Assert.Equal(2, Regex.Matches(html, "<output\\b").Count);
+        Assert.Equal(2, Regex.Matches(html, "data-testid=\"solar-(?:actual|possible)\"").Count);
         Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
         var visible = StripTags(Regex.Replace(html, "<details\\b.*?</details>", "", RegexOptions.Singleline));
-        Assert.Contains("Possible", visible);
-        Assert.Contains("Latest inverter generation", visible);
+        Assert.Contains("Expected now", visible);
+        Assert.Contains("Inverter reading", visible);
         Assert.DoesNotContain("Deviation", html);
         Assert.DoesNotContain("Approximate range", html);
         Assert.DoesNotContain("Roofs and configuration", html);
         Assert.DoesNotContain("Within the expected range", html);
         Assert.DoesNotContain("Below the estimate", html);
         Assert.DoesNotContain("Above the estimate", html);
-        Assert.DoesNotContain("8.8", visible);
-        Assert.DoesNotContain("Geodetów", visible);
+        Assert.DoesNotContain("8.80", visible);
+        Assert.Contains("Geodetów", visible);
         Assert.Contains("Measured at", visible);
         Assert.Contains("Weather estimate", visible);
         Assert.Contains("<summary", html);
-        Assert.Contains("aria-label=\"Data sources and timestamps\"", html);
+        Assert.Contains(">Data sources and timestamps</summary>", html);
         Assert.Contains("Open-Meteo", html);
         Assert.Contains("CC BY 4.0", html);
         Assert.Matches("29 Sep(?:t)? 2026 13:20:00 UTC[+]02:00", html);
@@ -108,12 +146,12 @@ public class SolarEstimateCardTests
 
     [Theory]
     [InlineData("stale", "4.60 kW", "Weather data is stale")]
-    [InlineData("expired", "—", "Estimate unavailable")]
+    [InlineData("expired", "—", "The estimate is unavailable")]
     [InlineData("stopped", "—", "The calculation has stopped updating")]
-    [InlineData("future", "—", "Estimate unavailable")]
-    [InlineData("future-source", "—", "Estimate unavailable")]
+    [InlineData("future", "—", "The estimate is unavailable")]
+    [InlineData("future-source", "—", "The estimate is unavailable")]
     [InlineData("failed", "4.60 kW", "Weather refresh failed")]
-    [InlineData("empty", "—", "Estimate unavailable")]
+    [InlineData("empty", "—", "The estimate is unavailable")]
     public async Task EstimateFreshnessIsPreservedWithoutExtraReadings(string scenario, string expected, string reason)
     {
         var fixture = CreateFixture();
@@ -132,11 +170,11 @@ public class SolarEstimateCardTests
 
         var html = await RenderAsync(fixture, "compact-" + scenario);
 
-        Assert.Equal(2, Regex.Matches(html, "<output\\b").Count);
+        Assert.Equal(2, Regex.Matches(html, "data-testid=\"solar-(?:actual|possible)\"").Count);
         Assert.Equal(expected, ReadValue(html, "solar-possible"));
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
         Assert.Contains(reason, html);
-        Assert.Contains("solar-info-warning", html);
+        Assert.DoesNotContain("Refresh", html);
     }
 
     [Theory]
@@ -165,7 +203,7 @@ public class SolarEstimateCardTests
         Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
         Assert.Equal("—", ReadValue(html, "solar-actual"));
         Assert.Contains(reason, html);
-        Assert.Contains("solar-info-warning", html);
+        Assert.DoesNotContain("Refresh", html);
     }
 
     [Theory]
@@ -184,7 +222,7 @@ public class SolarEstimateCardTests
         Assert.Contains("The inverter power type is unconfirmed", html);
         Assert.DoesNotContain("Within the expected range", html);
         Assert.DoesNotContain("Deviation", html);
-        Assert.Contains("solar-info-warning", html);
+        Assert.DoesNotContain("Refresh", html);
     }
 
     [Theory]
@@ -268,26 +306,33 @@ public class SolarEstimateCardTests
     }
 
     [Fact]
-    public async Task DetailedGenerationLeadsWithTheInteractiveChartAndKeepsMissingHoursInItsTable()
+    public async Task HistoricalComparisonNeverReplacesTheCurrentSnapshot()
     {
         var fixture = CreateFixture();
         var history = new SolarHistoryResult(Now.AddHours(-2), Now, "Europe/Warsaw",
-            [new(Now.AddHours(-2), new(0, 0), 0), new(Now.AddHours(-1), null, null)])
-        { Today = DateOnly.FromDateTime(Now.DateTime), SelectedDate = DateOnly.FromDateTime(Now.DateTime) };
+            [new(Now.AddHours(-2), new(0, 0), 0), new(Now.AddHours(-1), null, null)]);
         var html = await RenderAsync(fixture, detailed: true, history: history);
 
-        Assert.True(html.IndexOf("data-testid=\"actual-series\"", StringComparison.Ordinal) < html.IndexOf("Latest solar snapshot", StringComparison.Ordinal));
-        Assert.Contains("aria-label=\"Chart period\"", html);
-        Assert.Contains("aria-label=\"Day navigation\"", html);
-        foreach (var period in new[] { "Day", "7 days", "30 days" }) Assert.Matches($">{period}</button>", html);
-        Assert.Contains("Hourly generation data", html);
-        Assert.Matches("<td[^>]*>0[.]00</td>", html);
-        Assert.Matches("<td[^>]*>—</td>", html);
-        Assert.Contains("Time-aligned comparison", html);
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
+        Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
+        Assert.Contains("Historical inverter power", html);
         Assert.Contains("8.80 kW", html);
-        Assert.DoesNotContain("Estimate for comparison", html); // The weather model has no bracket for the historical sample.
         Assert.Contains("Comparison unavailable", html);
+        Assert.DoesNotContain("Inverter minus estimate", html);
+        Assert.Contains("href=\"/energy\"", html);
+    }
+
+    [Theory]
+    [InlineData(false, 3700)]
+    [InlineData(false, 0)]
+    public async Task UnverifiedPowerCannotBecomeAUsableReading(bool valid, int watts)
+    {
+        var fixture = CreateFixture();
+        fixture = fixture with { Actual = fixture.Actual! with { Telemetry = null, SolarProduction = watts } };
+        var html = await RenderAsync(fixture);
+        Assert.Equal("—", ReadValue(html, "solar-actual"));
+        Assert.Contains("Awaiting reading", html);
+        Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
     }
 
     [Fact]
@@ -298,8 +343,9 @@ public class SolarEstimateCardTests
             { Timestamp = Now.AddMinutes(-5), CentralKw = 5.25 } } };
         var html = await RenderAsync(fixture, detailed: true);
 
-        Assert.Contains("Estimate for comparison", html);
-        Assert.Contains("5.25 kW", html);
+        Assert.Contains("Inverter minus estimate", html);
+        Assert.Contains("5.70 kW", html);
+        Assert.DoesNotContain("5.25 kW", html);
         Assert.Contains("Above estimate range", html);
         Assert.Equal("4.60 kW", ReadValue(html, "solar-possible"));
         Assert.Equal("3.70 kW", ReadValue(html, "solar-actual"));
@@ -318,7 +364,7 @@ public class SolarEstimateCardTests
         // A different historical reading must never replace the current snapshot in the compact tile.
         var historic = new SolarActual(now.AddMinutes(-5), 8.8, SolarPowerBasis.PvDc);
         var state = new SolarEstimateState(estimate, new(SolarComparisonStatus.AboveEstimate, historic, 5.7, 183, null), false, now.AddMinutes(-8), null);
-        return new(state, new InverterData { SolarProduction = 3700, SolarObservedAt = now.AddMinutes(-1), SolarDeviceSn = "test-device", Timestamp = now },
+        return new(state, ConfirmedInverterReading.Create(new InverterData { SolarProduction = 3700, SolarObservedAt = now.AddMinutes(-1), SolarDeviceSn = "test-device", Timestamp = now }),
             new SolarEstimateOptions { DeyeSolarPowerIsPvDcConfirmed = true, DeyeConfirmedDeviceSn = "test-device" }, now);
     }
 
@@ -326,17 +372,19 @@ public class SolarEstimateCardTests
 
     private static string ReadValue(string html, string id)
     {
-        var match = Regex.Match(html, "<output\\b[^>]*data-testid=\"" + id + "\"[^>]*>(.*?)</output>", RegexOptions.Singleline);
+        var match = Regex.Match(html, "<(div|strong|p)\\b[^>]*data-testid=\"" + id + "\"[^>]*>(.*?)</\\1>", RegexOptions.Singleline);
         Assert.True(match.Success, "Missing power output: " + id);
-        return StripTags(match.Groups[1].Value);
+        var value = StripTags(match.Groups[2].Value);
+        return value.StartsWith("—", StringComparison.Ordinal) ? "—" : value;
+
     }
 
-    private static async Task<string> RenderAsync(Fixture fixture, string? scenario = null, bool detailed = false, SolarHistoryResult? history = null)
+    private static async Task<string> RenderAsync(Fixture fixture, string? scenario = null, bool detailed = false, SolarHistoryResult? history = null,
+        bool hero = false, DeyeSolar.Web.Redesign.ProductionViewDto? production = null, bool batterySupply = false)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddComponentLocalization();
-        services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddOptions<SolarEstimateOptions>();
         services.Configure<InverterConnectionOptions>(o => o.DeviceKey = "test-device");
@@ -355,7 +403,8 @@ public class SolarEstimateCardTests
             var output = await renderer.RenderComponentAsync<SolarEstimateCard>(ParameterView.FromDictionary(new Dictionary<string, object?>
             {
                 ["State"] = fixture.State, ["Options"] = fixture.Options, ["Now"] = fixture.Now, ["Actual"] = fixture.Actual,
-                ["Detailed"] = detailed, ["HistoryData"] = history
+                ["Detailed"] = detailed, ["HistoryData"] = history, ["Hero"] = hero,
+                ["ProductionData"] = production, ["HomeRunsOnBattery"] = batterySupply
             }));
             return output.ToHtmlString();
         });

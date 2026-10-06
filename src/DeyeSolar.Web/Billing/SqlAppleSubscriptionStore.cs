@@ -93,6 +93,8 @@ public sealed class SqlAppleSubscriptionStore(DbContextOptions<DeyeSolarDbContex
         subscription.CheckedAt = observation.CheckedAt;
         subscription.InvalidatedAt = null;
         subscription.IsFreeTrial = transaction.IsFreeTrial;
+        subscription.AutoRenewEnabled = observation.AutoRenewEnabled;
+        subscription.RenewalAt = observation.RenewalAt;
         await db.SaveChangesAsync(cancellationToken);
         await atomic.CommitAsync(cancellationToken);
     }

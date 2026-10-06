@@ -7,7 +7,7 @@ namespace DeyeSolar.Web.Auth;
 
 public sealed record GoogleMobileFlow(string CodeChallenge, string State, string? LinkingUserId);
 public sealed record GoogleMobileExchangeRequest(string Code, string CodeVerifier);
-public sealed record GoogleMobileLinkStartRequest(string CodeChallenge, string State);
+public sealed record GoogleMobileLinkStartRequest(string CodeChallenge, string State, AccountSecurityProof? Proof = null);
 public sealed record PendingGoogleLink(string UserId, string Subject, string Email);
 public sealed record GoogleMobileProof(string? UserId, PendingGoogleLink? Link);
 

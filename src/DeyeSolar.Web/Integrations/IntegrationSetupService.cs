@@ -227,6 +227,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
     public async Task<IntegrationBindingDto> SelectDeviceAsync(Guid id, SelectIntegrationDeviceRequest request, ClaimsPrincipal actor, CancellationToken ct)
     {
         await EnsureManagerAsync(actor, ct);
+        if (!DeyeSolar.Web.Services.DeviceNameService.TryName(request.DisplayName, out var displayName))
+            throw new IntegrationRequestException("validation", "Use a device name of up to 80 characters without control characters.");
         var proof = selectionTokens.Read(request.SelectionToken);
         await using var db = await factory.CreateDbContextAsync(ct);
         var instance = await FindAsync(db, id, ct);
@@ -255,6 +257,8 @@ public sealed partial class IntegrationSetupService(IDbContextFactory<DeyeSolarD
         if (device.Kind == "socket" && billing is not null)
             await (quota ?? throw new InvalidOperationException("A billing-enabled integration service requires a socket quota policy.")).EnsureSocketSelectionAsync(db, actor, instance.InstallationId, new(id, device.RemoteId, channel), ct);
         var binding = await bindingWriter.BindAsync(db, instance, device, actor, ct);
+        if (request.DisplayName is not null)
+            binding.MetadataJson = IntegrationDeviceDisplayName.Write(binding, displayName);
         instance.AccountIdentity ??= device.AccountIdentity;
         lifecycle.Touch(instance);
         try { await db.SaveChangesAsync(ct); }

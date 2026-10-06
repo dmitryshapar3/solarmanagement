@@ -88,12 +88,13 @@ export function validRange(range: PowerRange | null | undefined): range is Power
   return Boolean(range && known(range.lowerKw) && known(range.upperKw) && range.lowerKw >= 0 && range.upperKw >= range.lowerKw);
 }
 
-export function chartGeometry(points: readonly ChartPoint[], mode: "generation" | "sales") {
+export function chartGeometry(points: readonly ChartPoint[], mode: "generation" | "sales", domain?: { minimum: number; maximum: number }) {
   const values = points.flatMap((point) => mode === "generation"
     ? [validRange(point.possible) ? point.possible.upperKw : null, point.actual]
     : [point.completed, known(point.provisional) ? (point.completed ?? 0) + point.provisional : null]).filter(known);
-  const min = Math.min(0, Math.floor(Math.min(0, ...values)));
-  const max = Math.max(1, Math.ceil(Math.max(0, ...values)));
+  const bounded = domain && known(domain.minimum) && known(domain.maximum) && domain.maximum > domain.minimum;
+  const min = bounded ? domain.minimum : Math.min(0, Math.floor(Math.min(0, ...values)));
+  const max = bounded ? domain.maximum : Math.max(1, Math.ceil(Math.max(0, ...values)));
   const step = (chartWidth - left - right) / Math.max(1, points.length);
   const x = (index: number) => left + step * (index + .5);
   const y = (value: number) => bottom - (value - min) / (max - min) * (bottom - top);

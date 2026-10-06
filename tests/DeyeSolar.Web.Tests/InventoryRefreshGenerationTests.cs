@@ -14,56 +14,28 @@ public class InventoryRefreshGenerationTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task ObsoletePageRefreshCannotRepublishDevicesAfterIntegrationInvalidation(bool dashboard, bool replacement)
+    public async Task ObsoleteInitialInventoryReadCannotRepublishAfterIntegrationInvalidation(bool discover, bool replacement)
     {
         var snapshot = new DeviceStatusSnapshot();
         var oldDevice = new DevicePowerInfo(Guid.NewGuid().ToString("D"), "Retired account socket", "Socket", true, true, 850);
         var neighbor = new DevicePowerInfo(Guid.NewGuid().ToString("D"), "Current account neighbor", "Socket", true, false, 0);
         IReadOnlyList<DevicePowerInfo> authoritative = [neighbor];
-        snapshot.Update([oldDevice]);
         var inventory = new HeldInventory();
-        object page = dashboard ? new DeyeSolar.Web.Pages.Index() : new DeyeSolar.Web.Pages.Devices();
-        Set(page, "DeviceSnapshot", snapshot);
-        if (dashboard)
-        {
-            Set(page, "Snapshot", new InverterDataSnapshot());
-            Set(page, "SocketInventory", inventory);
-            Set(page, "RuleRepo", new EmptyRules());
-        }
-        else
-        {
-            Set(page, "SocketInventoryService", inventory);
-            Set(page, "DeviceNames", new DeviceNameService(new Labels(), snapshot));
-        }
-        try
-        {
-            var pending = InvokeAsync(page, dashboard ? "RefreshManualDevicesAsync" : "RefreshDevices");
-            await inventory.Started.Task;
-            snapshot.Clear();
-            if (replacement) snapshot.Update(authoritative);
-            var lastUpdated = snapshot.LastUpdated;
-            var publications = 0;
-            snapshot.OnDataUpdated += () => ++publications;
-            inventory.Complete.SetResult([oldDevice]);
-            await pending;
-            Assert.Equal(0, publications);
-            Assert.Equal(lastUpdated, snapshot.LastUpdated);
-            if (replacement) Assert.Same(authoritative, snapshot.Current);
-            else Assert.Null(snapshot.Current);
-            var rendered = Get(page, "_devices") as System.Collections.IEnumerable;
-            var ids = rendered?.Cast<object>().Select(device => device switch
-            {
-                DevicePowerInfo reading => reading.Id,
-                DeviceDto description => description.Id,
-                _ => throw new InvalidDataException("Unexpected device representation.")
-            }).ToArray() ?? [];
-            Assert.Equal(replacement ? [neighbor.Id] : Array.Empty<string>(), ids);
-        }
-        finally
-        {
-            if (page is IAsyncDisposable asynchronous) await asynchronous.DisposeAsync();
-            else ((IDisposable)page).Dispose();
-        }
+        var pending = DeyeSolar.Web.Components.Ui.DeviceInventoryView.ReadAsync(snapshot, inventory,
+            new DeviceNameService(new Labels(), snapshot), discover, CancellationToken.None);
+        await inventory.Started.Task;
+        snapshot.Clear();
+        if (replacement) snapshot.Update(authoritative);
+        var lastUpdated = snapshot.LastUpdated;
+        var publications = 0;
+        snapshot.OnDataUpdated += () => ++publications;
+        inventory.Complete.SetResult([oldDevice]);
+        var descriptions = await pending;
+        Assert.Equal(0, publications);
+        Assert.Equal(lastUpdated, snapshot.LastUpdated);
+        Assert.Equal(replacement ? [neighbor.Id] : Array.Empty<string>(), descriptions.Select(d => d.Id));
+        if (replacement) Assert.Same(authoritative, snapshot.Current);
+        else Assert.Null(snapshot.Current);
     }
 
     [Fact]
@@ -72,25 +44,14 @@ public class InventoryRefreshGenerationTests
         var snapshot = new DeviceStatusSnapshot();
         snapshot.Update([new(Guid.NewGuid().ToString("D"), "Retired socket", "Socket", true, true, 850)]);
         var labels = new HeldLabels();
-        var page = new DeyeSolar.Web.Pages.Devices();
-        Set(page, "DeviceSnapshot", snapshot);
-        Set(page, "DeviceNames", new DeviceNameService(labels, snapshot));
-        try
-        {
-            var descriptions = InvokeAsync(page, "LoadDescriptionsAsync");
-            await labels.Started.Task;
-            snapshot.Clear();
-            labels.Complete.SetResult([]);
-            await descriptions;
-            Assert.Null(Get(page, "_devices"));
-            Assert.Null(snapshot.Current);
-        }
-        finally { ((IDisposable)page).Dispose(); }
+        var pending = DeyeSolar.Web.Components.Ui.DeviceInventoryView.ReadAsync(snapshot, new HeldInventory(),
+            new DeviceNameService(labels, snapshot), false, CancellationToken.None);
+        await labels.Started.Task;
+        snapshot.Clear();
+        labels.Complete.SetResult([]);
+        Assert.Empty(await pending);
+        Assert.Null(snapshot.Current);
     }
-
-    private static object? Get(object instance, string name) => instance.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(instance);
-    private static void Set(object instance, string name, object value) => instance.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(instance, value);
-    private static Task InvokeAsync(object instance, string name) => (Task)instance.GetType().GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(instance, null)!;
 
     private sealed class HeldInventory : ISocketInventoryService
     {
@@ -101,7 +62,7 @@ public class InventoryRefreshGenerationTests
             Started.SetResult();
             return Complete.Task;
         }
-        public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => throw new InvalidOperationException("Manual refresh must request current inventory.");
+        public Task<IReadOnlyList<DevicePowerInfo>> GetCachedDevicesAsync(CancellationToken ct) => RefreshDevicesAsync(ct);
     }
     private sealed class Labels : IDeviceLabelStore
     {

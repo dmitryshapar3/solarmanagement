@@ -4,160 +4,49 @@
 @using SolarManagement.Integrations.Contracts
 @inject IIntegrationProviderCatalog Catalog
 @inject IntegrationSetupService Setup
+@inject IServiceProvider Services
 @inject AuthenticationStateProvider Authentication
 @inject IntegrationChangeNotifier Changes
 @inject DeyeSolar.Web.Data.CurrentInstallation Installation
 @implements IDisposable
+@if(!_flowOpen&&!string.IsNullOrWhiteSpace(_notice)){<div class="banner" role="status">@T.Translate(_notice)</div>}@if(!_flowOpen&&!string.IsNullOrWhiteSpace(_error)){<div class="banner critical" role="alert">@T.Translate(_error)</div>}
+<div class="two-columns"><UiCard Title="@T["Add a connection"]"><p class="caption">@T["Connect an account, verify access, save its settings and choose devices. Connection checks never switch a device."]</p><UiButton Variant="primary" OnClick="OpenFlow" Disabled="_busy">@T["Connect a service"]</UiButton></UiCard><UiCard Title="@T["Saved connections"]"><div class="form-stack">@foreach(var instance in _instances){<UiButton Variant="@(instance.Id==_selected?"strong":"outline")" OnClick="()=>Select(instance.Id)" Disabled="_busy">@instance.Name · @T[instance.Status=="enabled"?"Enabled":"Not connected"]</UiButton>@if(instance.Status=="enabled"&&(!_forms.TryGetValue(instance.Id,out var savedForm)||!Supported(savedForm.Provider))){<UiButton Variant="critical" OnClick="()=>DisableInstance(instance)" Disabled="_busy">@T.Format("Disconnect {0}",instance.Name)</UiButton>}}</div></UiCard></div>
+@if(_flowOpen){<UiModal Title="@T["Connect a service"]" OnClose="RequestCloseFlow" CanClose="@(!_busy)"><div class="form-stack"><p class="caption">@T.Format("Step {0} of 3",!_flowCreated?1:Current?.Discovery is not null?3:2) · @T[!_flowCreated?"Choose a manufacturer":Current?.Discovery is not null?"Choose devices":"Connection settings"]</p>@if(_notice is not null){<p class="banner" role="status">@T.Translate(_notice)</p>}@if(_error is not null){<p class="banner critical" role="alert">@T.Translate(_error)</p>}
+@if(!_flowCreated){@foreach(var kind in new[]{"inverter","socket","other"}){var providers=_providers.Where(provider=>kind=="other"?!IntegrationProviderKinds.Supports(provider,"inverter")&&!IntegrationProviderKinds.Supports(provider,"socket"):IntegrationProviderKinds.Supports(provider,kind)).ToArray();if(providers.Length>0){<section class="form-stack"><h3>@T[kind=="inverter"?"Inverter manufacturer":kind=="socket"?"Smart plug manufacturer":"Other provider"]</h3><div class="provider-grid">@foreach(var provider in providers){<UiButton Variant="@(provider.ProviderId==_newProvider?"strong":"outline")" Class="provider-choice" OnClick="()=>ChooseProvider(provider.ProviderId,kind)" Disabled="@(_busy||!Supported(provider))" aria-pressed="@((provider.ProviderId==_newProvider).ToString().ToLowerInvariant())"><span class="provider-monogram" aria-hidden="true">@Monogram(provider.DisplayName)</span><span>@provider.DisplayName</span></UiButton>}</div></section>}}@if(_providers.Count==0){<p class="caption">@T["No provider packages are installed. Ask the platform operator to install a supported provider."]</p>}<div class="ui-field"><label for="connection-name">@T["Connection name"]</label><input id="connection-name" @bind="_newName" disabled="@_busy" maxlength="100"/></div><div class="form-actions"><UiButton Variant="outline" OnClick="RequestCloseFlow" Disabled="_busy">@T["Cancel"]</UiButton><UiButton Variant="primary" OnClick="Create" Disabled="@(_busy||string.IsNullOrWhiteSpace(_newProvider)||string.IsNullOrWhiteSpace(_newName))">@T["Add connection"]</UiButton></div>}
+else{@Editor}<div class="form-actions">@if(_flowCreated){<UiButton Variant="outline" OnClick="RequestCloseFlow" Disabled="_busy">@T["Close"]</UiButton>}</div></div></UiModal>}else{@Editor}
+@if(_confirmFlowClose){<UiModal Title="@T["Discard changes?"]" OnClose="()=>_confirmFlowClose=false"><p>@T["Your unsaved changes will be discarded."]</p><div class="form-actions"><UiButton Variant="outline" OnClick="()=>_confirmFlowClose=false">@T["Keep editing"]</UiButton><UiButton Variant="critical" OnClick="DiscardAndCloseFlow" Disabled="_busy">@T["Discard changes"]</UiButton></div></UiModal>}
 
-<MudPaper Class="pa-4 mb-4">
-    <MudText Typo="Typo.h6">@T["Device integrations"]</MudText>
-    <MudText Typo="Typo.body2" Class="mb-3">@T["Connect an account, verify access, save its settings and choose devices. Connection checks never switch a device."]</MudText>
-    <MudButton Variant="Variant.Outlined" OnClick="RefreshCatalog" Disabled="_busy">@T["Refresh providers"]</MudButton>
-    @if (!string.IsNullOrWhiteSpace(_notice)) { <MudAlert Severity="Severity.Info" Class="mt-2">@T.Translate(_notice)</MudAlert> }
-    @if (!string.IsNullOrWhiteSpace(_error)) { <MudAlert Severity="Severity.Error" Class="mt-2">@T.Translate(_error)</MudAlert> }
-    <MudGrid Class="mt-2">
-        <MudItem xs="12" md="5">
-            <MudSelect T="string" Label="@T["Inverter manufacturer"]" Value="@_newInverterProvider" ValueChanged="@((string value) => ChooseProvider(value, "inverter"))" Disabled="_busy">
-                @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "inverter")))
-                {
-                    <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
-                }
-            </MudSelect>
-            <MudSelect T="string" Label="@T["Socket manufacturer"]" Value="@_newSocketProvider" ValueChanged="@((string value) => ChooseProvider(value, "socket"))" Disabled="_busy">
-                @foreach (var provider in _providers.Where(p => IntegrationProviderKinds.Supports(p, "socket")))
-                {
-                    <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem>
-                }
-            </MudSelect>
-            @if (_providers.Any(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
-            {
-                <MudSelect T="string" Label="@T["Other provider"]" Value="@_newProvider" ValueChanged="@((string value) => ChooseProvider(value, "other"))" Disabled="_busy">
-                    @foreach (var provider in _providers.Where(p => !IntegrationProviderKinds.Supports(p, "inverter") && !IntegrationProviderKinds.Supports(p, "socket")))
-                    { <MudSelectItem T="string" Value="@provider.ProviderId">@provider.DisplayName</MudSelectItem> }
-                </MudSelect>
-            }
-            <MudTextField T="string" Label="@T["Integration name"]" @bind-Value="_newName" Immediate="true" Disabled="_busy" />
-            <MudButton Class="mt-2" Variant="Variant.Filled" Color="Color.Primary" OnClick="Create" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newProvider))">@T["Add integration"]</MudButton>
-            <MudStack Class="mt-4" Spacing="2">
-                <MudText Typo="Typo.body2">@T["Add another socket integration to connect devices from a different manufacturer."]</MudText>
-                @foreach (var instance in _instances)
-                {
-                    <MudButton Variant="@(instance.Id == _selected ? Variant.Filled : Variant.Outlined)" OnClick="@(() => Select(instance.Id))" Disabled="_busy">@instance.Name · @T.Translate(instance.Status)</MudButton>
-                    @if (instance.Status == "enabled")
-                    {
-                        <MudButton Variant="Variant.Text" OnClick="@(() => DisableInstance(instance))" Disabled="_busy">@T["Disable"] @instance.Name</MudButton>
-                    }
-                }
-            </MudStack>
-            @if (_providers.Count == 0 && !_catalogUnavailable) { <MudText Class="mt-3">@T["No provider packages are installed. Ask the platform operator to install a supported provider."]</MudText> }
-        </MudItem>
-        <MudItem xs="12" md="7">
-            @if (Current is { } form)
-            {
-                <MudText Typo="Typo.h6">@form.Configuration.Instance.Name</MudText>
-                <MudSelect T="string" Label="@T["Installed provider version"]" Value="@form.TargetPackageVersion"
-                    ValueChanged="@((string version) => form.TargetPackageVersion = version)" Disabled="_busy">
-                    @foreach (var version in form.Versions)
-                    {
-                        <MudSelectItem T="string" Value="@version.PackageVersion" Disabled="@(!Supported(version))">@version.PackageVersion</MudSelectItem>
-                    }
-                </MudSelect>
-                <MudText Typo="Typo.caption">@T["Switching verifies saved settings. A successful switch discards the current draft."]</MudText>
-                <MudButton Class="mt-2" Variant="Variant.Outlined" OnClick="SwitchVersion"
-                    Disabled="@(_busy || form.TargetPackageVersion == form.Configuration.Instance.PackageVersion || !form.Versions.Any(version => version.PackageVersion == form.TargetPackageVersion && Supported(version)))">@T["Use selected version (discard draft)"]</MudButton>
-                @if (!Supported(form.Provider))
-                {
-                    <MudAlert Severity="Severity.Warning">@T["This provider requires a newer settings interface."]</MudAlert>
-                    @if (form.Configuration.Instance.Status == "enabled") { <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="_busy">@T["Disable integration"]</MudButton> }
-                }
-                else
-                {
-                    var step = Steps(form)[form.StepIndex];
-                    var publicValues = PublicValues(form);
-                    @if (form.Provider.UiLayout is not null)
-                    {
-                        <MudText Typo="Typo.subtitle1" Class="mt-3">@T.Format("Step {0} of {1}", form.StepIndex + 1, Steps(form).Count) · @T.Translate(step.Title)</MudText>
-                        @if (step.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@T.Translate(step.Instructions)</MudText> }
-                    }
-                    @foreach (var group in step.Groups.Where(group => IntegrationUiConditions.IsActive(group.ActiveWhen, publicValues)))
-                    {
-                        @if (form.Provider.UiLayout is not null)
-                        {
-                            <MudText Typo="Typo.subtitle2" Class="mt-3">@T.Translate(group.Title)</MudText>
-                            @if (group.Instructions is not null) { <MudText Style="white-space: pre-wrap;">@T.Translate(group.Instructions)</MudText> }
-                        }
-                        @foreach (var field in form.Provider.Fields.Where(field => group.FieldKeys.Contains(field.Key) && IntegrationUiConditions.IsFieldActive(form.Provider, field, publicValues)))
-                        {
-                            <IntegrationFieldInput @key="field.Key" Field="field" Value="@TextValue(field.Key)" ValueChanged="@((string value) => SetText(field.Key, value))"
-                                SecretAction="@SecretAction(field.Key)" SecretActionChanged="@((string value) => SetSecretAction(field.Key, value))"
-                                SecretValue="@SecretValue(field.Key)" SecretValueChanged="@((string value) => SetSecretValue(field.Key, value))"
-                                SecretPresent="@(form.Configuration.SecretPresent.GetValueOrDefault(field.Key) || form.OAuthSecretPresent.GetValueOrDefault(field.Key))" Busy="_busy" />
-                        }
-                        <MudStack Row="true" Class="mt-3" Spacing="2">
-                            @if (group.Actions.Contains("test")) { <MudButton Variant="Variant.Outlined" OnClick="Test" Disabled="_busy">@T["Test connection"]</MudButton> }
-                            @if (group.Actions.Contains("discover")) { <MudButton Variant="Variant.Outlined" OnClick="Discover" Disabled="_busy">@T["Find devices"]</MudButton> }
-                            @if (group.Actions.Contains("oauth")) { <MudButton Variant="Variant.Outlined" OnClick="StartAuthorization" Disabled="_busy">@T["Authorize provider account"]</MudButton> }
-                        </MudStack>
-                        @if (group.Actions.Contains("oauth") && form.Authorization is { } authorization)
-                        {
-                            @if (form.AuthorizationStale)
-                            {
-                                <MudAlert Severity="Severity.Warning" Class="mt-2">@T["The draft changed. Start authorization again before using its result."]</MudAlert>
-                            }
-                            else if (form.AuthorizationStatus == "pending" && SafeAuthorizationUrl(authorization.AuthorizationUrl))
-                            {
-                                <a href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">@T["Open provider authorization"]</a>
-                            }
-                            <MudText Class="mt-2">@T["Authorization status:"] @T.Translate(form.AuthorizationStatus)</MudText>
-                            <MudButton OnClick="CheckAuthorization" Disabled="@(_busy || form.AuthorizationStale)">@T["Check authorization"]</MudButton>
-                            <MudButton OnClick="CancelAuthorization" Disabled="_busy">@T["Cancel authorization"]</MudButton>
-                        }
-                        @if (group.Actions.Contains("discover"))
-                        {
-                            <MudText Typo="Typo.caption" Class="mt-2">@T["Save before choosing a discovered device. Unsaved changes remain a draft."]</MudText>
-                            @foreach (var device in form.Discovery?.Devices ?? [])
-                            {
-                                <MudPaper Class="pa-2 mt-2" Outlined="true">
-                                    <MudText>@device.Name · @T.Translate(device.Kind) @(device.Channel.Length > 0 ? "· " + device.Channel : "")</MudText>
-                                    <MudButton OnClick="@(() => ChooseDevice(device.SelectionToken))" Disabled="@(_busy || form.Dirty)">@T["Use device"]</MudButton>
-                                </MudPaper>
-                            }
-                        }
-                    }
-                    <MudStack Row="true" Class="mt-3" Spacing="2">
-                        @if (form.StepIndex > 0) { <MudButton OnClick="PreviousStep" Disabled="_busy">@T["Previous step"]</MudButton> }
-                        @if (form.StepIndex + 1 < Steps(form).Count) { <MudButton OnClick="NextStep" Disabled="_busy">@T["Next step"]</MudButton> }
-                        else { <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_busy">@T["Save settings"]</MudButton> }
-                    </MudStack>
-                    <MudButton Class="mt-2" Variant="Variant.Text" OnClick="ReloadSaved" Disabled="_busy">@T["Reload saved settings (discard draft)"]</MudButton>
-                    <MudButton Class="mt-3" Variant="Variant.Outlined" OnClick="ToggleEnabled" Disabled="@(_busy || (form.Configuration.Instance.Status != "enabled" && form.Dirty))">@(form.Configuration.Instance.Status == "enabled" ? T["Disable integration"] : T["Enable integration"])</MudButton>
-                    @foreach (var binding in form.Bindings)
-                    {
-                        <MudText Class="mt-2">@binding.Name · @T.Translate(binding.Kind) @(binding.IsDefault ? T["· selected inverter"] : T["· connected"])</MudText>
-                        @if (binding.Kind == "socket")
-                        {
-                            <MudSelect T="Guid?" Label="@T["Linked inverter"]" Value="@SourceDraft(binding)" ValueChanged="@((Guid? value) => _sourceDrafts[binding.Id] = value)" Disabled="_busy">
-                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">@T["Installation default inverter"]</MudSelectItem>
-                                @if (binding.SourceInverterId is { } old && !_sourceInverters.Any(source => source.Id == old))
-                                { <MudSelectItem T="Guid?" Value="@((Guid?)old)">@T.Format("Unavailable inverter · {0}", old)</MudSelectItem> }
-                                @foreach (var source in _sourceInverters)
-                                { <MudSelectItem T="Guid?" Value="@((Guid?)source.Id)">@source.Name</MudSelectItem> }
-                            </MudSelect>
-                            <MudSelect T="int" Label="@T["Circuit type"]" Value="@PhaseDraft(binding)" ValueChanged="@((int value) => _phaseDrafts[binding.Id] = value)" Disabled="_busy">
-                                <MudSelectItem T="int" Value="1">@T["Single-phase"]</MudSelectItem>
-                                <MudSelectItem T="int" Value="3">@T["Three-phase"]</MudSelectItem>
-                            </MudSelect>
-                            <MudText Typo="Typo.caption">@T["Rules without an explicit source use this inverter. Circuit type describes the installed load."]</MudText>
-                            <MudButton Class="mt-2" Variant="Variant.Outlined" Disabled="_busy" OnClick="@(() => SaveSocketSource(binding))">@T.Format("Save link for {0}", binding.Name)</MudButton>
-                        }
-                    }
-                }
-            }
-        </MudItem>
-    </MudGrid>
-</MudPaper>
 
+<UnsavedChangesGuard Dirty="@(!_busy&&_forms.Values.Any(f=>f.Dirty))"/>
 @code {
+    private RenderFragment Editor => @<text>@if(Current is {} form){<UiCard Title="@form.Configuration.Instance.Name"><div class="form-stack"><p class="caption">@form.Provider.DisplayName</p>@if(form.Provider.ProviderId.Contains("shelly",StringComparison.OrdinalIgnoreCase)){<p class="field-hint">@T["In Shelly Cloud, open User settings → Authorization cloud key."]</p>}
+@if(_actor.IsInRole("PlatformOperator")){<details><summary>@T["Platform provider version"]</summary><div class="form-stack"><div class="ui-field"><label>@T["Installed provider version"]</label><select value="@form.TargetPackageVersion" @onchange="e=>form.TargetPackageVersion=e.Value?.ToString()??string.Empty" disabled="@_busy">@foreach(var version in form.Versions){<option value="@version.PackageVersion" disabled="@(!Supported(version))">@version.PackageVersion</option>}</select></div><p class="caption">@T["Switching verifies saved settings. A successful switch discards the current draft."]</p><UiButton Variant="outline" OnClick="SwitchVersion" Disabled="@(_busy||form.TargetPackageVersion==form.Configuration.Instance.PackageVersion||!form.Versions.Any(v=>v.PackageVersion==form.TargetPackageVersion&&Supported(v)))">@T["Use selected version (discard draft)"]</UiButton></div></details>}
+@if(!Supported(form.Provider)){<div class="banner">@T["This provider requires a newer settings interface."]</div>@if(form.Configuration.Instance.Status=="enabled"){<UiButton Variant="critical" OnClick="ToggleEnabled" Disabled="_busy">@T["Disconnect"]</UiButton>}}
+else{var step=Steps(form)[form.StepIndex];var publicValues=PublicValues(form);@if(form.Provider.UiLayout is not null){<h3>@T.Format("Step {0} of {1}",form.StepIndex+1,Steps(form).Count) · @T.Translate(step.Title)</h3>@if(step.Instructions is not null){<p class="caption" style="white-space:pre-wrap">@T.Translate(step.Instructions)</p>}}
+@foreach(var group in step.Groups.Where(g=>IntegrationUiConditions.IsActive(g.ActiveWhen,publicValues))){@if(group.Id.StartsWith("advanced",StringComparison.OrdinalIgnoreCase)||group.Title=="Advanced"){<details><summary>@T["Advanced"]</summary>@GroupContent(form,group)</details>}else{@GroupContent(form,group)}}
+<div class="form-actions">@if(form.StepIndex>0){<UiButton Variant="outline" OnClick="PreviousStep" Disabled="_busy">@T["Previous step"]</UiButton>}@if(form.StepIndex+1<Steps(form).Count){<UiButton Variant="primary" OnClick="NextStep" Disabled="_busy">@T["Next step"]</UiButton>}else{<UiButton Variant="primary" OnClick="Save" Disabled="_busy">@T["Save connection"]</UiButton>}</div><div class="form-actions"><UiButton Variant="quiet" OnClick="ReloadSaved" Disabled="_busy">@T["Discard draft"]</UiButton><UiButton Variant="@(form.Configuration.Instance.Status=="enabled"?"critical":"outline")" OnClick="ToggleEnabled" Disabled="@(_busy||(form.Configuration.Instance.Status!="enabled"&&form.Dirty))">@T[form.Configuration.Instance.Status=="enabled"?"Disconnect":"Enable connection"]</UiButton></div>
+@foreach(var binding in form.Bindings){<div class="selection-card"><h3>@(binding.DisplayName??binding.Name)</h3><StatusPill Dot="false">@T[binding.IsDefault?"Primary inverter":"Selected device"]</StatusPill>@if(binding.Kind=="socket"){<p class="caption">@T["Battery source and circuit are managed on the device page."]</p><UiButton Href="@("/devices/"+Uri.EscapeDataString(binding.Id.ToString()))">@T["Open device"]</UiButton>}</div>}
+}</div></UiCard>}else{<UiCard><UiState Title="@T["Choose a saved connection"]" Message="@T["Or add a connection using an installed manufacturer."]"/></UiCard>}</text>;
+    private RenderFragment GroupContent(FormState form,IntegrationUiGroup group)=>@<text><section class="form-stack">@if(form.Provider.UiLayout is not null){<h3>@T.Translate(group.Title)</h3>@if(group.Instructions is not null){<p class="caption" style="white-space:pre-wrap">@T.Translate(group.Instructions)</p>}}
+@foreach(var field in form.Provider.Fields.Where(f=>group.FieldKeys.Contains(f.Key)&&IntegrationUiConditions.IsFieldActive(form.Provider,f,PublicValues(form)))){<IntegrationFieldInput @key="field.Key" Field="field" Value="@TextValue(field.Key)" ValueChanged="v=>SetText(field.Key,v)" SecretAction="@SecretAction(field.Key)" SecretActionChanged="v=>SetSecretAction(field.Key,v)" SecretValue="@SecretValue(field.Key)" SecretValueChanged="v=>SetSecretValue(field.Key,v)" SecretPresent="@(form.Configuration.SecretPresent.GetValueOrDefault(field.Key)||form.OAuthSecretPresent.GetValueOrDefault(field.Key))" Busy="_busy"/>}
+<div class="form-actions">@if(group.Actions.Contains("test")){<UiButton Variant="outline" OnClick="Test" Disabled="_busy">@T["Check connection"]</UiButton>}@if(group.Actions.Contains("discover")){<UiButton Variant="outline" OnClick="Discover" Disabled="_busy">@T["Find devices"]</UiButton>}@if(group.Actions.Contains("oauth")){<UiButton Variant="outline" OnClick="StartAuthorization" Disabled="_busy">@T["Authorize provider account"]</UiButton>}</div>
+@if(group.Actions.Contains("oauth")&&form.Authorization is {} authorization){@if(form.AuthorizationStale){<div class="banner">@T["The draft changed. Start authorization again before using its result."]</div>}else if(form.AuthorizationStatus=="pending"&&SafeAuthorizationUrl(authorization.AuthorizationUrl)){<a class="ui-button strong" href="@authorization.AuthorizationUrl" target="_blank" rel="noopener noreferrer">@T["Open provider authorization"]</a>}<p class="caption">@T["Authorization status:"] @T.Translate(form.AuthorizationStatus)</p><div class="form-actions"><UiButton Variant="outline" OnClick="CheckAuthorization" Disabled="@(_busy||form.AuthorizationStale)">@T["Check authorization"]</UiButton><UiButton Variant="quiet" OnClick="CancelAuthorization" Disabled="_busy">@T["Cancel authorization"]</UiButton></div>}
+@if(group.Actions.Contains("discover")){<p class="caption">@T["Save before choosing a discovered device. Unsaved changes remain a draft."]</p>@if(_billingAccess is {SocketLimit:1}){<div class="banner">@T["Your free month includes 1 smart plug. Additional plugs require Premium."] · @T["Selected plugs"]: @_billingAccess.SocketUsage</div>}@if(_billingUnavailable){<p class="banner critical" role="alert">@T["Account access"]: @T["Unavailable"]</p>}@foreach(var device in form.Discovery?.Devices??[]){var nameId="discovered-device-name-"+(form.Discovery!.Devices.ToList().IndexOf(device));var canSwitch=IntegrationDiscoveryPresentation.CanSwitch(device);<div class="selection-card"><h3>@device.Name</h3><p class="caption">@T[device.Kind=="inverter"?"Inverter":"Smart plug"] @(device.Channel.Length>0?"· "+device.Channel:"")</p><div class="gallery-controls"><StatusPill Kind="neutral">@T["Availability"]: @T["Unknown"]</StatusPill>@if(device.Kind=="socket"&&canSwitch==false){<StatusPill Kind="warning">@T["This device does not support switching."]</StatusPill>}@if(IntegrationDiscoveryPresentation.AlreadySelected(device,form.Bindings)){<StatusPill Kind="positive">@T["Selected"]</StatusPill>}@if(RequiresPremium(form,device)){<StatusPill Kind="warning">@T["Premium"]</StatusPill>}</div><div class="ui-field"><label for="@nameId">@T["Name in SmartSolar"]</label><input id="@nameId" value="@_deviceNames.GetValueOrDefault(device.SelectionToken)" placeholder="@device.Name" maxlength="80" @oninput="change=>DeviceName(device.SelectionToken,change)" disabled="@_busy"/><p class="field-hint">@T.Format("Provider name: {0}. Renaming changes only its display name; rules stay connected.",device.Name)</p></div><UiButton Variant="outline" OnClick="()=>ChooseDevice(device.SelectionToken)" Disabled="@SelectionBlocked(form,device)">@T["Use device"]</UiButton></div>}}</section></text>;
+    private bool _flowOpen,_flowCreated,_confirmFlowClose;
+    private Guid? _flowPreviousSelection;
+    private DeyeSolar.Domain.Billing.BillingAccess? _billingAccess;
+    private bool _billingUnavailable;
+    private readonly Dictionary<string,string> _deviceNames=new(StringComparer.Ordinal);
+    private void OpenFlow(){if(_busy)return;_flowPreviousSelection=_selected;_flowOpen=true;_flowCreated=false;_newProvider=_newName="";_notice=_error=null;}
+    private void RequestCloseFlow(){if(_busy)return;if(_flowCreated&&Current?.Dirty==true)_confirmFlowClose=true;else FinishFlow();}
+    private void FinishFlow(){_flowOpen=_flowCreated=_confirmFlowClose=false;if(_flowPreviousSelection.HasValue)_selected=_flowPreviousSelection;_flowPreviousSelection=null;}
+    private Task DiscardAndCloseFlow()=>Run(async()=>{if(_flowCreated&&_selected is {} id){_forms.Remove(id);await SelectCore(id);}FinishFlow();});
+    private static string Monogram(string name)=>string.IsNullOrWhiteSpace(name)?"?":StringInfo.GetNextTextElement(name.Trim()).ToUpperInvariant();
+    private void DeviceName(string token,ChangeEventArgs change){if(!_busy)_deviceNames[token]=change.Value?.ToString()??"";}
+    private bool RequiresPremium(FormState form,IntegrationDiscoveryDevice device)=>IntegrationDiscoveryPresentation.RequiresPremium(_billingAccess,device,form.Bindings);
+    private bool SelectionBlocked(FormState form,IntegrationDiscoveryDevice device)=>_busy||form.Dirty||_billingUnavailable||_billingAccess is {HasAccess:false}||RequiresPremium(form,device)||!DeyeSolar.Web.Services.DeviceNameService.TryName(_deviceNames.GetValueOrDefault(device.SelectionToken),out _);
+    private async Task LoadBilling(){var billing=Services.GetService<DeyeSolar.Web.Billing.IBillingAccessReader>();if(billing is null)return;try{var result=await billing.ReadAsync(_actor.FindFirstValue(ClaimTypes.NameIdentifier)??"",_lifetime.Token);if(!_disposed){_billingAccess=result;_billingUnavailable=false;}}catch(Exception)when(!_disposed){_billingUnavailable=true;}}
+
     private IReadOnlyList<IntegrationProviderDescriptor> _providers = [];
     private IReadOnlyList<IntegrationInstanceDto> _instances = [];
     private readonly Dictionary<Guid, FormState> _forms = [];
@@ -186,7 +75,7 @@
     {
         _actor = (await Authentication.GetAuthenticationStateAsync()).User;
         Changes.Changed += OnChanged;
-        await Run(async () => { await LoadCatalog(); if (_instances.Count > 0) await SelectCore(_instances[0].Id); });
+        await Run(async () => { await LoadCatalog(); await LoadBilling(); if (_instances.Count > 0) await SelectCore(_instances[0].Id); });
     }
     private void OnChanged(string installation, Guid instance)
     {
@@ -214,6 +103,9 @@
         var versions = await Task.WhenAll(forms.Select(form => Catalog.GetVersionsAsync(form.Configuration.Instance.ProviderId, _lifetime.Token)));
         for (var index = 0; index < forms.Length; index++) forms[index].Versions = versions[index];
     }
+    private void ChooseInverter(ChangeEventArgs e)=>ChooseProvider(e.Value?.ToString()??"","inverter");
+    private void ChooseSocket(ChangeEventArgs e)=>ChooseProvider(e.Value?.ToString()??"","socket");
+    private void ChooseOther(ChangeEventArgs e)=>ChooseProvider(e.Value?.ToString()??"","other");
     private void ChooseProvider(string value, string kind)
     {
         _newProvider = value;
@@ -243,9 +135,32 @@
         await LoadCatalog();
         await SelectCore(instance.Id);
         _newName = "";
+        if(_flowOpen)_flowCreated=true;
         _notice = T["Integration added. Enter its connection settings."];
     });
     private Task Select(Guid id) => Run(async () => { await SelectCore(id); _notice = null; });
+    public async Task OpenSavedAsync(Guid id, string action = "settings")
+    {
+        if (_busy || _flowOpen || _disposed) return;
+        await Run(async () =>
+        {
+            var previous = _selected;
+            await SelectCore(id);
+            _flowPreviousSelection = previous;
+            _flowOpen = _flowCreated = true;
+            _notice = null;
+            StateHasChanged();
+            if (action == "test")
+                _notice = (await Setup.TestAsync(id, Draft(), _actor, _lifetime.Token)).Message;
+            else if (action == "discover")
+            {
+                _deviceNames.Clear();
+                Current!.Discovery = await Setup.DiscoverAsync(id, Draft(), _actor, _lifetime.Token);
+                _notice = T["Choose a device explicitly after saving its connection settings."];
+            }
+        });
+        if (!_disposed) StateHasChanged();
+    }
     private async Task SelectCore(Guid id)
     {
         if (!_forms.ContainsKey(id))
@@ -397,15 +312,21 @@
         await LoadCatalog();
     });
     private Task Test() => Run(async () => { var result = await Setup.TestAsync(Current!.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = result.Message; });
-    private Task Discover() => Run(async () => { Current!.Discovery = await Setup.DiscoverAsync(Current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = T["Choose a device explicitly after saving its connection settings."]; });
-    private Task ChooseDevice(string token) => Run(async () =>
+    private Task Discover() => Run(async () => { _deviceNames.Clear();Current!.Discovery = await Setup.DiscoverAsync(Current.Configuration.Instance.Id, Draft(), _actor, _lifetime.Token); _notice = T["Choose a device explicitly after saving its connection settings."]; });
+    private Task ChooseDevice(string token)
     {
-        var form = Current!;
-        await Setup.SelectDeviceAsync(form.Configuration.Instance.Id, new(Draft(), token), _actor, _lifetime.Token);
+        var form = Current;
+        var device = form?.Discovery?.Devices.FirstOrDefault(device => device.SelectionToken == token);
+        if (form is null || device is null || SelectionBlocked(form, device)) return Task.CompletedTask;
+        return Run(async () =>
+        {
+        await Setup.SelectDeviceAsync(form.Configuration.Instance.Id, new(Draft(), token,_deviceNames.GetValueOrDefault(token)), _actor, _lifetime.Token);
+        if(_flowCreated&&form.Configuration.Instance.Status!="enabled"){var instance=form.Configuration.Instance;await Setup.SetEnabledAsync(instance.Id,true,new(instance.Revision,instance.PackageVersion,instance.PackageDigest,instance.DescriptorDigest),_actor,_lifetime.Token);form.Configuration=await Setup.ReadAsync(instance.Id,_lifetime.Token);}
         form.Bindings = await Setup.DevicesAsync(form.Configuration.Instance.Id, _lifetime.Token);
-        form.Discovery = null;
-        _notice = T["Device connected."];
-    });
+        await LoadBilling();
+        _notice = form.Configuration.Instance.Status=="enabled"?T["Device connected."]:T["Selected"];
+        });
+    }
     private Task ToggleEnabled() => Run(async () =>
     {
         var form = Current!;

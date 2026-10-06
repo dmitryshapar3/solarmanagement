@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Current app · Dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2fd37a}a:hover{color:#1f8f57}
+</style>
+</helmet>
+<div style="width: 390px; height: 2860px; position: relative; overflow: hidden; background: #101412; color: #f3f6f2; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 63px 16px 112px;">
+
+    <div style="display: flex; flex-direction: column; gap: 4px; min-height: 48px;">
+      <h1 style="margin: 0; font-size: 26px; line-height: 31px; font-weight: 700;">Dashboard</h1>
+      <p style="margin: 0; font-size: 15px; line-height: 20px; color: #aab7ad;">Your energy at a glance</p>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 18px; line-height: 22px; font-weight: 700;">Current generation</span><span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Latest reported inverter power · polled 13:42:18</span></div>
+        <div style="display: flex;"><button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>Details</button></div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Solar power</span><span style="font-size: 20px; line-height: 24px; font-weight: 800; color: #2fd37a;">4.2 kW</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Latest inverter reading</span></div>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 8px; border-left: 0.5px solid #314036;"><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Load</span><span style="font-size: 20px; line-height: 24px; font-weight: 800;">1.2 kW</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Consumption</span></div>
+        <div style="display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Grid</span><span style="font-size: 20px; line-height: 24px; font-weight: 800;">2.5 kW</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Exporting</span></div>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding-left: 8px; border-left: 0.5px solid #314036;"><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Battery charging</span><span style="font-size: 20px; line-height: 24px; font-weight: 800;">420 W</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Latest inverter reading</span></div>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 18px; line-height: 22px; font-weight: 700;">Possible generation</span>
+        <div style="display: flex;"><button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>Details</button></div>
+      </div>
+      <div style="display: flex; gap: 16px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Latest reported inverter</span><span style="font-size: 22px; line-height: 26px; font-weight: 700; color: #2fd37a;">4.20 kW</span></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Possible · weather estimate</span><span style="font-size: 22px; line-height: 26px; font-weight: 700; color: #ffb454;">4.55 kW</span></div>
+      </div>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Polled 5 Oct, 13:42 GMT+2 · Deye Cloud</span>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Weather model for 5 Oct, 13:30 GMT+2. The inverter reading and estimate may refer to different times.</span>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">5 October 2026 · hourly average power</span>
+      <div style="display: flex; gap: 16px; font-size: 12px; line-height: 18px;"><span style="color: #ffb454;">■ Possible · range</span><span style="color: #2fd37a;">━ Actual</span></div>
+      <svg width="326" height="210" viewBox="0 0 360 210" aria-label="Possible range and actual generation chart in kW" style="display: block;">
+        <g stroke="#314036" stroke-width="0.6"><line x1="38" x2="348" y1="176" y2="176"/><line x1="38" x2="348" y1="136.5" y2="136.5"/><line x1="38" x2="348" y1="97" y2="97"/><line x1="38" x2="348" y1="57.5" y2="57.5"/><line x1="38" x2="348" y1="18" y2="18"/></g>
+        <g fill="#aab7ad" font-size="9" text-anchor="end" font-family="-apple-system, system-ui, sans-serif"><text x="32" y="180">0</text><text x="32" y="140.5">1.5</text><text x="32" y="101">3</text><text x="32" y="61.5">4.5</text><text x="32" y="22">6</text></g>
+        <text x="38" y="10" fill="#aab7ad" font-size="9" font-family="-apple-system, system-ui, sans-serif">kW</text>
+        <line x1="38" x2="348" y1="176" y2="176" stroke="#aab7ad" stroke-width="0.7"/>
+        <path d="M38.0 176.0 L44.46 176.0 L57.38 176.0 L70.29 176.0 L83.21 176.0 L96.12 176.0 L109.04 176.0 L121.96 173.89 L134.88 162.31 L147.79 133.34 L160.71 100.69 L173.62 74.35 L186.54 54.34 L199.46 42.75 L212.38 32.22 L225.29 49.6 L238.21 81.2 L251.12 120.7 L264.04 154.93 L276.96 173.37 L289.88 176.0 L302.79 176.0 L315.71 176.0 L328.62 176.0 L341.54 176.0 L348.0 176.0 L348.0 176.0 L341.54 176.0 L328.62 176.0 L315.71 176.0 L302.79 176.0 L289.88 176.0 L276.96 175.47 L264.04 162.83 L251.12 139.13 L238.21 112.8 L225.29 91.73 L212.38 80.15 L199.46 80.67 L186.54 89.1 L173.62 103.85 L160.71 123.33 L147.79 147.03 L134.88 168.1 L121.96 176.0 L109.04 176.0 L96.12 176.0 L83.21 176.0 L70.29 176.0 L57.38 176.0 L44.46 176.0 L38.0 176.0 Z" fill="#ffb454" fill-opacity="0.22" stroke="#ffb454" stroke-opacity="0.55" stroke-width="0.6"/>
+        <path d="M44.46 176.0 L57.38 176.0 L70.29 176.0 L83.21 176.0 L96.12 176.0 L109.04 176.0 L121.96 175.21 L134.88 164.94 L147.79 139.66 L160.71 113.85 L173.62 92.26 L186.54 74.35 L199.46 62.5 L212.38 64.35" fill="none" stroke="#2fd37a" stroke-width="2"/>
+        <g fill="#2fd37a"><circle cx="44.46" cy="176" r="1.7"/><circle cx="57.38" cy="176" r="1.7"/><circle cx="70.29" cy="176" r="1.7"/><circle cx="83.21" cy="176" r="1.7"/><circle cx="96.12" cy="176" r="1.7"/><circle cx="109.04" cy="176" r="1.7"/><circle cx="121.96" cy="175.21" r="1.7"/><circle cx="134.88" cy="164.94" r="1.7"/><circle cx="147.79" cy="139.66" r="1.7"/><circle cx="160.71" cy="113.85" r="1.7"/><circle cx="173.62" cy="92.26" r="1.7"/><circle cx="186.54" cy="74.35" r="1.7"/><circle cx="199.46" cy="62.5" r="1.7"/><circle cx="212.38" cy="64.35" r="1.7"/></g>
+        <line x1="341.54" x2="341.54" y1="18" y2="176" stroke="#aab7ad" stroke-dasharray="3 4"/>
+        <g fill="#aab7ad" font-size="9" text-anchor="middle" font-family="-apple-system, system-ui, sans-serif"><text x="44.46" y="198">00</text><text x="121.96" y="198">06</text><text x="199.46" y="198">12</text><text x="264.04" y="198">17</text><text x="341.54" y="198">23</text></g>
+      </svg>
+      <div style="display: flex; align-items: center; gap: 4px; padding: 8px 0; border-radius: 8px; background: #202720;">
+        <button type="button" aria-label="Previous interval" style="width: 30px; min-height: 44px; border: none; background: transparent; color: #f3f6f2; font-size: 26px; line-height: 26px;">‹</button>
+        <span style="flex: 1; display: flex; flex-direction: column; font-size: 11px; line-height: 17px; color: #aab7ad;"><span>5 Oct, 23:00 GMT+2</span><span>Possible 0.00–0.00 kW · Actual — kW</span></span>
+        <button type="button" aria-label="Next interval" disabled style="width: 30px; min-height: 44px; border: none; background: transparent; color: #f3f6f2; font-size: 26px; line-height: 26px; opacity: 0.25;">›</button>
+      </div>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Tap the chart or use Previous / Next interval to inspect exact values. These are hourly average power; missing readings remain gaps.</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <span style="font-size: 18px; line-height: 22px; font-weight: 700;">Electricity sales</span>
+        <div style="display: flex;"><button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>Details</button></div>
+      </div>
+      <span style="align-self: flex-start; padding: 4px 8px; border: 0.5px solid #245477; border-radius: 6px; background: #172f45; color: #58a6ff; font-size: 12px; line-height: 15px; font-weight: 700;">inverter estimate</span>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">5 October 2026</span>
+      <div style="display: flex; gap: 16px;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Exported today</span><span style="font-size: 22px; line-height: 26px; font-weight: 700; color: #2fd37a;">6.88 kWh</span></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Energy value</span><span style="font-size: 22px; line-height: 26px; font-weight: 700; color: #ffb454;">1.91 PLN</span></div>
+      </div>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Totals cover completed hours. Current hour is provisional.</span>
+      <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Updated 5 Oct, 13:40 GMT+2 · refreshes every 5 minutes</span>
+      <div style="display: flex; gap: 4px; padding: 4px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+        <button type="button" aria-pressed="true" style="flex: 1; min-height: 34px; border: none; border-radius: 6px; background: #202720; color: #2fd37a; font-family: inherit; font-size: 13px; font-weight: 700;">Energy</button>
+        <button type="button" aria-pressed="false" style="flex: 1; min-height: 34px; border: none; border-radius: 6px; background: transparent; color: #aab7ad; font-family: inherit; font-size: 13px; font-weight: 700;">Value</button>
+      </div>
+      <svg width="326" height="210" viewBox="0 0 360 210" aria-label="Completed and provisional sales chart in kWh" style="display: block;">
+        <g stroke="#314036" stroke-width="0.6"><line x1="38" x2="348" y1="176" y2="176"/><line x1="38" x2="348" y1="136.5" y2="136.5"/><line x1="38" x2="348" y1="97" y2="97"/><line x1="38" x2="348" y1="57.5" y2="57.5"/><line x1="38" x2="348" y1="18" y2="18"/></g>
+        <g fill="#aab7ad" font-size="9" text-anchor="end" font-family="-apple-system, system-ui, sans-serif"><text x="32" y="180">0</text><text x="32" y="140.5">0.75</text><text x="32" y="101">1.5</text><text x="32" y="61.5">2.25</text><text x="32" y="22">3</text></g>
+        <text x="38" y="10" fill="#aab7ad" font-size="9" font-family="-apple-system, system-ui, sans-serif">kWh</text>
+        <line x1="38" x2="348" y1="176" y2="176" stroke="#aab7ad" stroke-width="0.7"/>
+        <g fill="#2fd37a" fill-opacity="0.85"><rect x="40.33" y="176" width="8.27" height="1.5"/><rect x="53.24" y="176" width="8.27" height="1.5"/><rect x="66.16" y="176" width="8.27" height="1.5"/><rect x="79.07" y="176" width="8.27" height="1.5"/><rect x="91.99" y="176" width="8.27" height="1.5"/><rect x="104.91" y="176" width="8.27" height="1.5"/><rect x="117.82" y="176" width="8.27" height="1.5"/><rect x="130.74" y="176" width="8.27" height="1.5"/><rect x="143.66" y="164.94" width="8.27" height="11.06"/><rect x="156.57" y="130.71" width="8.27" height="45.29"/><rect x="169.49" y="95.95" width="8.27" height="80.05"/><rect x="182.41" y="71.72" width="8.27" height="104.28"/><rect x="195.32" y="54.34" width="8.27" height="121.66"/></g>
+        <rect x="208.24" y="99.11" width="8.27" height="76.89" fill="#2fd37a" fill-opacity="0.2" stroke="#2fd37a" stroke-dasharray="3 2" stroke-width="1"/>
+        <line x1="212.38" x2="212.38" y1="18" y2="176" stroke="#aab7ad" stroke-dasharray="3 4"/>
+        <g fill="#aab7ad" font-size="9" text-anchor="middle" font-family="-apple-system, system-ui, sans-serif"><text x="44.46" y="198">00</text><text x="121.96" y="198">06</text><text x="199.46" y="198">12</text><text x="264.04" y="198">17</text><text x="341.54" y="198">23</text></g>
+      </svg>
+      <div style="display: flex; align-items: center; gap: 4px; padding: 8px 0; border-radius: 8px; background: #202720;">
+        <button type="button" aria-label="Previous interval" style="width: 30px; min-height: 44px; border: none; background: transparent; color: #f3f6f2; font-size: 26px; line-height: 26px;">‹</button>
+        <span style="flex: 1; display: flex; flex-direction: column; font-size: 11px; line-height: 17px; color: #aab7ad;"><span>5 Oct, 13:00 GMT+2 – 5 Oct, 14:00 GMT+2</span><span>Completed: — kWh</span><span>Current hour · in progress: 1.46 kWh · measured through 5 Oct, 13:40 GMT+2</span></span>
+        <button type="button" aria-label="Next interval" style="width: 30px; min-height: 44px; border: none; background: transparent; color: #f3f6f2; font-size: 26px; line-height: 26px;">›</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 12px; border: 1px dashed #1f8f57; border-radius: 8px;">
+        <span style="font-size: 12px; line-height: 18px; color: #2fd37a;">Current hour · in progress</span>
+        <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">1.46 kWh · 0.38 PLN</span>
+        <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Measured through 5 Oct, 13:40 GMT+2</span>
+        <span style="font-size: 12px; line-height: 18px; color: #aab7ad;">Measured intervals only; no projection to the end of the hour.</span>
+      </div>
+    </section>
+
+    <h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Manual Override</h2>
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button type="button" style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; text-align: left;">
+          <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2fd37a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Water heater</span></span>
+          <span style="align-self: flex-start; padding: 4px 8px; border: 0.5px solid #1f6f45; border-radius: 6px; background: #143b28; color: #2fd37a; font-size: 12px; line-height: 15px; font-weight: 700;">ON</span>
+        </button>
+        <button type="button" style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; text-align: left;">
+          <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2fd37a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Garden lights</span></span>
+          <span style="align-self: flex-start; padding: 4px 8px; border: 0.5px solid #735221; border-radius: 6px; background: #3d2e12; color: #ffb454; font-size: 12px; line-height: 15px; font-weight: 700;">OFF</span>
+        </button>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v4"/><path d="M7.998 9.003a5 5 0 1 0 8-.005"/></svg>Socket ON</button>
+        <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border: 0.5px solid #ff6b6b; border-radius: 8px; background: #ff6b6b; color: #1f0505; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v4"/><path d="M7.998 9.003a5 5 0 1 0 8-.005"/></svg>Socket OFF</button>
+      </div>
+      <span style="font-size: 12px; line-height: 15px; color: #aab7ad;">The provider acknowledged the command. Device state comes from the next observation.</span>
+    </section>
+
+    <h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Rules</h2>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Solar surplus</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">SOC &gt;= 75% | every 60s</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Switched 05/10, 11:24:03 | Checked 05/10, 13:42:00</span></div>
+        <span style="padding: 4px 8px; border: 0.5px solid #1f6f45; border-radius: 6px; background: #143b28; color: #2fd37a; font-size: 12px; line-height: 15px; font-weight: 700;">ON</span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Battery reserve</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">SOC &gt;= 85% | every 60s</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Switched 05/10, 12:12:40 | Checked 05/10, 13:42:00</span></div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;"><span style="padding: 4px 8px; border: 0.5px solid #314036; border-radius: 6px; background: #202720; color: #aab7ad; font-size: 12px; line-height: 15px; font-weight: 700;">OFF</span><span style="padding: 4px 8px; border: 0.5px solid #314036; border-radius: 6px; background: #202720; color: #aab7ad; font-size: 12px; line-height: 15px; font-weight: 700;">Disabled</span></div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Smart Sockets</h2><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">05/10, 13:42:10</span></div>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Water heater</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Socket</span></div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;"><span style="font-size: 12px; line-height: 15px; font-weight: 700;">850 W</span><span style="padding: 4px 8px; border: 0.5px solid #1f6f45; border-radius: 6px; background: #143b28; color: #2fd37a; font-size: 12px; line-height: 15px; font-weight: 700;">ON</span></div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Garden lights</span><span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Socket</span></div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;"><span style="font-size: 12px; line-height: 15px; font-weight: 700;">0 W</span><span style="padding: 4px 8px; border: 0.5px solid #735221; border-radius: 6px; background: #3d2e12; color: #ffb454; font-size: 12px; line-height: 15px; font-weight: 700;">OFF</span></div>
+      </div>
+    </div>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 0; right: 0; bottom: 0; height: 90px; box-sizing: border-box; padding: 8px 0 34px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #171d1a; border-top: 0.5px solid #314036;">
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #2fd37a; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Home</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v1"/><path d="M12 20v1"/><path d="M3 12h1"/><path d="M20 12h1"/><path d="m18.364 5.636-.707.707"/><path d="m6.343 17.657-.707.707"/><path d="m5.636 5.636.707.707"/><path d="m17.657 17.657.707.707"/></svg>Generation</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>Sales</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg>Devices</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>More</span>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":2860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -121,6 +121,22 @@ public class IntegrationManagementTests
     }
 
     [Fact]
+    public async Task SelectionLabelsRetainCloudNameAndExistingLocalOverridesTakePrecedence()
+    {
+        var store = new Labels(); var snapshot = Devices();
+        snapshot.Update([new DevicePowerInfo(SocketId, "Selected label", "Socket", true, false, 0) { CloudName = "Provider name" }]);
+        var service = new DeviceNameService(store, snapshot);
+        var selected = Assert.Single(await service.DescribeAsync(snapshot.Current!, default));
+        Assert.Equal("Selected label", selected.Name);
+        Assert.Equal("Selected label", selected.LocalName);
+        Assert.Equal("Provider name", selected.CloudName);
+        var overrideName = await service.RenameAsync(SocketId, "Later local label", default);
+        Assert.Equal("Later local label", overrideName!.Name);
+        Assert.Equal("Provider name", overrideName.CloudName);
+        Assert.Equal("Later local label", Assert.Single(await service.DescribeAsync(snapshot.Current!, default)).LocalName);
+    }
+
+    [Fact]
     public async Task UnknownDevicesAndInvalidNamesCannotCreateLabelsOrOperateHardware()
     {
         var store = new Labels(); var service = new DeviceNameService(store, Devices());

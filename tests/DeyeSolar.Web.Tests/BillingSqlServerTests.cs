@@ -519,16 +519,45 @@ public class BillingSqlServerTests
             var billingMigration = db.Database.GetMigrations().Single(migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
             await db.GetService<IMigrator>().MigrateAsync(billingMigration);
             var latest = await db.Database.GetAppliedMigrationsAsync();
-            Assert.Empty(await db.BillingAccounts.ToListAsync());
-            Assert.Empty(await db.AppleSubscriptions.ToListAsync());
+            Assert.Equal(0, await db.BillingAccounts.CountAsync());
+            // The current entity has additive columns absent at this historical schema stage.
+            Assert.Equal(0, await db.AppleSubscriptions.CountAsync());
             await db.GetService<IMigrator>().MigrateAsync("20261004010452_DynamicIntegrationOAuth");
             Assert.DoesNotContain((await db.Database.GetAppliedMigrationsAsync()), migration => migration.EndsWith("_AccountBilling", StringComparison.Ordinal));
             await db.GetService<IMigrator>().MigrateAsync(billingMigration);
             Assert.Equal(latest, await db.Database.GetAppliedMigrationsAsync());
-            Assert.Empty(await db.BillingAccounts.ToListAsync());
-            Assert.Empty(await db.AppleSubscriptions.ToListAsync());
+            Assert.Equal(0, await db.BillingAccounts.CountAsync());
+            // The current entity has additive columns absent at this historical schema stage.
+            Assert.Equal(0, await db.AppleSubscriptions.CountAsync());
         }
         finally { await database.DisposeAsync(); }
+    }
+
+    [SqlServerFact]
+    public async Task CapabilityDowngradeStopsBeforeDroppingRevocationsOrColumnsEvenWithoutBillingAccounts()
+    {
+        await using var database = await SqlServerTestDatabase.CreateAsync("SolarCapabilityDowngrade");
+        await using var db = database.Factory.CreateDbContext();
+        Assert.Equal(0, await db.BillingAccounts.CountAsync());
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO [AppleIdentityRevocations] ([Id], [Audience], [ProtectedRefreshToken], [Attempts], [NextAttemptAt])
+            VALUES ('55555555-5555-4555-8555-555555555555', 'fixture.mobile', 'protected-fixture-token', 2, '2026-10-06T12:00:00');
+            """);
+        var history = await db.Database.GetAppliedMigrationsAsync();
+        var before = JsonSerializer.Serialize(await db.AppleIdentityRevocations.AsNoTracking().ToListAsync());
+        var previous = history.Last(migration => !migration.EndsWith("_SmartSolarRedesignCapabilities", StringComparison.Ordinal));
+        var error = await Assert.ThrowsAsync<SqlException>(() => db.GetService<IMigrator>().MigrateAsync(previous));
+        Assert.Equal(51000, error.Number);
+        Assert.Contains("SmartSolar capabilities", error.Message);
+        Assert.Equal(history, await db.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(before, JsonSerializer.Serialize(await db.AppleIdentityRevocations.AsNoTracking().ToListAsync()));
+        // These mapped queries require all additive columns to remain present after the rejected DOWN.
+        Assert.Empty(await db.AppleSubscriptions.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.AccountSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.AppleIdentityCredentials.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.ActivityEvents.IgnoreQueryFilters().AsNoTracking().ToListAsync());
+        await db.Database.MigrateAsync();
+        Assert.Equal(before, JsonSerializer.Serialize(await db.AppleIdentityRevocations.AsNoTracking().ToListAsync()));
     }
 
     private static IntegrationConfigurationChange Change(IntegrationInstanceDto instance) => new(instance.Revision,
@@ -767,6 +796,7 @@ public class BillingSqlServerTests
                 builder.Services.AddSingleton<TenantRuntimeRegistry>();
                 builder.Services.AddScoped(provider => provider.GetRequiredService<TenantRuntimeRegistry>()
                     .Resolve<DynamicSocketGateway>(provider.GetRequiredService<CurrentInstallation>().Id!));
+                builder.Services.AddScoped<DeyeSolar.Web.Redesign.ManualOverrideService>();
                 builder.Services.AddScoped<UiText>();
                 builder.Services.AddScoped<UserLanguageService>();
                 app = builder.Build();

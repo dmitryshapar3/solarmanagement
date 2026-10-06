@@ -1,0 +1,27 @@
+@using DeyeSolar.Web.Redesign
+@using DeyeSolar.Web.Auth
+@using SolarManagement.SmartSockets.Contracts
+@inject DeyeSolar.Domain.Interfaces.IConfigurationRules Rules
+@inject ManualOverrideService Manual
+@inject AuthenticationStateProvider Authentication
+@inject InteractiveSecurityContext Security
+@implements IDisposable
+<div class="device-control"><UiSwitch Value="@(StateKnown&&IsOn)" ValueChanged="Request" Label="@T.Format("Switch {0}",Name)" Disabled="@(!Online||!StateKnown||!Guid.TryParse(DeviceId,out _)||_checking||_blocked)"/><SocketCommandControls @ref="_commands" DeviceId="@DeviceId" Online="Online" HideButtons="true" CommandSender="Send" OnAvailabilityChanged="Blocked" OnAcknowledged="OnAcknowledged"/></div>
+@if(_error is not null){<p class="field-error" role="alert">@T.Translate(_error)</p>}
+@if(_confirm){<UiModal Title="@T.Format("Switch {0} by hand?",Name)" OnClose="()=>_confirm=false"><p>@T["These enabled automations can change the device again."]</p><ul>@foreach(var rule in _conflicts){<li>@rule.Name</li>}</ul><label class="checkbox-row"><input type="radio" name="conflict" value="pause" checked="@(_choice=="pause")" disabled="@(!_canPause)" @onchange="Pause"/><span>@T["Pause these automations"]</span></label>@if(!_canPause){<p class="field-hint">@T["You need permission to manage automations to pause them."]</p>}<label class="checkbox-row"><input type="radio" name="conflict" value="once" checked="@(_choice=="once")" @onchange="Once"/><span>@T["Just this once"]</span></label><p class="field-hint">@T["A paused automation stays paused even if the command fails. Resume it in Automations."]</p><div class="form-actions"><UiButton Variant="outline" OnClick="()=>_confirm=false">@T["Cancel"]</UiButton><UiButton Variant="primary" OnClick="Confirm">@T["Switch device"]</UiButton></div></UiModal>}
+@code{
+ [Parameter]public string DeviceId{get;set;}="";[Parameter]public string Name{get;set;}="";[Parameter]public bool Online{get;set;}[Parameter]public bool IsOn{get;set;}[Parameter]public bool StateKnown{get;set;}[Parameter]public EventCallback OnAcknowledged{get;set;}
+ private SocketCommandControls? _commands;private bool _blocked=true;private bool _checking,_confirm,_desired,_canPause;private string _choice="pause";private string? _error;private List<TriggerRule> _conflicts=[];
+ private readonly CancellationTokenSource _lifetime=new();private int _generation;private string? _selectedDevice;
+ protected override void OnParametersSet(){if(_selectedDevice!=DeviceId){_selectedDevice=DeviceId;++_generation;_confirm=false;_checking=false;_error=null;_conflicts=[];}}
+ private async Task Request(bool value){if(_checking||_commands?.IsBlocked!=false)return;var generation=_generation;var device=DeviceId;var commands=_commands;_checking=true;_error=null;
+ bool Current()=>generation==_generation&&!_lifetime.IsCancellationRequested;
+ try{var conflicts=(await Rules.GetAllAsync(_lifetime.Token)).Where(r=>r.Enabled&&r.EntityId==device).ToList();if(!Current())return;var canPause=false;try{await Security.EnsureAsync(InstallationPermission.ManageRules,_lifetime.Token);canPause=true;}catch(InstallationAccessException denied)when(denied.Status==403){}if(!Current())return;
+ _desired=value;_conflicts=conflicts;_canPause=canPause;_choice=canPause?"pause":"once";if(conflicts.Count>0)_confirm=true;else{_choice="once";await commands.RequestAsync(value);}
+ }catch(OperationCanceledException)when(_lifetime.IsCancellationRequested){}catch(Exception){if(Current())_error="The controlling automations could not be checked. No command was sent.";}finally{if(Current())_checking=false;}}
+ private void Blocked(bool value)=>_blocked=value;
+ private void Pause()=>_choice="pause";private void Once()=>_choice="once";
+ private async Task Confirm(){_confirm=false;if(_commands is not null)await _commands.RequestAsync(_desired);}
+ private async Task<SocketCommandResult> Send(Guid device,Guid command,bool state,CancellationToken ct){var actor=(await Authentication.GetAuthenticationStateAsync()).User;var result=await Manual.SwitchAsync(actor,device,command,state,_choice,ct,"web");var status=result.Status switch{"acknowledged"=>SocketCommandStatus.Acknowledged,"rejected"=>SocketCommandStatus.Rejected,"requested"=>SocketCommandStatus.Pending,"uncertain_closed"=>SocketCommandStatus.UncertainClosed,_=>SocketCommandStatus.Uncertain};return new(new(command),status,null,null);}
+ public void Dispose(){++_generation;_lifetime.Cancel();_lifetime.Dispose();}
+}

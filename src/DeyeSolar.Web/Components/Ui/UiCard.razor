@@ -1,0 +1,8 @@
+<section class="ui-card @Class" @attributes="Attributes">@if (!string.IsNullOrEmpty(Title)) { <div class="card-heading"><h2>@Title</h2>@HeaderContent</div> }@ChildContent</section>
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? HeaderContent { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributes { get; set; }
+}

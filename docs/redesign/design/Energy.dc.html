@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Energy · Production</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 390px; height: 1200px; position: relative; overflow: hidden; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 58px 16px 0;">
+
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px;">
+      <h1 style="margin: 0; font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em;">Energy</h1>
+      <button type="button" aria-label="Choose a date" style="width: 44px; height: 44px; flex: none; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></button>
+    </header>
+
+    <nav aria-label="Energy view" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: #EAEAE6;">
+      <a href="Energy.dc.html" aria-current="page" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: #FFFFFF; color: #12120F; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 600; box-shadow: 0 1px 3px rgba(18,18,15,0.12);">Production</a>
+      <a href="Energy-Export.dc.html" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; color: #51504C; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 500;">Export</a>
+    </nav>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; gap: 6px;">
+        <button type="button" aria-pressed="true" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Day</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">7 days</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">30 days</button>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <button type="button" aria-label="Previous day" style="width: 44px; height: 44px; border: none; border-radius: 22px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600;">Today, 5 October</span>
+        <button type="button" aria-label="Next day" disabled style="width: 44px; height: 44px; border: none; border-radius: 22px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; opacity: 0.35;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+    </div>
+
+    <section aria-label="Production summary" style="display: flex; flex-direction: column; gap: 4px; padding: 4px 4px 0;">
+      <div style="display: flex; align-items: baseline; gap: 6px;"><span style="font-size: 52px; line-height: 56px; font-weight: 700; letter-spacing: -0.035em;">18.5</span><span style="font-size: 20px; line-height: 24px; font-weight: 600;">kWh</span></div>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">produced so far today</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 10px; border-radius: 999px; background: #FFFFFF; font-size: 13px; line-height: 18px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>Expected 24–35 kWh</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 10px; border-radius: 999px; background: #FFFFFF; font-size: 13px; line-height: 18px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>Best hour 12:00 · 4.31 kW</span>
+      </div>
+    </section>
+
+    <section aria-label="Hourly production chart" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 14px; border-radius: 24px; background: #FFFFFF;">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 4px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;" aria-live="polite">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">12:00–13:00</span>
+          <span style="font-size: 24px; line-height: 28px; font-weight: 700;">4.31 <span style="font-size: 15px; font-weight: 600;">kW avg</span></span>
+          <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Expected 3.62–5.06 kW</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 2px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">
+          <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 16px; height: 3px; border-radius: 2px; background: #CB7F00;"></span>Actual</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 16px; height: 10px; border-radius: 3px; background: rgba(18,18,15,0.12);"></span>Expected</span>
+        </div>
+      </div>
+      <svg width="326" height="200" viewBox="0 0 326 200" role="img" aria-label="Hourly average solar power today against the expected range from weather data" style="display: block;">
+        <g stroke="#EAEAE6" stroke-width="1">
+          <line x1="36" y1="118.7" x2="318" y2="118.7"/><line x1="36" y1="65.3" x2="318" y2="65.3"/><line x1="36" y1="12" x2="318" y2="12"/>
+        </g>
+        <line x1="36" y1="172" x2="318" y2="172" stroke="#C9C8C3" stroke-width="1"/>
+        <g fill="#676662" font-size="11" font-family="Onest, system-ui, sans-serif" text-anchor="end">
+          <text x="28" y="176">0</text><text x="28" y="122.7">2</text><text x="28" y="69.3">4</text><text x="28" y="16">6 kW</text>
+        </g>
+        <rect x="167.6" y="12" width="18.8" height="160" rx="4" fill="#12120F" fill-opacity="0.05"/>
+        <path d="M70.8 172 C72.8 169.7 77.8 165.3 83 158.1 C88.2 150.9 95.5 139.2 101.8 128.8 C108.1 118.4 114.3 105.7 120.6 95.7 C126.9 85.8 133.1 76.9 139.4 69.1 C145.7 61.2 151.9 54.1 158.2 48.8 C164.5 43.5 170.7 40.8 177 37.1 C183.3 33.3 189.5 25.2 195.8 26.4 C202.1 27.6 208.3 35.7 214.6 44 C220.9 52.3 227.1 64 233.4 76 C239.7 88 245.9 103.6 252.2 116 C258.5 128.4 264.9 141.3 271 150.7 C277.1 160 285.6 168.4 288.5 172 L288.5 172 C285.6 169.8 277.1 164.9 271 158.7 C264.9 152.4 258.5 143.1 252.2 134.7 C245.9 126.2 239.7 116 233.4 108 C227.1 100 220.9 92.2 214.6 86.7 C208.3 81.2 202.1 76.8 195.8 74.9 C189.5 73.1 183.3 74 177 75.5 C170.7 77 164.5 80.1 158.2 84 C151.9 87.9 145.7 93.2 139.4 98.9 C133.1 104.7 126.9 111.4 120.6 118.7 C114.3 126 108.1 135.1 101.8 142.7 C95.5 150.2 88.2 159.1 83 164 C77.8 168.9 72.8 170.7 70.8 172 Z" fill="#12120F" fill-opacity="0.11"/>
+        <line x1="199.6" y1="12" x2="199.6" y2="172" stroke="#12120F" stroke-opacity="0.35" stroke-width="1"/>
+        <path d="M70.8 172 C72.8 170.1 77.8 166.9 83 160.8 C88.2 154.7 95.5 143.8 101.8 135.2 C108.1 126.6 114.3 117.1 120.6 109.1 C126.9 101.1 133.1 93.9 139.4 87.2 C145.7 80.5 151.9 74.1 158.2 69.1 C164.5 64 170.7 58.8 177 57.1 C183.3 55.4 192.7 58.6 195.8 58.9" fill="none" stroke="#CB7F00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="177" cy="57.1" r="5" fill="#FFFFFF" stroke="#CB7F00" stroke-width="2.5"/>
+        <circle cx="195.8" cy="58.9" r="4.5" fill="#CB7F00" stroke="#FFFFFF" stroke-width="2"/>
+        <g fill="#676662" font-size="11" font-family="Onest, system-ui, sans-serif" text-anchor="middle">
+          <text x="54.8" y="192">06:00</text><text x="111.2" y="192">09:00</text><text x="167.6" y="192">12:00</text><text x="224" y="192">15:00</text><text x="280.4" y="192">18:00</text>
+        </g>
+        <text x="203.6" y="24" fill="#12120F" font-size="11" font-weight="600" font-family="Onest, system-ui, sans-serif">Now</text>
+      </svg>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <a href="Hourly-Table.dc.html" style="height: 44px; border-radius: 14px; text-decoration: none; background: #F5F4F1; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 600;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>Hourly table</a>
+        <button type="button" style="height: 44px; border: none; border-radius: 14px; background: #F5F4F1; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>How it works</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="now-title" style="display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 18px; border-radius: 24px; background: #FFFFFF;">
+      <h2 id="now-title" style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Right now</h2>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Inverter</span><span style="font-size: 24px; line-height: 28px; font-weight: 700;">4.20 <span style="font-size: 15px; font-weight: 600;">kW</span></span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">measured 13:42</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Weather estimate</span><span style="font-size: 24px; line-height: 28px; font-weight: 700;">4.55 <span style="font-size: 15px; font-weight: 600;">kW</span></span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">range 3.64–5.46</span></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: #F5F4F1;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2A9754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <span style="display: flex; flex-direction: column;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Within expected range</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Compared at 13:30 · weather model</span></span>
+      </div>
+    </section>
+
+    <p style="margin: 0; padding: 0 4px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Weather data by <a href="https://open-meteo.com/" style="color: #12120F; font-weight: 600;">Open-Meteo.com</a>, CC BY 4.0</p>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 16px; right: 16px; bottom: 26px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(255,255,255,0.84); backdrop-filter: blur(24px) saturate(1.6); box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 12px 32px rgba(18,18,15,0.14);">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <a href="Energy.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; color: #12120F; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Energy</span></a>
+    <a href="Devices.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>Devices</span></a>
+    <a href="Automations.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Automations</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

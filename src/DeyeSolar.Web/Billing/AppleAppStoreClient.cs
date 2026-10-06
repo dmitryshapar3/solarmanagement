@@ -7,7 +7,11 @@ using SolarManagement.Http;
 namespace DeyeSolar.Web.Billing;
 
 public sealed record AppleSubscriptionObservation(AppleTransaction Transaction, AppleSubscriptionStatus Status,
-    DateTimeOffset? GracePeriodExpiresAt, DateTimeOffset SourceSignedAt, DateTimeOffset StartedAt, DateTimeOffset CheckedAt);
+    DateTimeOffset? GracePeriodExpiresAt, DateTimeOffset SourceSignedAt, DateTimeOffset StartedAt, DateTimeOffset CheckedAt)
+{
+    public bool? AutoRenewEnabled { get; init; }
+    public DateTimeOffset? RenewalAt { get; init; }
+}
 
 public interface IAppleAppStoreClient
 {
@@ -58,7 +62,8 @@ public sealed class AppleAppStoreClient(HttpClient http, AppleBillingOptions opt
                         || renewal.AppAccountToken is { } token && token != transaction.AppAccountToken) throw InvalidResponse(startedAt);
                     if (transaction.IsUpgraded && status == AppleSubscriptionStatus.Active) status = AppleSubscriptionStatus.Expired;
                     observation = new AppleSubscriptionObservation(transaction, status, renewal.GracePeriodExpiresAt,
-                        transaction.SignedAt > renewal.SignedAt ? transaction.SignedAt : renewal.SignedAt, startedAt, clock.GetUtcNow());
+                        transaction.SignedAt > renewal.SignedAt ? transaction.SignedAt : renewal.SignedAt, startedAt, clock.GetUtcNow())
+                        { AutoRenewEnabled = renewal.AutoRenewEnabled, RenewalAt = renewal.RenewalAt };
                 }
             // Missing authoritative data cannot retain a trusted paid grant.
             return observation ?? throw InvalidResponse(startedAt);

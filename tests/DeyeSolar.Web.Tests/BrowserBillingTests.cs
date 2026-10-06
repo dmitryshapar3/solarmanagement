@@ -25,6 +25,42 @@ public class BrowserBillingTests
     private const string InstallationId = "browser-billing-site";
     private const string NeighbourId = "browser-independent-site";
 
+    [SqlServerTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnknownBrowserRouteStaysPublicAndNavigableWithoutTenantServices(bool signedIn)
+    {
+        await using var app = await ProductionApp.StartAsync();
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        await using var context = await browser.NewContextAsync(new() { Locale = "en-US" });
+        await context.RouteAsync("**/*", r => r.Request.Url.StartsWith(app.Address, StringComparison.Ordinal) ? r.ContinueAsync() : r.AbortAsync());
+        var page = await context.NewPageAsync();
+        page.SetDefaultTimeout(20_000);
+        var circuitErrors = new List<string>();
+        page.PageError += (_, error) => circuitErrors.Add(error);
+        page.Console += (_, message) => { if (message.Type == "error") circuitErrors.Add(message.Text); };
+        if (signedIn)
+        {
+            await page.GotoAsync(app.Address + "/signin?mode=password");
+            await page.GetByLabel("Username, email or phone", new() { Exact = true }).FillAsync("billing-browser@example.test");
+            await page.GetByLabel("Password", new() { Exact = true }).FillAsync(Password);
+            await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+            await page.WaitForURLAsync(app.Address + "/");
+        }
+        await page.GotoAsync(app.Address + "/visual-qa-not-found");
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Not found", Exact = true })).ToBeVisibleAsync();
+        Assert.Equal(0, await page.Locator(".app-shell").CountAsync());
+        var home = page.GetByRole(AriaRole.Link, new() { Name = "Go to Home", Exact = true });
+        await Assertions.Expect(home).ToHaveAttributeAsync("href", signedIn ? "/" : "/signin");
+        await home.ClickAsync();
+        if (signedIn) await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Home", Exact = true })).ToBeVisibleAsync();
+        else await page.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/signin(?:\\?|$)"));
+        await Assertions.Expect(page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+        Assert.DoesNotContain(circuitErrors, error => error.Contains("authenticated installation must be bound", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(circuitErrors, error => error.Contains("System.InvalidOperationException", StringComparison.Ordinal));
+    }
+
     [SqlServerFact]
     public async Task RealLoginAndOpenBlazorCircuitLoseSocketAccessAtExpiryButKeepBillingAccountAndLogout()
     {
@@ -37,17 +73,16 @@ public class BrowserBillingTests
             ? route.ContinueAsync() : route.AbortAsync());
         var page = await context.NewPageAsync();
         page.SetDefaultTimeout(20_000);
-        var login = await page.GotoAsync(app.Address + "/login");
+        var login = await page.GotoAsync(app.Address + "/signin?mode=password");
         Assert.Equal(200, login!.Status);
         await page.Locator("#username").FillAsync("billing-browser@example.test");
         await page.Locator("#password").FillAsync(Password);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign In", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await page.WaitForURLAsync(app.Address + "/");
         await page.GotoAsync(app.Address + "/devices");
-        var refresh = page.GetByRole(AriaRole.Button, new() { Name = "Refresh devices", Exact = true });
-        await Assertions.Expect(refresh).ToBeVisibleAsync();
-        await refresh.ClickAsync();
-        await Assertions.Expect(page.GetByText("No smart sockets found. Add and enable a socket integration in Settings, then refresh devices.",
+        var privateContent = page.GetByRole(AriaRole.Heading, new() { Name = "No smart plugs yet", Exact = true });
+        await Assertions.Expect(privateContent).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByText("Connect a smart plug service, select your plugs and enable the connection.",
             new() { Exact = true })).ToBeVisibleAsync();
 
         var allowed = await context.APIRequest.GetAsync(app.Address + "/api/devices?refresh=true");
@@ -65,7 +100,7 @@ public class BrowserBillingTests
         // This remains the same SignalR circuit and page: a navigation could hide stale circuit access.
         await Assertions.Expect(page.GetByText("Your trial has ended. Subscribe to read or control your sockets.",
             new() { Exact = true })).ToBeVisibleAsync(new() { Timeout = 20_000 });
-        await Assertions.Expect(refresh).ToHaveCountAsync(0);
+        await Assertions.Expect(privateContent).ToHaveCountAsync(0);
         var denied = await context.APIRequest.GetAsync(app.Address + "/api/devices?refresh=true");
         {
             Assert.Equal(402, denied.Status);
@@ -81,16 +116,76 @@ public class BrowserBillingTests
         }
         var billing = await page.GotoAsync(app.Address + "/billing");
         Assert.Equal(200, billing!.Status);
-        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Subscription", Exact = true })).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Premium", Exact = true })).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByText("Subscriptions are not configured yet. Contact support.", new() { Exact = true })).ToBeVisibleAsync();
         await page.GetByRole(AriaRole.Link, new() { Name = "Account", Exact = true }).ClickAsync();
-        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Sign-in methods for your account", Exact = true })).ToBeVisibleAsync();
-        await Assertions.Expect(page.GetByText("Verified email: billing-browser@example.test", new() { Exact = true })).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Sign-in methods", Exact = true })).ToBeVisibleAsync();
+        await Assertions.Expect(page.Locator(".account-row small").GetByText("billing-browser@example.test", new() { Exact = true })).ToBeVisibleAsync();
         Assert.Equal(before, await app.ReadPrivateStateAsync());
         await page.GotoAsync(app.Address + "/logout");
-        await page.WaitForURLAsync(app.Address + "/login");
+        await page.WaitForURLAsync(new System.Text.RegularExpressions.Regex("/signin(?:\\?|$)"));
         var signedOut = await context.APIRequest.GetAsync(app.Address + "/api/billing/access");
         Assert.Equal(401, signedOut.Status);
+    }
+
+    [SqlServerFact]
+    public async Task SettingsShowStoredTimeZonesAndKeepInvalidAndUnsavedDraftsUntilExplicitDiscard()
+    {
+        await using var app=await ProductionApp.StartAsync();
+        using var playwright=await Playwright.CreateAsync();
+        await using var browser=await playwright.Chromium.LaunchAsync(new(){Headless=true});
+        await using var context=await browser.NewContextAsync(new(){Locale="en-US",ViewportSize=new(){Width=900,Height=800}});
+        await context.RouteAsync("**/*",r=>r.Request.Url.StartsWith(app.Address,StringComparison.Ordinal)?r.ContinueAsync():r.AbortAsync());
+        var page=await context.NewPageAsync();page.SetDefaultTimeout(20_000);
+        await page.GotoAsync(app.Address+"/signin?mode=password");
+        await page.GetByLabel("Username, email or phone",new(){Exact=true}).FillAsync("billing-browser@example.test");
+        await page.GetByLabel("Password",new(){Exact=true}).FillAsync(Password);
+        await page.GetByRole(AriaRole.Button,new(){Name="Sign in",Exact=true}).ClickAsync();
+        await page.WaitForURLAsync(app.Address+"/");
+        var response=await context.APIRequest.GetAsync(app.Address+"/api/settings/installation");Assert.Equal(200,response.Status);
+        using var settings=JsonDocument.Parse(await response.TextAsync());
+        var site=settings.RootElement.GetProperty("site");
+        await page.GotoAsync(app.Address+"/settings");
+        await BrowserBillingDeadlineTests.AssertLiveDrawerEventAsync(page,page.GetByRole(AriaRole.Button,new(){Name="Open navigation",Exact=true}));
+        await page.GetByRole(AriaRole.Button,new(){Name="Close navigation",Exact=true}).ClickAsync();
+        await Assertions.Expect(page.GetByLabel("Solar time zone",new(){Exact=true})).ToHaveValueAsync(site.GetProperty("solarEstimate").GetProperty("timeZoneId").GetString()!);
+        await Assertions.Expect(page.GetByLabel("Settlement time zone",new(){Exact=true})).ToHaveValueAsync(site.GetProperty("solarSales").GetProperty("timeZoneId").GetString()!);
+        await Assertions.Expect(page.GetByLabel("Installation display time zone",new(){Exact=true})).ToHaveValueAsync(settings.RootElement.GetProperty("display").GetProperty("timeZoneId").GetString()!);
+        var bearing = page.GetByRole(AriaRole.Slider, new() { Name = "Roof 1 · Compass bearing · degrees", Exact = true });
+        var savedBearing = await bearing.InputValueAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Roof 1 · Compass bearing · degrees · E 90°", Exact = true }).ClickAsync();
+        await Assertions.Expect(bearing).ToHaveValueAsync("90");
+        await Assertions.Expect(page.GetByLabel("Azimuth", new() { Exact = true }).First).ToHaveValueAsync("90");
+        await bearing.PressAsync("ArrowRight");
+        await Assertions.Expect(bearing).ToHaveValueAsync("91");
+        await Assertions.Expect(page.GetByLabel("Azimuth", new() { Exact = true }).First).ToHaveValueAsync("91");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Discard", Exact = true }).ClickAsync();
+        await Assertions.Expect(bearing).ToHaveValueAsync(savedBearing);
+        var azimuth = page.GetByLabel("Azimuth", new() { Exact = true }).First;
+        await azimuth.FillAsync("360");
+        await Assertions.Expect(azimuth).ToHaveAttributeAsync("aria-invalid", "true");
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save changes", Exact = true })).ToBeDisabledAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Discard", Exact = true }).ClickAsync();
+        await Assertions.Expect(azimuth).ToHaveAttributeAsync("aria-invalid", "false");
+        await Assertions.Expect(bearing).ToHaveValueAsync(savedBearing);
+        var latitude=page.GetByLabel("Latitude",new(){Exact=true});var savedLatitude=await latitude.InputValueAsync();
+        await latitude.FillAsync("invalid-number");
+        await Assertions.Expect(latitude).ToHaveAttributeAsync("aria-invalid","true");
+        await Assertions.Expect(page.GetByRole(AriaRole.Button,new(){Name="Save changes",Exact=true})).ToBeDisabledAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Button,new(){Name="Test weather here",Exact=true})).ToBeDisabledAsync();
+        await page.GetByRole(AriaRole.Button,new(){Name="Discard",Exact=true}).ClickAsync();
+        await Assertions.Expect(latitude).ToHaveValueAsync(savedLatitude);
+        await Assertions.Expect(latitude).ToHaveAttributeAsync("aria-invalid","false");
+        var name=page.GetByLabel("Installation name",new(){Exact=true});var savedName=await name.InputValueAsync();
+        await name.FillAsync(savedName+" unsaved");
+        await page.GetByRole(AriaRole.Button,new(){Name="Open navigation",Exact=true}).ClickAsync();
+        await page.GetByRole(AriaRole.Link,new(){Name="Energy",Exact=true}).ClickAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading,new(){Name="Leave without saving?",Exact=true})).ToBeVisibleAsync();
+        await page.GetByRole(AriaRole.Button,new(){Name="Keep editing",Exact=true}).ClickAsync();
+        Assert.Equal(app.Address+"/settings",page.Url);
+        await Assertions.Expect(name).ToHaveValueAsync(savedName+" unsaved");
+        await page.GetByRole(AriaRole.Button,new(){Name="Discard",Exact=true}).ClickAsync();
+        await Assertions.Expect(name).ToHaveValueAsync(savedName);
     }
 
     internal sealed class ProductionApp(Process process, DbContextOptions<DeyeSolarDbContext> options, string directory, string address,

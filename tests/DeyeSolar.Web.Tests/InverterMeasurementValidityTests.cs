@@ -1,6 +1,7 @@
 using System.Net;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Shared;
+using DeyeSolar.Web.Components.Ui;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,10 +19,12 @@ public class InverterMeasurementValidityTests
     {
         var reading = Reading(quality);
         var html = await RenderAsync(reading);
-        foreach (var (field, unit) in new[] { ("battery-power", "W"), ("load", "W"), ("soc", "%"), ("voltage", "V"), ("current", "A"), ("temperature", "°C") })
-            Assert.Matches($"data-testid=\"inverter-{field}\"[^>]*>— {unit}", html);
-        Assert.Matches("data-testid=\"inverter-pv\"[^>]*>4[.]10 kW", html);
-        Assert.Matches("data-testid=\"inverter-balance\"[^>]*>—", html);
+        var live = LiveReading.Read(reading, Now, "source");
+        Assert.Null(live.BatteryKw); Assert.Null(live.LoadKw); Assert.Null(live.BatterySoc);
+        Assert.False(reading.BatteryVoltageValid); Assert.False(reading.BatteryCurrentValid); Assert.False(reading.BatteryTemperatureValid);
+        Assert.Matches("<dt>Home load</dt><dd>— kW</dd>", html);
+        Assert.Matches("<dt>Solar generation</dt><dd>4[.]10 kW</dd>", html);
+        Assert.Null(PowerBalance.FromReading(reading, Now).Watts);
         Assert.DoesNotContain("Battery idle", html);
         Assert.DoesNotContain("reported zero may mean", html);
         Assert.Equal(4100, reading.SolarProduction);
@@ -33,14 +36,15 @@ public class InverterMeasurementValidityTests
     {
         var valid = await RenderAsync(Reading(MeasurementQuality.Good));
         Assert.Contains("Battery idle", valid);
-        Assert.Matches("data-testid=\"inverter-battery-power\"[^>]*>0 W", valid);
-        Assert.Matches("data-testid=\"inverter-soc\"[^>]*>0 %", valid);
-        Assert.Matches("data-testid=\"inverter-voltage\"[^>]*>0[.]00 V", valid);
-        Assert.Matches("data-testid=\"inverter-balance\"[^>]*>\\+4,100 W", valid);
+        Assert.Matches("<dt>Battery idle</dt><dd>0[.]00 kW</dd>", valid);
+        Assert.Contains(">0%</text>", valid);
+        var reading = Reading(MeasurementQuality.Good);
+        Assert.True(reading.BatteryVoltageValid); Assert.True(reading.BatteryCurrentValid); Assert.True(reading.BatteryTemperatureValid);
+        Assert.Equal(4100, PowerBalance.FromReading(reading, Now).Watts);
         Assert.DoesNotContain("legacy reading", valid);
-        var unverified = await RenderAsync(Reading(MeasurementQuality.Good) with { Telemetry = null, BatterySocValid = false });
-        Assert.Matches("data-testid=\"inverter-battery-power\"[^>]*>— W", unverified);
-        Assert.Matches("data-testid=\"inverter-soc\"[^>]*>— %", unverified);
+        var unverified = await RenderAsync(reading with { Telemetry = null, BatterySocValid = false });
+        Assert.Contains("Battery state unknown", unverified);
+        Assert.Contains(">—%</text>", unverified);
         Assert.DoesNotContain("legacy reading", unverified);
     }
 
@@ -51,11 +55,10 @@ public class InverterMeasurementValidityTests
     public async Task UnavailableGridAndSolarMeasurementsNeverPresentDefaultZeroAsIdleOrGeneration(MeasurementQuality quality)
     {
         var html = await RenderAsync(Reading(MeasurementQuality.Good, quality, quality, 0));
-        Assert.DoesNotContain(">Idle<", html);
-        Assert.Matches("data-testid=\"inverter-grid\"[^>]*>— W", html);
-        Assert.Matches("data-testid=\"inverter-pv\"[^>]*>— kW", html);
-        Assert.Contains("Grid measurement unavailable", html);
-        Assert.Matches("data-testid=\"inverter-balance\"[^>]*>—", html);
+        Assert.DoesNotContain("Grid idle", html);
+        Assert.Matches("<dt>Grid state unknown</dt><dd>— kW</dd>", html);
+        Assert.Matches("<dt>Solar generation</dt><dd>— kW</dd>", html);
+        Assert.Null(PowerBalance.FromReading(Reading(MeasurementQuality.Good, quality, quality, 0), Now).Watts);
         Assert.Contains("Battery idle", html);
     }
 
@@ -65,10 +68,10 @@ public class InverterMeasurementValidityTests
         foreach (var reading in new[] { Reading(MeasurementQuality.Good, solarPower: 0) })
         {
             var html = await RenderAsync(reading);
-            Assert.Matches("data-testid=\"inverter-grid\"[^>]*>0 W", html);
-            Assert.Matches("data-testid=\"inverter-pv\"[^>]*>0[.]00 kW", html);
-            Assert.Contains(">Idle<", html);
-            Assert.Matches("data-testid=\"inverter-balance\"[^>]*>0 W", html);
+            Assert.Matches("<dt>Grid idle</dt><dd>0[.]00 kW</dd>", html);
+            Assert.Matches("<dt>Solar generation</dt><dd>0[.]00 kW</dd>", html);
+            Assert.Equal(0, PowerBalance.FromReading(reading, Now).Watts);
+
         }
     }
 
@@ -100,7 +103,7 @@ public class InverterMeasurementValidityTests
         collection.AddComponentLocalization();
         await using var services = collection.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<InverterReadings>(
-            ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = reading, ["Now"] = Now }))).ToHtmlString()));
+        return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<EnergyFlow>(
+            ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = LiveReading.Read(reading, Now, "source") }))).ToHtmlString()));
     }
 }

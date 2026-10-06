@@ -7,7 +7,7 @@ import { DemoApiClient } from "./DemoApiClient";
 const clock = () => new Date("2026-09-30T11:25:00Z");
 const httpStatus = (status: number) => (error: unknown) => typeof error === "object" && error !== null && "status" in error && error.status === status;
 
-test("every existing screen API works offline, including device commands, rule CRUD and settings", async t => {
+test("every screen API works offline; commands stay disabled while rule CRUD and settings remain local", async t => {
   const network = t.mock.method(globalThis, "fetch", () => { throw new Error("Demo must never use the network."); });
   const api = new DeyeSolarApi(new DemoApiClient(clock));
   assert.equal((await api.getSession()).authenticated, true);
@@ -15,14 +15,13 @@ test("every existing screen API works offline, including device commands, rule C
   assert.ok((await api.refreshDashboard()).inverter);
   assert.ok((await api.getSolarEstimate()).estimate);
   for (const period of ["Today", "Week", "Month"] as const) assert.ok((await api.getSolarHistory(period)).points.length);
-  for (const period of ["Day", "Month", "Year", "Custom"] as const) assert.ok((await api.getSales(period, "2026-09-30")).buckets.length);
+  for (const period of ["Day", "Month", "Year", "Custom"] as const) assert.ok((await api.getSales(period, "2026-09-30", undefined, period === "Custom" ? { from: "2026-09-01", through: "2026-09-30" } : undefined)).buckets.length);
 
   const devices = await api.getDevices(true);
   const selected = devices.devices[0]!;
-  await api.integrations.sendDeviceCommand(selected.id, "00000000-0000-0000-0000-000000000001", false);
-  assert.equal((await api.getDevices()).devices[0]!.isOn, false);
-  assert.equal((await api.getDashboard()).manualDevices[0]!.isOn, false);
-  assert.equal((await api.getRuleRuns(1, "OFF"))[0]!.action, "OFF");
+  await assert.rejects(api.integrations.sendDeviceCommand(selected.id, "00000000-0000-0000-0000-000000000001", false), httpStatus(403));
+  assert.equal((await api.getDevices()).devices[0]!.isOn, selected.isOn);
+  assert.equal((await api.getDashboard()).manualDevices[0]!.isOn, selected.isOn);
   assert.ok((await api.getReadings(24)).length);
 
   const { id: _id, currentState: _state, currentStateChangedAt: _changed, lastEvaluated: _evaluated, ...original } = (await api.getRules())[0]!;
@@ -69,7 +68,8 @@ test("demo state is isolated from returned snapshots and from another demo sessi
   const snapshot = await first.getDevices();
   snapshot.devices[0]!.name = "Edited snapshot";
   assert.equal((await first.getDevices()).devices[0]!.name, "Demo water heater");
-  await first.integrations.sendDeviceCommand(snapshot.devices[0]!.id, "00000000-0000-0000-0000-000000000001", false);
+  await first.renameDevice(snapshot.devices[0]!.id, "First session name");
+  assert.equal((await second.getDevices()).devices[0]!.name, "Demo water heater");
   assert.equal((await second.getDevices()).devices[0]!.isOn, true);
   const settings = await first.getSettings();
   settings.polling.intervalSeconds = 99;
@@ -110,43 +110,25 @@ test("demo requires current configuration versions for edits, toggles and deleti
 });
 
 
-test("demo accepts only current receipt-based socket commands and keeps replay idempotent", async () => {
-  const client = new DemoApiClient(clock);
-  const api = new DeyeSolarApi(client);
-  const device = (await api.getDevices()).devices[0]!;
-  const commandId = "00000000-0000-0000-0000-000000000001";
-  const receipt = await api.integrations.sendDeviceCommand(device.id, commandId, false);
-  assert.equal(receipt.status, "acknowledged");
-  assert.equal((await api.getDevices()).devices[0]!.isOn, false);
-  assert.deepEqual(await api.integrations.getDeviceCommand(device.id, commandId), receipt);
-  assert.deepEqual(await api.integrations.sendDeviceCommand(device.id, commandId, false), receipt);
-  assert.equal((await api.getRuleRuns(1, "OFF")).filter(run => run.ruleName === "Demo manual override").length, 1);
-  await assert.rejects(api.integrations.sendDeviceCommand(device.id, commandId, true), httpStatus(409));
-  assert.deepEqual(await api.integrations.getUnresolvedCommands(device.id), []);
-  for (const [path, method] of [["/api/devices/state", "POST"], ["/api/settings/deye", "PUT"], ["/api/settings/shelly", "PUT"], ["/api/settings/deye/stations", "GET"]] as const)
-    await assert.rejects(client.request(path, { method, body: {} }), httpStatus(404));
+test("offline demo rejects all hardware commands, creates no receipts and preserves observed state", async t => {
+  const network = t.mock.method(globalThis, "fetch", () => { throw new Error("Demo must never use the network."); });
+  const api = new DeyeSolarApi(new DemoApiClient(clock)); const before = await api.getDevices(); const runs = await api.getRuleRuns(24);
+  for (const device of before.devices) {
+    for (const choice of [undefined, "pause", "once"] as const) await assert.rejects(api.integrations.sendDeviceCommand(device.id, "00000000-0000-0000-0000-000000000001", !device.isOn, choice), httpStatus(403));
+    await assert.rejects(api.integrations.getDeviceCommand(device.id, "00000000-0000-0000-0000-000000000001"), httpStatus(404));
+    assert.deepEqual(await api.integrations.getUnresolvedCommands(device.id), []);
+    assert.equal((await api.getDeviceDetails(device.id)).canSwitch, false);
+  }
+  assert.deepEqual(await api.getDevices(), before); assert.deepEqual(await api.getRuleRuns(24), runs); assert.equal(network.mock.callCount(), 0);
 });
 
-test("GUID-bound demo sockets retain their own rated power through switching, rename and idempotent replay", async t => {
-  const network = t.mock.method(globalThis, "fetch", () => { throw new Error("Demo must never use the network."); });
-  const api = new DeyeSolarApi(new DemoApiClient(clock));
-  const [heater, lights] = (await api.getDevices()).devices;
-  assert.ok(heater && lights);
-  assert.match(lights.id, /^[a-f0-9-]{36}$/);
-  await api.renameDevice(lights.id, "Renamed fixture");
-  const onId = "00000000-0000-0000-0000-000000000011";
-  await api.integrations.sendDeviceCommand(lights.id, onId, true);
-  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 45);
-  await api.integrations.sendDeviceCommand(lights.id, "00000000-0000-0000-0000-000000000012", false);
-  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 0);
-  await api.integrations.sendDeviceCommand(lights.id, onId, true);
-  assert.equal((await api.getDevices()).devices.find(device => device.id === lights.id)!.currentPowerW, 0, "Old receipt replay cannot switch the device again");
-  await api.integrations.sendDeviceCommand(lights.id, "00000000-0000-0000-0000-000000000013", true);
-  await api.integrations.sendDeviceCommand(heater.id, "00000000-0000-0000-0000-000000000014", true);
-  const switched = (await api.getDevices()).devices;
-  assert.equal(switched.find(device => device.id === lights.id)!.currentPowerW, 45);
-  assert.equal(switched.find(device => device.id === heater.id)!.currentPowerW, 850);
-  assert.equal(network.mock.callCount(), 0);
+test("GUID sample sockets keep their reported power through local renaming without switching", async () => {
+  const api = new DeyeSolarApi(new DemoApiClient(clock)); const [heater, lights] = (await api.getDevices()).devices; assert.ok(heater && lights);
+  assert.match(lights.id, /^[a-f0-9-]{36}$/); await api.renameDevice(lights.id, "Renamed fixture");
+  const after = (await api.getDevices()).devices;
+  assert.equal(after.find(device => device.id === lights.id)!.name, "Renamed fixture");
+  assert.equal(after.find(device => device.id === lights.id)!.currentPowerW, lights.currentPowerW);
+  assert.equal(after.find(device => device.id === heater.id)!.currentPowerW, heater.currentPowerW);
 });
 
 test("retargeting a demo rule reconciles its new observed device and clears the prior evaluation", async () => {
@@ -166,4 +148,22 @@ test("retargeting a demo rule reconciles its new observed device and clears the 
   assert.equal(renamed.currentStateChangedAt, moved.currentStateChangedAt);
   assert.equal(renamed.lastEvaluated, null);
   assert.equal((await api.getDevices()).devices.find(device => device.id === offTarget.id)!.isOn, false);
+});
+
+test("demo aggregate settings are atomic and version fenced", async () => {
+  const api = new DeyeSolarApi(new DemoApiClient(clock)); const before = await api.request<any>("/api/settings/installation");
+  await assert.rejects(api.request("/api/settings/installation", { method: "PUT", body: { ...before, expectedVersion: before.version, expectedIntegrationVersions: before.integrationVersions, site: { ...before.site, solarEstimate: { ...before.site.solarEstimate, locationLabel: "Must roll back" } }, display: { timeZoneId: "Invalid/zone" } } }), httpStatus(400));
+  assert.deepEqual(await api.request("/api/settings/installation"), before);
+  const after = await api.request<any>("/api/settings/installation", { method: "PUT", body: { ...before, expectedVersion: before.version, expectedIntegrationVersions: before.integrationVersions, polling: { intervalSeconds: 60 } } });
+  assert.notEqual(after.version, before.version); assert.equal(after.polling.intervalSeconds, 60);
+  await assert.rejects(api.request("/api/settings/installation", { method: "PUT", body: { ...before, expectedVersion: before.version } }), httpStatus(409));
+});
+test("demo redesign data provides current-hour separation, inclusive custom dates and 5-minute paging offline", async t => {
+  const network = t.mock.method(globalThis, "fetch", () => { throw new Error("Demo must never use the network."); }); const api = new DeyeSolarApi(new DemoApiClient(clock));
+  const data = await api.getSalesDetails("Custom", "2026-09-30", undefined, { from: "2026-09-01", through: "2026-09-30" });
+  assert.equal(data.request.from, "2026-09-01"); assert.equal(data.request.through, "2026-09-30"); assert.equal(data.buckets.length, 30); assert.ok(data.hours!.length); assert.ok(!data.hours!.some(hour => hour.start === data.currentHour?.start));
+  const production = await api.getProduction("Today"); assert.ok(production.hours.length); assert.equal(production.currentHour?.actualKw, null);
+  const first = await api.getReadingsView(168, "5m"); assert.equal(Date.parse(first.items[0]!.timestamp) - Date.parse(first.items[1]!.timestamp), 300000); assert.ok(first.nextCursor);
+  const next = await api.getReadingsView(168, "5m", first.nextCursor!); assert.ok(next.items.length); assert.ok(first.items.every(row => next.items.every(other => other.id !== row.id)));
+  const activity = await api.getActivity(); assert.ok(activity.items.length); assert.ok((await api.getActivityChecks(activity.items[0]!.id)).items.length); assert.equal(network.mock.callCount(), 0);
 });

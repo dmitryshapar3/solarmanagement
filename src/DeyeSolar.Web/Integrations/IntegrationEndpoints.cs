@@ -64,14 +64,27 @@ public static class IntegrationEndpoints
             catch (IntegrationRequestException) { return Results.BadRequest("The authorization is unavailable. Return to integration settings and start again."); }
         }).AllowAnonymous();
         var api = app.MapGroup("/api/v2").RequireAuthorization(ApiAuthorization.AuthenticatedUser);
-        api.MapGet("/integration-providers", async Task<IResult> (IIntegrationProviderCatalog catalog, HttpContext context, CancellationToken ct) =>
+        api.MapGet("/integration-providers", async Task<IResult> (IIntegrationProviderCatalog catalog,
+            IDbContextFactory<DeyeSolarDbContext> factory, HttpContext context, CancellationToken ct) =>
         {
             var providers = await catalog.GetProvidersAsync(ct);
+            await using var db = await factory.CreateDbContextAsync(ct);
+            // Old signed descriptors do not declare supported device kinds. Use
+            // only kinds actually discovered in this installation; an absent
+            // entry means unknown, so clients keep the provider available.
+            var observed = await (from binding in db.IntegrationDeviceBindings.AsNoTracking()
+                join instance in db.IntegrationInstances.AsNoTracking() on binding.InstanceId equals instance.Id
+                where binding.Kind == "inverter" || binding.Kind == "socket"
+                select new { instance.ProviderId, binding.Kind }).Distinct().ToListAsync(ct);
+            var providerKinds = observed.GroupBy(item => item.ProviderId, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Select(item => item.Kind).OrderBy(kind => kind, StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+            var facts = string.Join("|", providerKinds.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => $"{pair.Key}:{string.Join(',', pair.Value)}"));
             var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", providers.OrderBy(p => p.ProviderId, StringComparer.Ordinal)
-                .Select(p => $"{p.ProviderId}:{p.PackageVersion}:{p.PackageDigest}:{p.DescriptorDigest}"))))).ToLowerInvariant();
+                .Select(p => $"{p.ProviderId}:{p.PackageVersion}:{p.PackageDigest}:{p.DescriptorDigest}")) + "|" + facts))).ToLowerInvariant();
             context.Response.Headers.ETag = '"' + revision + '"';
             if (context.Request.Headers.IfNoneMatch == context.Response.Headers.ETag) return Results.StatusCode(304);
-            return Results.Ok(new { providers, revision });
+            return Results.Ok(new { providers, revision, providerKinds });
         });
         api.MapGet("/integration-providers/{id}/versions/{version}/ui", (string id, string version, IIntegrationProviderCatalog catalog, CancellationToken ct)
             => ReadAsync(() => catalog.GetAsync(id, version, ct)));
@@ -109,13 +122,11 @@ public static class IntegrationEndpoints
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SetEnabledAsync(id, true, request, context.User, ct)));
         api.MapPost("/integrations/{id:guid}/disable", (Guid id, IntegrationVersionGuard request, IntegrationSetupService service,
             HttpContext context, IAntiforgery antiforgery, CancellationToken ct) => WriteAsync(context, antiforgery, () => service.SetEnabledAsync(id, false, request, context.User, ct)));
-        api.MapPost("/devices/{id:guid}/commands", (Guid id, IntegrationSocketCommandRequest request, DynamicSocketGateway gateway,
+        api.MapPost("/devices/{id:guid}/commands", (Guid id, IntegrationSocketCommandRequest request,
+            [Microsoft.AspNetCore.Mvc.FromServices] Redesign.ManualOverrideService commands,
             HttpContext context, IAntiforgery antiforgery, InteractiveSecurityContext security, CancellationToken ct) => WriteAsync(context, antiforgery, async () =>
             {
-                var socket = await gateway.GetForUserAsync(new(id), context.User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-                    token => security.EnsureAsync(InstallationPermission.ControlDevices, token), ct);
-                await socket.SetPowerAsync(new(new(request.CommandId), request.IsOn ? SwitchState.On : SwitchState.Off), ct);
-                return await gateway.DescribeResultAsync(id, request.CommandId, ct);
+                return await commands.SwitchAsync(context.User, id, request.CommandId, request.IsOn, request.OnRuleConflict, ct);
             })).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ControlDevices));
         api.MapGet("/devices/{id:guid}/commands/{commandId:guid}", (Guid id, Guid commandId, DynamicSocketGateway gateway, CancellationToken ct)
             => ReadAsync(() => gateway.DescribeResultAsync(id, commandId, ct)));

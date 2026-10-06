@@ -1,39 +1,10 @@
-export const colors = {
-  background: "#101412",
-  surface: "#171d1a",
-  surfaceRaised: "#202720",
-  border: "#314036",
-  text: "#f3f6f2",
-  muted: "#aab7ad",
-  subtle: "#6f7e72",
-  primary: "#2fd37a",
-  primaryDark: "#1f8f57",
-  blue: "#58a6ff",
-  amber: "#ffb454",
-  red: "#ff6b6b",
-  off: "#49534c",
-  white: "#ffffff"
-} as const;
-
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32
-} as const;
-
-export const radius = {
-  sm: 6,
-  md: 8,
-  lg: 12
-} as const;
-
-export const typography = {
-  title: 26,
-  section: 18,
-  body: 15,
-  caption: 12,
-  metric: 30
-} as const;
+import { colors as palettes, designTokens } from "../ui/theme/tokens";
+// Legacy modules are migrated to useLegacyTheme as they move to the new views.
+const light = palettes.light;
+export const colors = { background: light.bg, surface: light.surface, surfaceRaised: light.fill,
+  border: light.line, text: light.ink, muted: light.ink2, subtle: light.ink3,
+  primary: light.ink, primaryDark: light.switchOnTrack, blue: light.grid, amber: light.solar,
+  red: light.criticalText, off: light.switchOffTrack, white: light.surface };
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
+export const radius = { sm: designTokens.radius.chip, md: designTokens.radius.control, lg: designTokens.radius.card };
+export const typography = { title: 34, section: 19, body: 17, caption: 13, metric: 30 };

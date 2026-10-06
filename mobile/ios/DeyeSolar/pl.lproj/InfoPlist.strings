@@ -1,2 +1,3 @@
 /* Generated from i18n/pl.json by scripts/sync-ios-localizations.mjs. */
-"NSFaceIDUsageDescription" = "Zezwól DeyeSolar na używanie Face ID do bezpiecznego logowania.";
+"NSFaceIDUsageDescription" = "Zezwól SmartSolar na używanie Face ID do bezpiecznego logowania.";
+"NSLocationWhenInUseUsageDescription" = "Użyj swojej lokalizacji, aby ustawić współrzędne instalacji fotowoltaicznej.";

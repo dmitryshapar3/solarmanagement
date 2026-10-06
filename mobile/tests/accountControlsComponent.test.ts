@@ -12,11 +12,13 @@ async function components() {
     stdin: { contents: 'export { LanguageDropdown } from "./src/features/settings/LanguageDropdown"; export { GoogleSignInButton } from "./src/features/auth/GoogleSignInButton";', resolveDir: process.cwd(), loader: "ts" },
     bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
     plugins: [{ name: "native-controls", setup(builder) {
-      builder.onResolve({ filter: /^(react-native|react-native-svg|lucide-react-native)$|application\/LanguageContext$/ }, args => ({ path: args.path, namespace: "native-controls" }));
+      builder.onResolve({ filter: /^(react-native|react-native-svg|lucide-react-native)$|application\/LanguageContext$|core\/components$|ui\/theme\/ThemeProvider$/ }, args => ({ path: args.path, namespace: "native-controls" }));
       builder.onLoad({ filter: /.*/, namespace: "native-controls" }, args => ({ loader: "js", contents:
         args.path === "react-native" ? 'export const Pressable="Pressable", Text="Text", View="View", ScrollView="ScrollView", ActivityIndicator="ActivityIndicator"; export const StyleSheet={create:v=>v};'
           : args.path === "react-native-svg" ? 'export default "Svg"; export const Path="Path";'
           : args.path === "lucide-react-native" ? 'export const Check="Check", ChevronDown="ChevronDown";'
+          : args.path.endsWith("components") ? 'export const ThemedText="Text";'
+          : args.path.endsWith("ThemeProvider") ? 'export const useTheme=()=>({colors:{ink:"#111",ink3:"#888",line:"#ddd",surface:"#fff"}});'
           : 'import React from "react"; export function useLanguage(){ const [language,set]=React.useState("ru"); return {language,languages:globalThis.__solarControlsLanguages,t:value=>value,setLanguage:async value=>{set(value);}}; }'
       }));
     } }]

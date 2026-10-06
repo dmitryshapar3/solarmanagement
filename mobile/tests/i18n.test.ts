@@ -56,7 +56,9 @@ test("cached translated errors restore their arguments when switching back to En
 test("rendered identity labels preserve custom names that resemble UI phrases", () => {
   try {
     for (const template of ["Signed in as {0}", "Configure {0}", "Use {0}", "Disable {0}", "Delete rule {0}", "Edit rule {0}",
-      "Provider name: {0}. This changes the display name in Solar; device IDs and rules stay connected.", "Test {0}"]) {
+      "Provider name: {0}. This changes the display name in Solar; device IDs and rules stay connected.", "Test {0}",
+      "Link {0}", "Open {0}", "Switch {0}", "Switch {0} by hand?", "Pause {0}", "Edit automation {0}",
+      "Provider name: {0}. Renaming changes only its display name; rules stay connected."]) {
       for (const name of ["Son of Earth", "Home"]) {
         setLocale("ru");
         const label = translate(template, name);
@@ -65,6 +67,23 @@ test("rendered identity labels preserve custom names that resemble UI phrases", 
         assert.equal(translate(label), translate(template, name), `${template} retains ${name} after changing language`);
       }
     }
+  } finally { setLocale("en"); }
+});
+
+test("simultaneously identical translated actions retain names without guessing a different action", () => {
+  try {
+    const name = "Simultaneous Son of Earth";
+    setLocale("ru");
+    const disable = translate("Disable {0}", name);
+    const disconnect = translate("Disconnect {0}", name);
+    assert.equal(disable, disconnect, "fixture exercises an actual catalog collision");
+    assert.equal(translate(disable), disable);
+    assert.equal(translate(disconnect), disconnect);
+    setLocale("en");
+    assert.equal(translate(disable), disable, "ambiguous cached wording is preserved instead of becoming Disconnect");
+    assert.equal(translate(disconnect), disconnect, "ambiguous cached wording is preserved instead of becoming Disable");
+    assert.equal(translate("Disable {0}", name), `Disable ${name}`);
+    assert.equal(translate("Disconnect {0}", name), `Disconnect ${name}`);
   } finally { setLocale("en"); }
 });
 

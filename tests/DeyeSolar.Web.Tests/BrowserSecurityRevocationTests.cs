@@ -52,19 +52,19 @@ public class BrowserSecurityRevocationTests
         await using var app = await BrowserBillingTests.ProductionApp.StartAsync();
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
-        await using var context = await browser.NewContextAsync(new() { Locale = "en-US" });
+        await using var context = await browser.NewContextAsync(new() { Locale = "en-US", ViewportSize=new(){Width=900,Height=800} });
         await context.RouteAsync("**/*", r => r.Request.Url.StartsWith(app.Address, StringComparison.Ordinal) ? r.ContinueAsync() : r.AbortAsync());
         var page = await context.NewPageAsync();
-        await page.GotoAsync(app.Address + "/login");
+        await page.GotoAsync(app.Address + "/signin?mode=password");
         await page.Locator("#username").FillAsync("billing-browser@example.test");
         await page.Locator("#password").FillAsync("Browser billing password 42!");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign In", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await page.WaitForURLAsync(app.Address + "/");
         await page.GotoAsync(app.Address + "/devices");
-        var refresh = page.GetByRole(AriaRole.Button, new() { Name = "Refresh devices", Exact = true });
-        await Assertions.Expect(refresh).ToBeVisibleAsync();
-        await refresh.ClickAsync();
-        await Assertions.Expect(page.GetByText("No smart sockets found. Add and enable a socket integration in Settings, then refresh devices.", new() { Exact = true })).ToBeVisibleAsync();
+        var privateContent = page.GetByRole(AriaRole.Heading, new() { Name = "No smart plugs yet", Exact = true });
+        await Assertions.Expect(privateContent).ToBeVisibleAsync();
+        await Assertions.Expect(page.GetByText("Connect a smart plug service, select your plugs and enable the connection.", new() { Exact = true })).ToBeVisibleAsync();
+        await BrowserBillingDeadlineTests.AssertLiveDrawerEventAsync(page,page.GetByRole(AriaRole.Button,new(){Name="Open navigation",Exact=true}));
         var before = await app.ReadPrivateStateAsync();
         await using (var db = new DeyeSolarDbContext(app.DatabaseOptions))
         {
@@ -74,17 +74,17 @@ public class BrowserSecurityRevocationTests
             else await db.Users.Where(u => u.Id == user).ExecuteUpdateAsync(s => s.SetProperty(u => u.SecurityStamp, "revoked-stamp"));
         }
         // No reload/navigation: the same open SignalR circuit must stop showing private content.
-        await Assertions.Expect(refresh).ToHaveCountAsync(0, new() { Timeout = 20_000 });
+        await Assertions.Expect(privateContent).ToHaveCountAsync(0, new() { Timeout = 20_000 });
         // The gate closes private content; a reconnect denied by the freshly validated
         // cookie may also send the existing browser page straight to sign-in.
         var closed = page.GetByText("Your installation could not be opened. Please sign in again or contact support.", new() { Exact = true });
-        await Assertions.Expect(closed.Or(page.GetByRole(AriaRole.Button, new() { Name = "Sign In", Exact = true }))).ToBeVisibleAsync();
+        await Assertions.Expect(closed.Or(page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }))).ToBeVisibleAsync();
         var denied = await context.APIRequest.GetAsync(app.Address + "/api/devices?refresh=true");
         Assert.Contains(denied.Status, new[] { 401, 403 });
         if (kind == "membership")
         {
             var billing = await context.APIRequest.GetAsync(app.Address + "/api/billing/access"); Assert.Equal(200, billing.Status);
-            var account = await context.APIRequest.GetAsync(app.Address + "/account"); Assert.Equal(200, account.Status);
+            var account = await context.APIRequest.GetAsync(app.Address + "/settings/account"); Assert.Equal(200, account.Status);
         }
         Assert.Equal(before, await app.ReadPrivateStateAsync());
     }

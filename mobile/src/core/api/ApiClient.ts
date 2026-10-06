@@ -16,7 +16,7 @@ export type ApiTransport = (url: string, options: {
   signal: AbortSignal;
   redirect: "error";
   credentials: "omit";
-}) => Promise<{ status: number; ok: boolean; text(): Promise<string> }>;
+}) => Promise<{ status: number; ok: boolean; text(): Promise<string>; arrayBuffer?(): Promise<ArrayBuffer>; headers?: { get(name: string): string | null } }>;
 
 export type ApiClientOptions = {
   baseUrl: string;
@@ -34,6 +34,7 @@ export type RequestOptions = {
   timeoutMs?: number;
   // Wrong login credentials must not expire an unrelated session.
   skipUnauthorizedHandler?: boolean;
+  responseType?: "json" | "zip";
 };
 
 export class ApiClient {
@@ -101,7 +102,7 @@ export class ApiClient {
     options.signal?.addEventListener("abort", cancel, { once: true });
     if (options.signal?.aborted) controller.abort();
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-    const headers: Record<string, string> = { Accept: "application/json", "Accept-Language": currentLocale() };
+    const headers: Record<string, string> = { Accept: options.responseType === "zip" ? "application/zip" : "application/json", "Accept-Language": currentLocale() };
     if (options.ifMatch !== undefined) headers["If-Match"] = options.ifMatch;
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -125,6 +126,17 @@ export class ApiClient {
         redirect: "error",
         credentials: "omit"
       });
+      if (response.ok && options.responseType === "zip") {
+        const contentType = response.headers?.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
+        if (!response.arrayBuffer || contentType && contentType !== "application/zip")
+          throw new ApiError(response.status, "The server returned an invalid account archive.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (controller.signal.aborted || revision !== this.revision) throw new Error(t("The request was canceled."));
+        if (bytes.length < 4 || bytes.length > 32 * 1024 * 1024 || bytes[0] !== 0x50 || bytes[1] !== 0x4b
+          || !((bytes[2] === 3 && bytes[3] === 4) || (bytes[2] === 5 && bytes[3] === 6)))
+          throw new ApiError(response.status, "The server returned an invalid account archive.");
+        return bytes as T;
+      }
       const text = await response.text();
       // A late response or 401 must never affect a replacement session.
       if (controller.signal.aborted || revision !== this.revision) throw new Error(t("The request was canceled."));
@@ -151,7 +163,7 @@ export class ApiClient {
         }
       }
       if (!response.ok) throw new ApiError(response.status, extractErrorMessage(payload, response.status));
-      if (!validApiResponse(path, options.method ?? "GET", payload))
+      if (!validApiResponse(path, options.method ?? "GET", payload, options.query))
         throw new ApiError(response.status, "The server returned an invalid API response. Check the server URL and try again.");
       return payload as T;
     };

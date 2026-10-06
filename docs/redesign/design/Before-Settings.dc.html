@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Current app · Settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2fd37a}a:hover{color:#1f8f57}
+</style>
+</helmet>
+<div style="width: 390px; height: 1800px; position: relative; overflow: hidden; background: #101412; color: #f3f6f2; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 63px 16px 112px;">
+
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 48px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;"><h1 style="margin: 0; font-size: 26px; line-height: 31px; font-weight: 700;">Settings</h1><p style="margin: 0; font-size: 15px; line-height: 20px; color: #aab7ad;">Europe/Warsaw</p></div>
+      <button type="button" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>Logout</button>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <span style="font-size: 18px; line-height: 22px; font-weight: 700;">Language</span>
+      <span style="font-size: 12px; line-height: 15px; color: #aab7ad;">Choose your language for the app and website.</span>
+      <button type="button" style="min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border: 1px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 15px;">English<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#aab7ad" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    </section>
+
+    <h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Account &amp; sign-in methods</h2>
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <span style="font-size: 15px; line-height: 20px;">Signed in as alex</span>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><span style="font-size: 15px;">Google:</span><span style="padding: 4px 8px; border: 0.5px solid #314036; border-radius: 6px; background: #202720; color: #aab7ad; font-size: 12px; line-height: 15px; font-weight: 700;">Not linked</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 15px; color: #aab7ad;">Verified email:</span><span style="font-size: 15px; color: #2fd37a;">alex@example.com</span></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 15px; color: #aab7ad;">Verified phone:</span><span style="font-size: 15px; color: #aab7ad;">Not linked</span></div>
+      </div>
+      <span style="font-size: 15px; line-height: 20px; color: #aab7ad;">Link Google, email and phone to this account to keep the same installation and devices. Each contact must be verified.</span>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Link Google account</button>
+      <div style="display: flex; gap: 12px;">
+        <button type="button" disabled style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Email</button>
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;">Phone</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="b-phone" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Phone to link</label><input id="b-phone" type="tel" placeholder="+48123456789" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Send verification code</button>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <span style="font-size: 18px; line-height: 22px; font-weight: 700;">Account security</span>
+      <span style="font-size: 15px; line-height: 20px; color: #aab7ad;">Confirm your current password or a new verification code to change your password, revoke sessions, export data or delete your account.</span>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="b-cur" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Current password</label><input id="b-cur" type="password" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <div style="display: flex; gap: 12px;">
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;">Email</button>
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Phone</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="b-ver" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Verified email or phone</label><input id="b-ver" type="text" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Send verification code</button>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="b-new" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">New password</label><input id="b-new" type="password" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Change password</button>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Sign out all devices</button>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Export account data</button>
+      <button type="button" disabled style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700; opacity: 0.65;">Delete account and owned installations</button>
+    </section>
+
+    <h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Mobile API</h2>
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="b-url" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Base URL</label><input id="b-url" type="url" value="https://solar.dshapar.com" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <button type="button" style="min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>Save API URL</button>
+    </section>
+
+    <h2 style="margin: 0; font-size: 18px; line-height: 22px; font-weight: 700;">Integrations</h2>
+    <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <span style="font-size: 15px; line-height: 20px; font-weight: 700;">Deye Cloud</span>
+      <span style="align-self: flex-start; padding: 4px 8px; border: 0.5px solid #1f6f45; border-radius: 6px; background: #143b28; color: #2fd37a; font-size: 12px; line-height: 15px; font-weight: 700;">Enabled</span>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Configure Deye Cloud</button>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Disable Deye Cloud</button>
+    </section>
+    <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <span style="font-size: 15px; line-height: 20px; font-weight: 700;">Shelly Cloud</span>
+      <span style="align-self: flex-start; padding: 4px 8px; border: 0.5px solid #1f6f45; border-radius: 6px; background: #143b28; color: #2fd37a; font-size: 12px; line-height: 15px; font-weight: 700;">Enabled</span>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Configure Shelly Cloud</button>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Disable Shelly Cloud</button>
+    </section>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 0; right: 0; bottom: 0; height: 90px; box-sizing: border-box; padding: 8px 0 34px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #171d1a; border-top: 0.5px solid #314036;">
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Home</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v1"/><path d="M12 20v1"/><path d="M3 12h1"/><path d="M20 12h1"/><path d="m18.364 5.636-.707.707"/><path d="m6.343 17.657-.707.707"/><path d="m5.636 5.636.707.707"/><path d="m17.657 17.657.707.707"/></svg>Generation</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>Sales</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #6f7e72; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg>Devices</span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #2fd37a; font-size: 11px; line-height: 13px; font-weight: 700;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>More</span>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

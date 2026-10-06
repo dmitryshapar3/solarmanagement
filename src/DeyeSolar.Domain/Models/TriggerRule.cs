@@ -10,6 +10,10 @@ public class TriggerRule : IInstallationOwned
     public string EntityId { get; set; } = string.Empty;
     public Guid? SourceInverterId { get; set; }
     public bool Enabled { get; set; } = true;
+    public string? PauseReason { get; set; }
+    public DateTimeOffset? PausedAt { get; set; }
+    public string? PausedByUserId { get; set; }
+    public Guid? PausedByCommandId { get; set; }
 
     // Turn ON when battery SOC is at or above this percentage
     public int SocTurnOnThreshold { get; set; } = 80;

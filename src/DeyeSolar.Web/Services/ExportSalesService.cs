@@ -16,6 +16,15 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
     private DateTimeOffset _priceRetryAfter;
 
     public async Task<ExportSalesResult> ReadAsync(ExportSalesRequest request, CancellationToken ct)
+        => await ReadCoreAsync(request, ct, false);
+
+    public async Task<ExportSalesResult> ReadDetailsAsync(ExportSalesRequest request, CancellationToken ct)
+        => await ReadCoreAsync(request, ct, true);
+
+    public async Task<ExportSalesResult> RecheckPricesAsync(ExportSalesRequest request, CancellationToken ct)
+        => await ReadCoreAsync(request, ct, true, true);
+
+    private async Task<ExportSalesResult> ReadCoreAsync(ExportSalesRequest request, CancellationToken ct, bool details, bool recheckPrices = false)
     {
         var now = clock.GetUtcNow();
         var config = options.CurrentValue;
@@ -50,7 +59,11 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
             return new(request, range.Today, config.ContractStartDate, config.TimeZoneId, range.Start, range.End, buckets,
                 total.ExportKwh, total.CreditedExportKwh, total.EnergyValuePln, total.EstimatedDepositPln,
                 total.ExpectedHours, total.ObservedHours, total.ValuedHours, dataError, priceError,
-                current ?? Current([], []), now);
+                current ?? Current([], []), now)
+            {
+                Hours = details ? hours : null,
+                MissingPriceHours = details ? hours.Where(h => !h.MarketAveragePricePlnPerKwh.HasValue).Select(h => h.Start).ToArray() : null
+            };
         }
         bool Changed() => !sourceIdentity.Matches(devices.CurrentValue) || snapshot !=
             (options.CurrentValue.ContractStartDate, options.CurrentValue.TimeZoneId, options.CurrentValue.PayNegativePrices);
@@ -144,10 +157,10 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
             }
             var hours = Calculate(range.DataStart, range.DataEnd, samples, storedPrices, config.PayNegativePrices);
             var current = Current(samples, storedPrices);
-            var unpriced = hours.Where(hour => hour.CreditedExportKwh > 0 && !hour.EnergyValuePln.HasValue)
+            var unpriced = hours.Where(hour => recheckPrices ? !hour.MarketAveragePricePlnPerKwh.HasValue : hour.CreditedExportKwh > 0 && !hour.EnergyValuePln.HasValue)
                 .Select(hour => hour.Start).ToList();
             if (current is { CreditedExportKwh: > 0, EnergyValuePln: null }) unpriced.Add(current.Start);
-            if (unpriced.Count > 0 && _priceRetryAfter <= now)
+            if (unpriced.Count > 0 && (recheckPrices || _priceRetryAfter <= now))
             {
                 try
                 {
@@ -198,8 +211,13 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
         {
             var around = new[] { hour.AddHours(-1), hour, hour.AddHours(1) }
                 .SelectMany(key => sampleHours.TryGetValue(key, out var values) ? values : []).ToArray();
-            result.Add(ExportSalesCalculator.CalculateHour(hour, around,
-                priceHours.TryGetValue(hour, out var hourPrices) ? hourPrices : [], payNegativePrices));
+            var hourPrices = priceHours.TryGetValue(hour, out var known) ? known.OrderBy(p => p.Start).ToArray() : [];
+            var complete = hourPrices.Length == 4 && hourPrices.Select((price, index) =>
+                price.Start == hour.AddMinutes(index * 15) && price.End == price.Start.AddMinutes(15)).All(valid => valid);
+            result.Add(ExportSalesCalculator.CalculateHour(hour, around, hourPrices, payNegativePrices) with
+            {
+                MarketAveragePricePlnPerKwh = complete ? hourPrices.Average(p => p.PricePlnPerMwh) / 1000m : null
+            });
         }
         return result;
     }

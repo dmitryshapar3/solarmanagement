@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using DeyeSolar.Web.Auth;
 using DeyeSolar.Web.Tenancy;
-using MudBlazor.Services;
 using DeyeSolar.Web.Localization;
 using DeyeSolar.Web.Billing;
 
@@ -51,7 +50,7 @@ public static class ApplicationServices
 
         builder.Services.ConfigureApplicationCookie(options =>
         {
-            options.LoginPath = "/login";
+            options.LoginPath = "/signin";
             options.LogoutPath = "/logout";
             options.ExpireTimeSpan = TimeSpan.FromDays(30);
             options.SlidingExpiration = true;
@@ -75,16 +74,19 @@ public static class ApplicationServices
         builder.Services.AddAccountSecurity();
         builder.Services.AddExpiredSessionCleanup();
         builder.Services.AddScoped<MobileAuthService>();
+        builder.Services.AddScoped<Redesign.ManualOverrideService>();
+        builder.Services.AddScoped<Redesign.RedesignQueries>();
+        builder.Services.AddScoped<Redesign.InstallationSettingsService>();
 
-        // Blazor + MudBlazor
+        // Blazor application and native design components.
         builder.Services.AddRazorPages(options =>
         {
             options.Conventions.AllowAnonymousToPage("/Privacy");
             options.Conventions.AllowAnonymousToPage("/Support");
+            if (builder.Environment.IsDevelopment()) options.Conventions.AllowAnonymousToPage("/DesignGalleryHost");
+            else options.Conventions.AddPageRouteModelConvention("/DesignGalleryHost", model => model.Selectors.Clear());
         });
         builder.Services.AddServerSideBlazor();
-        builder.Services.AddMudServices();
-        builder.Services.AddTransient<MudBlazor.MudLocalizer, DeyeSolar.Web.Localization.UiMudLocalizer>();
 
         builder.Services.AddSingleton(deployment);
         builder.Services.AddSingleton<IApplicationDatabaseInitializer, ApplicationDatabaseInitializer>();

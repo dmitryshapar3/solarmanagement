@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using MudBlazor.Services;
 using SolarManagement.SmartSockets.Contracts;
 
 namespace DeyeSolar.Web.Tests;
@@ -139,12 +138,72 @@ public class SocketCommandControlsTests
         });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnsupportedOrUnavailableCapabilitiesKeepControlsBlockedWithoutADeviceCommand(bool unavailable)
+    {
+        var commands = new Commands
+        {
+            Capabilities = new(false, true),
+            CatalogRead = unavailable ? _ => throw new InvalidOperationException("Unavailable capabilities.") : null
+        };
+        await using var services = Services(commands);
+        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync(commands.DeviceId, () => Task.CompletedTask);
+            Assert.True(renderer.Button(root, "Socket ON").Disabled);
+            Assert.True(renderer.Button(root, "Socket OFF").Disabled);
+            await renderer.DispatchAsync(renderer.Button(root, "Socket ON").EventId);
+            Assert.Empty(commands.Sends);
+            Assert.Equal(0, commands.Reads);
+            Assert.Contains(unavailable ? "Command results are unavailable" : "does not support switching", renderer.Text(root));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LateCapabilitiesFromPreviousDeviceCannotChangeCurrentPermission(bool currentCanSwitch)
+    {
+        var commands = new Commands();
+        var replacement = new SocketId(Guid.NewGuid());
+        var oldRead = new TaskCompletionSource<ISmartSocket>(TaskCreationOptions.RunContinuationsAsynchronously);
+        commands.CatalogRead = id => id == commands.DeviceId ? oldRead.Task
+            : Task.FromResult<ISmartSocket>(new MetadataOnlySocket(replacement, currentCanSwitch));
+        commands.RecoveryRead = _ => [];
+        await using var services = Services(commands);
+        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        var root = 0;
+        Task initial = Task.CompletedTask;
+        await renderer.Dispatcher.InvokeAsync(() =>
+        {
+            root = renderer.CreateRoot();
+            initial = renderer.SetDeviceAsync(root, commands.DeviceId, () => Task.CompletedTask);
+        });
+        Task replacementRender = Task.CompletedTask;
+        await renderer.Dispatcher.InvokeAsync(() =>
+        {
+            replacementRender = renderer.SetDeviceAsync(root, replacement, () => Task.CompletedTask);
+            Assert.Equal(!currentCanSwitch, renderer.Button(root, "Socket ON").Disabled);
+        });
+        oldRead.SetResult(new MetadataOnlySocket(commands.DeviceId, !currentCanSwitch));
+        await Task.WhenAll(initial, replacementRender).WaitAsync(TimeSpan.FromSeconds(10));
+        await renderer.Dispatcher.InvokeAsync(() =>
+        {
+            Assert.Equal(!currentCanSwitch, renderer.Button(root, "Socket ON").Disabled);
+            Assert.Equal(!currentCanSwitch, renderer.Button(root, "Socket OFF").Disabled);
+            Assert.Empty(commands.Sends);
+            Assert.Equal(0, commands.Reads);
+        });
+    }
+
     private static ServiceProvider Services(Commands commands)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddComponentLocalization();
-        services.AddMudServices();
         services.AddSingleton<IJSRuntime, NullJsRuntime>();
         services.AddSingleton<NavigationManager, Navigation>();
         services.AddSingleton<ISmartSocketCatalog>(commands);
@@ -156,7 +215,9 @@ public class SocketCommandControlsTests
     {
         public SocketId DeviceId { get; } = new(Guid.NewGuid());
         public SocketId Id => DeviceId;
-        public SocketCapabilities Capabilities { get; } = new(true, true);
+        public SocketCapabilities Capabilities { get; init; } = new(true, true);
+        public Func<SocketId, Task<ISmartSocket>>? CatalogRead { get; set; }
+        public Func<SocketId, IReadOnlyList<SocketCommandReceipt>>? RecoveryRead { get; set; }
         public bool LostResponse { get; init; }
         public bool RecoveryUnavailable { get; init; }
         public bool ResultUnavailable { get; set; }
@@ -166,7 +227,7 @@ public class SocketCommandControlsTests
         public List<SocketCommandId> Checked { get; } = [];
         public List<SocketCommandId> Released { get; } = [];
         public int Reads { get; private set; }
-        public Task<ISmartSocket> GetAsync(SocketId id, CancellationToken ct) { Assert.Equal(DeviceId, id); return Task.FromResult<ISmartSocket>(this); }
+        public Task<ISmartSocket> GetAsync(SocketId id, CancellationToken ct) { if (CatalogRead is {} read) return read(id); Assert.Equal(DeviceId, id); return Task.FromResult<ISmartSocket>(this); }
         public Task<SocketInventorySnapshot> ReadInventoryAsync(bool forceRefresh, CancellationToken ct) => throw new InvalidOperationException("Command controls cannot infer acknowledgement from inventory.");
         public Task<SocketState> ReadAsync(CancellationToken ct) => throw new InvalidOperationException("Command controls cannot infer acknowledgement from device state.");
         public Task<SocketCommandResult> SetPowerAsync(SetSocketPowerCommand command, CancellationToken ct)
@@ -177,6 +238,7 @@ public class SocketCommandControlsTests
         }
         public Task<IReadOnlyList<SocketCommandReceipt>> ListUnresolvedAsync(SocketId deviceId, CancellationToken ct)
         {
+            if (RecoveryRead is {} read) return Task.FromResult(read(deviceId));
             Assert.Equal(DeviceId, deviceId);
             if (RecoveryUnavailable) throw new InvalidOperationException("Unavailable journal.");
             return Task.FromResult(Unresolved);
@@ -196,6 +258,14 @@ public class SocketCommandControlsTests
         }
     }
 
+    private sealed class MetadataOnlySocket(SocketId id, bool canSwitch) : ISmartSocket
+    {
+        public SocketId Id => id;
+        public SocketCapabilities Capabilities { get; } = new(canSwitch, true);
+        public Task<SocketState> ReadAsync(CancellationToken ct) => throw new InvalidOperationException("Capability checks must not read a device.");
+        public Task<SocketCommandResult> SetPowerAsync(SetSocketPowerCommand command, CancellationToken ct) => throw new InvalidOperationException("Capability checks must not send a command.");
+    }
+
     private sealed class EventRenderer(IServiceProvider services, ILoggerFactory loggerFactory) : Renderer(services, loggerFactory)
     {
         public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
@@ -203,15 +273,18 @@ public class SocketCommandControlsTests
         protected override void HandleException(Exception exception) => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
         public async Task<int> MountAsync(SocketId id, Func<Task> refresh)
         {
-            var root = AssignRootComponentId(InstantiateComponent(typeof(SocketCommandControls)));
-            await RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?>
+            var root = CreateRoot();
+            await SetDeviceAsync(root, id, refresh);
+            return root;
+        }
+        public int CreateRoot() => AssignRootComponentId(InstantiateComponent(typeof(SocketCommandControls)));
+        public Task SetDeviceAsync(int root, SocketId id, Func<Task> refresh) =>
+            RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?>
             {
                 [nameof(SocketCommandControls.DeviceId)] = id.Value.ToString("D"),
                 [nameof(SocketCommandControls.Online)] = true,
                 [nameof(SocketCommandControls.OnAcknowledged)] = EventCallback.Factory.Create(this, refresh)
             }));
-            return root;
-        }
         public Task DispatchAsync(ulong id) => DispatchEventAsync(id, null, new MouseEventArgs());
         public (ulong EventId, bool Disabled) Button(int root, string label) => Assert.Single(Buttons(root), button => button.Label.Trim() == label).Button;
         public bool HasButton(int root, string label) => Buttons(root).Any(button => button.Label.Trim() == label);

@@ -1,0 +1,1470 @@
+{
+  "version": 1,
+  "verifiedUtc": "2026-10-06T02:12:46.855276+00:00",
+  "environment": "Isolated SolarRedesignUiQa; synthetic admin/history/prices/observations; locally signed test.provider integration (final connection-flow fixture1.0.1); no real hardware/contact/OAuth/payment actions",
+  "browser": "Chrome via Codex CUA",
+  "coverage": "Every implemented web route and development gallery at 390 and 1440 CSS pixels in light/dark; plus gallery dialog and all three connection-flow stages. All captures use the final corrective build. Connection settings/discovery frames were refreshed after the coherent signed synthetic1.0.1 fixture repair; other route frames remain valid against the same frozen product source.",
+  "imageCount": 90,
+  "baseCommit": "c935cdd76392617448d559096044c89ce20301fc",
+  "finalAffectedSourceSha256": {
+    "src/DeyeSolar.Web/App.razor": "af1527426b4683d08ed6db005d2064b7843f85438f8b1eca023dc744e26316a8",
+    "src/DeyeSolar.Web/Pages/Settings.razor": "d4653157c7d38ba5db9531a01748bbcf46da3b07d163be5ff50011fdf466b4f5",
+    "src/DeyeSolar.Web/Pages/Automations.razor": "a692b47fb9dc386c115d23b3846cfa2c996076595d26263bf54ee713bdf79e18",
+    "src/DeyeSolar.Web/Pages/Index.razor": "d81e3dbe0181465a5a06ade2ddcd8dcbb8043bac32f0fcfc6b2ed56de63ac67a",
+    "src/DeyeSolar.Web/Shared/SolarEstimateCard.razor": "57a89fa01547be5f0d91f714f893b31dc06b35e4915a485d79e94253df016b4b",
+    "src/DeyeSolar.Web/Components/Ui/UiBearing.razor": "71e66477848b78862035edf27afcf9c8b9622aa50aa254f8893dc6dd4aed8b10",
+    "src/DeyeSolar.Web/wwwroot/css/smartsolar.css": "967032dcc200292e96bc3d6b4f2d25a6ec4f47bf807ae54bae13d2025c25ecfe",
+    "src/DeyeSolar.Web/Pages/Connections.razor": "655d616e2e5164f3e0cadd04b8b603e051d5fe985dae9d7c0910eae6fe003f2a",
+    "src/DeyeSolar.Web/Integrations/IntegrationSettings.razor": "404c6600a2c7f169ff4c823789064fd0787f8a0413e29c2913249eb091fa7f96",
+    "src/DeyeSolar.Web/Integrations/IntegrationFieldInput.razor": "8a1be7c0a1931c9d1bed4c8d50173864b5fdea3a4ad789bc893e3b6f37ab1332",
+    "src/DeyeSolar.Web/Components/Ui/UiModal.razor": "e03b3800c7557619bfa60aadcfaa18fc87faf4f308ac15f95ac430ddc5e8cabc",
+    "src/DeyeSolar.Web/wwwroot/js/smartsolar.js": "2395fbe92f5a2c066282ec217031320c3bd0d60b1c06f64a2ffa51f596f36567",
+    "src/DeyeSolar.Web/Pages/ReadingsView.razor": "658d8618e85986ca000b7708035fa7317d1251d5cc26bde9daf32959662a9f95",
+    "src/DeyeSolar.Web/Pages/Devices.razor": "94e8acf324dd4cb6904876597d75d7fc53bafc0bfa78548744f72fad9e763c0f",
+    "src/DeyeSolar.Web/Components/Ui/EnergyFlow.razor": "afc66eb1a87d214a636aad0ee37b1a4b335437c88e164cedfb99280c55776e2e",
+    "src/DeyeSolar.Web/Pages/Activity.razor": "a1ee2085cf145d6277edc8f323372e379e8fee343a7547726c4f2eba3ef15f77",
+    "src/DeyeSolar.Web/Redesign/RedesignQueries.cs": "30efe1ffa96c64d99bb73be49dfdda2a6035487457a6503e6cd0c8427c9a1edf"
+  },
+  "entries": [
+    {
+      "screen": "home",
+      "route": "/",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/home-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3494
+      },
+      "sha256": "4b0e366a2a8aefea4265a02ace6c44dd9075060286650bf7e325c0ebf81d6851",
+      "capturedUtc": "2026-10-06T01:55:22.008517+00:00"
+    },
+    {
+      "screen": "home",
+      "route": "/",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/home-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2085
+      },
+      "sha256": "40b60df5159bb9929365a3f45a414feb1864aa72474c60e06fa050889fe15d9d",
+      "capturedUtc": "2026-10-06T01:55:22.270888+00:00"
+    },
+    {
+      "screen": "home",
+      "route": "/",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/home-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3494
+      },
+      "sha256": "78c2c1eb701003a31eb76f6257cfa08ad41315804bc95553f4810aa523b8ddb2",
+      "capturedUtc": "2026-10-06T02:01:46.993299+00:00"
+    },
+    {
+      "screen": "home",
+      "route": "/",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/home-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2085
+      },
+      "sha256": "5ef80544181c548ccfb797413ad18c81e443025df3e51898dcce1c285303a29f",
+      "capturedUtc": "2026-10-06T02:01:47.251678+00:00"
+    },
+    {
+      "screen": "energy",
+      "route": "/energy?period=day&date=2026-10-05",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/energy-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3662
+      },
+      "sha256": "e215a97db9678a96dc61eb0da430cee528ffda5cfc7d1c37461086960b63df5e",
+      "capturedUtc": "2026-10-06T01:55:23.534245+00:00"
+    },
+    {
+      "screen": "energy",
+      "route": "/energy?period=day&date=2026-10-05",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/energy-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 3028
+      },
+      "sha256": "263828a9f67426fafb72e957be3cd89de12fc916fbcab0aa17dc95ff9fdd75f4",
+      "capturedUtc": "2026-10-06T01:55:23.825370+00:00"
+    },
+    {
+      "screen": "energy",
+      "route": "/energy?period=day&date=2026-10-05",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/energy-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3662
+      },
+      "sha256": "ac723d14db78636fdf37d1ad96c3dfff3a870a404d4efd74c3978ea3ca655887",
+      "capturedUtc": "2026-10-06T02:01:48.105097+00:00"
+    },
+    {
+      "screen": "energy",
+      "route": "/energy?period=day&date=2026-10-05",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/energy-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 3028
+      },
+      "sha256": "c322d7e43df2b7bb2da184ba7a1cfec9995f5b5b64ad65b164117d13cc568b40",
+      "capturedUtc": "2026-10-06T02:01:48.424405+00:00"
+    },
+    {
+      "screen": "export",
+      "route": "/energy/export?period=day&date=2026-10-05",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/export-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3390
+      },
+      "sha256": "1b7d9a50ce2ff3eeb7e679e9e88ee0bc258427c1c2d96b45570bc540a560d272",
+      "capturedUtc": "2026-10-06T01:55:24.801049+00:00"
+    },
+    {
+      "screen": "export",
+      "route": "/energy/export?period=day&date=2026-10-05",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/export-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2941
+      },
+      "sha256": "e81949e1aa27919d9df652a7626a152fc40c2386f20462fe2cbd46955d3c1d16",
+      "capturedUtc": "2026-10-06T01:55:25.090275+00:00"
+    },
+    {
+      "screen": "export",
+      "route": "/energy/export?period=day&date=2026-10-05",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/export-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3390
+      },
+      "sha256": "da86b27aea768945b84bcd80e3824caded8e0fe9651d79ef8d12c3f06c234822",
+      "capturedUtc": "2026-10-06T02:01:49.371396+00:00"
+    },
+    {
+      "screen": "export",
+      "route": "/energy/export?period=day&date=2026-10-05",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/export-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2941
+      },
+      "sha256": "fb73ff0e953003c8f5ce8a9ee8024c35720673b354096834b101290d2a3ec0ae",
+      "capturedUtc": "2026-10-06T02:01:49.655881+00:00"
+    },
+    {
+      "screen": "devices",
+      "route": "/devices",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/devices-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 948
+      },
+      "sha256": "e2b8c93a019bf7558faea26b02e8a5dd438c8f8e2dae7c74ca21ff33d41b0dd9",
+      "capturedUtc": "2026-10-06T01:55:26.067600+00:00"
+    },
+    {
+      "screen": "devices",
+      "route": "/devices",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/devices-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "e13aa43a2abb38b6e1a1602eeb7f879e66eebd87363bb49a3448897615b82f2f",
+      "capturedUtc": "2026-10-06T01:55:26.287725+00:00"
+    },
+    {
+      "screen": "devices",
+      "route": "/devices",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/devices-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 948
+      },
+      "sha256": "c506fbc3662a7aba8050773b3819645448d9c4e8e936106acf3ccde39bb1a2a1",
+      "capturedUtc": "2026-10-06T02:01:50.506648+00:00"
+    },
+    {
+      "screen": "devices",
+      "route": "/devices",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/devices-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "9c295c17a3565035a735f9d497ec2f5979b3d3306a1f6a983b6a7c30f3822539",
+      "capturedUtc": "2026-10-06T02:01:50.765734+00:00"
+    },
+    {
+      "screen": "device-detail",
+      "route": "/devices/a1000000-0000-0000-0000-000000000003",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/device-detail-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1917
+      },
+      "sha256": "b2fac866e3385edc8198286960373027a9cea68663c36cb04e34fb3df58f8277",
+      "capturedUtc": "2026-10-06T01:55:27.096944+00:00"
+    },
+    {
+      "screen": "device-detail",
+      "route": "/devices/a1000000-0000-0000-0000-000000000003",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/device-detail-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1243
+      },
+      "sha256": "7b04e939d331a919d9c7fb3c69358b2ffaf047a751486713c58defe4534a6a95",
+      "capturedUtc": "2026-10-06T01:55:27.318725+00:00"
+    },
+    {
+      "screen": "device-detail",
+      "route": "/devices/a1000000-0000-0000-0000-000000000003",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/device-detail-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1917
+      },
+      "sha256": "e7f08a690f8f45a6c60b4aa45075b7a804fdb136c855cb4a8788357fb385a6b3",
+      "capturedUtc": "2026-10-06T02:01:51.769724+00:00"
+    },
+    {
+      "screen": "device-detail",
+      "route": "/devices/a1000000-0000-0000-0000-000000000003",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/device-detail-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1243
+      },
+      "sha256": "2870f1039cbafeda183da2ea337725e6cdba469a38a3bc0d31aa9a07574fa02e",
+      "capturedUtc": "2026-10-06T02:01:52.012486+00:00"
+    },
+    {
+      "screen": "automations",
+      "route": "/automations",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automations-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1130
+      },
+      "sha256": "8c969dc96ee4b923bb6fa0c092b63351c6242f465fec35ae4ff7c3fe5801a189",
+      "capturedUtc": "2026-10-06T01:55:28.270174+00:00"
+    },
+    {
+      "screen": "automations",
+      "route": "/automations",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automations-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "1f084d026c741e53586aa8956af3e03ae43a0da7ffc475c64c9ba23167a64043",
+      "capturedUtc": "2026-10-06T01:55:28.504595+00:00"
+    },
+    {
+      "screen": "automations",
+      "route": "/automations",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automations-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1130
+      },
+      "sha256": "11b2d3babbcbc98e8969ceb856865f8096d29b58465d16e5b3f13b5d71b34159",
+      "capturedUtc": "2026-10-06T02:01:52.871750+00:00"
+    },
+    {
+      "screen": "automations",
+      "route": "/automations",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automations-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "648f2ceb440c7857d418205c2e8339f6fa4d129b76c3d56518e73c16c83db361",
+      "capturedUtc": "2026-10-06T02:01:53.101322+00:00"
+    },
+    {
+      "screen": "automation-editor",
+      "route": "/automations/1",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-editor-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2077
+      },
+      "sha256": "9d1ec31d63d9f773460faf34a81638b4285c50389a2fe7d461ea55802ff60702",
+      "capturedUtc": "2026-10-06T01:55:29.036614+00:00"
+    },
+    {
+      "screen": "automation-editor",
+      "route": "/automations/1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-editor-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1247
+      },
+      "sha256": "b0046070fb8f83a07dd7e4ee5bf4894d3886120f48100be325fd1ee52031a197",
+      "capturedUtc": "2026-10-06T01:55:29.263576+00:00"
+    },
+    {
+      "screen": "automation-editor",
+      "route": "/automations/1",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-editor-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2077
+      },
+      "sha256": "c877d34e9f8be92a6315df59d2272de128bafc4e600b75cda00277708f8366ab",
+      "capturedUtc": "2026-10-06T02:01:53.916271+00:00"
+    },
+    {
+      "screen": "automation-editor",
+      "route": "/automations/1",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-editor-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1247
+      },
+      "sha256": "ab33ab4fc68520375d2f415d1aef0e4e4395e7a82898b34ceb662ba5d9ca124d",
+      "capturedUtc": "2026-10-06T02:01:54.161453+00:00"
+    },
+    {
+      "screen": "automation-new",
+      "route": "/automations/new",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-new-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1821
+      },
+      "sha256": "97e3166f18fe115d7955c36923923a675a6d572ef26b09cb3e1c1e0dfa0f0b43",
+      "capturedUtc": "2026-10-06T01:55:29.755333+00:00"
+    },
+    {
+      "screen": "automation-new",
+      "route": "/automations/new",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-new-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1045
+      },
+      "sha256": "32082203ba482466fd59efaa83756f41430aa1ca292619fb8abab00226b393d0",
+      "capturedUtc": "2026-10-06T01:55:29.961346+00:00"
+    },
+    {
+      "screen": "automation-new",
+      "route": "/automations/new",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-new-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1821
+      },
+      "sha256": "e9883087311a1fe53e6782e0bc95e7c22daba402698ae5d8cbb58e8f0cba4151",
+      "capturedUtc": "2026-10-06T02:01:54.965477+00:00"
+    },
+    {
+      "screen": "automation-new",
+      "route": "/automations/new",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/automation-new-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1045
+      },
+      "sha256": "7550478336b9ea69d3db1866048d1ad18987f378560d8f8832c51cbdf6c9e6e0",
+      "capturedUtc": "2026-10-06T02:01:55.184049+00:00"
+    },
+    {
+      "screen": "activity",
+      "route": "/activity",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/activity-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2314
+      },
+      "sha256": "8bb6fd9bcb8e975109f956d336550c31f69ba73bcaed4b7a7d53c92631584629",
+      "capturedUtc": "2026-10-06T01:55:30.751820+00:00"
+    },
+    {
+      "screen": "activity",
+      "route": "/activity",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/activity-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1770
+      },
+      "sha256": "e8d92647196e2856f2511c7143f4d1d6e25fd93ecdad059671a962c2a4d998e2",
+      "capturedUtc": "2026-10-06T01:55:31.036590+00:00"
+    },
+    {
+      "screen": "activity",
+      "route": "/activity",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/activity-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2314
+      },
+      "sha256": "9f5c707f47c2a41c165873cea9bdb84106056ec99643a29c3c3c1f673b7b6690",
+      "capturedUtc": "2026-10-06T02:01:56.052985+00:00"
+    },
+    {
+      "screen": "activity",
+      "route": "/activity",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/activity-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1770
+      },
+      "sha256": "8edbc8f28c7897bac142be94718bc259299921cfc831f09845c820386b73d3dd",
+      "capturedUtc": "2026-10-06T02:01:56.295330+00:00"
+    },
+    {
+      "screen": "readings",
+      "route": "/activity/readings",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/readings-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 8046
+      },
+      "sha256": "15f637cda4ed7de27daa4c3a4163dc85efdfb7d8ab1033b06dc8135609b05329",
+      "capturedUtc": "2026-10-06T01:55:31.862513+00:00"
+    },
+    {
+      "screen": "readings",
+      "route": "/activity/readings",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/readings-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 7601
+      },
+      "sha256": "737cf580e7603bf1739d06aed61fd6b4e7bb4381db64ef28b7a3bc6e9f666b00",
+      "capturedUtc": "2026-10-06T01:55:32.269276+00:00"
+    },
+    {
+      "screen": "readings",
+      "route": "/activity/readings",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/readings-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 7941
+      },
+      "sha256": "74445f575bcfb794ddd5f7de2879d2ee24a37fd5e0231b662d920786d1391b29",
+      "capturedUtc": "2026-10-06T02:01:57.325227+00:00"
+    },
+    {
+      "screen": "readings",
+      "route": "/activity/readings",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/readings-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 7496
+      },
+      "sha256": "66311b4bc6862cf13cdad93148ee2355fe34fd3c5852e55ed297b769bdfd53d1",
+      "capturedUtc": "2026-10-06T02:01:57.693685+00:00"
+    },
+    {
+      "screen": "settings",
+      "route": "/settings",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/settings-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3926
+      },
+      "sha256": "3a8c3ad2395faaf0dcee9020d2eae74c9a3baaf7f00b3cd31ba7ad436bf6e4b7",
+      "capturedUtc": "2026-10-06T01:55:33.303873+00:00"
+    },
+    {
+      "screen": "settings",
+      "route": "/settings",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/settings-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 3009
+      },
+      "sha256": "65e44f508ac690883bd43173aa1fe4473a6ed77da64fb0e13e8da931389c215c",
+      "capturedUtc": "2026-10-06T01:55:33.591865+00:00"
+    },
+    {
+      "screen": "settings",
+      "route": "/settings",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/settings-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3926
+      },
+      "sha256": "cefb5d5b7beba450fb06be31a76ec0e0308cf2e3a30c2a1d30e5693038f7c83c",
+      "capturedUtc": "2026-10-06T02:01:58.584231+00:00"
+    },
+    {
+      "screen": "settings",
+      "route": "/settings",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/settings-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 3009
+      },
+      "sha256": "8bd56b3e6a8b661a25f216b50943455e062f6ea38c0ced8b8b47e94d4abe3a0d",
+      "capturedUtc": "2026-10-06T02:01:58.893971+00:00"
+    },
+    {
+      "screen": "connections",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connections-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2504
+      },
+      "sha256": "0671adf05e0db4962a8e98bc39d1124650401cda07956ee96f9659a0301996c1",
+      "capturedUtc": "2026-10-06T02:12:37.603095+00:00"
+    },
+    {
+      "screen": "connections",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connections-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1872
+      },
+      "sha256": "f8d56707e047e06ab3620a5e01e270263a627a4ef161fc0e0f6e0606d605f38d",
+      "capturedUtc": "2026-10-06T02:12:37.821028+00:00"
+    },
+    {
+      "screen": "connections",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connections-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2504
+      },
+      "sha256": "823d9d22af7d38f84961a3045a79ab1fcc022d8533b2dc14d4973f091a275c0a",
+      "capturedUtc": "2026-10-06T02:12:23.776680+00:00"
+    },
+    {
+      "screen": "connections",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connections-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1872
+      },
+      "sha256": "2f9dda0311e618d46f53bc5eda51af1cc0a526d1c3bb4d7057cb1a53b6e3a6e6",
+      "capturedUtc": "2026-10-06T02:12:23.987185+00:00"
+    },
+    {
+      "screen": "account",
+      "route": "/settings/account",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/account-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2653
+      },
+      "sha256": "29b3d6578b40ea4113b739a451a7f5a184f6b243b202b02b6d69ecfd13928737",
+      "capturedUtc": "2026-10-06T01:55:35.091048+00:00"
+    },
+    {
+      "screen": "account",
+      "route": "/settings/account",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/account-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1600
+      },
+      "sha256": "2d99cc6c0eb12b47299b90581162088f6f3877a13f5f0b62e074c28dfc16ec07",
+      "capturedUtc": "2026-10-06T01:55:35.329021+00:00"
+    },
+    {
+      "screen": "account",
+      "route": "/settings/account",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/account-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 2653
+      },
+      "sha256": "f7a534c8e37b8be5ecfe06f2bff37ac329f4b955ce12e08eecc928b6f848f96c",
+      "capturedUtc": "2026-10-06T02:02:00.328719+00:00"
+    },
+    {
+      "screen": "account",
+      "route": "/settings/account",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/account-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1600
+      },
+      "sha256": "cbc568f9947260f55b88730c8736740728dcb3702369d0beb51c9b3eb5483a9e",
+      "capturedUtc": "2026-10-06T02:02:00.581330+00:00"
+    },
+    {
+      "screen": "support",
+      "route": "/support",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/support-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1523
+      },
+      "sha256": "a4da8f45c8fcc0d9ee523b61b6f88f6fd44a10849da49c90011d0ae15191d690",
+      "capturedUtc": "2026-10-06T01:55:35.692701+00:00"
+    },
+    {
+      "screen": "support",
+      "route": "/support",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/support-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1035
+      },
+      "sha256": "92d985fa5a8e7ae9a4960307beba14b32c5cf8949bb4b43be5e3bc5b77c3a4c1",
+      "capturedUtc": "2026-10-06T01:55:35.935255+00:00"
+    },
+    {
+      "screen": "support",
+      "route": "/support",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/support-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 1523
+      },
+      "sha256": "69d4fc2a562e67eca6d8f58ad2b3ac3b52f4492d517e04c986a868b7d40395fb",
+      "capturedUtc": "2026-10-06T02:02:00.953136+00:00"
+    },
+    {
+      "screen": "support",
+      "route": "/support",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/support-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1035
+      },
+      "sha256": "cc97ea36137958469269670a73006988e258670e13ef1c826c796e35eeb3a4c7",
+      "capturedUtc": "2026-10-06T02:02:01.188012+00:00"
+    },
+    {
+      "screen": "privacy",
+      "route": "/privacy",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/privacy-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3964
+      },
+      "sha256": "726f991868f6ed0b5707a28e29f95170a73c7427c3205e2d061e1ce7428fb3b3",
+      "capturedUtc": "2026-10-06T01:55:36.383874+00:00"
+    },
+    {
+      "screen": "privacy",
+      "route": "/privacy",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/privacy-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2085
+      },
+      "sha256": "79b7ad519904548ecc2f2531d994c28cf0de94fc53fc1dda0bb2fda8bb0eb0ed",
+      "capturedUtc": "2026-10-06T01:55:36.707926+00:00"
+    },
+    {
+      "screen": "privacy",
+      "route": "/privacy",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/privacy-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3964
+      },
+      "sha256": "b09a20160994be55a0dc26aef7bcbcb8e3b2433f0c5f92c9460b03bdeb72f9fc",
+      "capturedUtc": "2026-10-06T02:02:01.645099+00:00"
+    },
+    {
+      "screen": "privacy",
+      "route": "/privacy",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/privacy-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 2085
+      },
+      "sha256": "44e6f04d461f2c168ee6bf7899168b7707cb0bcab2cf499f3b570881ffc4c3a6",
+      "capturedUtc": "2026-10-06T02:02:01.964184+00:00"
+    },
+    {
+      "screen": "signin",
+      "route": "/signin",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/signin-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 847
+      },
+      "sha256": "23750f2d24d740cb31b2bd111f6c4c5f0f09c6d10fc0b0cf35aceb18b7226d8c",
+      "capturedUtc": "2026-10-06T01:57:23.152025+00:00"
+    },
+    {
+      "screen": "signin",
+      "route": "/signin",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/signin-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "024aece6116bca8472784a94dfb1532b207056a36fdad98729c10164a42eff60",
+      "capturedUtc": "2026-10-06T01:57:23.392609+00:00"
+    },
+    {
+      "screen": "signin",
+      "route": "/signin",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/signin-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 847
+      },
+      "sha256": "be7604501196da443fa3c5e200b63dbe7d4a1dde4fb2c6691e895908348f3047",
+      "capturedUtc": "2026-10-06T02:02:14.601201+00:00"
+    },
+    {
+      "screen": "signin",
+      "route": "/signin",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/signin-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "8a746f36520540814f78de1ac4d7a013def0279ab1c495e2e34d77772968734a",
+      "capturedUtc": "2026-10-06T02:02:14.799334+00:00"
+    },
+    {
+      "screen": "error",
+      "route": "/Error",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/error-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "cbac20c6805d4edd4e40c03fa108952f82a1023f1decfe1565b8335eed78f38e",
+      "capturedUtc": "2026-10-06T01:57:23.700253+00:00"
+    },
+    {
+      "screen": "error",
+      "route": "/Error",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/error-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "be29c50539e7eedce94b33c41f7dc6e4f90cb10b066f91b6dd480c322c3ece40",
+      "capturedUtc": "2026-10-06T01:57:23.903145+00:00"
+    },
+    {
+      "screen": "error",
+      "route": "/Error",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/error-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "4bc6b9be59aa8e78f6b2eb2e565c7a6687d691e7db1f3012fc24ae3301675aba",
+      "capturedUtc": "2026-10-06T02:02:15.130022+00:00"
+    },
+    {
+      "screen": "error",
+      "route": "/Error",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/error-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "b195a2c5dcc36fa0672d054b9c72cb5ecd89de45ef27bb31b19fc39c3e152521",
+      "capturedUtc": "2026-10-06T02:02:15.333839+00:00"
+    },
+    {
+      "screen": "not-found",
+      "route": "/visual-qa-not-found",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/not-found-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "9b4938b80408969125b0e66615fec7f1b7c3b5442957112fa3cde0c8af28ce96",
+      "capturedUtc": "2026-10-06T01:57:24.225444+00:00"
+    },
+    {
+      "screen": "not-found",
+      "route": "/visual-qa-not-found",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/not-found-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "b0791fb8279359c063a6b18bbf9395378851f398c4d64183842defd95eec5f84",
+      "capturedUtc": "2026-10-06T01:57:24.411852+00:00"
+    },
+    {
+      "screen": "not-found",
+      "route": "/visual-qa-not-found",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/not-found-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "686450f5b6d86b5b49df55922fa0211c0c7e30fe20dd4c1f961660a09299388e",
+      "capturedUtc": "2026-10-06T02:02:15.672373+00:00"
+    },
+    {
+      "screen": "not-found",
+      "route": "/visual-qa-not-found",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/not-found-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "0514f72cd0d33f6a2e39560a5cde41c4501d6dd2caa0f182f7b3fda5ad63e5fa",
+      "capturedUtc": "2026-10-06T02:02:15.865325+00:00"
+    },
+    {
+      "screen": "gallery",
+      "route": "/_design",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3089
+      },
+      "sha256": "b68b41ac3c4aa192a9c783493b61e167d094ed53dd231cb78fe5a324f134bbe5",
+      "capturedUtc": "2026-10-06T01:57:24.795790+00:00"
+    },
+    {
+      "screen": "gallery",
+      "route": "/_design",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1877
+      },
+      "sha256": "bbafb6a6c0d3cc0b3fab6a5b0e6bb3961b0961737d0c9397e50403b9336188f6",
+      "capturedUtc": "2026-10-06T01:57:25.035687+00:00"
+    },
+    {
+      "screen": "gallery",
+      "route": "/_design",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 3089
+      },
+      "sha256": "3fc256cf03b33837e58644c8614e5976ce21b82e972c075743edead3140a72e5",
+      "capturedUtc": "2026-10-06T02:02:16.260899+00:00"
+    },
+    {
+      "screen": "gallery",
+      "route": "/_design",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1877
+      },
+      "sha256": "9686c35ca8a39e443a7d89d40c7b8229a134407d6c90889c8783102b264e42cc",
+      "capturedUtc": "2026-10-06T02:02:16.519735+00:00"
+    },
+    {
+      "screen": "gallery-modal",
+      "route": "/_design",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-modal-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "dd4492c5e11eb5654dc9deacaf728e74f0ece35e7fbf88062bca602225a8d8c4",
+      "capturedUtc": "2026-10-06T01:57:25.538731+00:00"
+    },
+    {
+      "screen": "gallery-modal",
+      "route": "/_design",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/gallery-modal-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "72c2177b8bf5d943f4085a3575431f2993b43a61c3c14e6ba3222d6d147e5e83",
+      "capturedUtc": "2026-10-06T02:02:17.032483+00:00"
+    },
+    {
+      "screen": "connect-brand",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-brand-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "70ffe34b2ec1ce56197ceab011658e5b4574c8b40afd263e7bb67be47d96631f",
+      "capturedUtc": "2026-10-06T01:59:19.520263+00:00"
+    },
+    {
+      "screen": "connect-brand",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-brand-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "57cb4ceaec9071a40bae1992c9b83ef58a122c38dcadda3aaa0e115e604d6af5",
+      "capturedUtc": "2026-10-06T01:59:19.722877+00:00"
+    },
+    {
+      "screen": "connect-brand",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-brand-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "5084b640c1bdbb680843f2ee5ed01bf761a521650faa0314b49c485cdeeaf776",
+      "capturedUtc": "2026-10-06T02:03:32.915986+00:00"
+    },
+    {
+      "screen": "connect-brand",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-brand-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "ccf2de26adbd1f2845dbd6a1ed0c45eb9e0400982aa64f7a90a3b930178da5c6",
+      "capturedUtc": "2026-10-06T02:03:33.099908+00:00"
+    },
+    {
+      "screen": "connect-credentials",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-credentials-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "c06c43f4f2d39d541041358c8e3d2534b909629939c593b8b604df18fe11bd90",
+      "capturedUtc": "2026-10-06T02:12:38.303938+00:00"
+    },
+    {
+      "screen": "connect-credentials",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-credentials-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "2458665468f466bba8c4a519280d020ca477a554e62e4cde2fc1bc695ff2810c",
+      "capturedUtc": "2026-10-06T02:12:38.496087+00:00"
+    },
+    {
+      "screen": "connect-credentials",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-credentials-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "2d0f1e4c63f22211f9b8142eaba658b9816c3c75d4e7b1361ea3a0e41aa7ac9b",
+      "capturedUtc": "2026-10-06T02:12:07.480180+00:00"
+    },
+    {
+      "screen": "connect-credentials",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-credentials-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "bd7a16ef39d9cfd2db51ca900247f22b6786d29eef7c33d3d7461aedeb27eac3",
+      "capturedUtc": "2026-10-06T02:12:07.669045+00:00"
+    },
+    {
+      "screen": "connect-choose",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-choose-390-light.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "4515be25042a782e9f1b11add6cd62b4b480a9f8b8fe01557f22cd6d58e3b301",
+      "capturedUtc": "2026-10-06T02:12:39.269380+00:00"
+    },
+    {
+      "screen": "connect-choose",
+      "route": "/settings/connections",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-choose-1440-light.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "ba56fcdc153312a547c96895c55b802932937eaef9915e6c967bfe8cf26c67d4",
+      "capturedUtc": "2026-10-06T02:12:39.051730+00:00"
+    },
+    {
+      "screen": "connect-choose",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-choose-390-dark.jpg",
+      "imageSize": {
+        "width": 390,
+        "height": 844
+      },
+      "sha256": "1e277ed590e0cbbb4bac088a05850065ec0169ecee4b0b8d3604aa2c23b98ad2",
+      "capturedUtc": "2026-10-06T02:12:19.692432+00:00"
+    },
+    {
+      "screen": "connect-choose",
+      "route": "/settings/connections",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "image": "/Users/dmitryshapar/.codex/scratch/solar-redesign-release-20261006/web-qa/screenshots/connect-choose-1440-dark.jpg",
+      "imageSize": {
+        "width": 1440,
+        "height": 1000
+      },
+      "sha256": "0fbd5bd40306f383cc4b8167bd75741fc39e5224c39375adff3027b08fcf81b4",
+      "capturedUtc": "2026-10-06T02:12:19.528048+00:00"
+    }
+  ]
+}

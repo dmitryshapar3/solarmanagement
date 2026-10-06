@@ -2,12 +2,16 @@ using SolarManagement.Inverters.Contracts;
 using SolarManagement.SmartSockets.Contracts;
 using Watts = SolarManagement.Inverters.Contracts.Watts;
 using System.Net;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Data;
+using DeyeSolar.Web.Auth;
+using DeyeSolar.Web.Redesign;
+using Microsoft.AspNetCore.Http;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -20,8 +24,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using MudBlazor;
-using MudBlazor.Services;
 using DashboardPage = DeyeSolar.Web.Pages.Index;
 
 namespace DeyeSolar.Web.Tests;
@@ -38,343 +40,126 @@ public class DashboardTests
     });
 
     [Fact]
-    public async Task GenerationDetailKeepsBothPowerValuesAndTheFullHistoryControls()
-    {
-        var services = ComponentServices();
-        services.AddSingleton<InverterDataSnapshot>();
-        services.AddOptions<SolarEstimateOptions>();
-        services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
-        services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
-        services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
-        services.AddSingleton<SolarEstimateService>();
-        services.AddSingleton<ISolarHistoryService, HistoryService>();
-        services.AddSingleton<IInverterRefreshService>(new RefreshService(new InverterDataSnapshot()));
-        await using var provider = services.BuildServiceProvider();
-        var html = await RenderAsync<DeyeSolar.Web.Pages.Generation>(provider);
-
-        Assert.Contains("Solar generation", html);
-        Assert.Contains("Latest solar snapshot", html);
-        Assert.Single(Regex.Matches(html, "data-testid=\"solar-possible\""));
-        Assert.Single(Regex.Matches(html, "data-testid=\"solar-actual\""));
-        Assert.Contains("Possible", html);
-        Assert.Contains("Latest inverter generation", html);
-        Assert.Contains("aria-label=\"Chart period\"", html);
-        Assert.Contains("aria-label=\"Day navigation\"", html);
-        Assert.Contains("aria-label=\"Previous day\"", html);
-        Assert.Contains("aria-label=\"Next day\"", html);
-        foreach (var period in new[] { "Day", "7 days", "30 days" }) Assert.Matches($">{period}</button>", html);
-        Assert.DoesNotContain("history-overview-paper", html);
-        Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
-    }
-
-    [Fact]
-    public async Task NavigationKeepsDedicatedGenerationAndSalesLinksWithEnglishLabels()
+    public async Task NavigationUsesTheNewProductRoutesWithAccessibleEnglishLabels()
     {
         await using var services = ComponentServices().BuildServiceProvider();
         var html = await RenderAsync<NavMenu>(services);
-
-        Assert.Matches("<a[^>]*href=\"/generation\"[^>]*>[\\s\\S]*?Generation[\\s\\S]*?</a>", html);
-        Assert.Matches("<a[^>]*href=\"/sales\"[^>]*>[\\s\\S]*?Sales[\\s\\S]*?</a>", html);
-        foreach (var route in new[] { "/", "/devices", "/rules", "/runs", "/history", "/settings" })
-            Assert.Contains($"href=\"{route}\"", html);
+        foreach (var route in new[] { "/", "/energy", "/devices", "/automations", "/activity", "/settings" }) Assert.Contains($"href=\"{route}\"", html);
+        Assert.Contains("Main navigation", html); Assert.Contains("Energy", html); Assert.Contains("Automations", html);
+        Assert.DoesNotContain("href=\"/generation\"", html); Assert.DoesNotContain("href=\"/rules\"", html);
         Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
     }
-
     [Fact]
-    public void GenerationAndSalesDetailRoutesRetainTheInheritedAuthorizationRequirement()
+    public void ProductRoutesRetainInheritedAuthorization()
     {
-        foreach (var (page, route) in new[] { (typeof(DeyeSolar.Web.Pages.Generation), "/generation"), (typeof(DeyeSolar.Web.Pages.Sales), "/sales") })
+        foreach (var page in new[] { typeof(DashboardPage), typeof(DeyeSolar.Web.Pages.Energy), typeof(DeyeSolar.Web.Pages.EnergyExport), typeof(DeyeSolar.Web.Pages.Automations), typeof(DeyeSolar.Web.Pages.Activity), typeof(DeyeSolar.Web.Pages.Devices), typeof(DeyeSolar.Web.Pages.Settings) })
         {
-            Assert.Equal(route, Assert.Single(page.GetCustomAttributes(typeof(RouteAttribute), true).Cast<RouteAttribute>()).Template);
             Assert.NotEmpty(page.GetCustomAttributes(true).OfType<IAuthorizeData>());
             Assert.Empty(page.GetCustomAttributes(true).OfType<IAllowAnonymous>());
         }
     }
-
     private static ServiceCollection ComponentServices()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddComponentLocalization();
-        services.AddMudServices();
-        services.AddSingleton<IJSRuntime, NullJsRuntime>();
-        services.AddSingleton<TimeProvider>(new Clock());
-        services.AddSingleton<NavigationManager, TestNavigation>();
-        return services;
+        var services = new ServiceCollection(); services.AddLogging(); services.AddComponentLocalization();
+        services.AddSingleton<IJSRuntime, NullJsRuntime>(); services.AddSingleton<TimeProvider>(new Clock());
+        services.AddSingleton<NavigationManager, TestNavigation>(); return services;
     }
-
     private static async Task<string> RenderAsync<T>(IServiceProvider services) where T : IComponent
     {
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        return await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var rendered = await renderer.RenderComponentAsync<T>();
-            return WebUtility.HtmlDecode(rendered.ToHtmlString());
-        });
+        return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<T>()).ToHtmlString()));
     }
-
-    [SqlServerFact]
-    public async Task SolarGenerationDoesNotUseBatteryChargingOrDischargingPower()
+    [SqlServerTheory]
+    [InlineData(-2742, 4100, "4.10")]
+    [InlineData(2742, 4100, "4.10")]
+    [InlineData(2742, 0, "0.00")]
+    public async Task HomeSolarPowerRemainsIndependentOfBatteryFlow(int battery, int solar, string expected)
     {
-        foreach (var (solar, battery, expected) in new[] { (4100, -2742, "4.10"), (4100, 2742, "4.10"), (0, 2742, "0.00") })
-        {
-            await using var fixture = await Fixture.CreateAsync(Reading() with { SolarProduction = solar, BatteryPower = battery });
-            var html = await RenderAsync<DashboardHost>(fixture.Services);
-
-            var metric = Regex.Match(html, "data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?</div>").Value;
-            Assert.Matches($">{Regex.Escape(expected)}<small[^>]*>kW", metric);
-            Assert.Contains("Solar generation", metric);
-            Assert.DoesNotContain("2,742", metric);
-            Assert.DoesNotContain("Charging", metric);
-            Assert.DoesNotContain("Discharging", metric);
-            await fixture.AssertNoMutationsAsync();
-        }
+        await using var fixture = await Fixture.CreateAsync(Reading() with { SolarProduction = solar, BatteryPower = battery });
+        var html = await RenderAsync<DashboardHost>(fixture.Services);
+        var actual = Regex.Match(html, "data-testid=\"solar-actual\"[^>]*>[\\s\\S]*?</div>").Value;
+        Assert.Contains(expected, actual); Assert.DoesNotContain("2,742", actual);
+        Assert.Contains("Export today", html); Assert.Contains("Smart plugs", html); Assert.Contains("Recent activity", html);
+        Assert.DoesNotContain("Refresh inverter data", html); Assert.DoesNotContain("mud-", html);
+        Assert.Equal(0, fixture.Refresh.Calls); await fixture.AssertNoMutationsAsync();
     }
-
-    [SqlServerFact]
-    public async Task DashboardDistinguishesUnavailableGridAndSolarFromConfirmedZeroWithoutMutations()
+    [SqlServerTheory]
+    [InlineData(MeasurementQuality.Missing)]
+    [InlineData(MeasurementQuality.Invalid)]
+    [InlineData(MeasurementQuality.Stale)]
+    [InlineData(MeasurementQuality.Good)]
+    public async Task HomeDistinguishesMissingSolarFromConfirmedZero(MeasurementQuality quality)
     {
-        foreach (var quality in new[] { MeasurementQuality.Missing, MeasurementQuality.Invalid, MeasurementQuality.Stale, MeasurementQuality.Good })
-        {
-            var zero = Reading(grid: 0, solar: 0) with { Telemetry = ZeroFlows(quality) };
-            await using var fixture = await Fixture.CreateAsync(zero);
-            var html = await RenderAsync<DashboardHost>(fixture.Services);
-            var grid = Regex.Match(html, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
-            var solar = Regex.Match(html, "data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?</div>").Value;
-            if (quality == MeasurementQuality.Good)
-            {
-                Assert.Contains("Idle", grid);
-                Assert.Matches(">0<small[^>]*>W", grid);
-                Assert.Matches(">0[.]00<small[^>]*>kW", solar);
-            }
-            else
-            {
-                Assert.DoesNotContain("Idle", grid);
-                Assert.DoesNotContain("energy-status-positive", grid);
-                Assert.DoesNotContain("energy-status-active", grid);
-                Assert.Matches(">—<small[^>]*>W", grid);
-                Assert.Matches(">—<small[^>]*>kW", solar);
-                Assert.Contains("Grid measurement unavailable", grid);
-            }
-            await fixture.AssertNoMutationsAsync();
-        }
-        await using var unverified = await Fixture.CreateAsync(Reading(grid: 0, solar: 0) with { Telemetry = null, BatterySocValid = false });
-        var unverifiedHtml = await RenderAsync<DashboardHost>(unverified.Services);
-        var unknownGrid = Regex.Match(unverifiedHtml, "data-testid=\"grid-power\"[^>]*>[\\s\\S]*?</div>").Value;
-        Assert.DoesNotContain("Idle", unknownGrid);
-        Assert.Matches(">—<small[^>]*>W", unknownGrid);
-        await unverified.AssertNoMutationsAsync();
+        var reading = Reading(grid: 0, solar: 0) with { Telemetry = ZeroFlows(quality) };
+        await using var fixture = await Fixture.CreateAsync(reading); var html = await RenderAsync<DashboardHost>(fixture.Services);
+        var actual = Regex.Match(html, "data-testid=\"solar-actual\"[^>]*>[\\s\\S]*?</div>").Value;
+        Assert.Contains(quality == MeasurementQuality.Good ? "0.00" : "—", actual);
+        if (quality != MeasurementQuality.Good) Assert.DoesNotContain("0.00", actual);
+        await fixture.AssertNoMutationsAsync();
     }
-
+    [SqlServerFact]
+    public async Task EmptyHomeKeepsMeasuredValuesUnavailableAndNeverRequestsHardware()
+    {
+        await using var fixture = await Fixture.CreateAsync(null); var html = await RenderAsync<DashboardHost>(fixture.Services);
+        Assert.Contains("Awaiting reading", html); Assert.Contains("Waiting for readings", html); Assert.Contains("No smart plugs yet", html);
+        Assert.Contains("View production", html); Assert.Contains("/activity", html); Assert.Equal(0, fixture.Refresh.Calls);
+        await fixture.AssertNoMutationsAsync();
+    }
+    [SqlServerFact]
+    public async Task HomeKeepsProvisionalExportSeparateFromCompletedValueAndDeposit()
+    {
+        var sales = new ExportSalesResult(new(ExportSalesPeriod.Day,new(2026,9,30)),new(2026,9,30),new(2026,9,28),
+            "Europe/Warsaw",Timestamp,Timestamp.AddHours(1),[],5m,5m,10m,12.3m,1,1,1,
+            CurrentHour:new(Timestamp,Timestamp.AddMinutes(5),1.25m,1.25m,2.5m,3.075m,300));
+        await using var fixture = await Fixture.CreateAsync(Reading(),sales);
+        var html = await RenderAsync<DashboardHost>(fixture.Services);
+        Assert.Contains("5.00",Regex.Match(html,"data-testid=\"sales-export\"[^>]*>(.*?)</div>",RegexOptions.Singleline).Value);
+        Assert.Contains("10.00",Regex.Match(html,"data-testid=\"sales-value\"[^>]*>(.*?)</strong>",RegexOptions.Singleline).Value);
+        Assert.Contains("12.30",Regex.Match(html,"data-testid=\"sales-deposit\"[^>]*>(.*?)</strong>",RegexOptions.Singleline).Value);
+        Assert.Contains("In progress: 1.25 kWh, excluded from totals",html);
+        Assert.Contains("In progress: 2.50 PLN, excluded from totals",html);
+        Assert.Contains("It is not a cash payout",html);
+        await fixture.AssertNoMutationsAsync();
+    }
+    [SqlServerFact]
+    public async Task ReadingsPageRendersTheLatestSnapshotInTheInstallationTimeZone()
+    {
+        await using var fixture = await Fixture.CreateAsync(Reading());
+        var html = await RenderAsync<DeyeSolar.Web.Pages.ReadingsView>(fixture.Services);
+        Assert.Contains("Live readings", html);
+        Assert.Contains("Europe/Warsaw", html);
+        Assert.Contains("4.10", html);
+        Assert.Contains("Polled", html);
+        Assert.DoesNotContain("Readings could not be loaded", html);
+        Assert.DoesNotContain("Action failed", html);
+        Assert.Equal(0, fixture.Refresh.Calls);
+        await fixture.AssertNoMutationsAsync();
+    }
+    [SqlServerFact]
+    public async Task InitialSnapshotCannotBeLostWhileRulesAreLoading()
+    {
+        await using var fixture = await Fixture.CreateAsync(Reading()); fixture.Rules.HoldFirst = true;
+        await using var renderer = fixture.Renderer(); await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var mounting = renderer.MountAsync(); await fixture.Rules.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            fixture.Snapshot.Update(Reading(55, -2000, 450, 3300)); fixture.Rules.Release(); var root = await mounting;
+            var solar = renderer.TextByTestId(root, "solar-actual"); Assert.Contains("3.30", solar); Assert.DoesNotContain("4.10", solar);
+            Assert.Contains("Smart plugs", renderer.Text(root)); Assert.Equal(0, fixture.Refresh.Calls);
+        }); await fixture.AssertNoMutationsAsync();
+    }
+    [SqlServerFact]
+    public async Task DisposedHomeUnsubscribesFromBackgroundSnapshotUpdates()
+    {
+        await using var fixture = await Fixture.CreateAsync(Reading()); var renderer = fixture.Renderer();
+        await renderer.Dispatcher.InvokeAsync(async () => { await renderer.MountAsync(); }); await renderer.DisposeAsync();
+        var displays = renderer.Displays; fixture.Snapshot.Update(Reading(solar: 2800));
+        Assert.Equal(displays, renderer.Displays); Assert.Equal(0, fixture.Refresh.Calls); await fixture.AssertNoMutationsAsync();
+    }
     private static IInverterTelemetry ZeroFlows(MeasurementQuality quality) => new InverterTelemetry(new(Guid.NewGuid()), Timestamp,
         new(new Percent(87), Timestamp, MeasurementQuality.Good), new(new Watts(-2400), Timestamp, MeasurementQuality.Good),
         new(new Celsius(24), Timestamp, MeasurementQuality.Good), new(new Volts(51.5), Timestamp, MeasurementQuality.Good),
         new(new Amperes(4.2), Timestamp, MeasurementQuality.Good), new(new Watts(0), Timestamp, quality), new(new Watts(0), Timestamp, quality),
         new(new Watts(900), Timestamp, MeasurementQuality.Good), SolarManagement.Inverters.Contracts.SolarPowerBasis.PvDc);
-
-    [SqlServerFact]
-    public async Task UnifiedStatusPrecedesTheTwoChartsAndPreservesQuickActionsAndRules()
-    {
-        await using var fixture = await Fixture.CreateAsync(Reading());
-        await using var renderer = new HtmlRenderer(fixture.Services, fixture.Services.GetRequiredService<ILoggerFactory>());
-        var html = await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var rendered = await renderer.RenderComponentAsync<DashboardHost>();
-            return WebUtility.HtmlDecode(rendered.ToHtmlString());
-        });
-
-        Assert.Single(Regex.Matches(html, "data-testid=\"energy-status\""));
-        AssertOrdered(html, "data-testid=\"energy-status\"", "data-testid=\"solar-generation\"", "data-testid=\"load-power\"",
-            "data-testid=\"grid-power\"", "data-testid=\"battery-power\"", "data-testid=\"dashboard-charts\"", "data-testid=\"dashboard-generation\"", "data-testid=\"dashboard-sales\"");
-        Assert.DoesNotContain("data-testid=\"battery-soc\"", html);
-        Assert.Matches("data-testid=\"load-power\"[^>]*>[\\s\\S]*?>900<small[^>]*>W", html);
-        Assert.Matches("data-testid=\"solar-generation\"[^>]*>[\\s\\S]*?>4[.]10<small[^>]*>kW", html);
-        Assert.Matches("data-testid=\"grid-power\"[^>]*>[\\s\\S]*?>1,200<small[^>]*>W", html);
-        Assert.Matches("data-testid=\"battery-power\"[^>]*>[\\s\\S]*?Battery charging[\\s\\S]*?>2,400<small[^>]*>W", html);
-        Assert.Contains("Exporting", html);
-        Assert.Contains("12:00:00", html);
-        Assert.Contains("aria-label=\"Refresh inverter data\"", html);
-        Assert.Contains("href=\"/solar-details?returnTo=%2F\"", html);
-        Assert.Contains("href=\"/sales-details?period=Day&date=2026-09-30&returnTo=%2F\"", html);
-        Assert.Contains("href=\"/inverter-details?returnTo=%2F\"", html);
-        AssertOrdered(html, "data-testid=\"dashboard-sales\"", "sales-paper", "id=\"sales-title\"");
-        Assert.Contains("Quick Actions", html);
-        Assert.Contains("Socket ON", html);
-        Assert.Contains("Socket OFF", html);
-        Assert.Contains("Independent garden socket", html);
-        Assert.Contains("Last checked", html);
-        Assert.DoesNotContain("Battery Details", html);
-        Assert.DoesNotContain("<td>Voltage</td>", html);
-        Assert.DoesNotContain("<td>Temperature</td>", html);
-        Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
-        Assert.Equal(0, fixture.Refresh.Calls);
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task RefreshDispatchesTheCanonicalServiceOnlyOnceForDuplicateClicksAndShowsItsNewSnapshot()
-    {
-        await using var fixture = await Fixture.CreateAsync(Reading());
-        fixture.Refresh.Hold = true;
-        await using var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var button = renderer.RefreshButton(root);
-            var first = renderer.DispatchAsync(button.EventId);
-            Assert.True(renderer.RefreshButton(root).Disabled);
-            Assert.Contains("Refreshing…", renderer.Text(root));
-            Assert.Contains("4.10", renderer.Text(root));
-            await renderer.DispatchAsync(button.EventId);
-            Assert.Equal(1, fixture.Refresh.Calls);
-            fixture.Refresh.Complete(Reading(62, 1000, 750, 5200) with { Timestamp = Timestamp.AddMinutes(5) });
-            await first;
-            Assert.False(renderer.RefreshButton(root).Disabled);
-            Assert.Contains("Battery discharging", renderer.Text(root));
-            Assert.Contains("Importing", renderer.Text(root));
-            Assert.Contains("5.20", renderer.Text(root));
-            Assert.Contains("1,000", renderer.Text(root));
-            Assert.DoesNotContain("4.10", renderer.Text(root));
-            Assert.Contains("12:05:00", renderer.Text(root));
-            Assert.Same(fixture.Refresh.LastResult, fixture.Snapshot.Current);
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task FailedRefreshPreservesTheLastReadingAndTheButtonCanRecover()
-    {
-        var original = Reading();
-        await using var fixture = await Fixture.CreateAsync(original);
-        fixture.Refresh.FailNext = true;
-        await using var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.Same(original, fixture.Snapshot.Current);
-            Assert.Contains("Could not refresh inverter readings. Showing the last successful reading", renderer.Text(root));
-            Assert.Contains("4.10", renderer.Text(root));
-            Assert.False(renderer.RefreshButton(root).Disabled);
-            fixture.Refresh.Next = Reading(0, 0, 0, 0) with { Timestamp = Timestamp.AddMinutes(5) };
-            await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.DoesNotContain("Could not refresh", renderer.Text(root));
-            Assert.DoesNotContain("4.10", renderer.Text(root));
-            Assert.DoesNotContain("Awaiting reading", renderer.Text(root));
-            Assert.Contains("Idle", renderer.Text(root));
-            Assert.Equal(2, fixture.Refresh.Calls);
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task AnEmptyDashboardKeepsBothChartsAndCanFetchItsFirstReading()
-    {
-        await using var fixture = await Fixture.CreateAsync(null);
-        fixture.Refresh.FailNext = true;
-        await using var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Contains("Waiting for the first inverter reading", renderer.Text(root));
-            Assert.Contains("dashboard-generation", renderer.Attributes(root, "data-testid"));
-            Assert.Contains("dashboard-sales", renderer.Attributes(root, "data-testid"));
-            Assert.Contains("—", renderer.Text(root));
-            Assert.DoesNotContain("Idle", renderer.Text(root));
-            await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.Contains("Could not fetch inverter readings. Please try again.", renderer.Text(root));
-            fixture.Refresh.Next = Reading();
-            await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.DoesNotContain("Waiting for the first inverter reading", renderer.Text(root));
-            Assert.Contains("Solar generation", renderer.Text(root));
-            Assert.Contains("4.10", renderer.Text(root));
-            Assert.Contains("Quick Actions", renderer.Text(root));
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task DisposalCancelsPendingRefreshAndIgnoresLateResponsesAndSnapshotNotifications()
-    {
-        await using var fixture = await Fixture.CreateAsync(Reading());
-        fixture.Refresh.Hold = true;
-        var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var pending = renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            await renderer.DisposeAsync();
-            Assert.True(fixture.Refresh.LastToken.IsCancellationRequested);
-            var displays = renderer.Displays;
-            var reads = fixture.Rules.Reads;
-            fixture.Refresh.Complete(Reading(1));
-            await pending;
-            fixture.Snapshot.Update(Reading(2));
-            Assert.Equal(displays, renderer.Displays);
-            Assert.Equal(reads, fixture.Rules.Reads);
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task BackgroundReadingsClearARefreshFailureWithoutAnotherManualFetch()
-    {
-        await using var fixture = await Fixture.CreateAsync(Reading());
-        await using var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            fixture.Refresh.FailNext = true;
-            await renderer.DispatchAsync(renderer.RefreshButton(root).EventId);
-            Assert.Contains("Could not refresh inverter readings", renderer.Text(root));
-            fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
-            await renderer.WaitForAsync(() => fixture.Rules.Reads >= 2 && renderer.TextByTestId(root, "solar-generation").Contains("3.30", StringComparison.Ordinal));
-            var solar = renderer.TextByTestId(root, "solar-generation");
-            Assert.Contains("3.30", solar);
-            Assert.DoesNotContain("4.10", solar);
-            Assert.DoesNotContain("2,000", solar);
-            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
-            Assert.Contains("Importing", renderer.Text(root));
-            Assert.DoesNotContain("Could not refresh inverter readings", renderer.Text(root));
-            Assert.Equal(1, fixture.Refresh.Calls);
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    [SqlServerFact]
-    public async Task InitializationDoesNotLoseASnapshotPublishedWhileRulesAreLoading()
-    {
-        await using var fixture = await Fixture.CreateAsync(Reading());
-        fixture.Rules.HoldFirst = true;
-        await using var renderer = fixture.Renderer();
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var mounting = renderer.MountAsync();
-            await fixture.Rules.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            fixture.Snapshot.Update(Reading(55, -2000, 450, 3300));
-            fixture.Rules.Release();
-            var root = await mounting;
-            var solar = renderer.TextByTestId(root, "solar-generation");
-            Assert.Contains("3.30", solar);
-            Assert.DoesNotContain("2,000", solar);
-            Assert.DoesNotContain("4.10", solar);
-            Assert.Contains("2,000", renderer.TextByTestId(root, "battery-power"));
-            Assert.Equal(0, fixture.Refresh.Calls);
-        });
-        await fixture.AssertNoMutationsAsync();
-    }
-
-    private static void AssertOrdered(string html, params string[] fragments)
-    {
-        var previous = -1;
-        foreach (var fragment in fragments)
-        {
-            var index = html.IndexOf(fragment, previous + 1, StringComparison.Ordinal);
-            Assert.True(index > previous, $"Missing or out-of-order dashboard content: {fragment}");
-            previous = index;
-        }
-    }
 
     private sealed class Fixture(SqlServerTestDatabase database, Factory factory, InverterDataSnapshot snapshot, RefreshService refresh, RuleRepository rules,
         SocketController sockets, ServiceProvider services) : IAsyncDisposable
@@ -384,7 +169,7 @@ public class DashboardTests
         public RuleRepository Rules { get; } = rules;
         public ServiceProvider Services { get; } = services;
         public EventRenderer Renderer() => new(Services, Services.GetRequiredService<ILoggerFactory>());
-        public static async Task<Fixture> CreateAsync(InverterData? initial)
+        public static async Task<Fixture> CreateAsync(InverterData? initial, ExportSalesResult? sales = null)
         {
             var database = await SqlServerTestDatabase.CreateAsync("SolarDashboardTests", seed: async db =>
             {
@@ -416,12 +201,19 @@ public class DashboardTests
                 services.AddSingleton<IAppSettingsReader>(provider => provider.GetRequiredService<AppSettingsService>());
                 services.AddSingleton<IAppSettingsWriter>(provider => provider.GetRequiredService<AppSettingsService>());
                 services.AddSingleton<ISolarHistoryService, HistoryService>();
-                services.AddSingleton<IExportSalesService, SalesService>();
+                services.AddSingleton<IExportSalesService>(new SalesService(sales));
                 services.Configure<InverterConnectionOptions>(options => options.DeviceKey = "test-device");
                 services.AddOptions<SolarEstimateOptions>();
                 services.AddSingleton<ISolarRadiationSource, UnusedRadiationSource>();
                 services.AddSingleton<ISolarEstimateStore, UnusedEstimateStore>();
                 services.AddSingleton<SolarEstimateService>();
+                services.AddSingleton<IDeviceLabelStore, ReadOnlyLabels>(); services.AddSingleton<DeviceNameService>();
+                services.AddSingleton<ISolarDayForecastSource, EmptyForecast>(); services.AddSingleton<ISolarHistoryStore, EmptyHistory>();
+                services.AddSingleton<SolarProductionService>();
+                var installation = new CurrentInstallation(); installation.BindOnce(TestInstallation.Id);
+                var security = new InteractiveSecurityContext(new ReadOnlyAccess(), installation, new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "dashboard-fixture-account")], "test")) } });
+                security.BindOnce(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "dashboard-fixture-account")], "test")));
+                services.AddSingleton(security); services.AddSingleton<RedesignQueries>();
                 return new(database, factory, snapshot, refresh, rules, sockets, services.BuildServiceProvider());
             }
             catch
@@ -524,6 +316,24 @@ public class DashboardTests
         public Task<SocketCommandReceipt> ReleaseAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct) => throw new InvalidOperationException("Dashboard rendering must not release commands.");
     }
 
+    private sealed class ReadOnlyAccess : IInstallationAccessAuthorizer
+    {
+        public Task<InstallationMembership> CheckAsync(System.Security.Claims.ClaimsPrincipal actor, string installationId, InstallationPermission permission, CancellationToken ct = default)
+        { Assert.Equal(InstallationPermission.Read, permission); return Task.FromResult(new InstallationMembership { InstallationId = installationId, UserId = "component-fixture", Role = "Owner" }); }
+    }
+    private sealed class ReadOnlyLabels : IDeviceLabelStore
+    {
+        public Task<Dictionary<string,string>> LoadAsync(CancellationToken ct) => Task.FromResult(new Dictionary<string,string>());
+        public Task SaveAsync(Dictionary<string,string> labels, CancellationToken ct) => throw new InvalidOperationException("Rendering cannot change labels.");
+    }
+    private sealed class EmptyForecast : ISolarDayForecastSource
+    {
+        public Task<SolarDayForecast> ReadAsync(SolarEstimateOptions options, DateTimeOffset start, DateTimeOffset end, DateOnly selectedDate, CancellationToken ct) => Task.FromResult(new SolarDayForecast([], Timestamp, null, null, null));
+    }
+    private sealed class EmptyHistory : ISolarHistoryStore
+    {
+        public Task<IReadOnlyList<SolarActual>> ReadAsync(string deviceSn, DateTimeOffset start, DateTimeOffset end, CancellationToken ct) => Task.FromResult<IReadOnlyList<SolarActual>>([]);
+    }
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Timestamp; }
     private sealed class TestNavigation : NavigationManager
     {
@@ -545,9 +355,9 @@ public class DashboardTests
         public Task<SolarHistoryResult> ReadAsync(SolarHistoryPeriod period, CancellationToken ct, DateOnly? endDate = null) =>
             Task.FromResult(new SolarHistoryResult(Timestamp, Timestamp.AddHours(1), "Europe/Warsaw", []) { Today = new(2026, 9, 30), SelectedDate = new(2026, 9, 30) });
     }
-    private sealed class SalesService : IExportSalesService
+    private sealed class SalesService(ExportSalesResult? fixture = null) : IExportSalesService
     {
-        public Task<ExportSalesResult> ReadAsync(ExportSalesRequest request, CancellationToken ct) => Task.FromResult(new ExportSalesResult(
+        public Task<ExportSalesResult> ReadAsync(ExportSalesRequest request, CancellationToken ct) => Task.FromResult(fixture ?? new ExportSalesResult(
             request, new(2026, 9, 30), new(2026, 9, 28), "Europe/Warsaw", Timestamp, Timestamp.AddHours(1), [], null, null, null, null, 0, 0, 0));
     }
 
@@ -555,8 +365,6 @@ public class DashboardTests
     {
         protected override void BuildRenderTree(RenderTreeBuilder builder)
         {
-            builder.OpenComponent<MudPopoverProvider>(0);
-            builder.CloseComponent();
             builder.OpenComponent<DashboardPage>(1);
             builder.CloseComponent();
         }

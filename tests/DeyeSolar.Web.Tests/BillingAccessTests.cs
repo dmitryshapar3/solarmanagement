@@ -9,6 +9,22 @@ namespace DeyeSolar.Web.Tests;
 public class BillingAccessTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
+    [Fact]
+    public async Task VerifiedRenewalDisclosureDoesNotChangeAccessDeadlineAndStaleDetailsDisappear()
+    {
+        await using var fixture = await Fixture.CreateAsync(); await fixture.ExpireTrialAsync();
+        await fixture.SubscriptionAsync(AppleSubscriptionStatus.Active);
+        await using (var db = new DeyeSolarDbContext(fixture.Options))
+        {
+            var row = await db.AppleSubscriptions.SingleAsync(); row.AutoRenewEnabled = true; row.RenewalAt = Now.AddDays(10); await db.SaveChangesAsync();
+        }
+        var access = await fixture.Service.ReadAsync("one");
+        Assert.Equal("com.dshapar.solar.monthly", access.ProductId); Assert.Equal("month", access.PlanPeriod);
+        Assert.True(access.AutoRenewEnabled); Assert.Equal(Now.AddDays(10), access.RenewalAt);
+        Assert.Equal(Now.AddHours(1), access.AccessValidUntil); Assert.Equal(0, access.TrialDaysRemaining);
+        fixture.Clock.Now = Now.AddHours(1);
+        var stale = await fixture.Service.ReadAsync("one"); Assert.Null(stale.ProductId); Assert.Null(stale.PlanPeriod); Assert.Null(stale.AutoRenewEnabled); Assert.Null(stale.RenewalAt);
+    }
 
     [Theory]
     [InlineData(2026, 1, 31, 2026, 2, 28)]

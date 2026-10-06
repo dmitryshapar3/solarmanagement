@@ -105,7 +105,8 @@ internal sealed class RuleAutomationExecutor(ISocketController _socketController
         if (recordedRules.Count > 0)
             await _history.RecordAsync(data ?? new InverterData { BatterySocValid = false }, dueRules
                 .Where(rule => rule.Enabled && recordedRules.Contains(rule.Id))
-                .Select(rule => new RuleRunOutcome(rule.Name, decisions.GetValueOrDefault(rule.Id), successfulActions.Contains(rule.Id), failedActions.GetValueOrDefault(rule.Id)))
+                .Select(rule => new RuleRunOutcome(rule.Name, decisions.GetValueOrDefault(rule.Id), successfulActions.Contains(rule.Id), failedActions.GetValueOrDefault(rule.Id),
+                    rule.Id, RuleConfigurationVersion.Read(rule)))
                 .ToArray(), ct);
     }
 

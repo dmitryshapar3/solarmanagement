@@ -15,7 +15,8 @@ public sealed record IntegrationConfigurationChange(long ExpectedRevision, strin
     string PackageDigest, string DescriptorDigest, Dictionary<string, JsonElement> Values,
     Dictionary<string, IntegrationSecretOperation> SecretOperations, Guid? OAuthFlowId = null);
 public sealed record IntegrationBindingDto(Guid Id, Guid InstanceId, string Kind, string Name,
-    string RemoteId, string Channel, bool IsDefault, Guid? SourceInverterId = null, int PhaseCount = 1);
+    string RemoteId, string Channel, bool IsDefault, Guid? SourceInverterId = null, int PhaseCount = 1,
+    string? DisplayName = null);
 public sealed record IntegrationSourceInverterDto(Guid Id, string Name, bool IsDefault);
 public sealed record IntegrationSocketSourceChange(IntegrationVersionGuard Guard, Guid? SourceInverterId,
     int PhaseCount = 1, Guid? ExpectedSourceInverterId = null, int ExpectedPhaseCount = 1);
@@ -23,7 +24,8 @@ public sealed record IntegrationDiscoveryDevice(string SelectionToken, string Na
     string RemoteId, string Channel, JsonElement? Metadata);
 public sealed record IntegrationDiscoveryResponse(IReadOnlyList<IntegrationDiscoveryDevice> Devices,
     DateTimeOffset ExpiresAt);
-public sealed record SelectIntegrationDeviceRequest(IntegrationConfigurationChange Draft, string SelectionToken);
+public sealed record SelectIntegrationDeviceRequest(IntegrationConfigurationChange Draft, string SelectionToken,
+    string? DisplayName = null);
 public sealed record IntegrationApiError(string Code, string Message);
 
 public sealed class IntegrationRequestException(string code, string message, int status = 400) : Exception(message)
@@ -41,6 +43,6 @@ public static class IntegrationMappings
     {
         var association = IntegrationSocketAssociation.Read(value);
         return new(value.Id, value.InstanceId, value.Kind, value.Name, value.RemoteId, value.Channel,
-            value.IsDefault, association.SourceInverterId, association.PhaseCount);
+            value.IsDefault, association.SourceInverterId, association.PhaseCount, IntegrationDeviceDisplayName.Read(value));
     }
 }

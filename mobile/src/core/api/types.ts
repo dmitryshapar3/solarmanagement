@@ -104,6 +104,10 @@ export type Rule = {
   currentState: boolean;
   currentStateChangedAt: string | null;
   lastEvaluated: string | null;
+  pauseReason?: string | null;
+  pausedAt?: string | null;
+  pausedByUserId?: string | null;
+  pausedDeviceId?: string | null;
 };
 
 export type RuleRequest = Omit<
@@ -256,4 +260,6 @@ export type ExportSalesResult = {
   currentHour: ExportSaleProgress | null;
   updatedAt: string | null;
   isPartial: boolean;
+  hours?: { start: string; exportKwh: number | null; importKwh: number | null; creditedExportKwh: number | null; energyValuePln: number | null; observedSeconds: number; averagePricePlnPerKwh: number | null; marketAveragePricePlnPerKwh?: number | null }[];
+  missingPriceHours?: string[];
 };

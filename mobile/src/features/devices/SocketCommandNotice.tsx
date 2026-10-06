@@ -1,6 +1,6 @@
-import { Text, type StyleProp, type TextStyle } from "react-native";
+import { type StyleProp, type TextStyle } from "react-native";
 import { useLanguage } from "../../application/LanguageContext";
-import { AppButton } from "../../core/components";
+import { AppButton, ThemedText as Text } from "../../core/components";
 import { commandUnresolved, socketCommandMessage, type SocketCommandState } from "../../core/api/SocketCommandCoordinator";
 
 export function SocketCommandNotice({ command, disabled, onCheck, onRelease, textStyle }: {

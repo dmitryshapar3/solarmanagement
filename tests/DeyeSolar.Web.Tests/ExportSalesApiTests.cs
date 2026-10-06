@@ -245,6 +245,38 @@ public class ExportSalesApiTests
         Assert.Equal(0, host.Prices.Calls);
     }
 
+    [SqlServerFact]
+    public async Task AdditiveCsvAndHourlyDetailsRequireAuthenticationAndKeepExistingDataAndLegacyJson()
+    {
+        await using var host=await SalesHost.StartAsync();var before=await host.ReadStateAsync();
+        using(var response=await host.GetAsync("period=Day&date=2026-09-28&details=true",AuthorizedIdentity))
+        {
+            Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+            var data=Assert.IsType<ExportSalesResult>(await response.Content.ReadFromJsonAsync<ExportSalesResult>());
+            Assert.Equal(24,data.Hours!.Count);Assert.Empty(data.MissingPriceHours!);
+            Assert.All(data.Hours,h=>{Assert.Equal(0.5m,h.MarketAveragePricePlnPerKwh);Assert.Equal(1m,h.ExportKwh);});
+        }
+        using(var response=await host.GetAsync("period=Day&date=2026-09-28",AuthorizedIdentity))
+        {
+            var json=await response.Content.ReadAsStringAsync();Assert.DoesNotContain("\"hours\"",json);Assert.DoesNotContain("marketAveragePrice",json);
+        }
+        using(var csv=await host.GetPathAsync("/api/sales.csv?period=Day&date=2026-09-28",AuthorizedIdentity))
+        {
+            Assert.Equal(HttpStatusCode.OK,csv.StatusCode);Assert.Equal("text/csv",csv.Content.Headers.ContentType?.MediaType);
+            var text=await csv.Content.ReadAsStringAsync();Assert.Equal(25,text.Split('\n',StringSplitOptions.RemoveEmptyEntries).Length);
+            Assert.Contains("market_average_price_pln_per_kwh",text);
+            Assert.All(text.Split('\n',StringSplitOptions.RemoveEmptyEntries).Skip(1),row=>
+                Assert.Equal(0.5m,decimal.Parse(row.Trim().Split(',')[^1].Trim('"'),System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        foreach(var path in new[]{"/api/sales.csv?period=Day&date=2026-09-28","/api/activity","/api/readings.csv","/api/solar/production?period=Today"})
+        {
+            using var denied=await host.GetPathAsync(path,null);Assert.Equal(HttpStatusCode.Unauthorized,denied.StatusCode);
+        }
+        using(var invalid=await host.GetPathAsync("/api/sales.csv?period=Day&date=2026-09-31",AuthorizedIdentity))
+        {Assert.Equal(HttpStatusCode.BadRequest,invalid.StatusCode);Assert.Contains("validation",await invalid.Content.ReadAsStringAsync());}
+        await host.AssertStateUnchangedAsync(before);Assert.Equal(0,host.History.Calls);Assert.Equal(0,host.Prices.Calls);
+    }
+
     private sealed class SalesHost(SqlServerTestDatabase database, WebApplication application, HttpClient client, CountingFactory factory,
         RejectingHistory history, RejectingPrices prices, FixedClock clock, int latestCurrentMinute) : IAsyncDisposable
     {
@@ -276,6 +308,8 @@ public class ExportSalesApiTests
                 builder.Services.AddSingleton<MobileSessionStore>();
             builder.Services.AddSingleton<DeyeSolar.Web.Auth.IAccountSessionStore>(p => p.GetRequiredService<MobileSessionStore>());
                 builder.Services.AddAuthorization();
+                builder.Services.AddRateLimiter(options => options.AddPolicy("price-check", context =>
+                    System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("fixture")));
                 builder.Services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(factory);
                 builder.Services.AddScoped(_ => factory.CreateDbContext());
                 builder.Services.AddIdentityCore<IdentityUser>().AddEntityFrameworkStores<DeyeSolarDbContext>();
@@ -294,7 +328,9 @@ public class ExportSalesApiTests
                 application = builder.Build();
                 application.UseAuthentication();
                 application.UseAuthorization();
+                application.UseRateLimiter();
                 application.MapExportSalesApi();
+                DeyeSolar.Web.Redesign.RedesignEndpoints.MapRedesignApi(application);
                 await application.StartAsync();
                 var addresses = application.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>();
                 Assert.NotNull(addresses);
@@ -319,6 +355,13 @@ public class ExportSalesApiTests
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/sales?" + query);
             if (identity is not null) request.Headers.Add(AuthenticationHeader, identity);
+            return await client.SendAsync(request);
+        }
+
+        public async Task<HttpResponseMessage> GetPathAsync(string path,string? identity)
+        {
+            using var request=new HttpRequestMessage(HttpMethod.Get,path);
+            if(identity is not null)request.Headers.Add(AuthenticationHeader,identity);
             return await client.SendAsync(request);
         }
 

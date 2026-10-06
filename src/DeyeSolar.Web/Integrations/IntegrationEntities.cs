@@ -44,6 +44,7 @@ public sealed class IntegrationDeviceBindingEntity : IInstallationOwned
     public string MetadataJson { get; set; } = "{}";
     public bool IsDefault { get; set; }
     public bool Enabled { get; set; } = true;
+    public DateTimeOffset? AddedAt { get; set; }
 }
 
 public sealed class IntegrationCommandEntity : IInstallationOwned
@@ -61,4 +62,8 @@ public sealed class IntegrationCommandEntity : IInstallationOwned
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string? ErrorCode { get; set; }
+    public string? ActorUserId { get; set; }
+    public string? Client { get; set; }
+    public string? OnRuleConflict { get; set; }
+    public string? PausedRuleIdsJson { get; set; }
 }

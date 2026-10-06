@@ -13,16 +13,28 @@ public static class SolarPowerCalculator
 
     public static SolarPowerEstimate Calculate(SolarRadiationObservation observation, SolarEstimateOptions options,
         DateTimeOffset now, SolarPowerBasis basis = SolarPowerBasis.PvDc)
+        => CalculateCore(observation, options, now, basis, false);
+
+    public static SolarPowerEstimate CalculateForecast(SolarRadiationObservation observation, SolarEstimateOptions options,
+        DateTimeOffset now)
+    {
+        if (observation.Kind != SolarRadiationKind.WeatherModel || observation.RetrievedAt is not { } retrieved
+            || retrieved > now) throw new ArgumentException("A forecast requires a retrieved weather model.");
+        return CalculateCore(observation, options, now, SolarPowerBasis.PvDc, true);
+    }
+
+    private static SolarPowerEstimate CalculateCore(SolarRadiationObservation observation, SolarEstimateOptions options,
+        DateTimeOffset now, SolarPowerBasis basis, bool forecast)
     {
         options.Validate();
         if (basis == SolarPowerBasis.GridExport) throw new ArgumentException("Grid export is not PV generation.");
-        if (observation.Timestamp > now || !ValidGti(observation.Roof1Gti) || !ValidGti(observation.Roof2Gti)
+        if (!forecast && observation.Timestamp > now || !ValidGti(observation.Roof1Gti) || !ValidGti(observation.Roof2Gti)
             || !double.IsFinite(observation.RecentVariabilityFraction) || observation.RecentVariabilityFraction < 0)
             throw new ArgumentException("Invalid or future radiation observation.");
 
         var weatherMissing = observation.AirTemperatureC is not (>= -80 and <= 65)
             || observation.WindSpeedMs is not (>= 0 and <= 100)
-            || !observation.WeatherTimestamp.HasValue || observation.WeatherTimestamp > now
+            || !observation.WeatherTimestamp.HasValue || !forecast && observation.WeatherTimestamp > now
             || Math.Abs((observation.WeatherTimestamp.Value - observation.Timestamp).TotalMinutes) > 90;
         // Missing model weather is an explicit broad assumption, never an observation.
         var air = weatherMissing ? 20 : observation.AirTemperatureC!.Value;

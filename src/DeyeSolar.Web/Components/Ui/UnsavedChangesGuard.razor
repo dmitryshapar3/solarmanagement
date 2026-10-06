@@ -1,0 +1,9 @@
+@inject NavigationManager Navigation
+<NavigationLock ConfirmExternalNavigation="Dirty" OnBeforeInternalNavigation="Changing"/>
+@if(_destination is not null){<UiModal Title="@T["Leave without saving?"]" OnClose="()=>_destination=null"><p>@T["Your unsaved changes will be discarded."]</p><div class="form-actions"><UiButton Variant="outline" OnClick="()=>_destination=null">@T["Keep editing"]</UiButton><UiButton Variant="critical" OnClick="Leave">@T["Leave without saving"]</UiButton></div></UiModal>}
+@code{
+ [Parameter]public bool Dirty{get;set;}
+ private string? _destination;private bool _leaving;
+ private Task Changing(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context){var current=new Uri(Navigation.Uri);var target=new Uri(context.TargetLocation);if(current.GetLeftPart(UriPartial.Path)==target.GetLeftPart(UriPartial.Path)&&current.Query==target.Query)return Task.CompletedTask;if(Dirty&&!_leaving){context.PreventNavigation();_destination=context.TargetLocation;StateHasChanged();}return Task.CompletedTask;}
+ private void Leave(){var destination=_destination;_destination=null;if(destination is null)return;_leaving=true;Navigation.NavigateTo(destination);}
+}

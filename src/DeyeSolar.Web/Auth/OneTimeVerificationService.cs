@@ -31,7 +31,7 @@ public sealed class OneTimeVerificationService(IIdentityVerificationDelivery del
     public async Task<VerificationStartResponse> StartAsync(VerificationStartRequest request, string? linkingUserId, CancellationToken ct)
     {
         if (!TryNormalize(request.Channel, request.Destination, out var destination)
-            || request.Purpose is not ("register" or "login" or "link" or "security") || request.Purpose is ("link" or "security") && linkingUserId is null)
+            || request.Purpose is not ("register" or "login" or "link" or "security" or "signin" or "contact-change") || request.Purpose is ("link" or "security" or "contact-change") && linkingUserId is null)
             throw new ArgumentException("Enter a valid email address or phone number, including the country code.");
         if (request.Channel == "email" && !options.EmailEnabled || request.Channel == "phone" && !options.PhoneEnabled
             || request.Purpose == "register" && !options.RegistrationEnabled) throw new VerificationDeliveryException();

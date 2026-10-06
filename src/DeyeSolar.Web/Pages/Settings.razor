@@ -1,137 +1,39 @@
-@inject DeyeSolar.Web.Auth.InteractiveSecurityContext Security
 @page "/settings"
 @using DeyeSolar.Web.Api
 @using DeyeSolar.Web.Services
+@using DeyeSolar.Web.Redesign
 @using DeyeSolar.Web.Integrations
-@inject IIntegrationTestService IntegrationTests
-@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsReader
-@inject DeyeSolar.Web.Data.IAppSettingsWriter SettingsWriter
-@inject ISnackbar Snackbar
+@using DeyeSolar.Web.Auth
+@inject InstallationSettingsService InstallationSettings
+@inject IIntegrationTestService Tests
+@inject InteractiveSecurityContext Security
 @inject IJSRuntime JS
-
-<PageTitle>@T["Settings - DeyeSolar"]</PageTitle>
-
-<MudText Typo="Typo.h5" Class="mb-4">@T["Settings"]</MudText>
-<MudPaper Class="pa-4 mb-4" Elevation="2">
-    <MudText Typo="Typo.h6" Class="mb-2">@T["Language"]</MudText>
-    <MudText Typo="Typo.body2" Class="mb-3">@T["Choose the language for your account on the web and in the mobile app."]</MudText>
-    <form method="post" action="/account/language">
-        <input type="hidden" name="__RequestVerificationToken" value="@_languageToken" />
-        <label for="account-language">@T["Language"]</label>
-        <select id="account-language" name="Language" class="pa-2 ml-2" aria-label="@T["Language"]">
-            @foreach (var language in T.Languages)
-            {
-                <option value="@language.Code" selected="@(language.Code == T.Language)">@language.Name</option>
-            }
-        </select>
-        <button type="submit" class="mud-button-root mud-button mud-button-filled mud-button-filled-primary pa-2 ml-2">@T["Save language"]</button>
-    </form>
-</MudPaper>
-<IntegrationSettings />
-<MudGrid>
-    <MudItem xs="12"><SiteSettingsEditor /></MudItem>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-2">@T["Weather (Open-Meteo)"]</MudText>
-            <MudText Typo="Typo.body2">@T["Verify weather access for the server's configured solar location. Customer API keys are configured on the server."]</MudText>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("openmeteo"))" Disabled="@(_testing is not null)" Class="mt-3">@T["Test connection"]</MudButton>
-            @if (_testResults.TryGetValue("openmeteo", out var weatherTest)) { <MudAlert Severity="@(weatherTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@T.Translate(weatherTest.Message)</MudAlert> }
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-2">@T["Electricity prices (PSE)"]</MudText>
-            <MudText Typo="Typo.body2">@T["Verify access to the public PSE electricity price feed. No account or key is required."]</MudText>
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => TestConnection("pse"))" Disabled="@(_testing is not null)" Class="mt-3">@T["Test connection"]</MudButton>
-            @if (_testResults.TryGetValue("pse", out var priceTest)) { <MudAlert Severity="@(priceTest.Success ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-2">@T.Translate(priceTest.Message)</MudAlert> }
-        </MudPaper>
-    </MudItem>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">@T["Polling"]</MudText>
-            <MudNumericField Converter="@(T.InputConverter<int>(this, "Settings:_polling.IntervalSeconds"))" @bind-Value="_polling.IntervalSeconds" Label="@T["Interval (seconds)"]" Min="5" Max="300" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePolling" Class="mt-3">@T["Save"]</MudButton>
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">@T["Display"]</MudText>
-            <MudAutocomplete T="string" @bind-Value="_display.TimeZoneId" Label="@T["Timezone"]"
-                             SearchFunc="SearchTimezones" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDisplay" Class="mt-3">@T["Save"]</MudButton>
-        </MudPaper>
-    </MudItem>
-</MudGrid>
-
-@if (!string.IsNullOrEmpty(_errorMessage))
-{
-    <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _errorMessage = null">@_errorMessage</MudAlert>
-}
-
-@code {
-    private DeyeSolar.Domain.Options.PollingOptions _polling = new();
-    private DeyeSolar.Domain.Options.DisplayOptions _display = new();
-    private string? _errorMessage;
-    private string _languageToken = "";
-    private string? _testing;
-    private readonly Dictionary<string, IntegrationTestResult> _testResults = new();
-    private static readonly string[] _allTimeZones = TimeZoneInfo.GetSystemTimeZones().Select(tz => tz.Id).ToArray();
-
-    protected override async Task OnInitializedAsync()
-    {
-        _languageToken = T.GetAntiforgeryToken();
-        _polling = await SettingsReader.LoadSectionAsync<DeyeSolar.Domain.Options.PollingOptions>("Polling");
-        _display = await SettingsReader.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try
-            {
-                _languageToken = await JS.InvokeAsync<string>("deyeSolarLanguageToken");
-                StateHasChanged();
-            }
-            catch { }
-        }
-        if (firstRender && _display.TimeZoneId == "UTC")
-        {
-            try
-            {
-                var timezone = await JS.InvokeAsync<string>("eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
-                if (!string.IsNullOrEmpty(timezone)) { _display.TimeZoneId = timezone; await SaveDisplay(); StateHasChanged(); }
-            }
-            catch { }
-        }
-    }
-
-    private async Task TestConnection(string kind)
-    {
-        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
-        if (_testing is not null) return;
-        _testing = kind;
-        _testResults.Remove(kind);
-        try { _testResults[kind] = await IntegrationTests.TestAsync(kind, new IntegrationTestRequest(), CancellationToken.None); }
-        catch (Exception) { _testResults[kind] = new(kind, false, "unavailable", T["The provider could not be verified. Please try again."], DateTimeOffset.UtcNow); }
-        finally { _testing = null; }
-    }
-
-    private async Task SavePolling()
-    {
-        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
-        await SettingsWriter.SaveSectionAsync("Polling", _polling);
-        Snackbar.Add(T["Polling settings saved"], Severity.Success);
-    }
-
-    private async Task SaveDisplay()
-    {
-        await Security.EnsureAsync(DeyeSolar.Web.Auth.InstallationPermission.ManageSettings);
-        await SettingsWriter.SaveSectionAsync("Display", _display);
-        Snackbar.Add(T["Display settings saved"], Severity.Success);
-    }
-
-    private Task<IEnumerable<string>> SearchTimezones(string value, CancellationToken ct)
-        => Task.FromResult(_allTimeZones.Where(tz => string.IsNullOrWhiteSpace(value) || tz.Contains(value, StringComparison.OrdinalIgnoreCase)).AsEnumerable());
+@implements IAsyncDisposable
+<PageTitle>@T["Settings"] · SmartSolar</PageTitle><PageHeader Title="@T["Settings"]" Subtitle="@T["Make SmartSolar match your installation."]"/><SettingsTabs/>
+@if(_error is not null){<div class="banner critical" role="alert">@T.Translate(_error)</div>}@if(_notice is not null){<div class="banner" role="status">@_notice</div>}
+@if(_draft is null){<UiState Kind="loading" Title="@T["Loading…"]"/>}
+else{<CascadingValue @key="_draftRevision" Value="@_form" IsFixed="true"><form @onsubmit="Save" @onsubmit:preventDefault><div class="settings-grid"><nav class="settings-toc" aria-label="@T["Installation sections"]"><a href="/settings#installation">@T["Installation"]</a><a href="/settings#location">@T["Solar location"]</a><a href="/settings#panels">@T["Panel layout"]</a><a href="/settings#contract">@T["Export contract"]</a><a href="/settings#display">@T["Display and polling"]</a></nav><div class="form-stack"><fieldset class="installation-fields" disabled="@(!_canManage||_saving)">
+<UiCard Title="@T["Installation"]" id="installation"><div class="form-stack"><div class="ui-field"><label for="site-label">@T["Installation name"]</label><input id="site-label" value="@Solar.LocationLabel" @oninput="e=>SetSolar(Solar with{LocationLabel=e.Value?.ToString()??string.Empty})" maxlength="120"/></div><div class="ui-field"><label for="primary-inverter">@T["Primary inverter"]</label><select id="primary-inverter" value="@_draft.PrimaryInverterId?.ToString()" @onchange="Primary"><option value="">@T["No primary inverter"]</option>@foreach(var source in _draft.Inverters){<option value="@source.Id">@source.Name</option>}</select><p class="field-hint">@T["The primary source supplies installation readings and automations that use the default source."]</p></div><div class="toolbar"><p class="caption">@T["Inverters and devices are managed in Connections."]</p><UiButton Href="/settings/connections">@T["Connections"]</UiButton></div><label class="checkbox-row"><input type="checkbox" checked="@Solar.DeyeSolarPowerIsPvDcConfirmed" disabled="@(!_draft.PrimaryInverterId.HasValue)" @onchange="Confirmation"/><span>@T["The selected inverter reports PV DC solar power"]</span></label><p class="field-hint">@T["Confirm only after checking the inverter measurement type. Unconfirmed values are not compared with the PV forecast."]</p></div></UiCard>
+<UiCard Title="@T["Solar location"]" id="location"><div class="form-stack"><div class="toolbar"><p class="caption">@T["Coordinates are used for the weather and sunlight calculation."]</p><UiButton Variant="outline" Busy="_locating" OnClick="Locate">@T["Use my location"]</UiButton></div><div class="form-grid"><UiNumber Label="@T["Latitude"]" Value="@Solar.Latitude" ValueChanged="v=>SetSolar(Solar with{Latitude=v})" Min="-90" Max="90"/><UiNumber Label="@T["Longitude"]" Value="@Solar.Longitude" ValueChanged="v=>SetSolar(Solar with{Longitude=v})" Min="-180" Max="180"/></div><UiSelect Label="@T["Solar time zone"]" Searchable="true" Options="Zones" Value="@Solar.TimeZoneId" ValueChanged="v=>SetSolar(Solar with{TimeZoneId=v})"/><UiButton Variant="outline" Busy="_testingWeather" Disabled="@(!_form.IsValid)" OnClick="TestWeather">@T["Test weather here"]</UiButton>@if(_weatherResult is {} weather){<p role="status" class="banner @(weather.Success?"positive":"critical")">@T.Translate(weather.Message)</p>}</div></UiCard>
+<UiCard Title="@T["Panel layout"]" id="panels"><p class="caption">@T["Use installed DC capacity and the actual roof orientation. Azimuth is clockwise from north; south is 180°."]</p><div class="form-stack"><h3>@T["Roof 1"]</h3><div class="form-grid"><UiNumber Label="@T["Installed capacity"]" Unit="kWp" Value="@Solar.Roof1Kwp" ValueChanged="v=>SetSolar(Solar with{Roof1Kwp=v})" Min="0" Max="10000"/><UiNumber Label="@T["Tilt"]" Unit="°" Value="@Solar.Roof1Tilt" ValueChanged="v=>SetSolar(Solar with{Roof1Tilt=v})" Min="0" Max="90"/></div><UiBearing Label="@(T["Roof 1"]+" · "+T["Compass bearing · degrees"])" Value="@Solar.Roof1Azimuth" Disabled="@(!_canManage||_saving)" ValueChanged="v=>SetSolar(Solar with{Roof1Azimuth=v})"/><hr/><h3>@T["Roof 2"]</h3><p class="field-hint">@T["Set capacity to zero if there is no second roof."]</p><div class="form-grid"><UiNumber Label="@T["Installed capacity"]" Unit="kWp" Value="@Solar.Roof2Kwp" ValueChanged="v=>SetSolar(Solar with{Roof2Kwp=v})" Min="0" Max="10000"/><UiNumber Label="@T["Tilt"]" Unit="°" Value="@Solar.Roof2Tilt" ValueChanged="v=>SetSolar(Solar with{Roof2Tilt=v})" Min="0" Max="90"/></div><UiBearing Label="@(T["Roof 2"]+" · "+T["Compass bearing · degrees"])" Value="@Solar.Roof2Azimuth" Disabled="@(!_canManage||_saving)" ValueChanged="v=>SetSolar(Solar with{Roof2Azimuth=v})"/><p class="caption">@T["Total installed capacity"]: @UiFormat.Number(Solar.Roof1Kwp+Solar.Roof2Kwp) kWp</p></div></UiCard>
+<UiCard Title="@T["Export contract"]" id="contract"><div class="form-stack"><div class="ui-field"><label for="contract-start">@T["Contract start date"]</label><input id="contract-start" type="date" min="2000-01-01" value="@_draft.Site.SolarSales.ContractStartDate" @onchange="e=>SetSales(_draft.Site.SolarSales with{ContractStartDate=e.Value?.ToString()??string.Empty})"/></div><UiSelect Label="@T["Settlement time zone"]" Searchable="true" Options="Zones" Value="@_draft.Site.SolarSales.TimeZoneId" ValueChanged="v=>SetSales(_draft.Site.SolarSales with{TimeZoneId=v})"/><label class="checkbox-row"><input type="checkbox" checked="@_draft.Site.SolarSales.PayNegativePrices" @onchange="e=>SetSales(_draft.Site.SolarSales with{PayNegativePrices=e.Value is true})"/><span>@T["Apply negative prices"]</span></label><p class="field-hint">@T["Choose the policy in your contract. This affects credited energy and estimated value, not the measured export."]</p><p class="caption">@T["Your supplier settles using the OSD billing meter. SmartSolar values are estimates."]</p></div></UiCard>
+</fieldset><UiCard Title="@T["Display and polling"]" id="display"><div class="form-stack"><fieldset class="installation-fields form-stack" disabled="@(!_canManage||_saving)"><UiSelect Label="@T["Installation display time zone"]" Searchable="true" Options="Zones" Value="@_draft.Display.TimeZoneId" ValueChanged="SetDisplay"/><UiNumber Label="@T["Poll inverter every"]" Unit="s" Value="@_draft.Polling.IntervalSeconds" ValueChanged="SetPolling" Min="1" Max="3600" Integer="true"/><p class="field-hint">@T["Saved intervals remain supported. Provider limits still apply."]</p></fieldset><div class="ui-field"><label for="appearance">@T["Appearance"]</label><select id="appearance" value="@_appearance" @onchange="Appearance"><option value="light">@T["Light"]</option><option value="dark">@T["Dark"]</option><option value="system">@T["System"]</option></select><p class="field-hint">@T["Appearance is saved on this device. Language and personal time zone are in Account."]</p></div><UiButton Href="/settings/account">@T["Account settings"]</UiButton></div></UiCard>
+</div></div><div class="save-bar"><span>@(Dirty?T["Unsaved changes"]:T["All changes saved"])</span><div class="form-actions"><UiButton Variant="outline" OnClick="Discard" Disabled="@(!_canManage||!Dirty||_saving)">@T["Discard"]</UiButton><UiButton Variant="primary" Type="submit" Busy="_saving" Disabled="@(!_canManage||!Dirty||!_form.IsValid)">@T["Save changes"]</UiButton></div></div></form></CascadingValue>}
+<UnsavedChangesGuard Dirty="@(Dirty&&!_saving)"/>
+@code{
+ private InstallationSettingsDto? _draft,_saved;private string? _error,_notice;private bool _saving,_locating,_testingWeather,_canManage;private IntegrationTestResult? _weatherResult;private int _draftRevision,_weatherVersion;private string _appearance="light";private readonly AsyncQueryScope _queries=new();private readonly UiFormState _form=new();
+ private static readonly IReadOnlyList<KeyValuePair<string,string>> Zones=TimeZoneInfo.GetSystemTimeZones().Select(z=>new KeyValuePair<string,string>(z.Id,z.Id)).ToArray();
+ private SolarSiteSettings Solar=>_draft!.Site.SolarEstimate;private bool Dirty=>_draft is not null&&_saved is not null&&(_draft.Site!=_saved.Site||_draft.Display!=_saved.Display||_draft.Polling!=_saved.Polling||_draft.PrimaryInverterId!=_saved.PrimaryInverterId||!_form.IsValid);
+ protected override async Task OnInitializedAsync(){_form.Changed+=FormChanged;try{await Security.EnsureAsync(InstallationPermission.ManageSettings,_queries.LifetimeToken);_canManage=true;}catch(InstallationAccessException denied)when(denied.Status==403){}await _queries.RunAsync(ct=>InstallationSettings.LoadAsync(ct),started:()=>{},received:value=>_draft=_saved=value,failed:error=>_error="Installation settings could not be loaded.",finished:()=>{});}
+ private void SetSolar(SolarSiteSettings solar){if(!_canManage)return;if(_draft?.Site.SolarEstimate.Latitude!=solar.Latitude||_draft?.Site.SolarEstimate.Longitude!=solar.Longitude){++_weatherVersion;_weatherResult=null;}_draft=_draft! with{Site=_draft.Site with{SolarEstimate=solar}};}private void SetSales(SalesSiteSettings sales){if(_canManage)_draft=_draft! with{Site=_draft.Site with{SolarSales=sales}};}private void SetDisplay(string zone){if(_canManage)_draft=_draft! with{Display=new(zone)};}private void SetPolling(double seconds){if(_canManage)_draft=_draft! with{Polling=new((int)seconds)};}
+ private void Confirmation(ChangeEventArgs e)=>SetSolar(Solar with{DeyeSolarPowerIsPvDcConfirmed=e.Value is true,DeyeSolarPowerConfirmedDeviceSn=e.Value is true?_draft!.PrimaryInverterId?.ToString("D")??string.Empty:string.Empty});
+ private void Primary(ChangeEventArgs e){if(!_canManage)return;_draft=_draft! with{PrimaryInverterId=Guid.TryParse(e.Value?.ToString(),out var id)?id:null};SetSolar(Solar with{DeyeSolarPowerIsPvDcConfirmed=false,DeyeSolarPowerConfirmedDeviceSn=""});}
+ private void Discard(){++_draftRevision;++_weatherVersion;_draft=_saved;_error=null;_notice=null;_weatherResult=null;}
+ private async Task Save(){if(!_canManage||_saving||_draft is null||!Dirty)return;_error=null;_notice=null;if(!_form.IsValid){_error=T["Correct the fields before saving."];return;}if(!SiteSettingsService.TryValidate(_draft.Site,out var validation)){_error=validation;return;}_saving=true;try{await Security.EnsureAsync(InstallationPermission.ManageSettings,_queries.LifetimeToken);_draft=_saved=await InstallationSettings.SaveAsync(new(_draft.Site,_draft.Polling,_draft.Display,_draft.PrimaryInverterId,_draft.Version,new(_draft.IntegrationVersions)),_queries.LifetimeToken);_notice=T["Installation settings saved."];}catch(InstallationAccessException denied)when(denied.Status==403){_canManage=false;_error=denied.Message;}catch(Exception error)when(!_queries.IsDisposed){_error=error is ArgumentException or IntegrationRequestException?error.Message:"Settings could not be saved. Your draft is retained.";}finally{_saving=false;}}
+ private async Task Locate(){if(!_canManage||_locating)return;var revision=_draftRevision;_locating=true;_error=null;try{var point=await JS.InvokeAsync<double[]>("smartSolar.location");if(!_queries.IsDisposed&&revision==_draftRevision&&point.Length==2&&double.IsFinite(point[0])&&double.IsFinite(point[1]))SetSolar(Solar with{Latitude=point[0],Longitude=point[1]});}catch(JSException){_error=T["Location is unavailable. You can enter coordinates manually."];}finally{_locating=false;}}
+ private async Task TestWeather(){if(!_canManage||_testingWeather||_draft is null||!_form.IsValid)return;var revision=_weatherVersion;var location=Solar;_testingWeather=true;_weatherResult=null;try{await Security.EnsureAsync(InstallationPermission.ManageSettings,_queries.LifetimeToken);var result=await Tests.TestAsync("openmeteo",new(SolarEstimate:new(location.Latitude,location.Longitude)),_queries.LifetimeToken);if(!_queries.IsDisposed&&revision==_weatherVersion&&Solar.Latitude==location.Latitude&&Solar.Longitude==location.Longitude&&_form.IsValid)_weatherResult=result;}catch(InstallationAccessException denied)when(denied.Status==403){_canManage=false;_error=denied.Message;}catch(Exception)when(!_queries.IsDisposed){if(revision==_weatherVersion)_error=T["The provider could not be verified. Please try again."];}finally{_testingWeather=false;}}
+ protected override async Task OnAfterRenderAsync(bool first){if(first){var appearance=await JS.InvokeAsync<string>("smartSolar.getAppearance");if(appearance is "light" or "dark" or "system"){_appearance=appearance;StateHasChanged();}}}
+ private async Task Appearance(ChangeEventArgs e){_appearance=e.Value?.ToString()??"light";await JS.InvokeVoidAsync("smartSolar.appearance",_appearance);}
+ private void FormChanged(){if(!_queries.IsDisposed)_ = InvokeAsync(StateHasChanged);}
+ public ValueTask DisposeAsync(){_form.Changed-=FormChanged;return _queries.DisposeAsync();}
 }

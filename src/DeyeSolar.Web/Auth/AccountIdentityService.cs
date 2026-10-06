@@ -5,7 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DeyeSolar.Web.Auth;
 
-public sealed record AccountIdentitiesResponse(string? Email, string? Phone, bool GoogleLinked);
+public sealed record AccountIdentitiesResponse(string? Email, string? Phone, bool GoogleLinked)
+{
+    public bool AppleLinked { get; init; }
+    public bool HasPassword { get; init; }
+}
 
 public sealed class AccountIdentityService(UserManager<IdentityUser> users, DeyeSolarDbContext db,
     InstallationMembershipService memberships, IAccountSessionStore sessions, AuthProviderOptions providers)
@@ -17,7 +21,7 @@ public sealed class AccountIdentityService(UserManager<IdentityUser> users, Deye
         if (user is null) return null;
         var logins = await users.GetLoginsAsync(user);
         return new(user.EmailConfirmed ? user.Email : null, user.PhoneNumberConfirmed ? user.PhoneNumber : null,
-            logins.Any(login => login.LoginProvider == "Google"));
+            logins.Any(login => login.LoginProvider == "Google")) { AppleLinked = logins.Any(login => login.LoginProvider == "Apple"), HasPassword = await users.HasPasswordAsync(user) };
     }
 
     public async Task<MobileAuthResponse?> SessionAsync(string userId, CancellationToken ct)
@@ -133,6 +137,32 @@ public sealed class AccountIdentityService(UserManager<IdentityUser> users, Deye
             || !OneTimeVerificationService.TryNormalize("email", email, out var normalized))
             throw new AccountIdentityException("google_failed", "Google did not provide a verified identity.");
         return normalized;
+    }
+
+    public async Task<IdentityUser> AppleAsync(VerifiedAppleIdentity identity, string audience, string refreshToken,
+        string? linkingUserId, AppleIdentityCredentialStore credentials, CancellationToken ct)
+    {
+        var user = await users.FindByLoginAsync("Apple", identity.Subject);
+        if (user is not null && linkingUserId is not null && user.Id != linkingUserId)
+            throw new AccountIdentityException("link_conflict", "This Apple identity already belongs to another account.");
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (user is null && linkingUserId is null)
+        {
+            if (!providers.RegistrationEnabled) throw new AccountIdentityException("registration_disabled", "Registration is currently unavailable.");
+            if (identity.Email is null || !identity.EmailVerified) throw new AccountIdentityException("apple_failed", "Apple did not provide a verified email address.");
+            user = await RegisterCoreAsync(new("email", identity.Email), null, ct);
+        }
+        else if (linkingUserId is not null) user = await users.FindByIdAsync(linkingUserId)
+            ?? throw new AccountIdentityException("link_failed", "Sign in again before linking Apple.");
+        if (user is null || await users.IsLockedOutAsync(user)) throw new AccountIdentityException("account_unavailable", "This account is currently unavailable.");
+        var logins = await users.GetLoginsAsync(user);
+        if (logins.Any(x => x.LoginProvider == "Apple" && x.ProviderKey != identity.Subject)) throw new AccountIdentityException("link_conflict", "This account already has another Apple identity.");
+        if (!logins.Any(x => x.LoginProvider == "Apple") && !(await users.AddLoginAsync(user, new("Apple", identity.Subject, "Apple"))).Succeeded)
+            throw new AccountIdentityException("link_failed", "Apple could not be linked to this account.");
+        // A returning provider never overwrites an existing verified contact or merges accounts by email.
+        await credentials.SaveAsync(db, user.Id, identity.Subject, audience, refreshToken, ct);
+        await transaction.CommitAsync(ct);
+        return user;
     }
 
     private Task<bool> DestinationInUse(VerifiedIdentity identity, string? exceptUserId, CancellationToken ct)

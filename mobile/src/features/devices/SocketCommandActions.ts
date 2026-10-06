@@ -1,4 +1,5 @@
 import type { SocketCommandCoordinator, SocketCommandState } from "../../core/api/SocketCommandCoordinator";
+import type { RuleConflictChoice } from "../../core/api/IntegrationApi";
 import { ManualOverrideCommand, type ManualOverrideDirection } from "../dashboard/ManualOverrideCommand";
 
 type Commands = Pick<SocketCommandCoordinator, "send" | "check" | "get" | "isRunning" | "sessionEpoch">;
@@ -13,8 +14,8 @@ export class SocketCommandActions {
   activate(): void { this.active = true; for (const gate of this.gates.values()) gate.activate(); }
   deactivate(): void { this.active = false; for (const gate of this.gates.values()) gate.deactivate(); }
   busy(deviceId: string | null): ManualOverrideDirection | null { return deviceId ? this.gates.get(deviceId)?.busy ?? null : null; }
-  send(deviceId: string, isOn: boolean): Promise<boolean> {
-    return this.run(deviceId, isOn, () => this.commands.send(deviceId, isOn), "Unable to change socket state.");
+  send(deviceId: string, isOn: boolean, onRuleConflict?: RuleConflictChoice): Promise<boolean> {
+    return this.run(deviceId, isOn, () => this.commands.send(deviceId, isOn, onRuleConflict), "Unable to change socket state.");
   }
   check(deviceId: string, release = false): Promise<boolean> {
     return this.run(deviceId, this.commands.get(deviceId)?.isOn ?? false,

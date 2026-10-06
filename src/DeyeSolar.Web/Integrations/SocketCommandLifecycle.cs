@@ -203,7 +203,8 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
         return ToDto(command);
     }
     private static IntegrationCommandReceipt ToDto(IntegrationCommandEntity c)
-        => new(c.Id, c.DeviceId, c.DesiredState, c.Status == "uncertain_closed" ? c.Status : Receipt(c).Status.ToString().ToLowerInvariant(), c.ErrorCode, c.CreatedAt, c.CompletedAt);
+        => new(c.Id, c.DeviceId, c.DesiredState, c.Status == "uncertain_closed" ? c.Status : Receipt(c).Status.ToString().ToLowerInvariant(), c.ErrorCode, c.CreatedAt, c.CompletedAt,
+            c.OnRuleConflict, c.PausedRuleIdsJson is null ? null : JsonSerializer.Deserialize<int[]>(c.PausedRuleIdsJson));
     public async Task<IReadOnlyList<SocketCommandReceipt>> ListUnresolvedAsync(SocketId deviceId, CancellationToken ct)
         => (await UnresolvedAsync(deviceId.Value, ct)).Select(ToContract).ToArray();
     public async Task<SocketCommandReceipt> ReleaseAsync(SocketId deviceId, SocketCommandId commandId, CancellationToken ct)
@@ -244,7 +245,10 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
             if (authorizeCommand is not null) await authorizeCommand(ct);
             var session = await bindings.CurrentAsync(binding, expected, ct);
             var desired = request.DesiredState == SwitchState.On;
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{binding.Id:D}/{desired}")));
+            var choice = Redesign.ManualOverrideContext.Current;
+            // Omitting the new choice preserves the exact historical idempotency payload.
+            var payload = $"{binding.Id:D}/{desired}" + (choice?.Policy is { } policy ? "/" + policy : "");
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
             await using var db = await factory.CreateDbContextAsync(ct);
             await using (var intent = await db.Database.BeginTransactionAsync(ct))
             {
@@ -272,9 +276,36 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
                     Generation = session.Generation,
                     DesiredState = desired,
                     PayloadHash = hash,
-                    CreatedAt = clock.GetUtcNow()
+                    CreatedAt = clock.GetUtcNow(),
+                    ActorUserId = choice?.UserId,
+                    Client = choice?.Client,
+                    OnRuleConflict = choice?.Policy
                 };
+                if (choice?.Policy == "pause")
+                {
+                    // The installation admission lock also fences rule editor/enable mutations.
+                    // This happens before durable intent commits and under the same transaction.
+                    if (authorizeCommand is not null) await authorizeCommand(ct);
+                    var paused = await db.TriggerRules.Where(r => r.Enabled && r.EntityId == binding.Id.ToString("D")).ToListAsync(ct);
+                    foreach (var rule in paused)
+                    {
+                        rule.Enabled = false;
+                        rule.PauseReason = "manual_override";
+                        rule.PausedAt = clock.GetUtcNow();
+                        rule.PausedByUserId = choice.UserId;
+                        rule.PausedByCommandId = intentCommand.Id;
+                        db.ActivityEvents.Add(Redesign.ActivityEvidence.RuleChange(rule, "rule.paused", choice.UserId));
+                    }
+                    intentCommand.PausedRuleIdsJson = JsonSerializer.Serialize(paused.Select(r => r.Id).ToArray());
+                }
                 db.IntegrationCommands.Add(intentCommand);
+                db.ActivityEvents.Add(new Redesign.ActivityEvent
+                {
+                    Kind = choice is null ? "command.automation" : "command.manual",
+                    DeviceId = binding.Id.ToString("D"), OccurredAt = clock.GetUtcNow().UtcDateTime,
+                    RecordedAt = clock.GetUtcNow().UtcDateTime, ActorUserId = choice?.UserId, Client = choice?.Client,
+                    State = desired, ReasonCode = "requested", ValuesJson = JsonSerializer.Serialize(new { commandId = intentCommand.Id })
+                });
                 await db.SaveChangesAsync(ct);
                 await intent.CommitAsync(ct);
             }
@@ -357,6 +388,14 @@ internal sealed class SocketCommandLifecycle(IIntegrationRegistry registry, IInt
                 rule.CurrentState = command.DesiredState;
             }
         }
+        db.ActivityEvents.Add(new Redesign.ActivityEvent
+        {
+            Kind = "command.result", DeviceId = binding.Id.ToString("D"),
+            OccurredAt = clock.GetUtcNow().UtcDateTime, RecordedAt = clock.GetUtcNow().UtcDateTime,
+            ActorUserId = command.ActorUserId, Client = command.Client,
+            State = command.Status == "acknowledged" && active ? command.DesiredState : null,
+            ReasonCode = command.Status, ValuesJson = JsonSerializer.Serialize(new { commandId = command.Id, command.ErrorCode })
+        });
         await db.SaveChangesAsync(CancellationToken.None);
         await transaction.CommitAsync(CancellationToken.None);
     }

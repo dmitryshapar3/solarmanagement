@@ -45,6 +45,37 @@ public class PersistentSessionSecurityTests
         Assert.Empty(await final.AccountSessions.ToListAsync());
     }
     [SqlServerFact]
+    public async Task PublicSessionIdsAreStablePrivateAndRevocationIsAccountScopedAndPreservesCurrent()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        var store = MobileSessionStore.Persistent(fixture.Options, fixture.Clock);
+        var current = await store.CreateAsync("owner", "owner", "stamp", "installation");
+        fixture.Clock.Now = fixture.Clock.Now.AddSeconds(1);
+        var other = await store.CreateAsync("owner", "owner", "stamp", "installation");
+        var rows = await store.ListAsync("owner", current.Token);
+        Assert.Equal(2, rows.Count); Assert.Equal(current.SessionId, Assert.Single(rows.Where(x => x.IsCurrent)).Id);
+        Assert.DoesNotContain(current.Token, System.Text.Json.JsonSerializer.Serialize(rows));
+        Assert.False(await store.RevokeSessionAsync("different-account", other.SessionId));
+        Assert.NotNull(await store.FindAsync(other.Token));
+        await store.RevokeOthersAsync("owner", current.Token);
+        Assert.Null(await store.FindAsync(other.Token));
+        var reloaded = await MobileSessionStore.Persistent(fixture.Options, fixture.Clock).FindAsync(current.Token);
+        Assert.Equal(current.SessionId, reloaded!.SessionId);
+        Assert.True(await store.RevokeSessionAsync("owner", current.SessionId)); Assert.Null(await store.FindAsync(current.Token));
+    }
+    [SqlServerFact]
+    public async Task SessionActivityUpdatesAreThrottledAndLegacyMetadataStaysUnknown()
+    {
+        await using var fixture = await Fixture.StartAsync(); var store = MobileSessionStore.Persistent(fixture.Options, fixture.Clock);
+        var session = await store.CreateAsync("owner", "owner", "stamp", "installation");
+        await store.FindAsync(session.Token);
+        var first = Assert.Single(await store.ListAsync("owner", session.Token)); Assert.NotNull(first.LastSeenAt); Assert.Null(first.Platform); Assert.Null(first.Client);
+        fixture.Clock.Now = fixture.Clock.Now.AddMinutes(4); await store.FindAsync(session.Token);
+        Assert.Equal(first.LastSeenAt, Assert.Single(await store.ListAsync("owner", session.Token)).LastSeenAt);
+        fixture.Clock.Now = fixture.Clock.Now.AddMinutes(2); await store.FindAsync(session.Token);
+        Assert.True(Assert.Single(await store.ListAsync("owner", session.Token)).LastSeenAt > first.LastSeenAt);
+    }
+    [SqlServerFact]
     public async Task LiveCircuitOperationRechecksStampMembershipAndRoleBeforeCallingRepository()
     {
         await using var fixture = await Fixture.StartAsync();

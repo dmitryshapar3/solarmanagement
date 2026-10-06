@@ -40,3 +40,4 @@ export function useSubscription() {
   if (!context) throw new Error(t("useSubscription must be used inside SubscriptionProvider."));
   return context;
 }
+export function useOptionalSubscription() { return useContext(SubscriptionContext); }

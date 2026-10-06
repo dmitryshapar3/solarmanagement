@@ -11,7 +11,8 @@ public static class GoogleIdentityEndpoints
     public const string Scheme = "Google";
     public static void MapGoogleIdentity(this WebApplication app)
     {
-        app.MapGet("/auth/google", (HttpContext context, AuthProviderOptions options, GoogleMobileTicketStore tickets) =>
+        app.MapGet("/auth/google", (HttpContext context, AuthProviderOptions options, GoogleMobileTicketStore tickets,
+            [Microsoft.AspNetCore.Mvc.FromServices] IServiceProvider services) =>
         {
             if (!options.GoogleEnabled) return Results.Redirect("/login?error=google_unavailable");
             GoogleMobileFlow? flow = null;
@@ -26,6 +27,11 @@ public static class GoogleIdentityEndpoints
             if ((query.ContainsKey("linkTicket") || query["mobile"].ToString() == "true") && flow is null)
                 return Results.BadRequest(new IdentityApiError("The sign-in request is invalid or expired."));
             var properties = new AuthenticationProperties { RedirectUri = "/auth/google/complete" };
+            if (query["proofFlow"].ToString() is { Length: > 0 } proofFlow)
+            {
+                if (services.GetRequiredService<ExternalAccountProofStore>().Find(proofFlow)?.Provider != "Google") return Results.BadRequest();
+                properties.Items["solar.proof.flow"] = proofFlow;
+            }
             properties.Items["solar.oauth.once"] = tickets.StartCallback();
             if (flow is not null)
             {
@@ -37,7 +43,8 @@ public static class GoogleIdentityEndpoints
         }).AllowAnonymous().RequireRateLimiting("identity-auth");
 
         app.MapGet("/auth/google/complete", async Task<IResult> (HttpContext context, SignInManager<IdentityUser> signIn,
-            AccountIdentityService accounts, GoogleMobileTicketStore tickets, CancellationToken ct) =>
+            AccountIdentityService accounts, GoogleMobileTicketStore tickets,
+            [Microsoft.AspNetCore.Mvc.FromServices] IServiceProvider services, CancellationToken ct) =>
         {
             var external = await context.AuthenticateAsync(IdentityConstants.ExternalScheme);
             if (!external.Succeeded || external.Principal is null || external.Properties is null)
@@ -59,6 +66,17 @@ public static class GoogleIdentityEndpoints
                 var subject = external.Principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
                 var email = external.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
                 var verified = external.Principal.FindFirstValue("google:email_verified") == "true";
+                if (properties.TryGetValue("solar.proof.flow", out var proofFlowId) && proofFlowId is not null)
+                {
+                    var proofs = services.GetRequiredService<ExternalAccountProofStore>();
+                    var completions = services.GetRequiredService<ExternalProofCompletionStore>();
+                    _ = AccountIdentityService.ValidateGoogle(subject, email, verified);
+                    var owner = await signIn.UserManager.FindByLoginAsync("Google", subject);
+                    if (owner is null || await signIn.UserManager.IsLockedOutAsync(owner)) throw new AccountIdentityException("proof_failed", "Use the Google identity already linked to this account.");
+                    completions.Add(proofFlowId, proofs.Complete(proofFlowId, "Google", owner.Id));
+                    return flow is null ? Results.Redirect("/settings/account?confirmed=google")
+                        : Results.Redirect($"deyesolar://auth/callback?confirmed=google&state={Uri.EscapeDataString(flow.State)}");
+                }
                 if (flow?.LinkingUserId is not null)
                 {
                     // OAuth proves the Google identity, but a callback cannot authorize an account mutation.
@@ -82,7 +100,7 @@ public static class GoogleIdentityEndpoints
                     return Results.Redirect($"deyesolar://auth/callback?code={Uri.EscapeDataString(code)}&state={Uri.EscapeDataString(flow.State)}");
                 }
                 await signIn.SignInAsync(user, isPersistent: true);
-                return Results.Redirect(linkingUserId is null ? "/" : "/account?linked=google");
+                return Results.Redirect(linkingUserId is null ? "/" : "/settings/account?linked=google");
             }
             catch (AccountIdentityException exception)
             {

@@ -14,6 +14,69 @@ public class ExportSalesServiceTests
     private static readonly ExportSalesRequest Day = new(ExportSalesPeriod.Day, new DateOnly(2026, 9, 28));
 
     [Fact]
+    public async Task HourlyDetailsAreOptInAndNeverChangeTheLegacyAppStorePayload()
+    {
+        var fixture = new Fixture();
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start, 200m));
+        var legacy = await fixture.Service.ReadAsync(Day, default);
+        var details = await fixture.Service.ReadDetailsAsync(Day, default);
+        Assert.Null(legacy.Hours);
+        Assert.Null(legacy.MissingPriceHours);
+        var json = System.Text.Json.JsonSerializer.Serialize(legacy, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.DoesNotContain("\"hours\"", json);
+        Assert.DoesNotContain("\"missingPriceHours\"", json);
+        var hour = Assert.Single(details.Hours!);
+        Assert.Equal(1m, hour.ExportKwh);
+        Assert.Equal(0.2m, hour.AveragePricePlnPerKwh);
+        Assert.Empty(details.MissingPriceHours!);
+        Assert.Equal(legacy.EnergyValuePln, details.EnergyValuePln);
+        Assert.Equal(legacy.Buckets, details.Buckets);
+    }
+
+    [Fact]
+    public async Task ExplicitPriceRecheckCanRetryImmediatelyAndPreservesPreviouslyStoredIntervals()
+    {
+        var fixture = new Fixture();
+        fixture.Clock.Now = Start.AddHours(2).AddMinutes(10);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 2).ToList();
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start, 200m));
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start.AddHours(1), 300m).Take(3));
+        fixture.Prices.Fail = true;
+        var partial = await fixture.Service.ReadDetailsAsync(Day, default);
+        Assert.Equal(Start.AddHours(1), Assert.Single(partial.MissingPriceHours!));
+        await fixture.Service.ReadDetailsAsync(Day, default);
+        Assert.Single(fixture.Prices.Calls);
+        fixture.Prices.Fail = false;
+        fixture.Prices.Rows = [new(Start.AddMinutes(105), Start.AddHours(2), 300m)];
+        var complete = await fixture.Service.RecheckPricesAsync(Day, default);
+        Assert.Equal(2, fixture.Prices.Calls.Count);
+        Assert.Empty(complete.MissingPriceHours!);
+        Assert.Equal(0.5m, complete.EnergyValuePln);
+        Assert.Equal(8, fixture.PriceStore.Rows.Count);
+        Assert.Equal(200m, fixture.PriceStore.Rows.Single(price => price.Start == Start).PricePlnPerMwh);
+    }
+
+    [Fact]
+    public async Task ExplicitPriceRecheckIncludesUnpublishedHoursWithMeasuredZeroCredit()
+    {
+        var fixture = new Fixture();
+        fixture.Readings.Rows["selected"] = Constant(1000, 1).ToList();
+        var first = await fixture.Service.ReadDetailsAsync(Day, default);
+        Assert.Equal(0m, first.EnergyValuePln);
+        Assert.Equal(Start, Assert.Single(first.MissingPriceHours!));
+        Assert.Empty(fixture.Prices.Calls);
+        fixture.Prices.Rows = PriceHour(Start, -200m);
+        var checkedPrices = await fixture.Service.RecheckPricesAsync(Day, default);
+        Assert.Single(fixture.Prices.Calls);
+        Assert.Empty(checkedPrices.MissingPriceHours!);
+        var hour=Assert.Single(checkedPrices.Hours!);
+        Assert.Equal(-0.2m, hour.MarketAveragePricePlnPerKwh);
+        Assert.Equal(0m,hour.AveragePricePlnPerKwh);
+        Assert.Equal(0m, checkedPrices.EnergyValuePln);
+    }
+
+    [Fact]
     public async Task ValuesHourlyNetExportInsteadOfGrossExportAndKeepsSignedPricePolicyExplicit()
     {
         var fixture = new Fixture();

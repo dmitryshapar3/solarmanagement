@@ -1,10 +1,6 @@
 {
   "version": 1,
   "dependencies": {
-    "net8.0": {
-      "solarmanagement.integrations.contracts": {
-        "type": "Project"
-      }
-    }
+    "net8.0": {}
   }
 }

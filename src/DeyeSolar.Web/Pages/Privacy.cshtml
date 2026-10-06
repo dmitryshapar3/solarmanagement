@@ -7,15 +7,15 @@
 }
 
 <h1>@T["Privacy policy"]</h1>
-<p class="updated">@T["Last updated: October 4, 2026"]</p>
-<p>@T["This policy describes the DeyeSolar mobile app and the Solar Energy Management service at"]
+<p class="updated">@T["Last updated: October 6, 2026"]</p>
+<p>@T["This policy describes the SmartSolar mobile app and solar energy management service at"]
     <a href="https://solar.dshapar.com">solar.dshapar.com</a>@T[". Contact the service operator at"]
     <a href="mailto:@contactEmail">@contactEmail</a> @T["with privacy questions."]</p>
 
 <h2>@T["Information used by the service"]</h2>
 <ul>
-    <li><strong>@T["Account and sign-in information:"]</strong> @T["usernames, verified email addresses and phone numbers, linked Google account identifiers, password authentication records, verification challenges, and session tokens used to sign in."]</li>
-    <li><strong>@T["Configuration you save:"]</strong> @T["Deye and Shelly connection settings, including account email, credentials, API secrets, station and device identifiers, and polling preferences."]</li>
+    <li><strong>@T["Account and sign-in information:"]</strong> @T["usernames, verified email addresses and phone numbers, linked Google and Apple account identifiers, password authentication records, verification challenges, and session tokens used to sign in."]</li>
+    <li><strong>@T["Configuration you save:"]</strong> @T["Connection settings for installed inverter and smart plug services, including account email, credentials, API secrets, station and device identifiers, and polling preferences."]</li>
     <li><strong>@T["Installation information:"]</strong> @T["inverter and battery readings, solar generation estimates and history, device status, automation rules you create, and records of rule execution. The service also stores export readings and electricity settlement data to calculate estimated sales."]</li>
 </ul>
 <p>@T["The mobile app stores its selected server address locally. On iOS and Android, it uses the operating system's secure storage for the sign-in session. The mobile app does not save the password entered on its sign-in screen."]</p>
@@ -27,13 +27,14 @@
 <h2>@T["Connected services"]</h2>
 <ul>
     <li><strong>@T["Google:"]</strong> @T["when you choose Google sign-in or linking, Google verifies your identity and supplies its account identifier and verified email address. The service does not receive your Google password."]</li>
+    <li><strong>Apple:</strong> @T["when you choose Sign in with Apple, Apple verifies your identity and supplies its account identifier and available email address. The service does not receive your Apple password."]</li>
     <li><strong>@T["Resend:"]</strong> @T["when email verification is enabled, your email address and verification message are sent to Resend for delivery."]</li>
     <li><strong>@T["Twilio Verify:"]</strong> @T["when phone verification is enabled, your phone number and verification request are sent to Twilio to deliver and verify the SMS code."]</li>
     <li><strong>@T["Deye Cloud:"]</strong> @T["the server uses configured Deye account and application credentials and station or device identifiers to request inverter and energy information."]</li>
     <li><strong>@T["Shelly Cloud:"]</strong> @T["the server uses the configured authorization key and device identifiers to retrieve device status and send device commands."]</li>
-    <li><strong>@T["Open-Meteo:"]</strong> @T["the server sends the configured solar installation coordinates to retrieve weather and solar radiation information. The mobile app does not request the phone's GPS location."]</li>
+    <li><strong>@T["Open-Meteo:"]</strong> @T["the server sends the configured solar installation coordinates to retrieve weather and solar radiation information. You may choose Use my location in installation settings. The app or browser requests location permission for that action; location is not tracked in the background."]</li>
 </ul>
-<p>@T["The web dashboard loads fonts from Google Fonts, which involves a direct browser request to Google. Service requests also pass through the hosting and network providers used to operate the server. These providers may process technical connection information necessary to deliver the service."]</p>
+<p>@T["Fonts are served by the SmartSolar server. Service requests pass through the hosting and network providers used to operate the server. These providers may process technical connection information necessary to deliver the service."]</p>
 <p>@T["The mobile app does not include advertising or analytics SDKs and does not use data for cross-app advertising tracking."]</p>
 
 <h2>@T["App Store subscriptions"]</h2>
@@ -44,7 +45,7 @@
 <p>@T["Verification challenges expire after ten minutes; mobile Google tickets expire after two minutes. Mobile sessions expire and can be revoked. Signing out clears the stored mobile session and attempts to revoke that session on the server. Signing out does not delete the server account, connection settings, or installation history."]</p>
 
 <h2>@T["Your choices and requests"]</h2>
-<p>@T["You can sign out and change the configured server in the mobile app. You can edit connection settings and automation rules when signed in to a server you administer. To request access, correction, or deletion of information held by this service, or to stop its processing, contact"]
+<p>@T["Account settings let you update verified contacts, manage sign-in methods and sessions, export an account ZIP archive, and request account deletion after confirming your identity. Deletion does not cancel an App Store subscription. Installation edits require the appropriate permission. For other privacy requests, contact"]
     <a href="mailto:@contactEmail">@contactEmail</a>@T[". Describe your request and the relevant account or installation without sending passwords or API secrets. The operator may need to verify that you are authorized to make the request."]</p>
 <p>@T["If you connect the mobile app to a different server, that server's operator is responsible for its data handling. Ask that operator for its privacy policy and data requests."]</p>
 

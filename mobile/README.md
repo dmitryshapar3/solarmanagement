@@ -1,4 +1,4 @@
-# DeyeSolar Mobile
+# SmartSolar Mobile
 
 React Native / Expo client for the existing Solar server. Settings offers 15 interface languages shared with the web dashboard; selections work offline and synchronize with the account after the updated backend is deployed. See [localization](../docs/localization.md).
 
@@ -12,7 +12,11 @@ npm start
 
 The default server is `https://solar.dshapar.com`. Sign in with the existing Solar account. A custom server URL can be entered on the login screen.
 
-The Home screen combines battery SOC, solar generation and grid power. Pull down to refresh all data on the current screen, including its generation and sales panels; this gesture also works on detail screens, devices, rules, history, settings and subscriptions. Both the live generation metric and the generation chart use PV production, independently of battery charging or discharging power. Generation shows the estimated range and actual readings. Sales shows the server's completed-period estimates and the separate provisional current hour. Both have dedicated detail tabs. Devices, rules, history and account settings remain available.
+The four tabs are Home, Energy, Devices and Automations. Home combines measured PV, battery charge and energy flows. Energy contains Production and Export: expected weather ranges are separate from measured PV; completed export totals exclude the provisional current hour. Automations includes recorded Activity, paused client presets and a guarded editor. Readings log and grouped checks retain unavailable values as gaps. Pull down to refresh each screen and its nested data; there are no generic refresh buttons. A purposeful missing-price check remains available in Export.
+
+Light is the initial appearance. Settings offers Light, Dark and System, a collapsed language dropdown, installation preferences and account security. Fonts are bundled Onest and Unbounded; native Apple sign-in appears only when both the device and configured server support it. The iOS tab bar uses Callstack native tabs and follows the selected UIKit appearance; other platforms use the shared floating tab bar. Development builds expose the component gallery by holding the Home account avatar.
+
+The sample account stays local, uses clearly disclosed fictional measurements and disables hardware commands. Real manual switching preserves durable command IDs, pending/uncertain handling and observed state; an enabled controlling automation requires an explicit pause or just-once choice.
 
 Focused screens refresh every five minutes while the app is in the foreground. Missing values are not displayed as zero. Financial values come from the server; the app does not recalculate settlement prices or revenue.
 
@@ -65,7 +69,7 @@ Install `build/DerivedData/Build/Products/Release-iphonesimulator/DeyeSolar.app`
 4. Select **Any iOS Device** as the build destination and choose **Product > Archive**. In Organizer choose **Distribute App > App Store Connect > Upload**.
 5. After Apple finishes processing, open the app's **TestFlight** page and add your Apple ID as an internal tester. Install the build through TestFlight on the iPhone. This does not publish a public App Store release.
 
-The current billing build is `1.0.0 (11)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
+The SmartSolar redesign build is `1.0.0 (12)`. Each account receives a one-calendar-month trial, with one socket allowed when adding devices. At expiry the server denies unpaid reading/control, and the app hides cached connected screens. StoreKit purchasing stays disabled until the backend Apple configuration is valid. The offline demo remains free and uses fictional data without controlling real equipment. See [subscription integration and prerequisites](modules/solar-subscriptions/README.md) and [backend configuration](../docs/app-store-backend.md).
 
 Client and server use the current contracts together. There are no old-session migrations, permissive old response formats, or unversioned rule mutations. Deploy the matching backend before validating connected features of this build. The complete native harness and Release bridge compilation are required; live Apple sandbox purchases remain a separate acceptance check.
 

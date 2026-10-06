@@ -50,6 +50,21 @@ public sealed class AppSettingsService : IAppSettingsReader, IAppSettingsWriter
         }
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await using var atomic = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await ApplySectionsAsync(db, sections, ct);
+        await db.SaveChangesAsync(ct);
+        await atomic.CommitAsync(ct);
+        Reload();
+    }
+
+    internal T Defaults<T>(string section) where T : new()
+    {
+        var result = new T();
+        _configuration.GetSection(section).Bind(result);
+        return result;
+    }
+    internal void Reload() => _configurationRoot?.Reload();
+    internal static async Task ApplySectionsAsync(DeyeSolarDbContext db, IReadOnlyDictionary<string, object> sections, CancellationToken ct)
+    {
         var names = sections.Keys.ToArray();
         var existing = await db.AppSettings.Where(s => names.Contains(s.Section)).ToListAsync(ct);
         foreach (var (section, options) in sections)
@@ -62,9 +77,6 @@ public sealed class AppSettingsService : IAppSettingsReader, IAppSettingsWriter
                 else setting.Value = value;
             }
         }
-        await db.SaveChangesAsync(ct);
-        await atomic.CommitAsync(ct);
-        _configurationRoot?.Reload();
     }
 
 }

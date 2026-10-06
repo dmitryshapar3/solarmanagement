@@ -28,7 +28,6 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.31" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.7" />
-    <PackageReference Include="MudBlazor" Version="7.6.0" />
   </ItemGroup>
 
   <ItemGroup><ProjectReference Include="../SolarManagement.Http/SolarManagement.Http.csproj" /></ItemGroup>

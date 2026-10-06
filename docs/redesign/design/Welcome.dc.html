@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Welcome</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;">
+  <main style="display: flex; flex-direction: column; padding: 58px 20px 0;">
+
+    <div style="display: flex; align-items: center; gap: 10px; height: 40px;">
+      <svg width="36" height="36" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#12120F"/><path d="M14 40 A18 18 0 0 1 50 40 Z" fill="#FBCE25"/><rect x="10" y="43" width="44" height="4" rx="2" fill="#F5F4F1"/></svg>
+      <span style="font-family: 'Unbounded', 'Onest', system-ui, sans-serif; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.01em;">SmartSolar</span>
+    </div>
+
+    <div style="position: relative; height: 200px; margin-top: 16px;">
+      <svg width="350" height="200" viewBox="0 0 350 200" aria-hidden="true" style="position: absolute; left: 0; top: 0;">
+        <path d="M45 184 A130 130 0 0 1 305 184 Z" fill="#FBCE25"/>
+        <rect x="0" y="188" width="350" height="5" rx="2.5" fill="#12120F"/>
+      </svg>
+      <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 104px; display: flex; flex-direction: column; align-items: center; gap: 0;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: rgba(18,18,15,0.72);">Solar now</span>
+        <span style="font-size: 36px; line-height: 42px; font-weight: 700; letter-spacing: -0.03em;">4.20 <span style="font-size: 18px; font-weight: 600;">kW</span></span>
+      </div>
+    </div>
+
+    <h1 style="margin: 28px 0 0; font-size: 32px; line-height: 38px; font-weight: 700; letter-spacing: -0.02em;">See what the sun does for your home</h1>
+    <p style="margin: 10px 0 0; font-size: 17px; line-height: 24px; font-weight: 500; color: #51504C;">Solar, battery and grid in one place — and smart plugs that use your surplus automatically.</p>
+
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 24px;">
+      <button type="button" style="height: 52px; border: none; border-radius: 26px; background: #000000; color: #FFFFFF; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">Continue with Apple</button>
+      <button type="button" style="height: 52px; border: none; border-radius: 26px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 10px; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;"><span aria-hidden="true" style="width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 10px; box-shadow: inset 0 0 0 1.5px currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; font-weight: 800;">G</span>Continue with Google</button>
+      <a href="Email-Code.dc.html" style="height: 52px; border-radius: 26px; background: #EAEAE6; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; font-size: 17px; line-height: 22px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Continue with email</a>
+    </div>
+
+    <a href="Demo-Home.dc.html" style="align-self: center; margin-top: 14px; padding: 10px 12px; font-size: 15px; line-height: 20px; font-weight: 600; color: #12120F;">Explore with sample data</a>
+
+    <p style="margin: 6px 0 0; display: flex; justify-content: center; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Own SmartSolar server? <a href="Settings.dc.html" style="color: #12120F; font-weight: 600;">Change server</a> · <a href="https://solar.dshapar.com/privacy" style="color: #12120F; font-weight: 600;">Privacy</a></p>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

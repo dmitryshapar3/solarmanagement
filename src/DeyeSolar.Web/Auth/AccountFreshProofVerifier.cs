@@ -1,9 +1,10 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 namespace DeyeSolar.Web.Auth;
-public sealed class AccountFreshProofVerifier(UserManager<IdentityUser> users, SignInManager<IdentityUser> signIn, IAccountSessionStore sessions, OneTimeVerificationService verification)
+public sealed class AccountFreshProofVerifier(UserManager<IdentityUser> users, SignInManager<IdentityUser> signIn, IAccountSessionStore sessions, OneTimeVerificationService verification,
+    ExternalAccountProofStore? external = null)
 {
-    private async Task<IdentityUser> ActorAsync(ClaimsPrincipal actor, CancellationToken ct)
+    public async Task<IdentityUser> ActorAsync(ClaimsPrincipal actor, CancellationToken ct)
     {
         var id = actor.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = id is null ? null : await users.FindByIdAsync(id);
@@ -16,7 +17,7 @@ public sealed class AccountFreshProofVerifier(UserManager<IdentityUser> users, S
             throw new AccountSecurityException("session_invalid", "Sign in again.", 401);
         return user!;
     }
-    public async Task<IdentityUser> ProveAsync(ClaimsPrincipal actor, AccountSecurityProof? proof, CancellationToken ct)
+    public async Task<IdentityUser> ProveAsync(ClaimsPrincipal actor, AccountSecurityProof? proof, CancellationToken ct, string operation = "account")
     {
         var user = await ActorAsync(actor, ct);
         if (proof?.CurrentPassword is { Length: > 0 and <= 128 } password)
@@ -29,6 +30,7 @@ public sealed class AccountFreshProofVerifier(UserManager<IdentityUser> users, S
             var identity = await verification.VerifyAsync(id, code, "security", user.Id, ct);
             if (identity is not null && IsLinked(user, identity)) return user;
         }
+        else if (proof?.ExternalProofId is { } proofId && external?.Consume(proofId, actor, user, operation) == true) return user;
         throw new AccountSecurityException("fresh_proof_required", "Confirm your current password or a new verification code before continuing.", 401);
     }
     private bool IsLinked(IdentityUser user, VerifiedIdentity identity) => identity.Channel == "phone"

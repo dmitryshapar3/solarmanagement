@@ -8,7 +8,8 @@ public sealed class BillingAccessMiddleware(RequestDelegate next)
     {
         if (context.User.Identity?.IsAuthenticated == true && context.User.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId)
             account.BindOnce(userId);
-        if (context.User.Identity?.IsAuthenticated == true && !IsAccountPath(context.Request.Path))
+        if (context.User.Identity?.IsAuthenticated == true && !IsAccountPath(context.Request.Path)
+            && !Operations.UiRoutePolicy.IsDevelopmentGallery(context))
         {
             try { await billing.EnsureUserAsync(context.User, context.RequestAborted); }
             catch (BillingAccessException error)
@@ -19,7 +20,7 @@ public sealed class BillingAccessMiddleware(RequestDelegate next)
                     context.Response.StatusCode = StatusCodes.Status402PaymentRequired;
                     await context.Response.WriteAsJsonAsync(new { code = "subscription_required", message = error.Message }, context.RequestAborted);
                 }
-                else context.Response.Redirect("/billing");
+                else context.Response.Redirect("/settings/account");
                 return;
             }
         }
@@ -27,6 +28,7 @@ public sealed class BillingAccessMiddleware(RequestDelegate next)
     }
 
     private static bool IsAccountPath(PathString path) => path.StartsWithSegments("/api/auth")
+        || Operations.UiRoutePolicy.IsAccount(path)
         || path.StartsWithSegments("/api/billing") || path.StartsWithSegments("/auth")
         || path == "/billing" || path == "/account" || path == "/account/language" || path == "/api/account/language"
         || path == "/login" || path == "/logout"

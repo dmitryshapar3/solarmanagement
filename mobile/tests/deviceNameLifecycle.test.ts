@@ -1,71 +1,72 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createRequire } from "node:module";
-import path from "node:path";
 import React from "react";
 import { act, create } from "react-test-renderer";
-import { build } from "esbuild";
 import type { Device } from "../src/core/api/types";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  return { promise: new Promise<T>(done => { resolve = done; }), resolve: (value: T) => resolve(value) };
-}
-
-test("the actual device-name editor fences late saves and keeps the replacement account's busy draft", async () => {
-  const device: Device = { id: "8d62e8e7-763a-44d5-9a75-0637a3d66d36", name: "Old provider", category: null,
-    online: true, isOn: false, stateKnown: true, currentPowerW: 0, cloudName: "Provider", localName: null };
+import { deviceComponents } from "./deviceComponentHarness";
+function deferred<T>() { let resolve!: (value: T) => void; return { promise: new Promise<T>(done => { resolve = done; }), resolve: (value: T) => resolve(value) }; }
+test("the device sheet fences late name saves and keeps the replacement account's busy draft", async () => {
+  const device: Device = { id: "8d62e8e7-763a-44d5-9a75-0637a3d66d36", name: "Old provider", category: null, online: true, isOn: false, stateKnown: true, currentPowerW: 0, cloudName: "Provider", localName: null };
   const old = deferred<Device>(), current = deferred<Device>();
-  const api = (name: string, save: Promise<Device>) => ({ sessionEpoch: 0, onSessionChange: () => () => {},
-    getDevices: async () => ({ devices: [{ ...device, name }], lastUpdated: null }),
-    renameDevice: async () => save, socketCommands: { recover: async () => [], get: () => null, isRunning: () => false } });
-  const state = { api: api("Old provider", old.promise), isDemo: false };
-  const globals = globalThis as typeof globalThis & { __solarDeviceNames?: typeof state; IS_REACT_ACT_ENVIRONMENT?: boolean };
-  globals.__solarDeviceNames = state; globals.IS_REACT_ACT_ENVIRONMENT = true;
+  const makeApi = (name: string, save: Promise<Device>) => {
+    let stored = { ...device, name };
+    return { sessionEpoch: 0, onSessionChange: () => () => {}, accountSecurity: { getPermissions: async () => ({ role: "Owner", permissions: ["Read", "ControlDevices", "ManageRules"] }) }, getDeviceDetails: async () => ({ id: device.id, name: stored.name, device: stored, controllingRules: [], canSwitch: false, supportsHistory: false, providerId: "fixture", instanceId: null }), renameDevice: async () => { stored = await save; return stored; }, socketCommands: { sessionEpoch: 0, subscribe: () => () => {}, get: () => null, isRunning: () => false } };
+  };
+  const state = { api: makeApi("Old provider", old.promise), isDemo: false };
+  const globals = globalThis as typeof globalThis & { __deviceUiAuth?: typeof state; IS_REACT_ACT_ENVIRONMENT?: boolean }; globals.__deviceUiAuth = state; globals.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer: ReturnType<typeof create> | undefined;
   try {
-    const bundle = await build({
-      stdin: { contents: 'export { DevicesScreen } from "./src/features/devices/DevicesScreen";', resolveDir: process.cwd(), loader: "ts" },
-      bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime", "expo-crypto"],
-      plugins: [{ name: "name-editor-boundaries", setup(builder) {
-        builder.onResolve({ filter: /^(react-native|lucide-react-native|@react-navigation\/native)$|(?:^|\/)application\/(AuthContext|LanguageContext)$|(?:^|\/)core\/components$|(?:^|\/)i18n$|(?:^|\/)useSocketCommandActions$/ }, args => ({ path: args.path, namespace: "name-test" }));
-        builder.onLoad({ filter: /.*/, namespace: "name-test" }, args => ({ loader: "js", contents:
-          args.path === "react-native" ? 'export const StyleSheet={create:value=>value}; export const Text="Text",View="View",Keyboard={dismiss(){}};'
-            : args.path === "lucide-react-native" ? 'export const CirclePower=()=>null,RefreshCcw=()=>null,Zap=()=>null;'
-            : args.path === "@react-navigation/native" ? 'import React from "react"; export const useFocusEffect=callback=>React.useEffect(callback,[callback]);'
-            : args.path.endsWith("AuthContext") ? 'export const useAuth=()=>globalThis.__solarDeviceNames;'
-            : args.path.endsWith("LanguageContext") ? 'export const useLanguage=()=>({t:text=>text});'
-            : args.path.endsWith("i18n") ? 'export const formattingLocale=()=>"en-GB"; export const translate=text=>text;'
-            : args.path.endsWith("useSocketCommandActions") ? 'export const useSocketCommandActions=()=>({busy:()=>null,send:async()=>{},check:async()=>{}});'
-            : 'export const AppButton="AppButton",Card="Card",EmptyState="EmptyState",ErrorBanner="ErrorBanner",Header="Header",LoadingState="LoadingState",Screen="Screen",TextField="TextField",StatusPill="StatusPill";'
-        }));
-      } }]
-    });
-    const module = { exports: {} as { DevicesScreen: React.ComponentType } };
-    new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
-    const Component = module.exports.DevicesScreen;
-    await act(async () => { renderer = create(React.createElement(Component)); });
-    const button = (label: string) => renderer!.root.findAllByType("AppButton").find(item => item.props.label === label)!;
+    const { DeviceSheetScreen: Component } = await deviceComponents(); const props = { route: { params: { id: device.id } }, navigation: { goBack() {}, navigate() {} } };
+    await act(async () => { renderer = create(React.createElement(Component, props)); });
+    const button = (label: string) => renderer!.root.findAllByType("button").find(item => item.props.label === label)!;
+    const edit = () => renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Name in SmartSolar")!.props.onPress();
     const field = () => renderer!.root.findByType("TextField");
-    await act(async () => { button("Edit name").props.onPress(); });
-    await act(async () => { field().props.onChangeText("Old account draft"); });
-    await act(async () => { button("Save name").props.onPress(); });
-    assert.equal(button("Save name").props.loading, true);
-    state.api = api("Current provider", current.promise);
-    await act(async () => { renderer!.update(React.createElement(Component)); });
-    await act(async () => { button("Edit name").props.onPress(); });
-    await act(async () => { field().props.onChangeText("Current draft"); });
-    await act(async () => { button("Save name").props.onPress(); });
+    await act(async () => { edit(); }); await act(async () => { field().props.onChangeText("Old account draft"); }); await act(async () => { button("Save name").props.onPress(); }); assert.equal(button("Save name").props.loading, true);
+    state.api = makeApi("Current provider", current.promise); await act(async () => { renderer!.update(React.createElement(Component, props)); });
+    await act(async () => { edit(); }); await act(async () => { field().props.onChangeText("Current draft"); }); await act(async () => { button("Save name").props.onPress(); });
     await act(async () => { old.resolve({ ...device, name: "Old account draft" }); await old.promise; });
-    assert.equal(field().props.value, "Current draft");
-    assert.equal(field().props.editable, false);
-    assert.equal(button("Save name").props.loading, true, "Late old finally cannot release the current save");
-    assert.ok(renderer!.root.findAllByType("Text").some(item => item.props.children === "Current provider"));
+    assert.equal(field().props.value, "Current draft"); assert.equal(field().props.editable, false); assert.equal(button("Save name").props.loading, true, "A previous account's completion cannot release the current save"); assert.equal(renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Name in SmartSolar")!.props.value, "Current provider");
     await act(async () => { current.resolve({ ...device, name: "Current draft" }); await current.promise; });
-    assert.ok(button("Edit name"));
-    assert.ok(renderer!.root.findAllByType("Text").some(item => item.props.children === "Current draft"));
-    assert.equal(renderer!.root.findByType("ErrorBanner").props.message, null);
-  } finally {
-    await act(async () => { renderer?.unmount(); }); delete globals.__solarDeviceNames; delete globals.IS_REACT_ACT_ENVIRONMENT;
-  }
+    assert.equal(renderer!.root.findAllByType("TextField").length, 0); assert.equal(renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Name in SmartSolar")!.props.value, "Current draft"); assert.equal(renderer!.root.findByType("ErrorBanner").props.message, null);
+  } finally { await act(async () => { renderer?.unmount(); }); delete globals.__deviceUiAuth; delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});
+
+test("device controls reject late previous-account permissions and callbacks while the replacement remains read-only", async () => {
+  const device: Device = { id: "fixture-device", name: "Fixture", category: null, online: true, isOn: false, stateKnown: true, currentPowerW: 0 };
+  const oldPermissions = deferred<{ role: string; permissions: string[] }>(); let commands = 0;
+  const makeApi = (permissions: () => Promise<{ role: string; permissions: string[] }>) => ({ sessionEpoch: 0, onSessionChange: () => () => {}, accountSecurity: { getPermissions: permissions }, getDeviceDetails: async () => ({ id: device.id, name: device.name, device, controllingRules: [], canSwitch: true, supportsHistory: false, instanceId: null }), socketCommands: { sessionEpoch: 0, subscribe: () => () => {}, get: () => null, isRunning: () => false, send: async () => { commands++; return { status: "acknowledged" }; } } });
+  let reads = 0; const oldApi = makeApi(async () => ++reads === 1 ? { role: "Owner", permissions: ["Read", "ControlDevices", "ManageRules"] } : oldPermissions.promise);
+  const state = { api: oldApi, isDemo: false };
+  const globals = globalThis as typeof globalThis & { __deviceUiAuth?: typeof state; IS_REACT_ACT_ENVIRONMENT?: boolean }; globals.__deviceUiAuth = state; globals.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const { DeviceSheetScreen: Component } = await deviceComponents(); const props = { route: { params: { id: device.id } }, navigation: { goBack() {}, navigate() {} } };
+    await act(async () => { renderer = create(React.createElement(Component, props)); });
+    const button = () => renderer!.root.findAllByType("button").find(item => item.props.label === "On")!;
+    assert.equal(button().props.disabled, false); const oldPress = button().props.onPress;
+    await act(async () => { renderer!.root.findByType("Screen").props.onRefresh(); });
+    assert.equal(button().props.disabled, true, "pending permission reads block retained controls");
+    state.api = makeApi(async () => ({ role: "Viewer", permissions: ["Read"] }));
+    await act(async () => { renderer!.update(React.createElement(Component, props)); });
+    assert.equal(button().props.disabled, true);
+    await act(async () => { oldPermissions.resolve({ role: "Owner", permissions: ["Read", "ControlDevices", "ManageRules"] }); await oldPermissions.promise; oldPress(); });
+    assert.equal(button().props.disabled, true, "old owner permissions cannot authorize the replacement account");
+    assert.equal(commands, 0, "a captured previous-account callback must not submit a command");
+  } finally { await act(async () => renderer?.unmount()); delete globals.__deviceUiAuth; delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});
+
+test("a failed permission refresh disables retained device controls and stale callbacks", async () => {
+  const device: Device = { id: "fixture-device", name: "Fixture", category: null, online: true, isOn: false, stateKnown: true, currentPowerW: 0 };
+  let reads = 0, commands = 0;
+  const api = { sessionEpoch: 0, onSessionChange: () => () => {}, accountSecurity: { getPermissions: async () => { if (++reads > 1) throw new Error("Permission read unavailable"); return { role: "Owner", permissions: ["Read", "ControlDevices", "ManageRules"] }; } }, getDeviceDetails: async () => ({ id: device.id, name: device.name, device, controllingRules: [], canSwitch: true, supportsHistory: false, instanceId: null }), socketCommands: { sessionEpoch: 0, subscribe: () => () => {}, get: () => null, isRunning: () => false, send: async () => { commands++; return { status: "acknowledged" }; } } };
+  const globals = globalThis as typeof globalThis & { __deviceUiAuth?: unknown; IS_REACT_ACT_ENVIRONMENT?: boolean }; globals.__deviceUiAuth = { api, isDemo: false }; globals.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const { DeviceSheetScreen: Component } = await deviceComponents();
+    await act(async () => { renderer = create(React.createElement(Component, { route: { params: { id: device.id } }, navigation: { goBack() {}, navigate() {} } })); });
+    const button = () => renderer!.root.findAllByType("button").find(item => item.props.label === "On")!; assert.equal(button().props.disabled, false); const oldPress = button().props.onPress;
+    await act(async () => { await renderer!.root.findByType("Screen").props.onRefresh(); });
+    assert.equal(button().props.disabled, true); assert.match(renderer!.root.findByType("ErrorBanner").props.message, /Permission read unavailable/);
+    await act(async () => { oldPress(); button().props.onPress(); }); assert.equal(commands, 0);
+  } finally { await act(async () => renderer?.unmount()); delete globals.__deviceUiAuth; delete globals.IS_REACT_ACT_ENVIRONMENT; }
 });

@@ -1,559 +1,175 @@
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
+using DeyeSolar.Domain.Interfaces;
+using DeyeSolar.Domain.Models;
+using DeyeSolar.Domain.Options;
+using DeyeSolar.Domain.Services;
+using DeyeSolar.Web.Components.Charts;
+using DeyeSolar.Web.Pages;
+using DeyeSolar.Web.Redesign;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Shared;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
-using MudBlazor;
-using MudBlazor.Services;
+using SolarManagement.Inverters.Contracts;
+using Basis = DeyeSolar.Domain.Models.SolarPowerBasis;
 
 namespace DeyeSolar.Web.Tests;
 
 public class SolarHistoryChartTests
 {
-    private static readonly DateTimeOffset Start = new(2026, 9, 29, 6, 0, 0, TimeSpan.Zero);
-    private static readonly DateOnly Today = new(2026, 9, 29);
-
+    private static readonly DateTimeOffset Start = new(2026,9,29,6,0,0,TimeSpan.Zero);
+    private static readonly DateOnly Today = new(2026,9,29);
+    private static ProductionViewDto Data(params (double? Lower,double? Upper,double? Actual)[] points) => new(Start,Start.AddHours(points.Length),"UTC",Today,Today,
+        points.Select((p,i)=>new ProductionHourDto(Start.AddHours(i),p.Actual,p.Actual, p.Actual.HasValue?3600:0,3600,p.Lower,p.Lower,p.Upper,!p.Actual.HasValue)).ToArray(),[],null,null,0,0,null,null,null,null,null,null,null,null,null,true);
     [Theory]
-    [InlineData(false, "normal")]
-    [InlineData(true, "normal")]
-    [InlineData(true, "zero")]
-    [InlineData(true, "missing")]
-    [InlineData(true, "weather-error")]
-    [InlineData(true, "actual-error")]
-    [InlineData(true, "empty")]
-    public async Task EnglishGenerationViewsPreserveAvailableSeries(bool overview, string scenario)
+    [InlineData(false,"normal")][InlineData(true,"normal")][InlineData(true,"zero")][InlineData(true,"missing")][InlineData(false,"weather-error")][InlineData(false,"actual-error")][InlineData(true,"empty")]
+    public async Task NativeChartPreservesAvailableSeriesAndAccessiblePowerUnits(bool compact,string scenario)
     {
-        var data = scenario switch
-        {
-            "zero" => RangeResult((0, 0, 0)),
-            "missing" => Result((null, null)),
-            "weather-error" => Result((null, 2)) with { WeatherError = "Weather history is unavailable." },
-            "actual-error" => Result((2, null)) with { ActualError = "Inverter history is unavailable." },
-            "empty" => Result(),
-            _ => RangeResult((1.2, 3.4, 2.1), (1.3, 3.5, 2.2))
-        };
-        var culture = CultureInfo.CurrentCulture;
-        var uiCulture = CultureInfo.CurrentUICulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
-            var html = await RenderAsync(data, overview: overview);
-
-            Assert.DoesNotMatch("[\\u0400-\\u04FF]", html);
-            Assert.Contains("Solar generation", html);
-            Assert.Contains("Hourly average power", html, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("aria-label=\"Refresh chart\"", html);
-            if (overview)
-            {
-                Assert.Contains("href=\"/generation\"", html);
-                Assert.Contains("View details", html);
-                Assert.Contains("Today · hourly average power · kW", html);
-                Assert.DoesNotContain("aria-label=\"Day navigation\"", html);
-                Assert.DoesNotContain("aria-label=\"Chart period\"", html);
-                Assert.DoesNotContain("<details", html);
-                Assert.Contains("Weather by Open-Meteo", html);
-            }
-            else
-            {
-                Assert.Contains("aria-label=\"Day navigation\"", html);
-                Assert.Contains("aria-label=\"Chart period\"", html);
-                Assert.Contains("About this chart", html);
-                Assert.Contains("29 September 2026", html);
-            }
-            if (scenario is "normal" or "zero" or "weather-error" or "actual-error")
-            {
-                Assert.Contains("data-testid=\"possible-band\"", html);
-                Assert.Contains("data-testid=\"actual-series\"", html);
-                Assert.Contains("aria-label=\"Previous hour\"", html);
-                Assert.Contains("aria-label=\"Next hour\"", html);
-                if (scenario == "normal") Assert.Contains("possible 1.3–3.5 kW, actual 2.2 kW", html);
-                if (scenario == "zero") Assert.Contains("possible 0.0–0.0 kW, actual 0.0 kW", html);
-                if (scenario == "weather-error") Assert.Contains("Weather history is unavailable.", html);
-                if (scenario == "actual-error") Assert.Contains("Inverter history is unavailable.", html);
-            }
-            else
-            {
-                Assert.DoesNotContain("data-testid=\"possible-band\"", html);
-                Assert.Contains(scenario == "empty" ? "first completed hour" : "No data is available", html);
-            }
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = culture;
-            CultureInfo.CurrentUICulture = uiCulture;
-        }
+        var data=scenario switch{"zero"=>Data((0,0,0)),"missing"=>Data((null,null,null)),"empty"=>Data(),"weather-error"=>Data((null,null,2)) with{WeatherError="Weather data is unavailable."},"actual-error"=>Data((1,3,null)) with{ActualError="Inverter history is unavailable."},_=>Data((1.2,3.4,2.1),(1.3,3.5,2.2))};
+        var html=await RenderAsync(data,compact:compact);
+        Assert.Contains("role=\"img\"",html);Assert.Contains("Use left and right arrow keys",html);Assert.DoesNotContain("Refresh chart",html);
+        Assert.DoesNotMatch("[\\u0400-\\u04FF]",html);
+        var actual=Path(html,"actual-series");var range=Path(html,"possible-band");
+        Assert.Equal(scenario is "missing" or "empty" or "actual-error",actual.Length==0);
+        Assert.Equal(scenario is "missing" or "empty" or "weather-error",range.Length==0);
+        if(!compact){Assert.Contains("Expected range",html);Assert.Contains("kW",html);}
     }
-
-    [Fact]
-    public async Task OverviewLoadsTodayAndHourInspectionDoesNotChangeTheRequestedPeriod()
+    [Fact] public async Task RangeUsesBothBoundsAndItsUpperBoundControlsTheScale()
     {
-        var history = new RecordingHistoryService();
-        await using var services = InteractiveServices(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync(overview: true);
-            Assert.Single(history.Calls);
-            Assert.Equal(SolarHistoryPeriod.Today, history.Calls[0].Period);
-            Assert.Null(history.Calls[0].Date);
-            await renderer.ClickAsync(root, "Previous hour");
-            Assert.Single(history.Calls);
-            await renderer.ClickAsync(root, "Refresh chart");
-            Assert.Equal(2, history.Calls.Count);
-            Assert.All(history.Calls, call =>
-            {
-                Assert.Equal(SolarHistoryPeriod.Today, call.Period);
-                Assert.Null(call.Date);
-            });
-        });
+        var html=await RenderAsync(Data((1,6,.5),(2,5,1)));var vertices=Vertices(Path(html,"possible-band"));
+        Assert.Equal(4,vertices.Length);Assert.True(vertices.Min(v=>v.Y)<vertices.Max(v=>v.Y));Assert.Contains("1.00–6.00",html);
+        Assert.DoesNotContain("central-line",html);Assert.Contains("Expected range",html);
     }
-
-    [Fact]
-    public async Task OverviewKeepsTheLoadedDateAcrossMidnightUntilRefreshCompletes()
+    [Fact] public async Task MissingHoursSplitForecastAndActualIndependently()
     {
-        var clock = new FixedClock { Now = new(2026, 9, 29, 21, 59, 0, TimeSpan.Zero) };
-        var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw");
-        var history = new RecordingHistoryService
-        {
-            DateProvider = () => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.Now, zone).DateTime)
-        };
-        await using var services = InteractiveServices(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync(overview: true);
-            clock.Now = clock.Now.AddMinutes(2);
-            await renderer.ClickAsync(root, "Previous hour");
-            Assert.Matches("29 Sep(?:t)? 2026 · hourly average power", renderer.Text(root));
-            Assert.DoesNotContain("Today · hourly average power", renderer.Text(root));
-
-            await renderer.ClickAsync(root, "Refresh chart");
-            Assert.Contains("Today · hourly average power", renderer.Text(root));
-            Assert.DoesNotMatch("29 Sep(?:t)? 2026 · hourly average power", renderer.Text(root));
-        });
+        var html=await RenderAsync(Data((1,2,.8),(null,null,1.1),(2,3,null),(3,4,2.2),(4,5,2.6)));
+        Assert.Equal(2,Regex.Matches(Path(html,"possible-band"),"M ").Count);Assert.Equal(2,Regex.Matches(Path(html,"actual-series"),"M ").Count);
     }
-
-    [Fact]
-    public async Task HeaderExposesDayNavigationSeparateFromHourInspection()
+    [Fact] public async Task IsolatedRangeKeepsItsOwnNarrowColumnAndBothBounds()
     {
-        var html = await RenderAsync(Result((1, 2), (3, 4)));
-
-        Assert.Contains("aria-label=\"Previous day\"", html);
-        Assert.Contains("aria-label=\"Next day\"", html);
-        Assert.Contains("aria-label=\"Previous hour\"", html);
-        Assert.Contains("aria-label=\"Next hour\"", html);
+        var vertices=Vertices(Path(await RenderAsync(Data((null,null,null),(1,3,null),(null,null,null))),"possible-band"));
+        Assert.Equal(4,vertices.Length);Assert.InRange(vertices.Max(v=>v.X)-vertices.Min(v=>v.X),1,16);Assert.Equal(2,vertices.Select(v=>v.Y).Distinct().Count());
     }
-
-    [Theory]
-    [InlineData(0, false, true, "29 September 2026")]
-    [InlineData(1, false, false, "28 September 2026")]
-    [InlineData(29, true, false, "31 August 2026")]
-    public async Task DayNavigationShowsTheDateAndHonorsBothBounds(int daysAgo, bool previousDisabled, bool nextDisabled, string caption)
+    [Fact] public async Task MeasuredZeroRendersAtTheBaselineInsteadOfBecomingMissing()
     {
-        var date = Today.AddDays(-daysAgo);
-        var html = await RenderAsync(ResultForDate(date), "history-date-" + daysAgo);
-
-        Assert.Equal(previousDisabled, DisabledButton(html, "Previous day"));
-        Assert.Equal(nextDisabled, DisabledButton(html, "Next day"));
-        Assert.Contains(caption, html);
-        Assert.Matches("<button[^>]*aria-pressed=\"true\"[^>]*>Day</button>", html);
-        Assert.DoesNotMatch("<button[^>]*aria-pressed=\"true\"[^>]*>Today</button>", html);
+        var html=await RenderAsync(Data((0,0,0)));Assert.Contains("0.00 kW",html);Assert.Equal(204,Assert.Single(Vertices(Path(html,"actual-series"))).Y);Assert.NotEmpty(Path(html,"possible-band"));Assert.DoesNotContain("NaN",html);
     }
-
-    [Fact]
-    public async Task EmptyPastDayDoesNotPromiseAFirstHourInTheFuture()
+    [Fact] public async Task PolishNumbersDoNotChangeSvgCoordinates()
     {
-        var html = await RenderAsync(ResultForDate(Today.AddDays(-1)) with { Points = [] }, "history-empty-past");
-
-        Assert.Contains("28 September 2026", html);
-        Assert.Contains("No data is available for this day yet.", html);
-        Assert.DoesNotContain("after the first completed hour of the day", html);
+        var previous=CultureInfo.CurrentCulture;try{CultureInfo.CurrentCulture=CultureInfo.GetCultureInfo("pl-PL");var html=await RenderAsync(Data((1.3,2.1,2.8),(2.5,3.3,1.6)));Assert.DoesNotContain(",",Path(html,"possible-band"));Assert.DoesNotContain(",",Path(html,"actual-series"));Assert.Contains("1,30–2,10",html);Assert.NotEmpty(Vertices(Path(html,"possible-band")));}finally{CultureInfo.CurrentCulture=previous;}
     }
-
-    [Fact]
-    public async Task DayButtonsRequestAnotherDateWhileHourButtonsOnlyInspectTheLoadedDay()
+    [Fact] public async Task ChartSelectionChangesOnlyTheInspectorAndNeverFetchesOrRelabelsTheLoadedDate()
     {
-        var history = new RecordingHistoryService();
-        await using var services = InteractiveServices(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Single(history.Calls);
-            Assert.Null(history.Calls[0].Date);
-
-            await renderer.ClickAsync(root, "Previous day");
-            Assert.Equal(Today.AddDays(-1), history.Calls[1].Date);
-            var requestCount = history.Calls.Count;
-            await renderer.ClickAsync(root, "Previous hour");
-            Assert.Equal(requestCount, history.Calls.Count);
-
-            await renderer.ClickAsync(root, "7 days");
-            Assert.Equal((SolarHistoryPeriod.Week, Today.AddDays(-1)), (history.Calls[^1].Period, history.Calls[^1].Date));
-            await renderer.ClickAsync(root, "Refresh chart");
-            Assert.Equal(Today.AddDays(-1), history.Calls[^1].Date);
-            await renderer.ClickAsync(root, "Today");
-            Assert.Null(history.Calls[^1].Date);
-            Assert.True(renderer.Button(root, "Next day").Disabled);
-        });
+        await using var services=Basic(new Clock());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync<PlotHost>();Assert.Contains("06:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowRight");Assert.Contains("07:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowRight");Assert.Contains("07:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowLeft");Assert.Contains("06:00",renderer.Text(root));});
     }
-
-    [Fact]
-    public async Task FastDayNavigationCancelsAndFencesAnOlderResponse()
+    [Theory][InlineData(0,true)][InlineData(1,false)][InlineData(29,false)]
+    public async Task EnergyPageShowsTheLoadedDateAndHonorsNextDayBound(int daysAgo,bool disabled)
     {
-        var history = new RecordingHistoryService { HoldPastRequests = true };
-        await using var services = InteractiveServices(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var olderClick = renderer.ClickAsync(root, "Previous day");
-            Assert.Equal(Today.AddDays(-1), history.Calls[1].Date);
-            Assert.False(renderer.Button(root, "Previous day").Disabled);
-            var latestClick = renderer.ClickAsync(root, "Previous day");
-            Assert.Equal(Today.AddDays(-2), history.Calls[2].Date);
-            Assert.True(history.Calls[1].Token.IsCancellationRequested);
-
-            history.Complete(Today.AddDays(-2));
-            await latestClick;
-            history.Complete(Today.AddDays(-1));
-            await olderClick;
-            Assert.Contains("27 September 2026", renderer.Text(root));
-            Assert.DoesNotContain("28 September 2026", renderer.Text(root));
-        });
+        var f=new Fixture();await using var services=f.Services();await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var date=Today.AddDays(-daysAgo);var root=await renderer.MountAsync<EnergyHost>(new(){["RequestedDate"]=date.ToString("yyyy-MM-dd")});Assert.Contains(date.ToString("d MMM yyyy",CultureInfo.GetCultureInfo("en-GB")),renderer.Text(root));Assert.Equal(disabled,renderer.Button(root,"Next day").Disabled);Assert.Equal(daysAgo==29,renderer.Button(root,"Previous day").Disabled);});
     }
-
-    [Fact]
-    public async Task MidnightDoesNotRelabelTheLoadedDayBeforeRefresh()
+    [Theory][InlineData(true)][InlineData(false)]
+    public async Task SourceFailureKeepsTheOtherSeriesAndDisclosesUnavailableData(bool weather)
     {
-        var clock = new FixedClock { Now = new(2026, 9, 29, 21, 59, 0, TimeSpan.Zero) };
-        var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Warsaw");
-        var history = new RecordingHistoryService
-        {
-            DateProvider = () => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.Now, zone).DateTime)
-        };
-        await using var services = InteractiveServices(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            clock.Now = clock.Now.AddMinutes(2);
-            await renderer.ClickAsync(root, "Previous hour");
-            Assert.Contains("29 September 2026", renderer.Text(root));
-            Assert.DoesNotContain("30 September 2026", renderer.Text(root));
-            Assert.False(renderer.Button(root, "Next day").Disabled);
-
-            await renderer.ClickAsync(root, "Refresh chart");
-            Assert.Null(history.Calls[^1].Date);
-            Assert.Contains("30 September 2026", renderer.Text(root));
-            Assert.DoesNotContain("29 September 2026", renderer.Text(root));
-        });
+        var f=new Fixture();f.Weather.Fail=weather;f.Store.Fail=!weather;await using var services=f.Services();var html=await RenderPageAsync(services);
+        Assert.Contains(weather?"Weather data is unavailable.":"Inverter history is unavailable.",html);Assert.NotEmpty(Path(html,weather?"actual-series":"possible-band"));Assert.Empty(Path(html,weather?"possible-band":"actual-series"));Assert.Contains("Gaps stay gaps",html);
     }
-
-    [Fact]
-    public async Task EmptyTodayCanNavigateAndRetryAFailedPastDayWithoutLosingTheDate()
+    [Fact] public async Task MidnightDoesNotRelabelLoadedDataUntilNewParametersLoad()
     {
-        var history = new RecordingHistoryService { EmptyToday = true, FailFirstPastRequest = true };
-        await using var services = InteractiveServices(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Contains("The chart will appear after the first completed hour of the day", renderer.Text(root));
-            Assert.False(renderer.Button(root, "Previous day").Disabled);
-            await renderer.ClickAsync(root, "Previous day");
-            Assert.Contains("The chart could not be loaded", renderer.Text(root));
-            Assert.Equal(Today.AddDays(-1), history.Calls[^1].Date);
-            Assert.False(renderer.Button(root, "Refresh chart").Disabled);
-
-            await renderer.ClickAsync(root, "Refresh chart");
-            Assert.Equal(Today.AddDays(-1), history.Calls[^1].Date);
-            Assert.Contains("28 September 2026", renderer.Text(root));
-            Assert.DoesNotContain("The chart could not be loaded", renderer.Text(root));
-            Assert.False(renderer.Button(root, "Next day").Disabled);
-        });
+        var f=new Fixture();await using var services=f.Services();await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync<EnergyHost>();f.Clock.Now=f.Clock.Now.AddDays(1);Assert.Contains("29 Sep 2026",renderer.Text(root));Assert.DoesNotContain("30 Sep 2026",renderer.Text(root));await renderer.DateAsync(root,Today.AddDays(1));Assert.Contains("30 Sep 2026",renderer.Text(root));});
     }
-
-    [Fact]
-    public async Task PossiblePowerUsesBothBoundsAndUpperBoundScaleInsteadOfACentralLine()
+    [Fact] public async Task FasterDateSelectionCancelsAndFencesTheOldResponse()
     {
-        var html = await RenderAsync(RangeResult((1, 6, 0.5), (2, 5, 1)), "history-range");
-        var band = Path(html, "possible-band");
-        var vertices = Vertices(band);
-
-        Assert.Single(Regex.Matches(band, "\\bM\\b"));
-        Assert.Single(Regex.Matches(band, "\\bZ\\b"));
-        Assert.Contains((270d, 28d), vertices);
-        Assert.Contains((270d, 198d), vertices);
-        Assert.Contains((714d, 62d), vertices);
-        Assert.Contains((714d, 164d), vertices);
-        Assert.All(vertices, vertex => Assert.InRange(vertex.Y, 28, 232));
-        Assert.Equal("M 270 215 L 714 198", Path(html, "actual-series").Trim());
-        Assert.Contains("Possible · range", html);
-        Assert.DoesNotContain("possible-series", html);
-        Assert.DoesNotContain("possible-dot", html);
-        Assert.Matches("class=\"possible-value\"[^>]*>Possible <strong[^>]*>2[.]0–5[.]0 kW</strong>", html);
-        Assert.Matches("class=\"actual-value\"[^>]*>Actual <strong[^>]*>1[.]0 kW</strong>", html);
+        var f=new Fixture();f.Store.HoldPast=true;await using var services=f.Services();await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync<EnergyHost>();var old=renderer.DateAsync(root,Today.AddDays(-1));var latest=renderer.DateAsync(root,Today.AddDays(-2));Assert.True(f.Store.Pending[Today.AddDays(-1)].Token.IsCancellationRequested);var updated=renderer.NextRender();f.Store.Complete(Today.AddDays(-2));await updated.WaitAsync(TimeSpan.FromSeconds(5));Assert.Contains("27 Sep 2026",renderer.Text(root));f.Store.Complete(Today.AddDays(-1));await Task.WhenAll(latest,old).WaitAsync(TimeSpan.FromSeconds(5));Assert.Contains("27 Sep 2026",renderer.Text(root));Assert.DoesNotContain("28 Sep 2026",renderer.Text(root));});
     }
-
-    [Fact]
-    public async Task GapsSplitTheBandAndActualLineIndependentlyAndExposeMissingValues()
+    [Fact] public async Task DisposalCancelsOutstandingProductionAndRejectsLateResponses()
     {
-        var data = RangeResult((1, 2, 2), (2, 3, null), (null, null, 3), (4, 5, 4), (5, 6, null));
-        var html = await RenderAsync(data, "history-gaps");
-        var possible = Path(html, "possible-band");
-        var actual = Path(html, "actual-series");
-        var segments = Regex.Matches(possible, "\\bM\\b[^M]*?\\bZ\\b").Select(match => Vertices(match.Value)).ToArray();
-
-        Assert.Equal(2, Regex.Matches(possible, "\\bM\\b").Count);
-        Assert.Equal(2, Regex.Matches(possible, "\\bZ\\b").Count);
-        Assert.Equal(2, segments.Length);
-        Assert.Equal(48, segments[0].Min(vertex => vertex.X));
-        Assert.Equal(403.2, segments[0].Max(vertex => vertex.X));
-        Assert.Equal(580.8, segments[1].Min(vertex => vertex.X));
-        Assert.Equal(936, segments[1].Max(vertex => vertex.X));
-        Assert.Equal(2, Regex.Matches(actual, "\\bM\\b").Count);
-        Assert.Single(Regex.Matches(actual, "\\bL\\b"));
-        Assert.Contains("Gaps indicate insufficient saved readings for the hour", html);
-        Assert.Matches("class=\"actual-value\"[^>]*>Actual <strong[^>]*>—</strong>", html);
-        Assert.Contains("possible —, actual 3.0 kW", html);
-        Assert.Contains("actual —", html);
+        var f=new Fixture();f.Store.HoldPast=true;await using var services=f.Services();var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync<EnergyHost>();var pending=renderer.DateAsync(root,Today.AddDays(-1));await renderer.DisposeComponentAsync(root);Assert.True(f.Store.Pending[Today.AddDays(-1)].Token.IsCancellationRequested);f.Store.Complete(Today.AddDays(-1));await pending.WaitAsync(TimeSpan.FromSeconds(5));await renderer.DisposeAsync();});
     }
-
-    [Fact]
-    public async Task AnIsolatedPossibleHourFillsOnlyItsOwnHourWithBothBounds()
+    [Fact] public async Task EmptyActualHoursStayMissingAndRetainForecastAndDayNavigation()
     {
-        var html = await RenderAsync(RangeResult((null, null, null), (1, 3, null), (null, null, null)), "history-isolated-range");
-        var band = Path(html, "possible-band");
-        var vertices = Vertices(band);
-
-        Assert.Single(Regex.Matches(band, "\\bM\\b"));
-        Assert.Single(Regex.Matches(band, "\\bZ\\b"));
-        Assert.Equal(344, vertices.Min(vertex => vertex.X));
-        Assert.Equal(640, vertices.Max(vertex => vertex.X));
-        Assert.Contains((344d, 79d), vertices);
-        Assert.Contains((640d, 79d), vertices);
-        Assert.Contains((344d, 181d), vertices);
-        Assert.Contains((640d, 181d), vertices);
-        Assert.All(vertices, vertex => Assert.InRange(vertex.X, 344, 640));
-        Assert.Empty(Path(html, "actual-series"));
-        Assert.Contains("possible 1.0–3.0 kW, actual —", html);
+        var f=new Fixture();f.Store.Empty=true;await using var services=f.Services();var html=await RenderPageAsync(services);Assert.Empty(Path(html,"actual-series"));Assert.NotEmpty(Path(html,"possible-band"));Assert.Contains("Upcoming",html);Assert.Contains("Partial coverage",html);Assert.Contains("A dash means unavailable; measured zero remains 0.00.",html);Assert.Contains("Previous day",html);
     }
-
-    [Fact]
-    public async Task RealZeroPowerRendersOnTheBaselineInsteadOfBecomingAGap()
+    [Theory][InlineData("999","2026-09-29")][InlineData("day","2026-02-30")]
+    public async Task InvalidPeriodOrDateIsRejectedWithoutReadingSources(string period,string date)
     {
-        var html = await RenderAsync(RangeResult((0, 0, 0)), "history-zero");
-        var band = Path(html, "possible-band");
-        var vertices = Vertices(band);
-
-        Assert.Single(Regex.Matches(band, "\\bM\\b"));
-        Assert.Single(Regex.Matches(band, "\\bZ\\b"));
-        Assert.NotEmpty(vertices);
-        Assert.All(vertices, vertex => Assert.Equal(232, vertex.Y));
-        Assert.Equal(48, vertices.Min(vertex => vertex.X));
-        Assert.Equal(936, vertices.Max(vertex => vertex.X));
-        Assert.Equal("M 492 232", Path(html, "actual-series").Trim());
-        Assert.Matches("class=\"possible-value\"[^>]*>Possible <strong[^>]*>0[.]0–0[.]0 kW</strong>", html);
-        Assert.Matches("class=\"actual-value\"[^>]*>Actual <strong[^>]*>0[.]0 kW</strong>", html);
-        Assert.DoesNotContain("NaN", html);
-        Assert.DoesNotContain("Infinity", html);
-        Assert.DoesNotContain("No data is available for this period yet", html);
+        var f=new Fixture();await using var services=f.Services();var html=await RenderPageAsync(services,new(){["RequestedPeriod"]=period,["RequestedDate"]=date});Assert.Contains("Choose a valid period and date.",html);Assert.Equal(0,f.Store.Calls);Assert.Equal(0,f.Weather.Calls);
     }
-
-    [Fact]
-    public async Task ControlsInspectorAndPointTooltipsDescribePowerAndLocalTime()
+    private static async Task<string> RenderPageAsync(IServiceProvider services,Dictionary<string,object?>? parameters=null)
+    {await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());return await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<EnergyHost>(ParameterView.FromDictionary(parameters??[]))).ToHtmlString()));}
+    private static async Task<string> RenderAsync(ProductionViewDto data,bool compact=false)
+    {await using var services=Basic(new Clock());await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());return await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<ProductionPlot>(ParameterView.FromDictionary(new Dictionary<string,object?>{["Data"]=data,["Compact"]=compact}))).ToHtmlString()));}
+    private static string Path(string html,string id){var tag=Regex.Match(html,"<path\\b[^>]*data-testid=\""+id+"\"[^>]*/?>").Value;Assert.NotEmpty(tag);return Regex.Match(tag,"\\bd=\"([^\"]*)\"").Groups[1].Value;}
+    private static (double X,double Y)[] Vertices(string path)=>Regex.Matches(path,"[ML]\\s+(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)").Select(m=>(double.Parse(m.Groups[1].Value,CultureInfo.InvariantCulture),double.Parse(m.Groups[2].Value,CultureInfo.InvariantCulture))).ToArray();
+    // The router supplies query values as cascades; this host forwards the same public
+    // inputs to the real page lifecycle without changing its rendering or query code.
+    private sealed class EnergyHost:Energy
     {
-        var html = await RenderAsync(RangeResult((1, 2, 0.8), (3.2, 5.6, 3.7)), "history-now");
-
-        Assert.Contains("aria-label=\"Chart period\"", html);
-        Assert.Matches("<button[^>]*aria-pressed=\"[Tt]rue\"[^>]*>Day</button>", html);
-        Assert.Contains(">7 days</button>", html);
-        Assert.Contains(">30 days</button>", html);
-        Assert.Contains("aria-label=\"Refresh chart\"", html);
-        Assert.Contains("aria-label=\"Previous hour\"", html);
-        Assert.Contains("aria-label=\"Next hour\"", html);
-        Assert.Contains("aria-live=\"polite\"", html);
-        Assert.Contains("Hourly average power · kW", html);
-        Assert.Matches("29 Sep(?:t)?" + Regex.Escape(" · 09:00–10:00 (UTC+02:00)"), html);
-        Assert.Contains("possible 1.0–2.0 kW, actual 0.8 kW", html);
-        Assert.Contains("possible 3.2–5.6 kW, actual 3.7 kW", html);
-        Assert.Contains("role=\"img\"", html);
-        Assert.Contains("aria-label=\"Hourly possible solar power range and actual power\"", html);
-        Assert.DoesNotContain("kWh", html);
+        [Parameter] public string? RequestedDate {get;set;}
+        [Parameter] public string? RequestedPeriod {get;set;}
+        protected override Task OnParametersSetAsync(){DateQuery=RequestedDate;PeriodQuery=RequestedPeriod;return base.OnParametersSetAsync();}
     }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task PartialSourceFailureKeepsTheOtherSeries(bool weatherFailed)
+    private sealed class PlotHost:ComponentBase
+    {private int _selected;protected override void BuildRenderTree(RenderTreeBuilder b){b.OpenComponent<ProductionPlot>(0);b.AddAttribute(1,"Data",Data((1,2,.8),(3,4,2.2)));b.AddAttribute(2,"SelectedIndex",_selected);b.AddAttribute(3,"SelectedIndexChanged",EventCallback.Factory.Create<int>(this,(int value)=>_selected=value));b.CloseComponent();}}
+    private sealed class Clock:TimeProvider{public DateTimeOffset Now=Start.AddHours(5);public override DateTimeOffset GetUtcNow()=>Now;}
+    private sealed class Navigation:NavigationManager{public Navigation()=>Initialize("http://localhost/","http://localhost/energy");protected override void NavigateToCore(string uri,bool forceLoad){}}
+    private static ServiceProvider Basic(Clock clock)=>Base(clock).BuildServiceProvider();
+    private static ServiceCollection Base(Clock clock){var s=new ServiceCollection();s.AddLogging();s.AddComponentLocalization();s.AddSingleton<TimeProvider>(clock);s.AddSingleton<IJSRuntime,NullJsRuntime>();s.AddSingleton<NavigationManager,Navigation>();return s;}
+    private sealed class Fixture
     {
-        var data = weatherFailed
-            ? Result((null, 2), (null, 3)) with { WeatherError = "Weather history is unavailable." }
-            : Result((2, null), (3, null)) with { ActualError = "Inverter history is unavailable." };
-        var html = await RenderAsync(data, weatherFailed ? "history-weather-error" : "history-deye-error");
-
-        Assert.Contains(weatherFailed ? "Weather history is unavailable." : "Inverter history is unavailable.", html);
-        Assert.Contains("role=\"status\"", html);
-        Assert.Equal("", Path(html, weatherFailed ? "possible-band" : "actual-series").Trim());
-        Assert.Contains("M", Path(html, weatherFailed ? "actual-series" : "possible-band"));
-        Assert.DoesNotContain("No data is available for this period yet", html);
+        public Clock Clock=new();public Forecast Weather=new();public History Store=new();
+        public ServiceProvider Services(){var s=Base(Clock);s.AddOptions<SolarEstimateOptions>().Configure(o=>{o.TimeZoneId="UTC";o.DeyeSolarPowerIsPvDcConfirmed=true;o.DeyeConfirmedDeviceSn="primary";});s.Configure<InverterConnectionOptions>(o=>o.DeviceKey="primary");s.AddSingleton<ISolarDayForecastSource>(Weather);s.AddSingleton<ISolarHistoryStore>(Store);s.AddSingleton<SolarProductionService>();s.AddSingleton<InverterDataSnapshot>();s.AddSingleton<ISolarRadiationSource,UnusedSource>();s.AddSingleton<ISolarEstimateStore,UnusedStore>();s.AddSingleton<SolarEstimateService>();s.AddSingleton<IInverterRefreshService,UnusedRefresh>();return s.BuildServiceProvider();}
     }
-
-    [Theory]
-    [InlineData(true, "The chart will appear after the first completed hour of the day.")]
-    [InlineData(false, "No data is available for this period yet.")]
-    public async Task MissingDataHasAnHonestEmptyState(bool noHours, string message)
-    {
-        var html = await RenderAsync(noHours ? Result() : Result((null, null), (null, null)), "history-empty-" + noHours);
-
-        Assert.Contains(message, html);
-        Assert.DoesNotContain("data-testid=\"possible-band\"", html);
-        Assert.DoesNotContain("data-testid=\"actual-series\"", html);
-    }
-
-    [Fact]
-    public async Task CoordinatesRemainInvariantUnderPolishCulture()
-    {
-        var previous = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            var html = await RenderAsync(RangeResult((1.3, 2.1, 2.8), (2.5, 3.3, 1.6), (4.2, 5.4, 3.1), (3.7, 4.9, 4.4), (0.8, 1.4, 1.2)));
-            Assert.DoesNotContain(",", Path(html, "possible-band"));
-            Assert.DoesNotContain(",", Path(html, "actual-series"));
-            Assert.Contains("0,8–1,4 kW", html);
-            Assert.Contains("actual 1,2 kW", html);
-            Assert.NotEmpty(Vertices(Path(html, "possible-band")));
-        }
-        finally { CultureInfo.CurrentCulture = previous; }
-    }
-
-    private static SolarHistoryResult Result(params (double? PossibleLower, double? Actual)[] values) => RangeResult(
-        values.Select(value => (value.PossibleLower, value.PossibleLower + 1, value.Actual)).ToArray());
-
-    private static SolarHistoryResult RangeResult(params (double? Lower, double? Upper, double? Actual)[] values) => new(
-        Start, Start.AddHours(values.Length), "Europe/Warsaw",
-        values.Select((value, i) => new SolarHistoryPoint(Start.AddHours(i),
-            value.Lower.HasValue ? new SolarHistoryPowerRange(value.Lower.Value, value.Upper!.Value) : null, value.Actual)).ToArray())
-    { Today = Today, SelectedDate = Today };
-
-    private static SolarHistoryResult ResultForDate(DateOnly date, DateOnly? today = null)
-    {
-        var start = new DateTimeOffset(date.ToDateTime(new TimeOnly(6, 0)), TimeSpan.Zero);
-        return new(start, start.AddHours(2), "Europe/Warsaw", [new(start, new(1, 2), 2), new(start.AddHours(1), new(3, 4), 4)])
-        { Today = today ?? Today, SelectedDate = date };
-    }
-
-    private static bool DisabledButton(string html, string label)
-    {
-        var button = Regex.Match(html, "<button\\b[^>]*aria-label=\"" + Regex.Escape(label) + "\"[^>]*>").Value;
-        Assert.NotEmpty(button);
-        return Regex.IsMatch(button, "\\sdisabled(?:[\\s=>])");
-    }
-
-    private static string Path(string html, string id)
-    {
-        var tag = Regex.Match(html, "<path\\b[^>]*data-testid=\"" + id + "\"[^>]*/?>").Value;
-        Assert.NotEmpty(tag);
-        var path = Regex.Match(tag, "\\bd=\"([^\"]*)\"");
-        Assert.True(path.Success, "SVG series has no path attribute.");
-        return path.Groups[1].Value;
-    }
-
-    private static (double X, double Y)[] Vertices(string path) => Regex.Matches(path, "[ML]\\s+(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)")
-        .Select(match => (double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture), double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture)))
-        .ToArray();
-
-    private static async Task<string> RenderAsync(SolarHistoryResult data, string? scenario = null, bool overview = false)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddComponentLocalization();
-        services.AddMudServices();
-        services.AddSingleton<IJSRuntime, NullJsRuntime>();
-        services.AddSingleton(TimeProvider.System);
-        var history = new UnusedHistoryService();
-        services.AddSingleton<ISolarHistoryService>(history);
-        await using var provider = services.BuildServiceProvider();
-        await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
-        var html = await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var output = await renderer.RenderComponentAsync<SolarHistoryChart>(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = data, ["Overview"] = overview }));
-            return output.ToHtmlString();
-        });
-        Assert.Equal(0, history.Calls);
-        await RenderPreview.ExportAsync(renderer, html, scenario, 1100);
-        var decoded = WebUtility.HtmlDecode(html);
-        if (CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en")
-            Assert.DoesNotMatch("[\\u0400-\\u04FF]", decoded);
-        return decoded;
-    }
-
-    private static ServiceProvider InteractiveServices(ISolarHistoryService history, TimeProvider? clock = null)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddComponentLocalization();
-        services.AddMudServices();
-        services.AddSingleton<IJSRuntime, NullJsRuntime>();
-        services.AddSingleton(clock ?? new FixedClock());
-        services.AddSingleton(history);
-        return services.BuildServiceProvider();
-    }
-
-    private sealed class FixedClock : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = Start.AddHours(5);
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
-
-    private sealed class RecordingHistoryService : ISolarHistoryService
-    {
-        public List<(SolarHistoryPeriod Period, DateOnly? Date, CancellationToken Token)> Calls { get; } = [];
-        public bool HoldPastRequests { get; init; }
-        public bool EmptyToday { get; init; }
-        public bool FailFirstPastRequest { get; init; }
-        public Func<DateOnly> DateProvider { get; init; } = () => Today;
-        private readonly Dictionary<DateOnly, TaskCompletionSource<SolarHistoryResult>> _pending = [];
-        private bool _pastRequestFailed;
-        public Task<SolarHistoryResult> ReadAsync(SolarHistoryPeriod period, CancellationToken ct, DateOnly? endDate = null)
-        {
-            Calls.Add((period, endDate, ct));
-            if (FailFirstPastRequest && endDate.HasValue && !_pastRequestFailed)
-            {
-                _pastRequestFailed = true;
-                throw new InvalidOperationException("A transient history failure.");
-            }
-            if (EmptyToday && endDate is null) return Task.FromResult(ResultForDate(DateProvider(), DateProvider()) with { Points = [] });
-            if (!HoldPastRequests || endDate is not { } date) return Task.FromResult(ResultForDate(endDate ?? DateProvider(), DateProvider()));
-            // Deliberately return even after cancellation to verify that a late response cannot replace a newer day.
-            var response = new TaskCompletionSource<SolarHistoryResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pending.Add(date, response);
-            return response.Task;
-        }
-        public void Complete(DateOnly date) => _pending[date].SetResult(ResultForDate(date));
-    }
-
-    // Framework rendering and event dispatch exercise the real component; no private methods or state are invoked.
+    private sealed class Forecast:ISolarDayForecastSource
+    {public bool Fail;public int Calls;public Task<SolarDayForecast> ReadAsync(SolarEstimateOptions o,DateTimeOffset a,DateTimeOffset b,DateOnly date,CancellationToken ct){Calls++;if(Fail)throw new HttpRequestException();return Task.FromResult(new SolarDayForecast(Enumerable.Range(0,(int)(b-a).TotalHours).Select(i=>new SolarWeatherSample(a.AddHours(i),500,500,20,1,0)).ToArray(),Start,null,null,null));}}
+    private sealed class History:ISolarHistoryStore
+    {public bool Fail,Empty,HoldPast;public int Calls;public Dictionary<DateOnly,(TaskCompletionSource<IReadOnlyList<SolarActual>> Response,CancellationToken Token)> Pending=[];
+     public Task<IReadOnlyList<SolarActual>> ReadAsync(string device,DateTimeOffset a,DateTimeOffset b,CancellationToken ct){Calls++;if(Fail)throw new HttpRequestException();var date=DateOnly.FromDateTime(a.AddMinutes(10).UtcDateTime);if(HoldPast&&date<Today){var response=new TaskCompletionSource<IReadOnlyList<SolarActual>>(TaskCreationOptions.RunContinuationsAsynchronously);Pending.Add(date,(response,ct));return response.Task;}return Task.FromResult(Samples(date));}
+     private IReadOnlyList<SolarActual> Samples(DateOnly date)=>Empty?[]:Enumerable.Range(0,37).Select(i=>new SolarActual(new DateTimeOffset(date.ToDateTime(new TimeOnly(6,0)),TimeSpan.Zero).AddMinutes(i*5),2,Basis.PvDc)).ToArray();
+     public void Complete(DateOnly date)=>Pending[date].Response.SetResult(Samples(date));}
+    private sealed class UnusedSource:ISolarRadiationSource{public Task<SolarRadiationObservation> ReadAsync(SolarEstimateOptions o,DateTimeOffset n,CancellationToken ct)=>throw new InvalidOperationException("No live weather fetch from supplied snapshot");}
+    private sealed class UnusedStore:ISolarEstimateStore{public Task<CachedSolarObservation?> LoadAsync(CancellationToken ct)=>throw new NotSupportedException();public Task SaveAsync(CachedSolarObservation o,CancellationToken ct)=>throw new NotSupportedException();public Task<SolarActual?> FindActualAsync(DateTimeOffset t,int tolerance,DateTimeOffset n,CancellationToken ct)=>throw new NotSupportedException();}
+    private sealed class UnusedRefresh:IInverterRefreshService{public Task<InverterData> RefreshAsync(CancellationToken ct)=>throw new InvalidOperationException("UI must not refresh hardware on load");}
     private sealed class EventRenderer(IServiceProvider services, ILoggerFactory loggerFactory) : Renderer(services, loggerFactory)
     {
+        private readonly Dictionary<int,IComponent> _mounted=[];
+        public ValueTask DisposeComponentAsync(int root)=>((IAsyncDisposable)_mounted[root]).DisposeAsync();
         public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
-        protected override Task UpdateDisplayAsync(in RenderBatch renderBatch) => Task.CompletedTask;
+        private TaskCompletionSource? _nextRender;
+        public Task NextRender()=> (_nextRender=new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        protected override Task UpdateDisplayAsync(in RenderBatch renderBatch){_nextRender?.TrySetResult();_nextRender=null;return Task.CompletedTask;}
         protected override void HandleException(Exception exception) => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
 
-        public async Task<int> MountAsync(bool overview = false)
+        public async Task<int> MountAsync<T>(Dictionary<string, object?>? parameters = null) where T : IComponent
         {
-            var root = AssignRootComponentId(InstantiateComponent(typeof(SolarHistoryChart)));
-            await RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?> { ["Overview"] = overview }));
+            var component=InstantiateComponent(typeof(T));
+            var root = AssignRootComponentId(component);
+            _mounted[root]=component;
+            await RenderRootComponentAsync(root, ParameterView.FromDictionary(parameters ?? []));
             return root;
+        }
+        public Task DateAsync(int root, DateOnly date) => RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?> { ["RequestedDate"] = date.ToString("yyyy-MM-dd"), ["RequestedPeriod"] = "day" }));
+        public Task KeyAsync(int root, string key) => DispatchEventAsync(Event(root, "onkeydown"), null, new KeyboardEventArgs { Key = key });
+        private ulong Event(int root, string name)
+        {
+            var frames = GetCurrentRenderTreeFrames(root);
+            foreach (var frame in frames.Array.Take(frames.Count))
+            {
+                if (frame.FrameType == RenderTreeFrameType.Component) { var nested = Event(frame.ComponentId, name); if (nested != 0) return nested; }
+                if (frame.FrameType == RenderTreeFrameType.Attribute && frame.AttributeName == name) return frame.AttributeEventHandlerId;
+            }
+            return 0;
         }
 
         public Task ClickAsync(int root, string label)
@@ -610,15 +226,6 @@ public class SolarHistoryChartTests
         }
     }
 
-    private sealed class UnusedHistoryService : ISolarHistoryService
-    {
-        public int Calls { get; private set; }
-        public Task<SolarHistoryResult> ReadAsync(SolarHistoryPeriod period, CancellationToken ct, DateOnly? endDate = null)
-        {
-            Calls++;
-            throw new InvalidOperationException("A provided result must not fetch another user's or period's data.");
-        }
-    }
     private sealed class NullJsRuntime : IJSRuntime
     {
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => ValueTask.FromResult(default(TValue)!);

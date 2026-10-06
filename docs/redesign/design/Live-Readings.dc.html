@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live readings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 390px; height: 1180px; position: relative; overflow: hidden; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 58px 16px 0;">
+
+    <header style="display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 8px;">
+      <a href="Main.dc.html" aria-label="Back to Home" style="width: 44px; height: 44px; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; text-decoration: none; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></a>
+      <h1 style="margin: 0; text-align: center; font-size: 17px; line-height: 22px; font-weight: 600;">Live readings</h1>
+      <button type="button" aria-label="Refresh readings" style="width: 44px; height: 44px; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
+    </header>
+
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 20px; background: #FFFFFF;">
+      <span style="display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600;"><span style="width: 8px; height: 8px; border-radius: 4px; background: #2A9754;"></span>Updated 12 s ago</span>
+      <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Measured 13:42:05 · received 13:42:18 · Deye Cloud</span>
+    </div>
+
+    <section aria-labelledby="battery-title" style="display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 18px; border-radius: 24px; background: #FFFFFF;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <h2 id="battery-title" style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Battery</h2>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #E2EFE8; color: #005A38; font-size: 13px; line-height: 18px; font-weight: 600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>Charging</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 52px; line-height: 56px; font-weight: 700; letter-spacing: -0.035em;">78%</span><span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">state of charge</span></div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div aria-hidden="true" style="position: relative; height: 12px; border-radius: 6px; background: #E2EFE8;">
+          <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 78%; border-radius: 6px; background: #007549;"></div>
+          <div style="position: absolute; left: 55%; top: -4px; width: 2px; height: 20px; border-radius: 1px; background: #12120F;"></div>
+          <div style="position: absolute; left: 75%; top: -4px; width: 2px; height: 20px; border-radius: 1px; background: #12120F;"></div>
+        </div>
+        <div style="position: relative; height: 18px; font-size: 12px; line-height: 16px; font-weight: 600; color: #51504C;">
+          <span style="position: absolute; left: 55%; transform: translateX(-50%);">Off 55%</span>
+          <span style="position: absolute; left: 75%; transform: translateX(-50%);">On 75%</span>
+        </div>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Marks show the Solar surplus thresholds.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Power</span><span style="font-size: 19px; line-height: 24px; font-weight: 700;">0.42 kW in</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Temperature</span><span style="font-size: 19px; line-height: 24px; font-weight: 700;">24.5 °C</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Voltage</span><span style="font-size: 19px; line-height: 24px; font-weight: 700;">51.8 V</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Current</span><span style="font-size: 19px; line-height: 24px; font-weight: 700;">8.1 A</span></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="power-title" style="display: flex; flex-direction: column; padding: 16px 0 6px; border-radius: 24px; background: #FFFFFF;">
+      <h2 id="power-title" style="margin: 0 0 4px; padding: 0 20px; font-size: 19px; line-height: 24px; font-weight: 700;">Power right now</h2>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 20px;"><span style="width: 10px; height: 10px; flex: none; border-radius: 5px; background: #CB7F00;"></span><span style="flex: 1; font-size: 17px; line-height: 22px; font-weight: 500;">Solar</span><span style="font-size: 17px; line-height: 22px; font-weight: 700;">4.20 kW</span></div>
+      <div style="height: 1px; margin-left: 42px; background: #EAEAE6;"></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 20px;"><span style="width: 10px; height: 10px; flex: none; border-radius: 5px; background: #12120F;"></span><span style="flex: 1; font-size: 17px; line-height: 22px; font-weight: 500;">Home</span><span style="font-size: 17px; line-height: 22px; font-weight: 700;">1.24 kW</span></div>
+      <div style="height: 1px; margin-left: 42px; background: #EAEAE6;"></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 20px;"><span style="width: 10px; height: 10px; flex: none; border-radius: 5px; background: #007549;"></span><span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px; font-weight: 500;">Battery</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">charging</span></span><span style="font-size: 17px; line-height: 22px; font-weight: 700;">−0.42 kW</span></div>
+      <div style="height: 1px; margin-left: 42px; background: #EAEAE6;"></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 20px;"><span style="width: 10px; height: 10px; flex: none; border-radius: 5px; background: #3D66D0;"></span><span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px; font-weight: 500;">Grid</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">exporting</span></span><span style="font-size: 17px; line-height: 22px; font-weight: 700;">−2.54 kW</span></div>
+      <p style="margin: 8px 20px 10px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Minus means charging or exporting. These are instant power readings, not energy totals.</p>
+    </section>
+
+    <section aria-labelledby="balance-title" style="display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 18px; border-radius: 24px; background: #FFFFFF;">
+      <h2 id="balance-title" style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Balance check</h2>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2A9754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>Readings are consistent</span>
+        <span style="font-size: 19px; line-height: 24px; font-weight: 700;">0.00 kW</span>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Solar + grid + battery − home. Small gaps come from measurement timing and conversion losses.</span>
+    </section>
+
+    <button type="button" style="display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 16px 0 20px; border: none; border-radius: 20px; background: #FFFFFF; color: #12120F; font-family: inherit; text-align: left; cursor: pointer;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      <span style="flex: 1; font-size: 17px; line-height: 22px; font-weight: 500;">Readings log</span>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">Last 6 hours</span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#676662" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 16px; right: 16px; bottom: 26px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(255,255,255,0.84); backdrop-filter: blur(24px) saturate(1.6); box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 12px 32px rgba(18,18,15,0.14);">
+    <a href="Main.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; color: #12120F; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <a href="Energy.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Energy</span></a>
+    <a href="Devices.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>Devices</span></a>
+    <a href="Automations.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Automations</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

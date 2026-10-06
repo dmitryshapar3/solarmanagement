@@ -32,6 +32,9 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<Guid>("AppAccountToken")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool?>("AutoRenewEnabled")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("CheckedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -60,6 +63,9 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("RenewalAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("datetimeoffset");
@@ -154,6 +160,20 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset?>("PausedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("PausedByCommandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PausedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<int>("SocTurnOffThreshold")
                         .HasColumnType("int");
 
@@ -183,6 +203,10 @@ namespace DeyeSolar.Web.Migrations
                         .HasColumnType("nvarchar(64)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<string>("Client")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -193,9 +217,19 @@ namespace DeyeSolar.Web.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Platform")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
                     b.Property<string>("SecurityStamp")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("UserId")
                         .IsRequired()
@@ -209,6 +243,9 @@ namespace DeyeSolar.Web.Migrations
                     b.HasKey("TokenHash");
 
                     b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique();
 
                     b.HasIndex("UserId", "CreatedAt");
 
@@ -247,6 +284,63 @@ namespace DeyeSolar.Web.Migrations
                         .IsUnique();
 
                     b.ToTable("AppSettings");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.AppleIdentityCredential", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Audience")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ProtectedRefreshToken")
+                        .IsRequired()
+                        .HasMaxLength(30000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("AppleIdentityCredentials");
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.AppleIdentityRevocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Audience")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ProtectedRefreshToken")
+                        .IsRequired()
+                        .HasMaxLength(30000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt");
+
+                    b.ToTable("AppleIdentityRevocations");
                 });
 
             modelBuilder.Entity("DeyeSolar.Web.Data.ExportPriceRow", b =>
@@ -512,6 +606,14 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Client")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -533,6 +635,13 @@ namespace DeyeSolar.Web.Migrations
 
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OnRuleConflict")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("PausedRuleIdsJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PayloadHash")
                         .IsRequired()
@@ -599,6 +708,9 @@ namespace DeyeSolar.Web.Migrations
                     b.Property<string>("AccountIdentity")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("AddedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("AddedByUserId")
                         .HasMaxLength(450)
@@ -817,6 +929,89 @@ namespace DeyeSolar.Web.Migrations
                     b.HasIndex("InstallationId", "InstanceId", "UserId", "ExpiresAt");
 
                     b.ToTable("IntegrationOAuthFlows", (string)null);
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Redesign.ActivityEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("BatterySoc")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Client")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("ConfigurationVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<long?>("Generation")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("GroupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RuleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RuleName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("SolarWatts")
+                        .HasColumnType("int");
+
+                    b.Property<bool?>("State")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ValuesJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstallationId", "DeviceId", "OccurredAt");
+
+                    b.HasIndex("InstallationId", "GroupId", "Id");
+
+                    b.HasIndex("InstallationId", "OccurredAt", "Id");
+
+                    b.HasIndex("InstallationId", "RuleId", "OccurredAt");
+
+                    b.ToTable("ActivityEvents");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -1068,6 +1263,15 @@ namespace DeyeSolar.Web.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("DeyeSolar.Web.Data.AppleIdentityCredential", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("DeyeSolar.Web.Data.ExportReading", b =>
                 {
                     b.HasOne("DeyeSolar.Web.Data.Installation", null)
@@ -1194,6 +1398,15 @@ namespace DeyeSolar.Web.Migrations
                         .WithMany()
                         .HasForeignKey("InstallationId", "InstanceId")
                         .HasPrincipalKey("InstallationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Redesign.ActivityEvent", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

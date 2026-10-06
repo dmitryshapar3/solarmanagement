@@ -1,2 +1,3 @@
 /* Generated from i18n/tr.json by scripts/sync-ios-localizations.mjs. */
-"NSFaceIDUsageDescription" = "DeyeSolar'ın güvenli oturum açma için Face ID kullanmasına izin ver.";
+"NSFaceIDUsageDescription" = "SmartSolar'ın güvenli oturum açma için Face ID kullanmasına izin ver.";
+"NSLocationWhenInUseUsageDescription" = "Güneş enerjisi tesisinin koordinatlarını ayarlamak için konumunuzu kullanın.";

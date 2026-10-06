@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Energy · Export</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 390px; height: 1390px; position: relative; overflow: hidden; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 58px 16px 0;">
+
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px;">
+      <h1 style="margin: 0; font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em;">Energy</h1>
+      <button type="button" aria-label="Choose a date" style="width: 44px; height: 44px; flex: none; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></button>
+    </header>
+
+    <nav aria-label="Energy view" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: #EAEAE6;">
+      <a href="Energy.dc.html" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; color: #51504C; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 500;">Production</a>
+      <a href="Energy-Export.dc.html" aria-current="page" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: #FFFFFF; color: #12120F; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 600; box-shadow: 0 1px 3px rgba(18,18,15,0.12);">Export</a>
+    </nav>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; gap: 6px;">
+        <button type="button" aria-pressed="true" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Day</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Month</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Year</button>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <button type="button" aria-label="Previous day" style="width: 44px; height: 44px; border: none; border-radius: 22px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600;">Today, 5 October</span>
+        <button type="button" aria-label="Next day" disabled style="width: 44px; height: 44px; border: none; border-radius: 22px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; opacity: 0.35;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+    </div>
+
+    <section aria-label="Export summary" style="display: flex; flex-direction: column; gap: 4px; padding: 4px 4px 0;">
+      <div style="display: flex; align-items: baseline; gap: 6px;"><span style="font-size: 52px; line-height: 56px; font-weight: 700; letter-spacing: -0.035em;">6.88</span><span style="font-size: 20px; line-height: 24px; font-weight: 600;">kWh</span></div>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">exported to the grid in completed hours</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 17px; line-height: 22px; font-weight: 600;">
+        <span>PLN 1.91 <span style="font-size: 15px; font-weight: 500; color: #51504C;">value</span></span>
+        <span>PLN 2.35 <span style="font-size: 15px; font-weight: 500; color: #51504C;">deposit credit, est.</span></span>
+      </div>
+    </section>
+
+    <section aria-label="Hourly export chart" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 14px; border-radius: 24px; background: #FFFFFF;">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 4px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;" aria-live="polite">
+          <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">12:00–13:00</span>
+          <span style="font-size: 24px; line-height: 28px; font-weight: 700;">2.31 <span style="font-size: 15px; font-weight: 600;">kWh</span></span>
+          <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">PLN 0.58 value</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 2px; border-radius: 10px; background: #EAEAE6;">
+          <button type="button" aria-pressed="true" style="height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(18,18,15,0.12); cursor: pointer;">kWh</button>
+          <button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: transparent; color: #51504C; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">PLN</button>
+        </div>
+      </div>
+      <div style="display: flex; gap: 16px; padding: 0 4px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 3px; background: #3D66D0;"></span>Completed hour</span>
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 3px; box-sizing: border-box; border: 1.5px solid #3D66D0; background: rgba(61,102,208,0.16);"></span>In progress</span>
+      </div>
+      <svg width="326" height="200" viewBox="0 0 326 200" role="img" aria-label="Energy exported per hour today. Completed hours from 08:00 to 13:00, current hour in progress" style="display: block;">
+        <g stroke="#EAEAE6" stroke-width="1"><line x1="36" y1="108" x2="318" y2="108"/><line x1="36" y1="44" x2="318" y2="44"/></g>
+        <g fill="#676662" font-size="11" font-family="Onest, system-ui, sans-serif" text-anchor="end"><text x="28" y="176">0</text><text x="28" y="112">1</text><text x="28" y="48">2 kWh</text></g>
+        <rect x="167.6" y="12" width="18.8" height="160" rx="4" fill="#12120F" fill-opacity="0.05"/>
+        <g fill="#3D66D0">
+          <path d="M96.8 172 L96.8 162.6 Q96.8 158.6 100.8 158.6 L102.8 158.6 Q106.8 158.6 106.8 162.6 L106.8 172 Z"/>
+          <path d="M115.6 172 L115.6 121 Q115.6 117 119.6 117 L121.6 117 Q125.6 117 125.6 121 L125.6 172 Z"/>
+          <path d="M134.4 172 L134.4 78.7 Q134.4 74.7 138.4 74.7 L140.4 74.7 Q144.4 74.7 144.4 78.7 L144.4 172 Z"/>
+          <path d="M153.2 172 L153.2 49.3 Q153.2 45.3 157.2 45.3 L159.2 45.3 Q163.2 45.3 163.2 49.3 L163.2 172 Z"/>
+          <path d="M172 172 L172 28.2 Q172 24.2 176 24.2 L178 24.2 Q182 24.2 182 28.2 L182 172 Z"/>
+        </g>
+        <path d="M191.55 172 L191.55 82.6 Q191.55 79.35 194.8 79.35 L196.8 79.35 Q200.05 79.35 200.05 82.6 L200.05 172" fill="#3D66D0" fill-opacity="0.16" stroke="#3D66D0" stroke-width="1.5" stroke-linejoin="round"/>
+        <line x1="36" y1="172" x2="318" y2="172" stroke="#C9C8C3" stroke-width="1"/>
+        <g fill="#676662" font-size="11" font-family="Onest, system-ui, sans-serif" text-anchor="middle"><text x="54.8" y="192">06:00</text><text x="111.2" y="192">09:00</text><text x="167.6" y="192">12:00</text><text x="224" y="192">15:00</text><text x="280.4" y="192">18:00</text></g>
+      </svg>
+      <button type="button" style="height: 44px; border: none; border-radius: 14px; background: #F5F4F1; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>Hourly table with coverage</button>
+    </section>
+
+    <section aria-label="Current hour" style="display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; border-radius: 24px; background: #FFFFFF; box-shadow: inset 0 0 0 1.5px rgba(61,102,208,0.45);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600;">13:00–14:00</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(61,102,208,0.12); color: #2B4F9E; font-size: 13px; line-height: 18px; font-weight: 600;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>In progress</span>
+      </div>
+      <span style="font-size: 24px; line-height: 28px; font-weight: 700;">1.46 <span style="font-size: 15px; font-weight: 600;">kWh so far</span> <span style="font-size: 17px; font-weight: 600; color: #51504C;">· PLN 0.38</span></span>
+      <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Measured through 13:40. Not included in today’s totals until the hour ends.</span>
+    </section>
+
+    <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 18px; background: #FFFFFF;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2A9754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 500;">13 of 13 completed hours measured and priced</span>
+    </div>
+
+    <section aria-labelledby="terms-title" style="display: flex; flex-direction: column; padding: 16px 0 8px; border-radius: 24px; background: #FFFFFF;">
+      <h2 id="terms-title" style="margin: 0 0 6px; padding: 0 20px; font-size: 19px; line-height: 24px; font-weight: 700;">How value is estimated</h2>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 20px; font-size: 15px; line-height: 20px;"><span style="color: #51504C; font-weight: 500;">Contract</span><span style="font-weight: 600; text-align: right;">TAURON net-billing, since 1 Jan 2026</span></div>
+      <div style="height: 1px; margin-left: 20px; background: #EAEAE6;"></div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 20px; font-size: 15px; line-height: 20px;"><span style="color: #51504C; font-weight: 500;">Prices</span><span style="font-weight: 600;">Hourly RCE</span></div>
+      <div style="height: 1px; margin-left: 20px; background: #EAEAE6;"></div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 20px; font-size: 15px; line-height: 20px;"><span style="color: #51504C; font-weight: 500;">Deposit credit</span><span style="font-weight: 600;">Value × 1.23</span></div>
+      <p style="margin: 8px 20px 8px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Estimated from inverter readings. Your final bill uses the grid operator’s meter. This is not a cash payout.</p>
+    </section>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 16px; right: 16px; bottom: 26px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(255,255,255,0.84); backdrop-filter: blur(24px) saturate(1.6); box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 12px 32px rgba(18,18,15,0.14);">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <a href="Energy.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; color: #12120F; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Energy</span></a>
+    <a href="Devices.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>Devices</span></a>
+    <a href="Automations.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Automations</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1390}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

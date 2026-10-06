@@ -24,7 +24,9 @@ public sealed class BillingAccessService(DbContextOptions<DeyeSolarDbContext> op
         var account = await db.BillingAccounts.AsNoTracking().SingleOrDefaultAsync(a => a.UserId == userId, ct)
             ?? throw new BillingAccessException("This account has no billing record. Contact support.");
         var subscriptions = await db.AppleSubscriptions.AsNoTracking().Where(s => s.UserId == userId).ToListAsync(ct);
-        return BillingEntitlementPolicy.ResolveAccess(account, subscriptions, clock.GetUtcNow(), apple.ProductPolicy);
+        var access = BillingEntitlementPolicy.ResolveAccess(account, subscriptions, clock.GetUtcNow(), apple.ProductPolicy);
+        var usage = await db.IntegrationDeviceBindings.IgnoreQueryFilters().AsNoTracking().CountAsync(b => b.AddedByUserId == userId && b.Kind == "socket", ct);
+        return access with { SocketUsage = usage };
     }
 
     public async Task EnsureUserAsync(ClaimsPrincipal actor, CancellationToken ct)

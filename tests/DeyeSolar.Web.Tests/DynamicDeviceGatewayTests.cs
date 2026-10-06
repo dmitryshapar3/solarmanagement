@@ -19,7 +19,7 @@ using Xunit;
 
 namespace DeyeSolar.Web.Tests;
 
-public sealed class DynamicDeviceGatewayTests
+public sealed partial class DynamicDeviceGatewayTests
 {
     [SqlServerFact]
     public async Task AccountRevocationWhileQueuedRejectsBeforeIntentOrSecondRemoteEffect()

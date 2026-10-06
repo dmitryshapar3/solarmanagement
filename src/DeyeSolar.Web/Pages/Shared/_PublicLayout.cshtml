@@ -1,30 +1,30 @@
 @inject DeyeSolar.Web.Localization.UiText T
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 <!DOCTYPE html>
-<html lang="@T.Language">
+<html lang="@T.Language" data-theme="@DeyeSolar.Web.Components.Ui.WebAppearance.CookieTheme(Context)">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] @T["- DeyeSolar"]</title>
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="stylesheet" href="/css/public.css" asp-append-version="true" />
+    <title>@ViewData["Title"] · SmartSolar</title>
+    <link rel="icon" type="image/svg+xml" href="/images/smartsolar-mark.svg" />
+    <link rel="stylesheet" href="/css/fonts.css" /><link rel="stylesheet" href="/css/tokens.css" /><link rel="stylesheet" href="/css/smartsolar.css" asp-append-version="true" />
 </head>
 <body>
     <header class="public-header">
-        <a class="brand" href="/">DeyeSolar</a>
-        <nav aria-label="@T["Public information"]">
+        <a class="brand-lockup" href="/"><img src="/images/smartsolar-mark.svg" width="32" height="32" alt="" /><span>SmartSolar</span></a>
+        <nav class="public-nav" aria-label="@T["Public information"]">
             <a href="/privacy">@T["Privacy"]</a>
             <a href="/support">@T["Support"]</a>
-            <a href="/login">@T["Sign in"]</a>
+            <a href="/signin">@T["Sign in"]</a>
         </nav>
     </header>
     <main id="main-content" class="public-content">
         @RenderBody()
     </main>
     <footer class="public-footer">
-        <span>@T["DeyeSolar · Solar Energy Management"]</span>
+        <span>SmartSolar · @T["Solar Energy Management"]</span>
         <a href="/privacy">@T["Privacy policy"]</a>
         <a href="/support">@T["Contact support"]</a>
     </footer>
-</body>
+<script src="/js/smartsolar.js"></script></body>
 </html>

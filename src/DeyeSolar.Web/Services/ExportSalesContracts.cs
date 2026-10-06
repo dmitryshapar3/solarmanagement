@@ -14,9 +14,15 @@ public sealed record ExportSalesResult(ExportSalesRequest Request, DateOnly Toda
     ExportSaleProgress? CurrentHour = null, DateTimeOffset? UpdatedAt = null)
 {
     public bool IsPartial => ObservedHours < ExpectedHours || ValuedHours < ObservedHours;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ExportSaleHour>? Hours { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<DateTimeOffset>? MissingPriceHours { get; init; }
 }
 
 public interface IExportSalesService
 {
     Task<ExportSalesResult> ReadAsync(ExportSalesRequest request, CancellationToken ct);
+    Task<ExportSalesResult> ReadDetailsAsync(ExportSalesRequest request, CancellationToken ct) => ReadAsync(request, ct);
+    Task<ExportSalesResult> RecheckPricesAsync(ExportSalesRequest request, CancellationToken ct) => ReadDetailsAsync(request, ct);
 }

@@ -30,8 +30,10 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     {
         base.OnModelCreating(modelBuilder);
         ConfigureAccountSessions(modelBuilder);
+        ConfigureAppleIdentity(modelBuilder);
         ConfigureBilling(modelBuilder);
         ConfigureDynamicIntegrations(modelBuilder);
+        ConfigureRedesign(modelBuilder);
         modelBuilder.Entity<Installation>(e =>
         {
             e.HasKey(i => i.Id);

@@ -30,9 +30,32 @@ internal sealed class RuleRunHistory(IDbContextFactory<DeyeSolarDbContext> _dbFa
                 var presentation = RuleRunPresentation.From(outcome);
                 await UpsertRuleRunLogAsync(db, outcome.RuleName, presentation.Action, presentation.ConditionKey, presentation.Reason,
                     outcome.Decision?.BatterySoc, data, now.UtcDateTime, ct);
+                var eventKind = outcome.ActionSucceeded ? "rule.switched" : outcome.Failure is not null ? "rule.failed" : "rule.checked";
+                var ruleId = outcome.RuleId ?? outcome.Decision?.RuleId;
+                var target = outcome.Decision?.EntityId;
+                var reasonCode = outcome.Failure is not null ? "command_failed" : outcome.Decision?.Reason.ToString();
+                var previous = ruleId is null ? null : await db.ActivityEvents.AsNoTracking()
+                    .Where(e => e.RuleId == ruleId || e.DeviceId == target && e.Kind.StartsWith("command."))
+                    .OrderByDescending(e => e.Id).FirstOrDefaultAsync(ct);
+                var continues = eventKind == "rule.checked" && previous?.Kind == eventKind
+                    && previous.ConfigurationVersion == outcome.ConfigurationVersion && previous.ReasonCode == reasonCode
+                    && previous.DeviceId == target && previous.Generation == data.RuntimeGeneration
+                    && now.UtcDateTime - previous.OccurredAt <= TimeSpan.FromMinutes(10);
+                db.ActivityEvents.Add(new Redesign.ActivityEvent
+                {
+                    Kind = eventKind, GroupId = continues ? previous!.GroupId ?? previous.Id : null,
+                    OccurredAt = now.UtcDateTime, RecordedAt = now.UtcDateTime,
+                    RuleId = ruleId, RuleName = outcome.RuleName,
+                    DeviceId = outcome.Decision?.EntityId, ConfigurationVersion = outcome.ConfigurationVersion,
+                    State = outcome.ActionSucceeded ? outcome.Decision?.TurnOn : null,
+                    ReasonCode = reasonCode, Generation = data.RuntimeGeneration,
+                    BatterySoc = outcome.Decision?.BatterySoc, SolarWatts = outcome.Decision?.AverageSolarProductionWatts,
+                    ValuesJson = outcome.Decision is null ? null : System.Text.Json.JsonSerializer.Serialize(outcome.Decision)
+                });
             }
 
             await db.SaveChangesAsync(ct);
+            await db.ActivityEvents.Where(e => e.OccurredAt < now.UtcDateTime.AddDays(-31)).ExecuteDeleteAsync(ct);
 
             // Retain the complete time range offered by browser and API history queries.
             var cutoff = HistoryQueryPolicy.Cutoff(now, HistoryQueryPolicy.MaximumHours);

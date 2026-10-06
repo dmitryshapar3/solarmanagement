@@ -81,7 +81,13 @@ public sealed record RuleSummaryDto(
     string? ActiveFrom,
     string? ActiveTo,
     Guid? SourceInverterId,
-    string ConfigurationVersion);
+    string ConfigurationVersion)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? PauseReason { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? PausedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? PausedByUserId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? PausedByCommandId { get; init; }
+}
 
 public sealed record TriggerRuleDto(
     int Id,
@@ -101,7 +107,13 @@ public sealed record TriggerRuleDto(
     DateTime? CurrentStateChangedAt,
     DateTime? LastEvaluated,
     Guid? SourceInverterId,
-    string ConfigurationVersion);
+    string ConfigurationVersion)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? PauseReason { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? PausedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? PausedByUserId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? PausedByCommandId { get; init; }
+}
 
 public sealed record TriggerRuleRequest(
     string Name,
@@ -213,7 +225,8 @@ public static class MobileApiMappings
             FormatTime(rule.ActiveFrom),
             FormatTime(rule.ActiveTo),
             rule.SourceInverterId,
-            RuleConfigurationVersion.Read(rule));
+            RuleConfigurationVersion.Read(rule))
+        { PauseReason = rule.PauseReason, PausedAt = rule.PausedAt, PausedByUserId = rule.PausedByUserId, PausedByCommandId = rule.PausedByCommandId };
 
     public static TriggerRuleDto ToDto(this TriggerRule rule)
         => new(
@@ -234,7 +247,8 @@ public static class MobileApiMappings
             rule.CurrentStateChangedAt,
             rule.LastEvaluated,
             rule.SourceInverterId,
-            RuleConfigurationVersion.Read(rule));
+            RuleConfigurationVersion.Read(rule))
+        { PauseReason = rule.PauseReason, PausedAt = rule.PausedAt, PausedByUserId = rule.PausedByUserId, PausedByCommandId = rule.PausedByCommandId };
 
     public static ReadingDto ToDto(this Reading reading)
         => new(

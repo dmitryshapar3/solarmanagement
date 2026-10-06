@@ -1,106 +1,40 @@
+import { useAuth } from "../../application/AuthContext";
 import { useLanguage } from "../../application/LanguageContext";
 import { ReactNode, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { CreditCard, LogOut, RefreshCcw } from "lucide-react-native";
-import { AppButton, Card, ErrorBanner, Header, Screen } from "../../core/components";
-import { colors, spacing, typography } from "../../core/theme";
+import { Linking, Pressable, View } from "react-native";
+import { Check, CreditCard, LogOut, RefreshCcw, Sun } from "lucide-react-native";
+import { AppButton, Card, DataRow, ErrorBanner, Header, Screen, StatusPill, ThemedText as Text } from "../../core/components";
+import { formatDateTime } from "../../core/format";
+import { useTheme } from "../../ui/theme/ThemeProvider";
 import { subscriptionPriceLabel, subscriptionProductIds } from "./billingPolicy";
 import { useSubscription } from "./SubscriptionContext";
-
-export type SubscriptionScreenProps = {
-  onLogout: () => Promise<void>;
-  privacyUrl: string;
-  termsUrl: string;
-  supportUrl: string;
-};
-
-export function SubscriptionGate({ children, ...screenProps }: SubscriptionScreenProps & { children: ReactNode }) {
-  const { hasAccess } = useSubscription();
-  return hasAccess ? children : <SubscriptionScreen {...screenProps} />;
-}
-
-export function SubscriptionScreen({ onLogout, privacyUrl, termsUrl, supportUrl }: SubscriptionScreenProps) {
-  const { t } = useLanguage();
-  const billing = useSubscription();
-  const [selectedId, setSelectedId] = useState<string>(subscriptionProductIds.monthly);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const product = billing.snapshot?.products.find(item => item.id === selectedId);
-
-  async function openLink(value: string) {
-    setLinkError(null);
-    try {
-      const url = new URL(value);
-      if (url.protocol !== "https:" || url.username || url.password) throw new Error(t("Invalid public URL"));
-      await Linking.openURL(url.toString());
-    } catch {
-      setLinkError("The link could not be opened. Please try again or contact support.");
-    }
-  }
-
+export type SubscriptionScreenProps = { onLogout: () => Promise<void>; onSettings?: () => void; privacyUrl: string; termsUrl: string; supportUrl: string; };
+export function SubscriptionGate({ children, ...screenProps }: SubscriptionScreenProps & { children: ReactNode }) { const { hasAccess } = useSubscription(); return hasAccess ? children : <SubscriptionScreen {...screenProps} />; }
+type Disclosures = { productId?: string | null; planPeriod?: string | null; autoRenewEnabled?: boolean | null; renewalAt?: string | null; trialDaysRemaining?: number; socketUsage?: number };
+export function SubscriptionScreen({ onLogout, onSettings, privacyUrl, termsUrl, supportUrl }: SubscriptionScreenProps) {
+  const { t } = useLanguage(); const { colors } = useTheme(); const billing = useSubscription();
+  const [selectedId, setSelectedId] = useState<string>(subscriptionProductIds.monthly); const [linkError, setLinkError] = useState<string | null>(null);
+  const product = billing.snapshot?.products.find(item => item.id === selectedId); const access = billing.access as (NonNullable<typeof billing.access> & Disclosures) | null;
+  const days = access?.trialDaysRemaining ?? (access ? Math.max(0, Math.ceil((Date.parse(access.trialEndsAt) - Date.parse(access.serverNow)) / 86400000)) : null);
+  const copy = { color: colors.ink2, fontSize: 15, lineHeight: 21 };
+  async function openLink(value: string) { setLinkError(null); try { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw new Error(t("Invalid public URL")); await Linking.openURL(url.toString()); } catch { setLinkError("The link could not be opened. Please try again or contact support."); } }
   return <Screen refreshing={billing.isChecking} onRefresh={() => billing.busy === null ? billing.refresh() : undefined}>
-    <Header title={billing.hasAccess ? t("Your subscription") : "Solar Premium"}
-      subtitle={t("Solar energy monitoring, generation and sales insights")}
-      action={<AppButton label={t("Logout")} icon={LogOut} onPress={() => void onLogout()} variant="secondary" compact />} />
-    <ErrorBanner message={linkError ?? billing.error} />
-    {billing.isChecking ? <Text style={styles.copy}>{t("Checking your account access…")}</Text> : null}
-    {billing.notice ? <Text style={styles.copy}>{t(billing.notice)}</Text> : null}
-
-    {billing.access?.status === "trial" ? <Card>
-      <Text style={styles.heading}>{t("One-month trial")}</Text>
-      <Text style={styles.copy}>{t("Your free trial ends on {0}. You can add one socket during the trial.", new Date(billing.access.trialEndsAt).toLocaleDateString())}</Text>
-      <Text style={styles.copy}>{t("After the trial ends, a paid subscription is required to read or control sockets.")}</Text>
-    </Card> : billing.access?.status === "active" ? <Card>
-      <Text style={styles.heading}>{t("Subscription active")}</Text>
-      <Text style={styles.copy}>{t("Your subscription is verified by the server. Manage renewal and cancellation using your Apple Account.")}</Text>
-    </Card> : billing.access?.status === "expired" ? <Card>
-      <Text style={styles.heading}>{t("Subscription required")}</Text>
-      <Text style={styles.copy}>{t("Your trial has ended. Subscribe to read or control your sockets.")}</Text>
-    </Card> : null}
-
-    {billing.access?.status !== "active" ? <>
-      <Card style={styles.card}>
-        <Text style={styles.heading}>{t("Choose your plan")}</Text>
-        {Object.entries(subscriptionProductIds).map(([name, id]) => {
-          const option = billing.snapshot?.products.find(item => item.id === id);
-          return <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: selectedId === id, disabled: !billing.canPurchase }}
-            disabled={!billing.canPurchase || billing.busy !== null} onPress={() => setSelectedId(id)}
-            style={[styles.plan, selectedId === id && styles.selected]}>
-            <View style={styles.planCopy}>
-              <Text style={styles.planName}>{name === "monthly" ? t("Monthly") : t("Yearly")}</Text>
-              <Text style={styles.copy}>{option && billing.canPurchase ? subscriptionPriceLabel(option) : t("Price unavailable")}</Text>
-            </View>
-          </Pressable>;
-        })}
-        {!billing.canPurchase && !billing.isChecking ? <Text style={styles.copy}>
-          {t(!billing.canUseAppStore ? "Subscriptions are not configured yet. Contact support."
-            : billing.snapshot?.catalogError ?? "Subscriptions are currently unavailable for this Apple Account. You can still restore purchases, view policies or contact support.")}
-        </Text> : null}
-        {product && billing.canPurchase ? <Text style={styles.copy}>{t("{0}  Your subscription renews automatically until canceled.", `${subscriptionPriceLabel(product)}.`)}</Text> : null}
-        <AppButton label={t("Subscribe")} icon={CreditCard}
-          disabled={!billing.canPurchase || !product || billing.busy !== null} loading={billing.busy === "purchase"}
-          onPress={() => void billing.purchase(selectedId)} />
-      </Card>
-      <Text style={styles.copy}>{t("Payment is charged to your Apple Account when the App Store confirms the purchase. Cancel in App Store account settings at least 24 hours before the current period ends to avoid renewal. The final price is confirmed by the App Store before purchase.")}</Text>
-    </> : null}
-
-    <AppButton label={t("Restore purchases")} icon={RefreshCcw} variant="secondary" disabled={!billing.canUseAppStore || billing.busy !== null || billing.isChecking}
-      loading={billing.busy === "restore"} onPress={() => void billing.restore()} />
-    <AppButton label={t("Manage subscription")} variant="ghost" disabled={!billing.canUseAppStore || billing.busy !== null || billing.isChecking}
-      loading={billing.busy === "manage"} onPress={() => void billing.manage()} />
-    <View style={styles.legal}>
-      <AppButton label={t("Privacy policy")} variant="ghost" onPress={() => void openLink(privacyUrl)} />
-      <AppButton label={t("Terms of use")} variant="ghost" onPress={() => void openLink(termsUrl)} />
-      <AppButton label={t("Support")} variant="ghost" onPress={() => void openLink(supportUrl)} />
-    </View>
+    <Header title={billing.hasAccess ? "Your subscription" : "SmartSolar Premium"} action={<AppButton label="Logout" icon={LogOut} onPress={() => void onLogout()} variant="ghost" compact />} />
+    <ErrorBanner message={linkError ?? billing.error} />{billing.isChecking ? <Text style={copy}>{t("Checking your account access…")}</Text> : null}{billing.notice ? <Text style={copy}>{t(billing.notice)}</Text> : null}
+    <Card style={{ backgroundColor: colors.sunTint, gap: 18, alignItems: "center", paddingVertical: 28 }}><Sun size={52} strokeWidth={1.5} color={colors.solar} /><Text style={{ fontSize: 28, lineHeight: 34, fontWeight: "700", textAlign: "center" }}>{t("More control. More solar.")}</Text><Text style={{ ...copy, textAlign: "center" }}>{t("Understand your energy, compare expected generation and automate your smart plugs.")}</Text></Card>
+    {access?.status === "trial" ? <Card style={{ gap: 10 }}><StatusPill label="Free trial" tone="warning" /><Text style={{ fontSize: 22, fontWeight: "700" }}>{t("{0} days remaining", days ?? 0)}</Text><Text style={copy}>{t("Your free trial ends on {0}. You can add one socket during the trial.", formatDateTime(access.trialEndsAt))}</Text><Text style={copy}>{t("After the trial ends, a paid subscription is required to read or control sockets.")}</Text>{typeof access.socketUsage === "number" ? <DataRow label="Smart plugs" value={t("{0} of 1", access.socketUsage)} /> : null}</Card>
+      : access?.status === "active" ? <Card style={{ gap: 12 }}><StatusPill label="Subscription active" tone="success" /><Text style={copy}>{t("Your subscription is verified by the server. Manage renewal and cancellation using your Apple Account.")}</Text>{access.planPeriod ? <DataRow label="Plan" value={t(access.planPeriod === "year" ? "Yearly" : access.planPeriod === "month" ? "Monthly" : "Unknown")} /> : null}<DataRow label="Access until" value={access.subscriptionExpiresAt ? formatDateTime(access.subscriptionExpiresAt) : t("Unknown")} /><DataRow label="Auto-renewal" value={t(access.autoRenewEnabled === true ? "On" : access.autoRenewEnabled === false ? "Off" : "Unknown")} />{access.renewalAt ? <DataRow label="Next renewal" value={formatDateTime(access.renewalAt)} /> : null}</Card>
+        : access?.status === "expired" ? <Card style={{ gap: 10 }}><Text style={{ fontSize: 22, fontWeight: "700" }}>{t("Your trial has ended.")}</Text><Text style={copy}>{t("Subscribe to keep reading and controlling your smart plugs. Your saved data and account remain available.")}</Text></Card> : null}
+    {access?.status !== "active" ? <><Card style={{ gap: 14 }}><Text style={{ fontSize: 19, fontWeight: "700" }}>{t("Choose your plan")}</Text>{Object.entries(subscriptionProductIds).map(([name, id]) => { const option = billing.snapshot?.products.find(item => item.id === id); const selected = selectedId === id; return <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected, disabled: !billing.canPurchase || billing.busy !== null }} disabled={!billing.canPurchase || billing.busy !== null} onPress={() => setSelectedId(id)} style={{ padding: 16, borderWidth: selected ? 2 : 1, borderColor: selected ? colors.ink : colors.line, borderRadius: 16, backgroundColor: selected ? colors.fill : colors.surface, flexDirection: "row", alignItems: "center", gap: 12 }}><View style={{ flex: 1, gap: 4 }}><Text style={{ fontWeight: "700" }}>{t(name === "monthly" ? "Monthly" : "Yearly")}</Text><Text style={copy}>{option && billing.canPurchase ? subscriptionPriceLabel(option) : t("Price unavailable")}</Text></View>{selected ? <Check size={22} color={colors.ink} /> : null}</Pressable>; })}
+      {!billing.canPurchase && !billing.isChecking ? <Text style={copy}>{t(!billing.canUseAppStore ? "Subscriptions are not configured yet. Contact support." : billing.snapshot?.catalogError ?? "Subscriptions are currently unavailable for this Apple Account. You can still restore purchases, view policies or contact support.")}</Text> : null}
+      {product && billing.canPurchase ? <Text style={copy}>{t("{0}  Your subscription renews automatically until canceled.", `${subscriptionPriceLabel(product)}.`)}</Text> : null}<AppButton label="Subscribe" icon={CreditCard} variant="sun" disabled={!billing.canPurchase || !product || billing.busy !== null} loading={billing.busy === "purchase"} onPress={() => void billing.purchase(selectedId)} /></Card><Text style={{ color: colors.ink3, fontSize: 13, lineHeight: 18 }}>{t("Payment is charged to your Apple Account when the App Store confirms the purchase. Cancel in App Store account settings at least 24 hours before the current period ends to avoid renewal. The final price is confirmed by the App Store before purchase.")}</Text></> : null}
+    <AppButton label="Restore purchases" icon={RefreshCcw} variant="secondary" disabled={!billing.canUseAppStore || billing.busy !== null || billing.isChecking} loading={billing.busy === "restore"} onPress={() => void billing.restore()} /><AppButton label="Manage subscription" variant="ghost" disabled={!billing.canUseAppStore || billing.busy !== null || billing.isChecking} loading={billing.busy === "manage"} onPress={() => void billing.manage()} />
+    {onSettings ? <AppButton label="Account settings" variant="quiet" onPress={onSettings} /> : null}<View style={{ gap: 4 }}><AppButton label="Privacy policy" variant="ghost" onPress={() => void openLink(privacyUrl)} /><AppButton label="Terms of use" variant="ghost" onPress={() => void openLink(termsUrl)} /><AppButton label="Support" variant="ghost" onPress={() => void openLink(supportUrl)} /></View>
   </Screen>;
 }
 
-const styles = StyleSheet.create({
-  card: { gap: spacing.lg }, heading: { color: colors.text, fontSize: typography.section, fontWeight: "800" },
-  copy: { color: colors.muted, fontSize: typography.caption, lineHeight: 20 },
-  plan: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: spacing.md,
-    flexDirection: "row", gap: spacing.md, alignItems: "center" },
-  selected: { borderColor: colors.primary, backgroundColor: colors.surfaceRaised },
-  planCopy: { flex: 1, gap: spacing.xs }, planName: { color: colors.text, fontSize: typography.body, fontWeight: "700" },
-  legal: { gap: spacing.sm }
-});
+export function DemoPaywallScreen() {
+  const { colors } = useTheme(); const { t } = useLanguage();
+  const { logout } = useAuth();
+  return <Screen><Header title="SmartSolar Premium" /><Card style={{ backgroundColor: colors.sunTint, alignItems: "center", gap: 16, paddingVertical: 28 }}><Sun size={52} color={colors.solar} /><Text style={{ fontSize: 28, fontWeight: "700", textAlign: "center" }}>{t("More control. More solar.")}</Text><Text style={{ color: colors.ink2, textAlign: "center" }}>{t("Understand your energy, compare expected generation and automate your smart plugs.")}</Text></Card><StatusPill label="Sample data" tone="warning" /><Text>{t("Sign in to view your account's trial and App Store plans. Purchases are unavailable in sample data.")}</Text><Card style={{ gap: 10 }}><DataRow label="Monthly" value={t("Price unavailable")} /><DataRow label="Yearly" value={t("Price unavailable")} /></Card><AppButton label="Sign in to see plans" variant="sun" onPress={() => void logout()} /></Screen>;
+}

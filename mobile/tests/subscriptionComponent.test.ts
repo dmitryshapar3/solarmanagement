@@ -89,16 +89,17 @@ async function harness(platform: "ios" | "android" = "ios", management = false) 
     bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
     plugins: [{ name: "native-boundaries", setup(builder) {
       builder.onResolve({ filter: /^(react-native|lucide-react-native)$/ }, args => ({ path: args.path, namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)(AuthContext|LanguageContext|core\/components)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+      builder.onResolve({ filter: /(?:^|\/)(AuthContext|LanguageContext|core\/components|ui\/theme\/ThemeProvider)$/ }, args => ({ path: args.path, namespace: "native-test" }));
       builder.onResolve({ filter: /modules\/solar-subscriptions\/src$/ }, () => ({ path: "store", namespace: "native-test" }));
       builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => {
         const state = "globalThis.__solarBillingNative";
         const contents = args.path === "react-native" ? `export const Platform = {OS:${state}.platform}; export const AppState = {currentState:"active", addEventListener: (_event, listener) => { ${state}.appListeners.add(listener); return {remove: () => ${state}.appListeners.delete(listener)}; }}; export const StyleSheet = {create:value=>value}; export const Text="Text",View="View",Pressable="Pressable"; export const Linking={openURL:async()=>{}};`
-          : args.path === "lucide-react-native" ? 'export const CreditCard="CreditCard",LogOut="LogOut",RefreshCcw="RefreshCcw";'
+          : args.path === "lucide-react-native" ? 'export const CreditCard="CreditCard",LogOut="LogOut",RefreshCcw="RefreshCcw",Check="Check",Sun="Sun";'
           : args.path.includes("AuthContext") ? `export const useAuth = () => ({api:${state}.api});`
           : args.path.includes("LanguageContext") ? 'export const useLanguage = () => ({t:(phrase,...args)=>phrase.replace(/\\{(\\d+)\\}/g,(_,slot)=>args[Number(slot)]??"{"+slot+"}")});'
+          : args.path.endsWith("ThemeProvider") ? 'export const useTheme=()=>({colors:{ink:"#111",ink2:"#555",ink3:"#888",surface:"#fff",line:"#ddd",fill:"#eee",sunTint:"#ffb",solar:"#fc0"}});'
           : args.path === "store" ? `export const solarSubscriptions = ${state}.platform === "ios" ? ${state}.store : null;`
-          : 'import React from "react"; export const AppButton=props=>React.createElement("button",props,props.label); export const Card="Card",ErrorBanner="ErrorBanner",Screen="Screen"; export const Header=props=>React.createElement("Header",null,props.title,props.subtitle,props.action);';
+          : 'import React from "react"; export const AppButton=props=>React.createElement("button",props,props.label); export const Card="Card",ErrorBanner="ErrorBanner",Screen="Screen",DataRow="DataRow",StatusPill="StatusPill",ThemedText="Text"; export const Header=props=>React.createElement("Header",null,props.title,props.subtitle,props.action);';
         return { contents, loader: "js" };
       });
     } }]
@@ -309,7 +310,7 @@ test("local entitlements and pending approval cannot unlock an expired server ac
 test("trial management presents one month and one socket without offering a second local trial", async () => {
   const h = await harness("android", true);
   try {
-    assert.ok(h.tree.includes("One-month trial"));
+    assert.ok(h.tree.includes("Free trial"));
     assert.ok(h.tree.includes("You can add one socket during the trial."));
     assert.ok(!h.tree.includes("14-day"));
     assert.ok(!h.tree.includes("Apple Pay"));

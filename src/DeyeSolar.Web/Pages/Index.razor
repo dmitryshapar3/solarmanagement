@@ -1,298 +1,35 @@
 @page "/"
-@using System.Globalization
+@using DeyeSolar.Web.Redesign
 @using DeyeSolar.Web.Services
-@using DeyeSolar.Domain.Options
 @using Microsoft.Extensions.Options
-@inject InverterDataSnapshot Snapshot
-@inject TimeProvider Clock
-@inject IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
-@inject IOptionsMonitor<SolarEstimateOptions> EstimateOptions
-@inject IInverterRefreshService InverterRefresh
+@using DeyeSolar.Domain.Options
+@inject InverterDataSnapshot InverterSnapshot
 @inject DeviceStatusSnapshot DeviceSnapshot
-@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService SocketInventory
-@inject DeyeSolar.Domain.Interfaces.IConfigurationRules RuleRepo
-@using DeyeSolar.Web.Shared
+@inject IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
+@inject IOptionsMonitor<SolarEstimateOptions> SolarOptions
+@inject SolarProductionService Production
+@inject IExportSalesService Sales
+@inject DeviceNameService Names
+@inject DeyeSolar.Domain.Interfaces.ISocketInventoryService Inventory
+@inject DeyeSolar.Domain.Interfaces.IConfigurationRules Rules
+@inject RedesignQueries Queries
+@inject TimeProvider Clock
 @implements IAsyncDisposable
-
-<PageTitle>@T["Dashboard - DeyeSolar"]</PageTitle>
-
-<MudGrid>
-    <MudItem xs="12">
-        <MudPaper Class="energy-status" Elevation="2">
-            <section aria-labelledby="energy-status-title" aria-busy="@_refreshing.ToString().ToLowerInvariant()" data-testid="energy-status">
-                <div class="energy-status-heading">
-                    <div>
-                        <h2 id="energy-status-title">@T["Current generation"]</h2>
-                        <span class="energy-status-source">@T["Inverter"]</span>
-                        @if (_data is { } reading)
-                        {
-                            <span class="energy-status-updated" title="@T["Poll time; the inverter measurement may be older."]">@T["Last inverter poll"] <time datetime="@reading.Timestamp.ToString("O")">@TimeHelper.ToUserTime(reading.Timestamp.UtcDateTime, _tz).ToString("HH:mm:ss", CultureInfo.InvariantCulture)</time></span>
-                        }
-                    </div>
-                    <div class="energy-status-actions">
-                    <button type="button" class="energy-status-refresh" @onclick="RefreshInverterAsync" disabled="@_refreshing"
-                            aria-label="@T["Refresh inverter data"]" title="@T["Fetch the latest inverter readings"]">
-                        <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
-                        @(_refreshing ? T["Refreshing…"] : T["Refresh"])
-                    </button>
-                    <a class="energy-status-refresh" href="/inverter-details?returnTo=%2F" aria-label="@T["Current generation details"]">@T["Details"]</a>
-                    </div>
-                </div>
-                <div class="energy-status-metrics">
-                    <div class="energy-status-metric energy-status-primary" data-testid="solar-generation">
-                        <span class="energy-status-label">@T["Solar generation · Inverter"]</span>
-                        <strong>@SolarPower<small>kW</small></strong>
-                        @if (HasSolarReading && _data?.SolarObservedAt is { } observedAt)
-                        {
-                            <span class="energy-status-direction">@T["Measured"] <time datetime="@observedAt.ToString("O")">@TimeHelper.ToUserTime(observedAt.UtcDateTime, _tz).ToString("d MMM HH:mm:ss", CultureInfo.CurrentCulture)</time></span>
-                        }
-                        else
-                        {
-                            <span class="energy-status-direction">@T["PV measurement unavailable"]</span>
-                        }
-                    </div>
-                    <div class="energy-status-metric" data-testid="load-power">
-                        <span class="energy-status-label">@T["Load"]</span>
-                        <strong>@Power(_data?.LoadPowerValid != true ? null : _data?.LoadPower)<small>W</small></strong>
-                    </div>
-                    <div class="energy-status-metric" data-testid="grid-power">
-                        <span class="energy-status-label">@T["Grid"]</span>
-                        <strong>@Power(GridPower)<small>W</small></strong>
-                        <span class="energy-status-direction @GridClass">@GridDirection</span>
-                    </div>
-                    <div class="energy-status-metric" data-testid="battery-power">
-                        <span class="energy-status-label">@PowerBalance.BatteryLabel(_data?.BatteryPowerValid != true ? null : _data?.BatteryPower)</span>
-                        <strong>@Power(_data?.BatteryPowerValid != true ? null : _data?.BatteryPower)<small>W</small></strong>
-                        <span class="energy-status-direction">@(_data is null || _data.BatteryPowerValid != true ? T["Awaiting reading"] : T["Reported inverter power"])</span>
-                    </div>
-                </div>
-                @if (_data is null)
-                {
-                    <p class="energy-status-message" role="status">@T["Waiting for the first inverter reading."]</p>
-                }
-                @if (_refreshError is not null)
-                {
-                    <p class="energy-status-error" role="alert">@T.Translate(_refreshError)</p>
-                }
-            </section>
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12">
-        <section class="dashboard-charts" aria-label="@T["Generation and electricity sales"]" data-testid="dashboard-charts">
-            <div class="dashboard-chart-column" data-testid="dashboard-generation">
-                <SolarEstimateCard Overview="true" Actual="_data" OnRefreshInverter="RefreshInverterAsync" Refreshing="_refreshing" ReturnTo="/" />
-            </div>
-            <div class="dashboard-chart-column" data-testid="dashboard-sales">
-                <SalesStatistics Overview="true" ReturnTo="/" />
-            </div>
-        </section>
-    </MudItem>
-
-    @if (_data is not null)
-    {
-
-        <!-- Quick Actions -->
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">@T["Quick Actions"]</MudText>
-                <MudText Typo="Typo.caption" Class="mb-2">@T["Manual override (rules will correct on next cycle)"]</MudText>
-                <MudSelect T="string" @bind-Value="_manualDeviceId" Label="@T["Device"]" Variant="Variant.Outlined" Dense="true" Class="mb-3">
-                    @if (_devices != null)
-                    {
-                        @foreach (var d in _devices)
-                        {
-                            <MudSelectItem T="string" Value="@d.Id">
-                                @d.Name (@T.Translate(d.Category))
-                            </MudSelectItem>
-                        }
-                    }
-                </MudSelect>
-                <SocketCommandControls DeviceId="@_manualDeviceId" Online="@(_devices?.FirstOrDefault(device => device.Id == _manualDeviceId)?.Online == true)" OnAcknowledged="RefreshManualDevicesAsync" />
-            </MudPaper>
-        </MudItem>
-
-        <!-- Rules -->
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.h6" Class="mb-3">@T["Rules"]</MudText>
-                @if (_rules == null || _rules.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@T["No rules configured."]</MudText>
-                }
-                else
-                {
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                            <tr>
-                                <th>@T["Name"]</th>
-                                <th>@T["State"]</th>
-                                <th>@T["Last switched"]</th>
-                                <th>@T["Last checked"]</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var rule in _rules)
-                            {
-                                <tr>
-                                    <td>
-                                        @rule.Name
-                                        @if (!rule.Enabled)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">@T["disabled"]</MudChip>
-                                        }
-                                    </td>
-                                    <td>
-                                        <MudChip T="string" Size="Size.Small"
-                                                 Color="@(rule.CurrentState ? Color.Success : Color.Default)">
-                                            @(rule.CurrentState ? T["ON"] : T["OFF"])
-                                        </MudChip>
-                                    </td>
-                                    <td>@FormatTimestamp(rule.CurrentStateChangedAt)</td>
-                                    <td>@FormatTimestamp(rule.LastEvaluated)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-            </MudPaper>
-        </MudItem>
-    }
-</MudGrid>
-
-@inject DeyeSolar.Web.Data.IAppSettingsReader SettingsService
-
-@code {
-    private InverterData? _data;
-    private List<TriggerRule>? _rules;
-    private IReadOnlyList<DevicePowerInfo>? _devices;
-    private string? _manualDeviceId;
-    private string? _tz;
-    private bool _refreshing;
-    private bool _disposed;
-    private string? _refreshError;
-    private readonly AsyncQueryScope _queries = new();
-    private static string Power(int? watts) => watts.HasValue ? Math.Abs((long)watts.Value).ToString("N0", CultureInfo.CurrentCulture) : "—";
-    private bool HasSolarReading => _data is { SolarObservedAt: { } observed, SolarProduction: >= 0 } reading && reading.SolarPowerValid == true
-        && !string.IsNullOrWhiteSpace(reading.SolarDeviceSn) && reading.SolarDeviceSn == InverterOptions.CurrentValue.DeviceKey
-        && observed <= Clock.GetUtcNow() && (Clock.GetUtcNow() - observed).TotalMinutes <= EstimateOptions.CurrentValue.NowcastActualMaximumAgeMinutes;
-    private string SolarPower => HasSolarReading ? (_data!.SolarProduction / 1000d).ToString("N2", CultureInfo.CurrentCulture) : "—";
-    private int? GridPower => _data?.GridPowerValid != true ? null : _data?.GridConsumption;
-    private string GridDirection => _data is null ? T["Awaiting reading"] : GridPower is null ? T["Grid measurement unavailable"] : GridPower < 0 ? T["Exporting"] : GridPower > 0 ? T["Importing"] : T["Idle"];
-    private string GridClass => GridPower < 0 ? "energy-status-positive" : GridPower > 0 ? "energy-status-active" : "";
-    private static string SocClass(int soc) => soc >= 80 ? "energy-status-charge-high" : soc >= 40 ? "energy-status-charge-medium" : "energy-status-charge-low";
-
-    protected override async Task OnInitializedAsync()
-    {
-        var display = await SettingsService.LoadSectionAsync<DeyeSolar.Domain.Options.DisplayOptions>("Display");
-        if (_disposed) return;
-        _tz = display.TimeZoneId;
-        _data = Snapshot.Current;
-        await LoadRulesAndManualDevices();
-        if (_disposed) return;
-        Snapshot.OnDataUpdated += OnDataUpdated;
-        _data = Snapshot.Current;
-        _queries.StartRefresh(Clock, TimeSpan.FromSeconds(30), () => InvokeAsync(() => { if (!_disposed) StateHasChanged(); }));
-    }
-
-    private void OnDataUpdated()
-    {
-        if (_disposed) return;
-        _ = InvokeAsync(UpdateSnapshotAsync);
-    }
-
-    private async Task UpdateSnapshotAsync()
-    {
-        if (_disposed) return;
-        _data = Snapshot.Current;
-        _refreshError = null;
-        StateHasChanged();
-        try
-        {
-            await LoadRulesAndManualDevices();
-        }
-        catch
-        {
-            // Keep previous rules on transient failure; the inverter reading is already available.
-        }
-        if (!_disposed) StateHasChanged();
-    }
-
-    private async Task RefreshInverterAsync()
-    {
-        if (_disposed || _refreshing) return;
-        _refreshing = true;
-        _refreshError = null;
-        try
-        {
-            await InverterRefresh.RefreshAsync(_queries.LifetimeToken);
-            if (!_disposed) _data = Snapshot.Current;
-        }
-        catch (OperationCanceledException) when (_disposed || _queries.LifetimeToken.IsCancellationRequested) { }
-        catch (Exception)
-        {
-            if (!_disposed) _refreshError = _data is null
-                ? T["Could not fetch inverter readings. Please try again."]
-                : T["Could not refresh inverter readings. Showing the last successful reading; please try again."];
-        }
-        finally
-        {
-            if (!_disposed) _refreshing = false;
-        }
-    }
-
-    private string FormatTimestamp(DateTime? utc)
-    {
-        if (!utc.HasValue) return "-";
-        var local = TimeHelper.ToUserTime(utc.Value, _tz);
-        return local.ToString("g", System.Globalization.CultureInfo.CurrentCulture);
-    }
-
-    private async Task RefreshManualDevicesAsync()
-    {
-        var epoch = DeviceSnapshot.Epoch;
-        var devices = await SocketInventory.RefreshDevicesAsync(_queries.LifetimeToken);
-        if (_disposed) return;
-        DeviceSnapshot.TryUpdate(devices, epoch);
-        await LoadRulesAndManualDevices();
-    }
-
-    private async Task LoadRulesAndManualDevices()
-    {
-        var rules = await RuleRepo.GetAllAsync(CancellationToken.None);
-        if (_disposed) return;
-        _rules = rules;
-        _devices = BuildManualDevices(_rules);
-        SelectDefaultManualDevice();
-    }
-
-    private IReadOnlyList<DevicePowerInfo> BuildManualDevices(IReadOnlyList<TriggerRule> rules)
-        => DeviceSnapshot.Current ?? ManualSocketDevices.Build(rules);
-
-    private void SelectDefaultManualDevice()
-    {
-        if (_devices == null || _devices.Count == 0)
-        {
-            _manualDeviceId = null;
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_manualDeviceId) &&
-            _devices.Any(d => d.Id == _manualDeviceId))
-        {
-            return;
-        }
-
-        _manualDeviceId =
-            _devices.FirstOrDefault(d => d.IsOn)?.Id ??
-            _devices[0].Id;
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        Snapshot.OnDataUpdated -= OnDataUpdated;
-        await _queries.DisposeAsync();
-    }
+<PageTitle>@T["Home"] · SmartSolar</PageTitle><PageHeader Title="@T["Home"]" Subtitle="@(T["Your solar energy, at a glance"]+" · "+DisplayDate)"/>
+@if(_error is not null){<div class="banner critical" role="alert">@T.Translate(_error)</div>}
+<div class="dashboard-top"><SolarEstimateCard Hero="true" Actual="InverterSnapshot.Current" ProductionData="_production" HomeRunsOnBattery="@HomePresentation.RunsOnBattery(Live)" Now="_now"/><div class="form-stack"><UiCard Title="@T["Battery"]"><div class="battery-number">@UiFormat.Number(Live.BatterySoc,"0")<span>%</span></div>@if(Live.BatterySoc is {} charge){<div class="battery-meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@charge" aria-label="@T["Battery charge"]"><span style="width:@charge%"></span></div>}else{<div class="battery-meter unknown" role="img" aria-label="@T["Battery charge unavailable"]"></div>}<div class="toolbar"><strong>@(Live.BatteryKw is null?T["State unknown"]:Live.BatteryKw<0?T["Charging"]:Live.BatteryKw>0?T["Discharging"]:T["Battery idle"])</strong><span>@UiFormat.Number(Live.BatteryKw) kW</span></div><p class="caption">@(Live.PolledAt is {} poll?T.Format("Last poll {0}",UiFormat.Time(poll,_zone,"HH:mm:ss zzz")):T["Waiting for readings"])</p><a class="text-link" href="/activity/readings">@T["Live readings"] →</a></UiCard>
+<UiCard Title="@T["Export today"]"><div class="kpi-value" data-testid="sales-export">@UiFormat.Number(_sales?.ExportKwh)<small> kWh</small></div><div class="toolbar"><span>@T["Estimated energy value"]</span><strong data-testid="sales-value">@UiFormat.Number(_sales?.EnergyValuePln) PLN</strong></div><div class="toolbar"><span>@T["Deposit credit, estimated"]</span><strong data-testid="sales-deposit">@UiFormat.Number(_sales?.EstimatedDepositPln) PLN</strong></div><p class="caption">@T["Estimated deposit credit is energy value × 1.23. It is not a cash payout or your remaining deposit balance."]</p><p class="caption">@(NightSunrise is not null&&_sales?.CurrentHour is null?T["All export hours are complete"]:T["Completed hours only"]) @if(_sales?.IsPartial==true){<span>· @T["Partial coverage"]</span>}</p>@if(_sales?.CurrentHour is {} progress){<div class="banner" data-testid="sales-progress"><strong>@T["In progress"]</strong><p>@T.Format("In progress: {0} {1}, excluded from totals",UiFormat.Number(progress.ExportKwh),"kWh")</p><p>@T.Format("In progress: {0} {1}, excluded from totals",UiFormat.Number(progress.EnergyValuePln),"PLN")</p></div>}<a class="text-link" href="/energy/export">@T["View export"] →</a></UiCard></div></div>
+<div class="two-columns"><EnergyFlow Data="Live" Rules="@(InverterSnapshot.Epoch == _flowEpoch && InverterSnapshot.Current?.InverterId == _flowSource ? _flowRules : [])"/><UiCard Title="@T["Today’s production"]"><div class="kpi-grid detail-kpis"><div><p class="kpi-label">@T["Produced so far"]</p><strong class="metric">@UiFormat.Number(_production?.ObservedEnergyKwh) kWh</strong></div><div><p class="kpi-label">@T["Expected today"]</p><strong class="metric">@UiFormat.Number(_production?.ExpectedEnergyKwh) kWh</strong></div></div><dl class="metadata"><div><dt>@T["Best completed hour"]</dt><dd>@UiFormat.Number(_production?.BestHour?.ActualKw) kW</dd></div><div><dt>@T["Sunset"]</dt><dd>@(_production?.Sunset is {} sunset?UiFormat.Time(sunset,_production.TimeZoneId,"HH:mm"):T["Unavailable"])</dd></div><div><dt>@T["Next sunrise"]</dt><dd>@(_production?.NextSunrise is {} sunrise?UiFormat.Time(sunrise,_production.TimeZoneId,"d MMM HH:mm"):T["Unavailable"])</dd></div><div><dt>@T["Coverage"]</dt><dd>@(_production?.Partial==true?T["Partial readings"]:_production is null?T["Unavailable"]:T["Complete"])</dd></div></dl><a class="text-link" href="/energy">@T["Hour by hour"] →</a></UiCard></div>
+<div class="two-columns"><UiCard Title="@T["Smart plugs"]">@if(_devices.Count==0){<UiState Title="@T["No smart plugs yet"]"><UiButton Href="/settings/connections" Icon="plus">@T["Add a smart plug"]</UiButton></UiState>}@foreach(var device in _devices.Take(4)){<div class="dashboard-row"><a href="@("/devices/"+Uri.EscapeDataString(device.Id))"><span class="device-icon @(device.Online&&device.StateKnown&&device.IsOn?"active":null)"><UiIcon Name="devices"/></span><span><strong>@device.Name</strong><small>@(device.Online&&device.StateKnown?device.IsOn?UiFormat.Number(device.CurrentPowerW,"0")+" W":T["Off"]:T["Unknown"])</small></span></a><DeviceControl DeviceId="@device.Id" Name="@device.Name" Online="device.Online" IsOn="device.IsOn" StateKnown="device.StateKnown" OnAcknowledged="Reload"/></div>}<a class="text-link" href="/devices">@T["All devices"] →</a></UiCard><UiCard Title="@T["Automations"]">@if(_rules.Count==0){<UiState Title="@T["No automations yet"]"><UiButton Href="/automations/new" Icon="plus">@T["New automation"]</UiButton></UiState>}@foreach(var rule in _rules.Take(4)){<a class="dashboard-row" href="@($"/automations/{rule.Id}")"><span><strong>@rule.Name</strong><small>@T.Format("On at {0}% · off at {1}%",rule.SocTurnOnThreshold,rule.SocTurnOffThreshold)</small></span><StatusPill Kind="@(rule.Enabled?"positive":"neutral")">@T[rule.PauseReason=="manual_override"?"Manually paused":rule.Enabled?rule.CurrentState?"Running":"Waiting":"Paused"]</StatusPill></a>}<a class="text-link" href="/automations">@T["All automations"] →</a></UiCard></div>
+<UiCard Title="@T["Recent activity"]">@if(_activity.Count==0){<p class="caption">@T["No recorded activity yet."]</p>}@foreach(var item in _activity.Take(3)){<div class="dashboard-row"><time>@UiFormat.Time(item.End,_zone,"HH:mm:ss zzz")</time><span><strong>@T[ActivityPresentation.Kind(item.Kind)]</strong><small>@(item.RuleName??T["Manual control"]) · @T[ActivityPresentation.Reason(item.ReasonCode)]</small></span></div>}<a class="text-link" href="/activity">@T["All activity"] →</a></UiCard>
+@code{
+ [CascadingParameter(Name="DisplayTimeZone")]public string? PersonalTimeZone{get;set;}
+ private string _zone=>PersonalTimeZone??SolarOptions.CurrentValue.TimeZoneId;private DateTimeOffset _now;private ProductionViewDto? _production;private ExportSalesResult? _sales;private IReadOnlyList<DeyeSolar.Web.Api.DeviceDto> _devices=[];private List<TriggerRule> _rules=[];private IReadOnlyList<ActivityItemDto> _activity=[];private string? _error;private long _devicesEpoch;private readonly AsyncQueryScope _queries=new();
+ private DateTimeOffset? NightSunrise=>HomePresentation.NightSunrise(_production,_now);
+ private IReadOnlyList<TriggerRule> _flowRules=[];private Guid? _flowSource;private long _flowEpoch;
+ private LiveReading Live=>LiveReading.Read(InverterSnapshot.Current,_now,InverterOptions.CurrentValue.DeviceKey,SolarOptions.CurrentValue.NowcastActualMaximumAgeMinutes);private string DisplayDate=>UiFormat.Time(_now,_zone,"dddd, d MMMM");
+ protected override async Task OnInitializedAsync(){_now=Clock.GetUtcNow();InverterSnapshot.OnDataUpdated+=Updated;DeviceSnapshot.OnDataUpdated+=Updated;await Reload();_queries.StartRefresh(Clock,TimeSpan.FromSeconds(30),()=>InvokeAsync(async()=>{_now=Clock.GetUtcNow();StateHasChanged();if(!_queries.IsLoading)await Reload();}));}
+ private Task Reload()=>_queries.RunAsync(async ct=>{var generation=await Production.ReadAsync(SolarHistoryPeriod.Today,ct:ct);var sales=await Sales.ReadAsync(new(ExportSalesPeriod.Day,generation.Today),ct);var devices=await DeviceInventoryView.ReadSnapshotAsync(DeviceSnapshot,Inventory,Names,false,ct);var rules=await Rules.GetAllAsync(ct);var flowSource=InverterSnapshot.Current?.InverterId;var flowEpoch=InverterSnapshot.Epoch;var flowRules=await Queries.FlowRulesAsync(rules,flowSource,ct);var activity=await Queries.ActivityAsync(_now.AddHours(-24),_now,ct:ct);return(generation,sales,devices,rules,activity,flowRules,flowSource,flowEpoch);},started:()=>_error=null,received:value=>{_production=value.generation;_sales=value.sales;_devices=value.devices.Epoch==DeviceSnapshot.Epoch?value.devices.Devices:[];_devicesEpoch=value.devices.Epoch;_rules=value.rules;_activity=value.activity.Items;_flowRules=value.flowRules;_flowSource=value.flowSource;_flowEpoch=value.flowEpoch;},failed:_=>_error="Some home data is unavailable. The latest verified readings are retained.",finished:()=>{});
+ private void Updated()=>_ = InvokeAsync(()=>{if(_queries.IsDisposed)return;_now=Clock.GetUtcNow();if(_devicesEpoch!=DeviceSnapshot.Epoch)_devices=[];StateHasChanged();});
+ public async ValueTask DisposeAsync(){InverterSnapshot.OnDataUpdated-=Updated;DeviceSnapshot.OnDataUpdated-=Updated;await _queries.DisposeAsync();}
 }

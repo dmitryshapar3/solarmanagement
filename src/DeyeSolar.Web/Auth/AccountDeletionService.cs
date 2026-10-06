@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 namespace DeyeSolar.Web.Auth;
 
 /// <summary>Fences installation admission, drains work, then deletes only exclusively owned data.</summary>
-public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> database, TenantRuntimeRegistry runtimes)
+public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> database, TenantRuntimeRegistry runtimes,
+    AppleIdentityCredentialStore? apple = null)
 {
     public async Task DeleteAsync(IdentityUser user, CancellationToken ct)
     {
@@ -49,6 +50,7 @@ public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> 
             await db.IntegrationInstances.IgnoreQueryFilters().Where(i => owned.Contains(i.InstallationId)).ExecuteDeleteAsync(ct);
             await db.TriggerRules.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.RuleRunLogs.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
+            await db.ActivityEvents.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.Readings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.ExportReadings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.AppSettings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
@@ -56,6 +58,7 @@ public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> 
             await db.Installations.Where(i => owned.Contains(i.Id)).ExecuteDeleteAsync(ct);
             // Identity, billing, subscriptions and sessions have user cascade FKs. The removal
             // revokes browser circuits and bearer sessions atomically with the account deletion.
+            if (apple is not null) await apple.QueueRevokeAsync(db, user.Id, ct);
             await db.Users.Where(u => u.Id == user.Id).ExecuteDeleteAsync(ct);
             await deletion.CommitAsync(ct);
             committed = true;

@@ -40,22 +40,23 @@ internal sealed class SocketInventoryReader(IIntegrationRegistry registry, ISmar
         foreach (var binding in bindings)
         {
             var capabilities = SocketCommandLifecycle.Capabilities(binding);
+            var displayName = IntegrationDeviceDisplayName.Read(binding) ?? binding.Name;
             try
             {
                 var socket = await sockets.GetAsync(new(binding.Id), ct);
                 var state = await socket.ReadAsync(ct);
-                devices.Add(new(new(binding.Id), binding.Name, capabilities, state.Reachability));
-                displayDevices.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", state.Reachability == Reachability.Online,
+                devices.Add(new(new(binding.Id), displayName, capabilities, state.Reachability));
+                displayDevices.Add(new(binding.Id.ToString("D"), displayName, "Socket", state.Reachability == Reachability.Online,
                     state.Power == SwitchState.On, state.CurrentPower?.Value, state.Reachability == Reachability.Online && state.Power != SwitchState.Unknown
-                    && (state.ObservedAt is null || clock.GetUtcNow() - state.ObservedAt <= TimeSpan.FromMinutes(10))));
+                    && (state.ObservedAt is null || clock.GetUtcNow() - state.ObservedAt <= TimeSpan.FromMinutes(10))) { CloudName = binding.Name });
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (BillingAccessException) { throw; }
             catch
             {
-                devices.Add(new(new(binding.Id), binding.Name, capabilities, Reachability.Unknown));
-                issues.Add(new(binding.Name, SocketInventoryIssueKind.Unavailable));
-                displayDevices.Add(new(binding.Id.ToString("D"), binding.Name, "Socket", false, false, null, false));
+                devices.Add(new(new(binding.Id), displayName, capabilities, Reachability.Unknown));
+                issues.Add(new(displayName, SocketInventoryIssueKind.Unavailable));
+                displayDevices.Add(new(binding.Id.ToString("D"), displayName, "Socket", false, false, null, false) { CloudName = binding.Name });
             }
         }
         await access.EnsureAsync(ct);

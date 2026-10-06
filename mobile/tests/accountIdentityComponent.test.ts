@@ -8,11 +8,7 @@ import { act, create } from "react-test-renderer";
 import { build } from "esbuild";
 import { sessionKeys } from "../src/application/sessionStorage";
 
-for (const [language, linkLabel, successMessage, loginMode] of [
-  ["en", "Link Google account", "Google is linked to this account.", "restored"],
-  ["pl", "Połącz konto Google", "Google jest połączony z tym kontem.", "restored"],
-  ["en", "Link Google account", "Google is linked to this account.", "password"]
-] as const) test(`the real account card links Google in ${language} after ${loginMode} sign-in without signing out its current owner`, async () => {
+for (const [language, loginMode] of [["en", "restored"], ["pl", "restored"], ["en", "password"]] as const) test(`the new sign-in security screen links Google in ${language} after ${loginMode} sign-in without signing out its current owner`, async () => {
   const stored = JSON.stringify({ baseUrl: "https://solar.dshapar.com", token: "original-owner-token", username: "owner" });
   const preferences = new Map([[sessionKeys.baseUrl, "https://solar.dshapar.com"], ["solar.language.v1", language]]);
   const secure = new Map(loginMode === "restored" ? [[sessionKeys.secureSession, stored]] : []);
@@ -42,6 +38,7 @@ for (const [language, linkLabel, successMessage, loginMode] of [
       }
       if (pathname === "/api/auth/google/link/start") {
         startedFlow = JSON.parse(init.body!);
+        assert.deepEqual(JSON.parse(init.body!).proof, { currentPassword: "verified-owner-password" });
         assert.match(startedFlow!.codeChallenge, /^[A-Za-z0-9_-]{43}$/);
         assert.match(startedFlow!.state, /^[A-Za-z0-9_-]{16,128}$/);
       }
@@ -79,40 +76,45 @@ for (const [language, linkLabel, successMessage, loginMode] of [
   globals.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer: ReturnType<typeof create> | undefined;
   try {
-    // Bundle the actual provider and card. Only native platform boundaries are replaced;
-    // React, auth state transitions, API client and the card's event handler remain real.
+    // Auth state, secure storage, API client, PKCE and new screen handlers remain real.
+    // The fresh proof form has its own component regression coverage.
     const bundle = await build({
-      stdin: { contents: 'export { AuthProvider, useAuth } from "./src/application/AuthContext"; export { LanguageProvider } from "./src/application/LanguageContext"; export { AccountIdentityCard } from "./src/features/auth/AccountIdentityCard"; export { ScreenRefreshContext } from "./src/core/ScreenRefreshContext";', resolveDir: process.cwd(), loader: "ts" },
+      stdin: { contents: 'export { AuthProvider, useAuth } from "./src/application/AuthContext"; export { LanguageProvider } from "./src/application/LanguageContext"; export { SignInSecurityScreen } from "./src/features/settings/SettingsPages";', resolveDir: process.cwd(), loader: "ts" },
       bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
       plugins: [{ name: "native-boundaries", setup(builder) {
-        builder.onResolve({ filter: /^(react-native|expo\/fetch|expo-secure-store|expo-crypto|expo-web-browser|@react-native-async-storage\/async-storage)$/ }, args => ({ path: args.path, namespace: "native-test" }));
-        builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
+        builder.onResolve({ filter: /^(react-native|expo\/fetch|expo-secure-store|expo-crypto|expo-web-browser|expo-apple-authentication|@react-navigation\/native|expo-location|expo-file-system|expo-sharing|lucide-react-native|@react-native-async-storage\/async-storage)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+        builder.onResolve({ filter: /(?:^|\/)(core\/components|ThemeProvider|AccountProofForm|LanguageDropdown|CompassBearing)$/ }, args => ({ path: args.path, namespace: "native-test" }));
         builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => {
           const state = "globalThis.__solarAccountNative";
-          const contents = args.path === "react-native" ? 'export const Platform = {OS:"ios"}; export const Text = "Text"; export const View = "View";'
+          const contents = args.path === "react-native" ? 'export const Platform = {OS:"ios"}; export const Text = "Text"; export const View = "View"; export const Alert={alert(){}};'
             : args.path === "expo/fetch" ? `export const fetch = (...args) => ${state}.fetch(...args);`
             : args.path === "expo-crypto" ? `export const randomUUID = () => "11111111-1111-4111-8111-111111111111"; export const getRandomBytesAsync = length => ${state}.randomBytes(length); export const CryptoDigestAlgorithm = {SHA256:"SHA-256"}; export const CryptoEncoding = {BASE64:"base64"}; export const digestStringAsync = (...args) => ${state}.digest(...args);`
             : args.path === "expo-secure-store" ? `export const WHEN_UNLOCKED_THIS_DEVICE_ONLY = 1; export const getItemAsync = key => ${state}.secure.getItem(key); export const setItemAsync = (key,value) => ${state}.secure.setItem(key,value); export const deleteItemAsync = key => ${state}.secure.removeItem(key);`
             : args.path === "@react-native-async-storage/async-storage" ? `export default ${state}.preferences;`
+            : args.path === "expo-apple-authentication" ? 'export const isAvailableAsync=async()=>false; export const AppleAuthenticationScope={FULL_NAME:0,EMAIL:1}; export const signInAsync=async()=>{throw new Error("unavailable")};'
+            : args.path === "@react-navigation/native" ? 'export const useNavigation=()=>({navigate(){},dispatch(){}});export const usePreventRemove=()=>{};'
+            : args.path.endsWith("ThemeProvider") ? 'export const useTheme=()=>({colors:{ink:"#111",ink3:"#888"}});'
+            : args.path.endsWith("AccountProofForm") ? 'import React from "react";export const AccountProofForm=props=>React.createElement("Proof",props);'
+            : args.path.endsWith("LanguageDropdown") ? 'export const LanguageDropdown=()=>null;'
+            : args.path.endsWith("CompassBearing") ? 'export const CompassBearing=()=>null;'
+            : args.path === "expo-file-system" ? 'export const Paths={cache:"cache"};export class File{}'
+            : args.path === "expo-sharing" ? 'export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};'
+            : args.path === "expo-location" ? 'export const Accuracy={Balanced:1};export const requestForegroundPermissionsAsync=async()=>({status:"denied"});export const getCurrentPositionAsync=async()=>{};'
+            : args.path === "lucide-react-native" ? 'export const Check="Check",LocateFixed="LocateFixed",Plug="Plug",User="User";'
             : args.path === "expo-web-browser" ? `export const openAuthSessionAsync = (...args) => ${state}.openAuthSession(...args);`
-            : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card = "Card"; export const SectionTitle = "SectionTitle"; export const ErrorBanner = "ErrorBanner"; export const TextField = "TextField"; export const StatusPill = "StatusPill";';
+            : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card="Card",SectionTitle="SectionTitle",ErrorBanner="ErrorBanner",TextField="TextField",StatusPill="StatusPill",ThemedText="Text",Screen="Screen",DataRow="DataRow",EmptyState="EmptyState",Group="Group",Header="Header",LoadingState="LoadingState",NavigationRow="NavigationRow",NativeSwitch="NativeSwitch",SegmentedControl="SegmentedControl",SwitchRow="SwitchRow";';
           return { contents, loader: "js" };
         });
       } }]
     });
     const module = { exports: {} as any };
     new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
-    const { AuthProvider, useAuth, LanguageProvider, AccountIdentityCard, ScreenRefreshContext } = module.exports;
-    const registered = new Map<symbol, { refresh: () => Promise<unknown>; loading: boolean }>();
-    const registry = { register: (id: symbol, entry: { refresh: () => Promise<unknown>; loading: boolean }) => {
-      registered.set(id, entry); return () => { registered.delete(id); };
-    } };
+    const { AuthProvider, useAuth, LanguageProvider, SignInSecurityScreen } = module.exports;
     let current: { isAuthenticated: boolean; username: string | null; login(input: { baseUrl: string; username: string; password: string }): Promise<void> } | undefined;
-    function Probe() { current = useAuth(); return null; }
+    function Probe() { current = useAuth(); return current!.isAuthenticated ? React.createElement(SignInSecurityScreen) : null; }
     await act(async () => {
       renderer = create(React.createElement(AuthProvider, null,
-        React.createElement(LanguageProvider, null, React.createElement(Probe),
-          React.createElement(ScreenRefreshContext.Provider, { value: registry }, React.createElement(AccountIdentityCard)))));
+        React.createElement(LanguageProvider, null, React.createElement(Probe))));
     });
     if (loginMode === "password") {
       assert.equal(current?.isAuthenticated, false);
@@ -122,16 +124,19 @@ for (const [language, linkLabel, successMessage, loginMode] of [
     assert.equal(current?.isAuthenticated, true);
     assert.equal(current?.username, "owner");
     assert.equal(identityReads, 1);
-    assert.equal([...registered.values()][0]!.loading, true, "Initial identity reads must block screen pulls");
-    await act(async () => { await [...registered.values()][0]!.refresh(); });
+    assert.equal(renderer!.root.findByType("Screen").props.refreshing, true, "Initial identity reads must block screen pulls");
+    await act(async () => { await renderer!.root.findByType("Screen").props.onRefresh(); });
     assert.equal(identityReads, 1, "A pull cannot overlap the initial identity read or allow its old status to win later");
     await act(async () => { finishInitialIdentity(); await initialIdentity; });
-    assert.equal([...registered.values()][0]!.loading, false);
-    await act(async () => { await [...registered.values()][0]!.refresh(); });
+    assert.equal(renderer!.root.findByType("Screen").props.refreshing, false);
+    await act(async () => { await renderer!.root.findByType("Screen").props.onRefresh(); });
     assert.equal(identityReads, 2, "Pull refresh becomes available after the initial request finishes");
-    const button = renderer!.root.findAllByType("button").find((item: any) => item.props.label === linkLabel)!;
-    assert.equal(button.props.disabled, false);
-    await act(async () => { button.props.onPress(); });
+    const before = renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Google")!.props.value;
+    const linkButton = () => renderer!.root.findAllByType("button").find(item => item.props.label === "Link sign-in method")!;
+    assert.equal(linkButton().props.disabled, true, "Linking must require a fresh account proof");
+    await act(async () => renderer!.root.findByType("Proof").props.onProof({ currentPassword: "verified-owner-password" }));
+    assert.equal(linkButton().props.disabled, false);
+    await act(async () => { linkButton().props.onPress(); });
     assert.equal(browserCalls, 1);
     assert.equal(renderer!.root.findByType("ErrorBanner").props.message, null);
     assert.deepEqual(calls.filter(call => call.path.includes("google")), [
@@ -142,21 +147,23 @@ for (const [language, linkLabel, successMessage, loginMode] of [
     assert.equal(current?.username, "owner");
     assert.equal(secure.get(sessionKeys.secureSession), stored);
     assert.equal(preferences.get(sessionKeys.disabled), undefined);
-    assert.ok(JSON.stringify(renderer!.toJSON()).includes(successMessage));
+    assert.ok(JSON.stringify(renderer!.toJSON()).includes("Sign-in method linked"));
+    const linked = renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Google")!.props.value;
+    assert.notEqual(linked, before, "The server linked status is shown in the selected language");
     assert.ok(JSON.stringify(renderer!.toJSON()).includes("owner@example.test"));
     assert.ok(JSON.stringify(renderer!.toJSON()).includes("+48123456789"));
     const linkInstruction = language === "pl" ? "Każda metoda kontaktu wymaga weryfikacji." : "Each contact must be verified.";
     assert.equal(JSON.stringify(renderer!.toJSON()).includes(linkInstruction), false, "A fully linked account should not be asked to link its identities again");
-    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === linkLabel), false);
+    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === "Link sign-in method"), false);
     assert.ok(calls.filter(call => call.path === "/api/auth/identities").every(call => call.bearer === "Bearer original-owner-token"));
     // The provider binding is read again on opening Settings; its state is not just a transient success message.
     await act(async () => renderer!.unmount());
     await act(async () => {
       renderer = create(React.createElement(AuthProvider, null,
-        React.createElement(LanguageProvider, null, React.createElement(Probe), React.createElement(AccountIdentityCard))));
+        React.createElement(LanguageProvider, null, React.createElement(Probe))));
     });
-    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === linkLabel), false);
-    assert.equal(renderer!.root.findByType("StatusPill").props.tone, "success");
+    assert.equal(renderer!.root.findAllByType("button").some((item: any) => item.props.label === "Link sign-in method"), false);
+    assert.equal(renderer!.root.findAllByType("NavigationRow").find(item => item.props.title === "Google")!.props.value, linked);
     assert.equal(browserCalls, 1);
   } finally {
     if (renderer) await act(async () => renderer!.unmount());

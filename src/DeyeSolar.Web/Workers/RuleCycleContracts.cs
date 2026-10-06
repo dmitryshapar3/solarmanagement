@@ -11,7 +11,8 @@ internal interface IRuleRunHistory
     Task RecordAsync(InverterData data, IReadOnlyList<RuleRunOutcome> outcomes, CancellationToken ct);
 }
 
-internal sealed record RuleRunOutcome(string RuleName, RuleDecision? Decision, bool ActionSucceeded, string? Failure);
+internal sealed record RuleRunOutcome(string RuleName, RuleDecision? Decision, bool ActionSucceeded, string? Failure,
+    int? RuleId = null, string? ConfigurationVersion = null);
 
 internal interface IRuleObservationReconciler
 {

@@ -2,6 +2,7 @@ namespace DeyeSolar.Web.Auth;
 
 public sealed class AuthProviderOptions
 {
+    public AuthAppleOptions Apple { get; init; } = new();
     public bool RegistrationEnabled { get; init; } = true;
     public bool? GoogleRegistrationEnabled { get; init; }
     public bool AllowGoogleRegistration => GoogleRegistrationEnabled ?? RegistrationEnabled;
@@ -20,6 +21,7 @@ public sealed class AuthProviderOptions
 
     public static AuthProviderOptions Capture(IConfiguration config) => new()
     {
+        Apple = AuthAppleOptions.Capture(config),
         RegistrationEnabled = !bool.TryParse(config["Auth:RegistrationEnabled"], out var enabled) || enabled,
         GoogleRegistrationEnabled = bool.TryParse(config["Auth:Google:RegistrationEnabled"], out var googleEnabled) ? googleEnabled : null,
         PublicBaseUrl = config["Auth:PublicBaseUrl"] ?? "https://solar.dshapar.com",

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SmartSolar components</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1760px; box-sizing: border-box; position: relative; overflow: hidden; padding: 64px; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif; display: flex; flex-direction: column; gap: 40px;">
+
+  <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <h1 style="margin: 0; font-size: 44px; line-height: 52px; font-weight: 700; letter-spacing: -0.02em;">Components</h1>
+      <span style="font-size: 17px; line-height: 22px; font-weight: 500; color: #51504C;">Every control at 44 pt or larger. States are drawn, not described.</span>
+    </div>
+    <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;">iOS 26 patterns · native tab bar, sheets and switches in the build</span>
+  </header>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start;">
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Buttons</h2>
+      <button type="button" style="height: 56px; border: none; border-radius: 28px; background: #FBCE25; color: #12120F; font-family: inherit; font-size: 17px; font-weight: 700; cursor: pointer;">Primary · one per screen</button>
+      <button type="button" style="height: 52px; border: none; border-radius: 26px; background: #EAEAE6; color: #12120F; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">Secondary</button>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <button type="button" style="height: 44px; border: none; border-radius: 22px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Strong</button>
+        <button type="button" style="height: 44px; border: none; border-radius: 22px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8; color: #12120F; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Outline</button>
+        <button type="button" disabled style="height: 44px; border: none; border-radius: 22px; background: #EAEAE6; color: #676662; font-family: inherit; font-size: 15px; font-weight: 600;">Disabled</button>
+        <button type="button" aria-busy="true" style="height: 44px; border: none; border-radius: 22px; background: #FBCE25; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>Saving…</button>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <button type="button" style="padding: 10px 4px; border: none; background: transparent; color: #12120F; font-family: inherit; font-size: 15px; font-weight: 600; text-decoration: underline; cursor: pointer;">Text action</button>
+        <button type="button" style="padding: 10px 4px; border: none; background: transparent; color: #CC3430; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Delete automation</button>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 20px; background: #F5F4F1;">
+        <button type="button" aria-label="Back" style="width: 44px; height: 44px; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <button type="button" aria-label="Add" style="width: 44px; height: 44px; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        <button type="button" aria-label="Close" style="width: 44px; height: 44px; border: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        <span style="width: 44px; height: 44px; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: #12120F; color: #FBCE25; font-size: 15px; font-weight: 700;">AN</span>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Glass nav buttons and avatar</span>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 18px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Selection</h2>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <button type="button" role="switch" aria-checked="true" aria-label="On" style="width: 51px; height: 31px; border: none; border-radius: 16px; padding: 2px; background: #12120F; display: flex; align-items: center; justify-content: flex-end; cursor: pointer;"><span style="width: 27px; height: 27px; border-radius: 14px; background: #FFFFFF; box-shadow: 0 2px 4px rgba(18,18,15,0.24);"></span></button>
+        <button type="button" role="switch" aria-checked="false" aria-label="Off" style="width: 51px; height: 31px; border: none; border-radius: 16px; padding: 2px; background: #D9D8D3; display: flex; align-items: center; justify-content: flex-start; cursor: pointer;"><span style="width: 27px; height: 27px; border-radius: 14px; background: #FFFFFF; box-shadow: 0 2px 4px rgba(18,18,15,0.24);"></span></button>
+        <button type="button" role="switch" aria-checked="true" aria-label="Busy" aria-busy="true" style="width: 51px; height: 31px; border: none; border-radius: 16px; padding: 2px; background: #12120F; opacity: 0.45; display: flex; align-items: center; justify-content: flex-end;"><span style="width: 27px; height: 27px; border-radius: 14px; background: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#12120F" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg></span></button>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">On · Off · Sending</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: #EAEAE6;">
+        <button type="button" aria-pressed="true" style="height: 36px; border: none; border-radius: 9px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 1px 3px rgba(18,18,15,0.12); cursor: pointer;">Production</button>
+        <button type="button" aria-pressed="false" style="height: 36px; border: none; border-radius: 9px; background: transparent; color: #51504C; font-family: inherit; font-size: 15px; font-weight: 500; cursor: pointer;">Export</button>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <button type="button" aria-pressed="true" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Day</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Month</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 16px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Year</button>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 500;">Stepper</span>
+        <div style="display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 14px; background: #F5F4F1;">
+          <button type="button" aria-label="Decrease" style="width: 40px; height: 36px; border: none; border-radius: 10px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+          <span style="min-width: 72px; text-align: center; font-size: 17px; line-height: 22px; font-weight: 700;">1.8 kW</span>
+          <button type="button" aria-label="Increase" style="width: 40px; height: 36px; border: none; border-radius: 10px; background: #FFFFFF; color: #12120F; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 500;">Threshold range · on/off gap</span>
+        <div style="position: relative; height: 64px;">
+          <span style="position: absolute; left: 55%; top: 0; transform: translateX(-50%); padding: 2px 8px; border-radius: 8px; background: #F5F4F1; font-size: 13px; line-height: 18px; font-weight: 600; white-space: nowrap;">Off 55%</span>
+          <span style="position: absolute; left: 75%; top: 0; transform: translateX(-50%); padding: 2px 8px; border-radius: 8px; background: #12120F; color: #FFFFFF; font-size: 13px; line-height: 18px; font-weight: 600; white-space: nowrap;">On 75%</span>
+          <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 39px; height: 6px; border-radius: 3px; background: #EAEAE6;"></div>
+          <div aria-hidden="true" style="position: absolute; left: 55%; width: 20%; top: 39px; height: 6px; background: #007549;"></div>
+          <button type="button" role="slider" aria-label="Turn off at" aria-valuemin="0" aria-valuemax="100" aria-valuenow="55" style="position: absolute; left: 55%; top: 28px; width: 28px; height: 28px; margin-left: -14px; padding: 0; border: none; border-radius: 14px; background: #FFFFFF; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.2), 0 2px 6px rgba(18,18,15,0.22); cursor: pointer;"></button>
+          <button type="button" role="slider" aria-label="Turn on at" aria-valuemin="0" aria-valuemax="100" aria-valuenow="75" style="position: absolute; left: 75%; top: 28px; width: 28px; height: 28px; margin-left: -14px; padding: 0; border: none; border-radius: 14px; background: #FFFFFF; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.2), 0 2px 6px rgba(18,18,15,0.22); cursor: pointer;"></button>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 4px; border-radius: 20px; background: #F5F4F1;">
+        <button type="button" aria-pressed="false" style="height: 52px; border: none; border-radius: 16px; background: transparent; color: #51504C; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">Off</button>
+        <button type="button" aria-pressed="true" style="height: 52px; border: none; border-radius: 16px; background: #FBCE25; color: #12120F; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; font-size: 17px; font-weight: 700; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>On</button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Device &amp; command states</h2>
+      <div style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-bottom: 1px solid #EAEAE6;"><span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FBCE25; box-shadow: 0 0 0 1.5px #12120F;"></span>On · 850 W</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">confirmed by provider</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-bottom: 1px solid #EAEAE6;"><span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #676662;"></span>Off</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">confirmed by provider</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-bottom: 1px solid #EAEAE6;"><span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>Turning on…</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">controls locked</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-bottom: 1px solid #EAEAE6;"><span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg>Offline</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">last seen 09:10</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px;"><span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>State unknown</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">waiting for a reading</span></div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 18px; background: #FDF0E6;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 700; color: #9A4207;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Result unknown</span>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">The plug didn’t answer in time. It may have switched. Check before sending another command.</span>
+        <div style="display: flex; gap: 8px;"><button type="button" style="height: 40px; padding: 0 16px; border: none; border-radius: 20px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Check now</button><button type="button" style="height: 40px; padding: 0 14px; border: none; border-radius: 20px; background: transparent; color: #12120F; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Allow a new command</button></div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; line-height: 18px; font-weight: 600;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #FFF6D6;"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FBCE25; box-shadow: 0 0 0 1.5px #12120F;"></span>Running</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #F5F4F1;"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #12120F;"></span>Waiting</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #F5F4F1; color: #51504C;"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #676662;"></span>Paused</span>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C; align-self: center;">automation states</span>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Freshness &amp; messages</h2>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 20px; font-weight: 500;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 4px; background: #2A9754;"></span>Live · updated 12 s ago</span>
+        <span style="display: flex; align-items: center; gap: 8px; color: #51504C;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Updated 6 min ago · pull to refresh</span>
+        <span style="display: flex; align-items: center; gap: 8px; color: #9A4207;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg>No connection · showing 09:10</span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 18px; background: #FBEAE9;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B42B27" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 2px; flex: 1;"><span style="font-size: 15px; line-height: 20px; font-weight: 700; color: #9E2522;">Couldn’t reach Deye Cloud</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Your last readings are kept. We’ll retry automatically.</span></span>
+        <button type="button" style="height: 32px; padding: 0 12px; border: none; border-radius: 16px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Retry</button>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 18px; background: #FDF0E6;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A4207" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; line-height: 20px; font-weight: 700; color: #9A4207;">Partial data</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">11 of 13 hours measured. Totals cover available hours; missing hours are not zero.</span></span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 18px; background: #FFF6D6;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#12120F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; line-height: 20px; font-weight: 700;">Trial · 26 days left</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">1 smart plug included during the trial.</span></span>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Lists &amp; rows</h2>
+      <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 20px; background: #F5F4F1;">
+        <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px;"><span style="width: 32px; height: 32px; border-radius: 9px; background: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span style="flex: 1; font-size: 17px; line-height: 22px; font-weight: 500;">Navigation row</span><span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">Value</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#676662" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></div>
+        <div style="height: 1px; margin-left: 58px; background: #E2E1DC;"></div>
+        <div style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px;"><span style="width: 10px; height: 10px; margin: 0 11px; border-radius: 5px; background: #3D66D0;"></span><span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px; font-weight: 500;">Data row</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">exporting</span></span><span style="font-size: 17px; line-height: 22px; font-weight: 700;">−2.54 kW</span></div>
+        <div style="height: 1px; margin-left: 58px; background: #E2E1DC;"></div>
+        <div style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 14px;"><span style="width: 40px; height: 40px; border-radius: 12px; background: #FBCE25; display: flex; align-items: center; justify-content: center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">Device row</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">On · 850 W · by Solar surplus</span></span><button type="button" role="switch" aria-checked="true" aria-label="Device row" style="width: 51px; height: 31px; border: none; border-radius: 16px; padding: 2px; background: #12120F; display: flex; align-items: center; justify-content: flex-end; cursor: pointer;"><span style="width: 27px; height: 27px; border-radius: 14px; background: #FFFFFF; box-shadow: 0 2px 4px rgba(18,18,15,0.24);"></span></button></div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Produced</span><span style="font-size: 22px; line-height: 26px; font-weight: 700;">18.5</span><span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">kWh</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Exported</span><span style="font-size: 22px; line-height: 26px; font-weight: 700;">6.88</span><span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">kWh</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: #F5F4F1;"><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Value</span><span style="font-size: 22px; line-height: 26px; font-weight: 700;">1.91</span><span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">PLN</span></div>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Stat tiles: label · value · unit. One hero number per screen.</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Charts</h2>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 16px; height: 3px; border-radius: 2px; background: #CB7F00;"></span>Actual</span>
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 16px; height: 10px; border-radius: 3px; background: rgba(18,18,15,0.12);"></span>Expected range</span>
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 3px; background: #3D66D0;"></span>Completed hour</span>
+        <span style="display: inline-flex; align-items: center; gap: 8px;"><span style="width: 12px; height: 12px; box-sizing: border-box; border-radius: 3px; border: 1.5px solid #3D66D0; background: rgba(61,102,208,0.16);"></span>In progress</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 20px; background: #F5F4F1;">
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">Readout · always visible above the plot</span>
+        <span style="font-size: 24px; line-height: 28px; font-weight: 700;">4.31 <span style="font-size: 15px; font-weight: 600;">kW avg</span></span>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">12:00–13:00 · expected 3.62–5.06 kW</span>
+      </div>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">
+        <li>2 pt lines, 4 pt rounded bar tops, hairline grid, 11 pt axis labels</li>
+        <li>Selected interval: soft column + ring marker; drag to scrub</li>
+        <li>Gaps stay gaps — missing data is never drawn as zero</li>
+        <li>Every chart has an hourly table twin</li>
+      </ul>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Inputs</h2>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: 16px; background: #F5F4F1;">
+        <label for="c-name" style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">Name</label>
+        <input id="c-name" type="text" value="Solar surplus" style="border: none; outline: none; padding: 0; background: transparent; color: #12120F; font-family: inherit; font-size: 17px; line-height: 24px; font-weight: 500;">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: 16px; background: #FFFFFF; box-shadow: inset 0 0 0 2px #CC3430;">
+        <label for="c-lat" style="font-size: 13px; line-height: 18px; font-weight: 600; color: #51504C;">Latitude</label>
+        <input id="c-lat" type="text" value="150.2" aria-invalid="true" aria-describedby="c-lat-error" style="border: none; outline: none; padding: 0; background: transparent; color: #12120F; font-family: inherit; font-size: 17px; line-height: 24px; font-weight: 500;">
+        <span id="c-lat-error" style="font-size: 13px; line-height: 18px; font-weight: 600; color: #B42B27;">Use a value between −90 and 90.</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;" aria-hidden="true">
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8; font-size: 24px; font-weight: 700;">4</span>
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8; font-size: 24px; font-weight: 700;">8</span>
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8; font-size: 24px; font-weight: 700;">1</span>
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 2px #12120F; font-size: 24px; font-weight: 700;"></span>
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8;"></span>
+        <span style="height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: #FFFFFF; box-shadow: inset 0 0 0 1px #DDDCD8;"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">Time</span>
+        <button type="button" style="height: 36px; padding: 0 14px; border: none; border-radius: 10px; background: #F5F4F1; color: #12120F; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">08:00</button>
+        <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">to</span>
+        <button type="button" style="height: 36px; padding: 0 14px; border: none; border-radius: 10px; background: #F5F4F1; color: #12120F; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">18:00</button>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Units and ranges live in the field; errors appear under it, not in a banner.</span>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 28px; background: #FFFFFF;">
+      <h2 style="margin: 0; font-size: 19px; line-height: 24px; font-weight: 700;">Navigation</h2>
+      <div style="position: relative; height: 96px; border-radius: 20px; background: #F5F4F1;">
+        <nav aria-label="Tabs example, light" style="position: absolute; left: 12px; right: 12px; bottom: 16px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(255,255,255,0.84); box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 12px 32px rgba(18,18,15,0.14);">
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Home</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #51504C; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Energy</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #51504C; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Devices</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #51504C; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>Automations</span>
+        </nav>
+      </div>
+      <div style="position: relative; height: 96px; border-radius: 20px; background: #0D0C0A;">
+        <nav aria-label="Tabs example, dark" style="position: absolute; left: 12px; right: 12px; bottom: 16px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(34,33,30,0.84); box-shadow: 0 0 0 0.5px rgba(255,255,255,0.12), 0 12px 32px rgba(0,0,0,0.5);">
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; color: #12120F; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Home</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #BEBEB9; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Energy</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #BEBEB9; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>Devices</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #BEBEB9; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>Automations</span>
+        </nav>
+      </div>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">
+        <li>4 tabs: Home · Energy · Devices · Automations</li>
+        <li>Settings opens from the avatar on Home</li>
+        <li>Segmented control switches views inside a tab (Production / Export, Rules / Activity)</li>
+        <li>Sheets for quick device control; full screens for editing</li>
+      </ul>
+    </section>
+
+    <section style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 24px; border-radius: 28px; background: #FFFFFF; text-align: center;">
+      <h2 style="margin: 0 0 6px; align-self: flex-start; font-size: 19px; line-height: 24px; font-weight: 700;">Empty state</h2>
+      <svg width="96" height="48" viewBox="0 0 96 48" aria-hidden="true"><path d="M14 42 A34 34 0 0 1 82 42" fill="none" stroke="#C9C8C3" stroke-width="3"/><rect x="2" y="44" width="92" height="4" rx="2" fill="#C9C8C3"/></svg>
+      <span style="font-size: 17px; line-height: 22px; font-weight: 600;">No automations yet</span>
+      <span style="font-size: 15px; line-height: 20px; font-weight: 500; color: #51504C;">Use your solar surplus automatically — for example, heat water when the battery is full.</span>
+      <button type="button" style="margin-top: 6px; height: 44px; padding: 0 20px; border: none; border-radius: 22px; background: #FBCE25; color: #12120F; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;">Create automation</button>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

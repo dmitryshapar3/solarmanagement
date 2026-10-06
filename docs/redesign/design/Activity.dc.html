@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Automations · Activity</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400..800&amp;family=Unbounded:wght@500..800&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#12120F}a:hover{color:#51504C}
+</style>
+</helmet>
+<div style="width: 390px; height: 980px; position: relative; overflow: hidden; background: #F5F4F1; color: #12120F; font-family: 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 58px 16px 0;">
+
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px;">
+      <h1 style="margin: 0; font-size: 34px; line-height: 40px; font-weight: 700; letter-spacing: -0.02em;">Automations</h1>
+      <a href="Automation-Editor.dc.html" aria-label="New automation" style="width: 44px; height: 44px; flex: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.78); color: #12120F; text-decoration: none; box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 6px 16px rgba(18,18,15,0.08);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></a>
+    </header>
+
+    <nav aria-label="Automations view" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: #EAEAE6;">
+      <a href="Automations.dc.html" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; color: #51504C; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 500;">Rules</a>
+      <a href="Activity.dc.html" aria-current="page" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: #FFFFFF; color: #12120F; text-decoration: none; font-size: 15px; line-height: 20px; font-weight: 600; box-shadow: 0 1px 3px rgba(18,18,15,0.12);">Activity</a>
+    </nav>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+      <div style="display: flex; gap: 6px;">
+        <button type="button" aria-pressed="true" style="height: 34px; padding: 0 14px; border: none; border-radius: 17px; background: #12120F; color: #FFFFFF; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">All</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 14px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Changes</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 14px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">On</button>
+        <button type="button" aria-pressed="false" style="height: 34px; padding: 0 14px; border: none; border-radius: 17px; background: #FFFFFF; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 500; box-shadow: inset 0 0 0 1px #DDDCD8; cursor: pointer;">Off</button>
+      </div>
+      <button type="button" aria-label="Time range: last 24 hours" style="height: 34px; display: inline-flex; align-items: center; gap: 4px; padding: 0 4px 0 8px; border: none; background: transparent; color: #12120F; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">24 h<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></button>
+    </div>
+
+    <h2 style="margin: 4px 0 0; padding: 0 4px; font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;">Today</h2>
+    <ol style="list-style: none; margin: 0; padding: 8px 16px; display: flex; flex-direction: column; border-radius: 24px; background: #FFFFFF;">
+      <li style="display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); gap: 8px; padding: 10px 0;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C; font-variant-numeric: tabular-nums;">13:42</span>
+        <span style="display: flex; justify-content: center; padding-top: 5px;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #B9B8B3;"></span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;">No change · 138 checks</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Since 11:25 · water heater stayed on</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); gap: 8px; padding: 10px 0; border-top: 1px solid #EAEAE6;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">11:24</span>
+        <span style="display: flex; justify-content: center; padding-top: 5px;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FBCE25; box-shadow: 0 0 0 1.5px #12120F;"></span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 17px; line-height: 22px; font-weight: 700;">Water heater turned on</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Solar surplus · battery 76% reached 75%, solar averaged 2.6 kW</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); gap: 8px; padding: 10px 0; border-top: 1px solid #EAEAE6;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C; font-variant-numeric: tabular-nums;">11:23</span>
+        <span style="display: flex; justify-content: center; padding-top: 5px;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FFFFFF; box-shadow: 0 0 0 1.5px #B9B8B3;"></span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;">No change · 204 checks</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Since 08:00 · waiting for battery 75% (was 61–74%)</span></span>
+      </li>
+    </ol>
+
+    <h2 style="margin: 4px 0 0; padding: 0 4px; font-size: 15px; line-height: 20px; font-weight: 600; color: #51504C;">Yesterday</h2>
+    <ol style="list-style: none; margin: 0; padding: 8px 16px; display: flex; flex-direction: column; border-radius: 24px; background: #FFFFFF;">
+      <li style="display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); gap: 8px; padding: 10px 0;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">17:52</span>
+        <span style="display: flex; justify-content: center; padding-top: 5px;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FFFFFF; box-shadow: 0 0 0 2px #12120F;"></span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 17px; line-height: 22px; font-weight: 700;">Water heater turned off</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Solar surplus · battery dropped to 55%</span></span>
+      </li>
+      <li style="display: grid; grid-template-columns: 48px 20px minmax(0, 1fr); gap: 8px; padding: 10px 0; border-top: 1px solid #EAEAE6;">
+        <span style="font-size: 15px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">10:41</span>
+        <span style="display: flex; justify-content: center; padding-top: 5px;"><span style="width: 10px; height: 10px; border-radius: 5px; background: #FBCE25; box-shadow: 0 0 0 1.5px #12120F;"></span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 17px; line-height: 22px; font-weight: 700;">Water heater turned on</span><span style="font-size: 13px; line-height: 18px; font-weight: 500; color: #51504C;">Solar surplus · battery 75%, solar averaged 2.1 kW</span></span>
+      </li>
+    </ol>
+  </main>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 16px; right: 16px; bottom: 26px; height: 64px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 6px; border-radius: 32px; background: rgba(255,255,255,0.84); backdrop-filter: blur(24px) saturate(1.6); box-shadow: 0 0 0 0.5px rgba(18,18,15,0.12), 0 12px 32px rgba(18,18,15,0.14);">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Home</span></a>
+    <a href="Energy.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Energy</span></a>
+    <a href="Devices.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; color: #51504C; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>Devices</span></a>
+    <a href="Automations.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: 26px; background: #FBCE25; color: #12120F; text-decoration: none; font-size: 11px; line-height: 13px; font-weight: 600;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg><span>Automations</span></a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

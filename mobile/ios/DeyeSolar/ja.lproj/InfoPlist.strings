@@ -1,2 +1,3 @@
 /* Generated from i18n/ja.json by scripts/sync-ios-localizations.mjs. */
-"NSFaceIDUsageDescription" = "DeyeSolarが安全なサインインにFace IDを使用することを許可します。";
+"NSFaceIDUsageDescription" = "SmartSolarが安全なサインインにFace IDを使用することを許可します。";
+"NSLocationWhenInUseUsageDescription" = "現在地を使用して太陽光発電設備の座標を設定します。";

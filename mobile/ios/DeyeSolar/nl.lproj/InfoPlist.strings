@@ -1,2 +1,3 @@
 /* Generated from i18n/nl.json by scripts/sync-ios-localizations.mjs. */
-"NSFaceIDUsageDescription" = "DeyeSolar toestaan Face ID te gebruiken voor veilige aanmelding.";
+"NSFaceIDUsageDescription" = "SmartSolar toestaan Face ID te gebruiken voor veilige aanmelding.";
+"NSLocationWhenInUseUsageDescription" = "Gebruik je locatie om de coördinaten van je zonne-installatie in te stellen.";

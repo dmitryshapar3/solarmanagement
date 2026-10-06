@@ -1,10 +1,9 @@
 import { translate as t } from "../../core/i18n";
 import { normalizeRuleDraft, validateRuleDraft } from "../rules/RuleDraftPolicy";
-import type { SocketCommandReceipt } from "../../core/api/IntegrationApi";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
 import type { DisplaySettings, PollingSettings, Rule, RuleRequest, SolarSiteSettings } from "../../core/api/types";
 import {
-  createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, type DemoState
+  createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, demoProduction, type DemoState
 } from "./fixtures";
 
 /** A separate offline installation. No request, credential, or command can reach a server. */
@@ -13,7 +12,7 @@ export class DemoApiClient extends ApiClient {
   private active = true;
   private nextRuleId = 3;
   private nextRuleRevision = 3;
-  private readonly commandReceipts = new Map<string, SocketCommandReceipt>();
+  private installationRevision = 1;
 
   constructor(private readonly clock: () => Date = () => new Date()) {
     super({ baseUrl: DEMO_API_BASE_URL, transport: async () => { throw new Error(t("Demo transport is disabled.")); } });
@@ -50,7 +49,31 @@ export class DemoApiClient extends ApiClient {
     if (!this.active) throw new ApiError(401, t("The demo session has ended."));
 
     if (route === "GET /api/auth/options") return { registrationEnabled: false, emailEnabled: false, phoneEnabled: false, googleEnabled: false };
-    if (route === "GET /api/auth/identities") return { email: null, phone: null, googleLinked: false };
+    if (route === "GET /api/auth/identities") return { email: null, phone: null, googleLinked: false, appleLinked: false, hasPassword: false };
+    if (route === "GET /api/auth/security/permissions") return { role: "Owner", permissions: ["Read", "ManageRules", "ManageSettings", "ManageIntegrations"] };
+    if (route === "GET /api/account/profile") return { displayName: "Alex", verifiedEmail: null, verifiedPhone: null };
+    if (route === "GET /api/account/preferences") return { displayTimeZoneId: this.state.settings.display.timeZoneId };
+    if (route === "PUT /api/account/preferences") { this.dispatch("/api/settings/display", { method: "PUT", body: { timeZoneId: objectBody(options.body).displayTimeZoneId } }); return { displayTimeZoneId: this.state.settings.display.timeZoneId }; }
+    if (route === "GET /api/account/sessions") return { sessions: [] };
+    if (route === "GET /api/v2/integration-providers") return { providers: [], revision: "offline-sample", providerKinds: {} };
+    if (route === "GET /api/v2/integrations") return [];
+    if (route === "GET /api/v2/integration-socket-sources") return [{ id: "766ce5fb-f18b-4438-8718-d837397a7c78", name: "Demo inverter", isDefault: true }];
+    if (route === "GET /api/v2/integrations/status") return { services: [], forecastRetrievedAt: now.toISOString(), latestStoredPriceAt: now.toISOString(), missingPriceHours: 0 };
+    if (route === "GET /api/settings/installation") return this.installation();
+    if (route === "PUT /api/settings/installation") {
+      const body = objectBody(options.body);
+      if (body.expectedVersion !== this.installation().version) throw new ApiError(409, t("Settings changed. Pull down to load the latest version."));
+      const beforeSite = JSON.parse(JSON.stringify(this.state.site)) as SolarSiteSettings;
+      const beforeSettings = JSON.parse(JSON.stringify(this.state.settings));
+      try {
+        if (body.primaryInverterId !== this.installation().primaryInverterId) throw new ApiError(400, t("Select an available source inverter."));
+        this.dispatch("/api/settings/site", { method: "PUT", body: body.site });
+        this.dispatch("/api/settings/polling", { method: "PUT", body: body.polling });
+        this.dispatch("/api/settings/display", { method: "PUT", body: body.display });
+      } catch (error) { this.state.site = beforeSite; this.state.settings = beforeSettings; throw error; }
+      ++this.installationRevision;
+      return this.installation();
+    }
 
     if (route === "GET /api/dashboard" || route === "POST /api/dashboard/refresh") return {
       inverter: demoInverter(now, timeZone), devicesLoaded: true, deviceLastUpdated: now.toISOString(),
@@ -62,11 +85,65 @@ export class DemoApiClient extends ApiClient {
       if (period !== "Today" && period !== "Week" && period !== "Month") throw new ApiError(400, t("Select a valid generation period."));
       return demoSolarHistory(period, optionalDate(options.query?.date), now, timeZone);
     }
-    if (route === "GET /api/sales") {
+    if (route === "GET /api/solar/production") {
+      const period = options.query?.period ?? "Today";
+      if (period !== "Today" && period !== "Week" && period !== "Month") throw new ApiError(400, t("Select a valid generation period."));
+      return demoProduction(period, optionalDate(options.query?.date), now, timeZone);
+    }
+    if (route === "GET /api/activity") {
+      const from = typeof options.query?.from === "string" ? options.query.from : new Date(now.getTime() - 168 * 3600000).toISOString();
+      const through = typeof options.query?.to === "string" ? options.query.to : now.toISOString();
+      const items = this.state.runs.filter(run => run.timestamp >= from && run.timestamp <= through && (!options.query?.changesOnly || run.action !== "NO_CHANGE"))
+        .map(run => ({ id: run.id, start: run.timestamp, end: run.timestamp, kind: run.action === "NO_CHANGE" ? "rule.checked" : "rule.switched", ruleId: this.state.rules.find(rule => rule.name === run.ruleName)?.id ?? null,
+          ruleName: run.ruleName, deviceId: null, reasonCode: "sample_data", state: run.action === "ON" ? true : run.action === "OFF" ? false : null, checkCount: 1,
+          socMin: run.batterySoc, socMax: run.batterySoc, solarMinWatts: run.solarProduction, solarMaxWatts: run.solarProduction, actorUserId: null, client: "demo" }))
+        .filter(item => !options.query?.ruleId || item.ruleId === Number(options.query.ruleId));
+      return { start: from, end: through, items, nextCursor: null, summary: { switches: items.filter(item => item.kind === "rule.switched").length, confirmedCommands: 0, onSeconds: 4 * 3600, knownSeconds: 24 * 3600, expectedSeconds: 24 * 3600, partial: false } };
+    }
+    const checks = /^\/api\/activity\/groups\/(\d+)\/checks$/.exec(path);
+    if (method === "GET" && checks) { const run = this.state.runs.find(run => run.id === Number(checks[1])); if (!run) throw new ApiError(404, t("Sample activity not found.")); return { items: [{ id: run.id, occurredAt: run.timestamp, kind: "rule.checked", reasonCode: "sample_data", state: null, batterySoc: run.batterySoc, solarWatts: run.solarProduction, configurationVersion: null, generation: null }], nextCursor: null }; }
+    const evaluation = /^\/api\/rules\/(\d+)\/evaluation$/.exec(path);
+    if (method === "GET" && evaluation) {
+      const rule = this.state.rules.find(item => item.id === Number(evaluation[1]));
+      if (!rule) throw new ApiError(404, t("Demo rule not found."));
+      const current = demoInverter(now,timeZone);
+      return { ruleId: rule.id, configurationVersion: rule.configurationVersion, checkedAt: rule.lastEvaluated,
+        nextCheckAt: new Date(now.getTime()+rule.intervalSeconds*1000).toISOString(), decision: "sample_data", state: rule.enabled ? "enabled" : "disabled", freshness: "current", sourceInverterId: current.inverterId,
+        conditions: [{ kind: "battery_soc", observed: current.batterySoc, threshold: rule.socTurnOnThreshold, status: current.batterySoc >= rule.socTurnOnThreshold ? "passed" : "blocked", reasonCode: "sample_data" },
+          ...(rule.useSolarProductionThreshold ? [{ kind: "solar_average", observed: current.solarProduction, threshold: rule.minAverageSolarProductionWatts, status: current.solarProduction >= rule.minAverageSolarProductionWatts ? "passed" : "blocked", reasonCode: "sample_data" }] : [])] };
+    }
+    const deviceHistory = /^\/api\/v2\/devices\/([^/]+)\/history$/.exec(path);
+    const deviceDetails = /^\/api\/v2\/devices\/([^/]+)\/details$/.exec(path);
+    if (method === "GET" && deviceDetails) {
+      const device = this.state.devices.find(item => item.id === decodeURIComponent(deviceDetails[1]!));
+      if (!device) throw new ApiError(404, t("Demo device not found."));
+      return { id: device.id, name: device.name, device, providerId: "sample.smart-plug", providerDisplayName: "Sample smart plug", model: null, instanceId: null,
+        sourceInverterId: null, phaseCount: 1, controllingRules: this.state.rules.filter(rule => rule.entityId === device.id),
+        lastConfirmedSwitch: null, addedAt: null, canSwitch: false, supportsHistory: true };
+    }
+    if (method === "GET" && deviceHistory) {
+      const device = this.state.devices.find(item => item.id === decodeURIComponent(deviceHistory[1]!));
+      if (!device) throw new ApiError(404, t("Demo device not found."));
+      const start = new Date(now.getTime()-24*3600000).toISOString();
+      const intervals = Array.from({length:24},(_,i)=>({from:new Date(now.getTime()-(24-i)*3600000).toISOString(),to:new Date(now.getTime()-(23-i)*3600000).toISOString(),isOn:i%4===0,evidence:"synthetic_sample"}));
+      return {start,end:now.toISOString(),intervals,onSeconds:6*3600,knownSeconds:24*3600,partial:false};
+    }
+    if (route === "GET /api/readings" && (options.query?.view === "details" || options.query?.aggregate === "5m")) {
+      const aggregate = options.query?.aggregate === "5m" ? "5m" : "raw"; const step = aggregate === "5m" ? 5 : 15;
+      const count = Math.ceil(historyHours(options.query?.hours) * 60 / step); const page = Number(options.query?.cursor ?? 0);
+      if (!Number.isInteger(page) || page < 0) throw new ApiError(400, t("Select a valid history cursor."));
+      const rows = Array.from({ length: Math.max(0, Math.min(500, count - page)) }, (_, index) => { const at = new Date(now.getTime() - (page + index) * step * 60000); return { ...demoInverter(at, timeZone), id: page + index + 1 }; });
+      return { start:new Date(now.getTime()-historyHours(options.query?.hours)*3600000).toISOString(),end:now.toISOString(),aggregate,
+        items:rows.map(row=>({...row,inverterId:"766ce5fb-f18b-4438-8718-d837397a7c78",configurationRevision:1,runtimeGeneration:1,solarObservedAt:row.timestamp})),gaps:[],nextCursor:page+rows.length<count?String(page+rows.length):null,partial:false };
+    }
+    if (route === "GET /api/sales" || route === "POST /api/sales/prices/recheck") {
+      if (method === "POST") options = { ...options, query: objectBody(options.body) as RequestOptions["query"] };
       const period = options.query?.period ?? "Day";
       if (period !== "Day" && period !== "Month" && period !== "Year" && period !== "Custom") throw new ApiError(400, t("Select a valid sales period."));
       const date = optionalDate(options.query?.date) ?? localDate(now, timeZone);
-      return demoSales(period, date, now, timeZone);
+      const from = optionalDate(options.query?.from); const through = optionalDate(options.query?.through);
+      if (period === "Custom" && (!from || !through || from > through || (Date.parse(through) - Date.parse(from)) / 86400000 + 1 > 366 || through > localDate(now, timeZone))) throw new ApiError(400, t("Choose a range of at most 366 days, ending today or earlier."));
+      return demoSales(period, date, now, timeZone, from && through ? { from, through } : undefined);
     }
     if (route === "GET /api/devices") return { devices: this.state.devices, lastUpdated: now.toISOString() };
     const deviceNameRoute = /^\/api\/devices\/([^/]+)\/name$/.exec(path);
@@ -88,39 +165,10 @@ export class DemoApiClient extends ApiClient {
       const receiptId = commandRoute[2] ? decodeURIComponent(commandRoute[2]) : null;
       if (method === "GET") {
         if (!receiptId) return [];
-        const receipt = this.commandReceipts.get(receiptId);
-        if (!receipt || receipt.deviceId !== deviceId) throw new ApiError(404, t("Demo device not found."));
-        return receipt;
+        throw new ApiError(404, t("Demo device not found."));
       }
       if (method !== "POST" || receiptId) throw new ApiError(404, t("This operation is not available in the offline demo."));
-      const body = objectBody(options.body);
-      if (typeof body.commandId !== "string" || !body.commandId.trim()) throw new ApiError(400, t("The command response did not identify this operation."));
-      const existing = this.commandReceipts.get(body.commandId);
-      if (existing) {
-        if (existing.deviceId !== deviceId || existing.isOn !== body.isOn) throw new ApiError(409, t("The command response did not identify this operation."));
-        return existing;
-      }
-      const device = this.state.devices.find(item => item.id === deviceId);
-      if (!device) throw new ApiError(404, t("Demo device not found."));
-      if (typeof body.isOn !== "boolean") throw new ApiError(400, t("Choose an on/off state."));
-      device.isOn = body.isOn;
-      device.currentPowerW = body.isOn ? this.state.deviceRatedPowerW[device.id]! : 0;
-      for (const rule of this.state.rules.filter(item => item.entityId === device.id)) {
-        rule.currentState = body.isOn;
-        rule.currentStateChangedAt = now.toISOString();
-      }
-      const inverter = demoInverter(now, timeZone);
-      this.state.runs.unshift({
-        id: Math.max(0, ...this.state.runs.map(item => item.id)) + 1,
-        timestamp: now.toISOString(), ruleName: "Demo manual override", action: body.isOn ? "ON" : "OFF",
-        conditionKey: "demo-manual", reason: "Simulated command; no hardware was contacted.",
-        batterySoc: inverter.batterySoc, solarProduction: inverter.solarProduction, batteryPower: inverter.batteryPower
-      });
-      this.state.runs = this.state.runs.slice(0, 500);
-      const receipt: SocketCommandReceipt = { commandId: body.commandId, deviceId, isOn: body.isOn,
-        status: "acknowledged", rejection: null, createdAt: now.toISOString(), completedAt: now.toISOString() };
-      this.commandReceipts.set(body.commandId, receipt);
-      return receipt;
+      throw new ApiError(403, t("Switching is turned off in the demo."));
     }
     if (route === "GET /api/rules") return this.state.rules;
     if (route === "POST /api/rules") {
@@ -151,6 +199,7 @@ export class DemoApiClient extends ApiClient {
         this.requireRuleVersion(rule, configurationVersion);
         if (typeof enabled !== "boolean") throw new ApiError(400, t("Choose an enabled state."));
         rule.enabled = enabled;
+        if (enabled) { rule.pauseReason = null; rule.pausedAt = null; rule.pausedByUserId = null; }
         rule.configurationVersion = this.ruleVersion();
         return rule;
       }
@@ -205,6 +254,12 @@ export class DemoApiClient extends ApiClient {
       return;
     }
     throw new ApiError(404, t("This operation is not available in the offline demo."));
+  }
+
+  private installation() {
+    return { site: this.state.site, polling: this.state.settings.polling, display: this.state.settings.display,
+      primaryInverterId: "766ce5fb-f18b-4438-8718-d837397a7c78", inverters: [{ id: "766ce5fb-f18b-4438-8718-d837397a7c78", name: "Demo inverter", isDefault: true }],
+      version: this.installationRevision.toString(16).padStart(64, "0"), integrationVersions: {} };
   }
 
   private ruleRequest(body: unknown): RuleRequest {

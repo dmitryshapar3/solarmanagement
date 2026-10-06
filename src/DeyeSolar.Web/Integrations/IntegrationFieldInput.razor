@@ -1,40 +1,37 @@
 @using SolarManagement.Integrations.Contracts
-
-@if (IntegrationUiConditions.IsSecret(Field))
-{
-    <MudText Typo="Typo.subtitle2" Class="mt-3">@T.Translate(Field.Label) @(SecretPresent ? T["(saved or authorized)"] : T["(not set)"])</MudText>
-    <MudSelect T="string" Label="@T["Credential action"]" Value="@SecretAction" ValueChanged="SecretActionChanged" Disabled="Busy">
-        <MudSelectItem T="string" Value="@("keep")">@T["Keep saved credential"]</MudSelectItem>
-        <MudSelectItem T="string" Value="@("replace")">@T["Enter a new credential"]</MudSelectItem>
-        <MudSelectItem T="string" Value="@("clear")">@T["Clear credential"]</MudSelectItem>
-    </MudSelect>
-    @if (SecretAction == "replace")
-    {
-        <MudTextField T="string" Label="@T.Translate(Field.Label)" Value="@SecretValue" ValueChanged="SecretValueChanged" Immediate="true" InputType="InputType.Password" Disabled="Busy" />
-    }
-}
-else if (Field.Kind == "boolean")
-{
-    <MudSelect T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy">
-        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">@T["No value"]</MudSelectItem> }
-        <MudSelectItem T="string" Value="@("true")">@T["True"]</MudSelectItem>
-        <MudSelectItem T="string" Value="@("false")">@T["False"]</MudSelectItem>
-    </MudSelect>
-}
-else if (Field.Kind == "select")
-{
-    <MudSelect T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy">
-        @if (!Field.Required) { <MudSelectItem T="string" Value="@string.Empty">@T["No selection"]</MudSelectItem> }
-        @foreach (var option in Field.Options ?? []) { <MudSelectItem T="string" Value="@option.Value">@T.Translate(option.Label)</MudSelectItem> }
-    </MudSelect>
-}
-else
-{
-    <MudTextField T="string" Label="@T.Translate(Field.Label)" Value="@Value" ValueChanged="ValueChanged" Immediate="true" Required="@Field.Required" RequiredError="@T["This field is required."]" Disabled="Busy"
-        InputType="@(Field.Kind is "number" or "integer" ? InputType.Number : InputType.Text)" />
-}
+@inject IJSRuntime JS
+@implements IDisposable
+<div class="ui-field"><label for="@_id">@T.Translate(Field.Label) @if(IntegrationUiConditions.IsSecret(Field)){<span class="caption">@(SecretPresent?T["Saved credential"]:T["Not set"])</span>}</label>
+@if(IntegrationUiConditions.IsSecret(Field)){<select id="@_id" value="@SecretAction" @onchange="e=>SecretActionChanged.InvokeAsync(e.Value?.ToString()??string.Empty)" disabled="@Busy"><option value="keep">@T["Keep saved credential"]</option><option value="replace">@T["Enter a new credential"]</option><option value="clear">@T["Clear credential"]</option></select>@if(SecretAction=="replace"){<input type="password" value="@SecretValue" @oninput="e=>SecretValueChanged.InvokeAsync(e.Value?.ToString()??string.Empty)" aria-label="@T.Translate(Field.Label)" autocomplete="new-password" disabled="@Busy"/><UiButton Variant="outline" OnClick="Paste" Disabled="Busy">@T["Paste"]</UiButton>@if(_pasteUnavailable){<p class="field-hint" role="status">@T["Unavailable"] · @T["Enter a new credential"]</p>}}}
+else if(Field.Kind=="boolean"){<select id="@_id" value="@Value" @onchange="e=>ValueChanged.InvokeAsync(e.Value?.ToString()??string.Empty)" required="@Field.Required" disabled="@Busy">@if(!Field.Required){<option value="">@T["No value"]</option>}<option value="true">@T["True"]</option><option value="false">@T["False"]</option></select>}
+else if(Field.Kind=="select"){<select id="@_id" value="@Value" @onchange="e=>ValueChanged.InvokeAsync(e.Value?.ToString()??string.Empty)" required="@Field.Required" disabled="@Busy"><option value="">@T["Select a value"]</option>@foreach(var option in Field.Options??[]){<option value="@option.Value">@T.Translate(option.Label)</option>}</select>}
+else{<input id="@_id" type="text" inputmode="@(Field.Kind is "number" or "integer"?"decimal":"text")" value="@Value" @oninput="e=>ValueChanged.InvokeAsync(e.Value?.ToString()??string.Empty)" required="@Field.Required" disabled="@Busy"/>}
+</div>
 
 @code {
+    private bool _pasteUnavailable, _disposed;
+    private long _pasteVersion;
+    private (string Key, string Action, string Value, bool Busy) _pasteState;
+    protected override void OnParametersSet()
+    {
+        var state = (Field.Key, SecretAction, SecretValue, Busy);
+        if (state != _pasteState) { _pasteState = state; _pasteVersion++; }
+    }
+    private async Task Paste()
+    {
+        if (Busy || SecretAction != "replace" || _disposed) return;
+        var version = ++_pasteVersion;
+        _pasteUnavailable = false;
+        try
+        {
+            var value = await JS.InvokeAsync<string>("smartSolar.paste");
+            if (!_disposed && !Busy && version == _pasteVersion && value is not null)
+                await SecretValueChanged.InvokeAsync(value);
+        }
+        catch (JSException) { if (!_disposed && version == _pasteVersion) _pasteUnavailable = true; }
+    }
+    public void Dispose() { _disposed = true; _pasteVersion++; }
+    private readonly string _id="provider-field-"+Guid.NewGuid().ToString("N");
     [Parameter, EditorRequired] public IntegrationFieldDescriptor Field { get; set; } = null!;
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> ValueChanged { get; set; }

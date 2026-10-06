@@ -45,6 +45,7 @@ public static class TenantRequestServices
         Add<SolarEstimateService>(services);
         Add<ISolarHistoryRadiationSource>(services);
         Add<ISolarHistoryStore>(services);
+        Add<Redesign.SolarProductionService>(services);
         Add<InverterDataSnapshot>(services);
         Add<DeviceStatusSnapshot>(services);
         Add<RuleEvaluator>(services);

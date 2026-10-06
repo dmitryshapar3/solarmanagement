@@ -1,373 +1,66 @@
-import { useDemoDisplayName } from "../demo/useDemoDisplayName";
-import { translate as t } from "../../core/i18n";
-import { useLanguage } from "../../application/LanguageContext";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Save } from "lucide-react-native";
-import {
-  AppButton,
-  Card,
-  EmptyState,
-  ErrorBanner,
-  Header,
-  LoadingState,
-  Screen,
-  SectionTitle,
-  StatusPill,
-  SwitchRow,
-  TextField
-} from "../../core/components";
-import { Device, Rule, RuleRequest } from "../../core/api/types";
-import type { IntegrationSourceInverter } from "../../core/api/IntegrationApi";
-import { colors, spacing, typography } from "../../core/theme";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, Keyboard, View } from "react-native";
+import { usePreventRemove } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useAuth } from "../../application/AuthContext";
-import { RulesStackParamList } from "../../application/navigationTypes";
-import { normalizeRuleDraft, validateRuleDraft } from "./RuleDraftPolicy";
+import { useLanguage } from "../../application/LanguageContext";
+import { useScopedAction } from "../../application/useScopedAction";
+import type { RootStackParamList } from "../../application/navigationTypes";
+import type { Device, Rule, RuleRequest } from "../../core/api/types";
+import type { IntegrationSourceInverter } from "../../core/api/IntegrationApi";
+import type { RuleEvaluation } from "../../core/api/redesignTypes";
+import { AppButton, Banner, Card, DataRow, ErrorBanner, Header, LoadingState, Screen, SectionTitle, StatusPill, SwitchRow, TextField, ThemedText as Text } from "../../core/components";
+import { formatDateTime, formatWatts } from "../../core/format";
+import { useTheme } from "../../ui/theme/ThemeProvider";
+import { SelectField } from "../../ui/forms/SelectField";
+import { ThresholdRange } from "../../ui/forms/ThresholdRange";
+import { useDemoDisplayName } from "../demo/useDemoDisplayName";
+import { normalizeRuleDraft } from "./RuleDraftPolicy";
+import { editorRuleError } from "./RuleEditorPolicy";
+import { ruleDecisionLabel } from "./rulePresentation";
 
-type Props = NativeStackScreenProps<RulesStackParamList, "RuleEditor">;
-
-const defaultRule: RuleRequest = {
-  name: "",
-  entityId: "",
-  sourceInverterId: null,
-  enabled: false,
-  socTurnOnThreshold: 80,
-  useSeparateSocTurnOffThreshold: false,
-  socTurnOffThreshold: 80,
-  useSolarProductionThreshold: false,
-  minAverageSolarProductionWatts: 3000,
-  cooldownMinutes: 15,
-  intervalSeconds: 30,
-  activeFrom: null,
-  activeTo: null
-};
-
+type Props = NativeStackScreenProps<RootStackParamList, "AutomationEditor">;
+const initialRule: RuleRequest = { name: "", entityId: "", sourceInverterId: null, enabled: false, socTurnOnThreshold: 75, useSeparateSocTurnOffThreshold: true, socTurnOffThreshold: 55, useSolarProductionThreshold: false, minAverageSolarProductionWatts: 1800, cooldownMinutes: 10, intervalSeconds: 60, activeFrom: null, activeTo: null };
+type NumberField = "socTurnOnThreshold" | "socTurnOffThreshold" | "minAverageSolarProductionWatts" | "cooldownMinutes" | "intervalSeconds";
+const numberText = (rule: RuleRequest) => ({ socTurnOnThreshold: String(rule.socTurnOnThreshold), socTurnOffThreshold: String(rule.socTurnOffThreshold), minAverageSolarProductionWatts: String(rule.minAverageSolarProductionWatts / 1000), cooldownMinutes: String(rule.cooldownMinutes), intervalSeconds: String(rule.intervalSeconds) });
+export function ruleToRequest(rule: Rule): RuleRequest { return { ...initialRule, configurationVersion: rule.configurationVersion, name: rule.name, entityId: rule.entityId, sourceInverterId: rule.sourceInverterId, enabled: rule.enabled, socTurnOnThreshold: rule.socTurnOnThreshold, useSeparateSocTurnOffThreshold: rule.useSeparateSocTurnOffThreshold, socTurnOffThreshold: rule.socTurnOffThreshold, useSolarProductionThreshold: rule.useSolarProductionThreshold, minAverageSolarProductionWatts: rule.minAverageSolarProductionWatts, cooldownMinutes: rule.cooldownMinutes, intervalSeconds: rule.intervalSeconds, activeFrom: rule.activeFrom, activeTo: rule.activeTo }; }
 export function RuleEditorScreen({ route, navigation }: Props) {
-  const demoDisplayName = useDemoDisplayName();
-  const { t } = useLanguage();
-  const { api, isDemo } = useAuth();
-  const ruleId = route.params?.id;
-  const [rule, setRule] = useState<RuleRequest>(defaultRule);
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [inverters, setInverters] = useState<IntegrationSourceInverter[]>([]);
-  const [sourceError, setSourceError] = useState<string | null>(null);
-  const [loadingSources, setLoadingSources] = useState(false);
-  const [loading, setLoading] = useState(Boolean(ruleId));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const savingPending = useRef(false);
-
-  const loadSources = useCallback(async (signal?: AbortSignal) => {
-    if (isDemo) return;
-    setLoadingSources(true);
-    try {
-      const sources = await api.integrations.getSocketSources(signal);
-      if (signal?.aborted) return;
-      if (!Array.isArray(sources)) throw new Error("Unable to load inverter sources.");
-      setInverters(sources);
-      setSourceError(null);
-    } catch (ex) {
-      if (!signal?.aborted) setSourceError(ex instanceof Error ? ex.message : t("Unable to load inverter sources."));
-    } finally {
-      if (!signal?.aborted) setLoadingSources(false);
-    }
-  }, [api, isDemo]);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [deviceList, loadedRule] = await Promise.all([
-        api.getDevices(false),
-        ruleId ? api.getRule(ruleId) : Promise.resolve(null)
-      ]);
-      if (signal?.aborted) return;
-      setDevices(deviceList.devices);
-      if (loadedRule) {
-        setRule(toRequest(loadedRule));
-      }
-      await loadSources(signal);
-    } catch (ex) {
-      if (!signal?.aborted) setError(ex instanceof Error ? ex.message : "Unable to load rule.");
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, [api, loadSources, ruleId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
-
-  function setField<K extends keyof RuleRequest>(key: K, value: RuleRequest[K]) {
-    setRule((current) => ({ ...current, [key]: value }));
-  }
-
-  function setNumberField<K extends keyof RuleRequest>(key: K, value: string) {
-    const parsed = Number.parseInt(value, 10);
-    setField(key, (Number.isNaN(parsed) ? 0 : parsed) as RuleRequest[K]);
-  }
-
-  const unknownSelection = Boolean(rule.entityId) && !devices.some((device) => device.id === rule.entityId);
-  const unknownSource = Boolean(rule.sourceInverterId) && !inverters.some(inverter => inverter.id === rule.sourceInverterId);
-
-  async function save() {
-    if (savingPending.current) return;
-    const payload = normalizeRuleDraft(rule);
-    const message = validateRuleDraft(payload, true)?.message;
-    if (message) {
-      setError(t(message));
-      return;
-    }
-    if (!isDemo && rule.enabled && rule.sourceInverterId && (sourceError || unknownSource)) {
-      setError(sourceError ? "Inverter sources are unavailable. Reload sources before enabling this rule."
-        : "Select an available source inverter.");
-      return;
-    }
-
-    savingPending.current = true;
-    setSaving(true);
-    setError(null);
-    try {
-      if (ruleId) {
-        if (!payload.configurationVersion) throw new Error(t("Unable to save rule."));
-        await api.updateRule(ruleId, { ...payload, configurationVersion: payload.configurationVersion });
-      } else {
-        await api.createRule(payload);
-      }
-      navigation.goBack();
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Unable to save rule.");
-    } finally {
-      savingPending.current = false;
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <Screen scroll={false}>
-        <LoadingState label={t("Loading rule...")} />
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen>
-      <Header title={ruleId ? t("Edit Rule") : t("New Rule")} subtitle={rule.enabled ? t("Enabled") : t("Disabled")} />
-      <ErrorBanner message={error} />
-
-      <Card style={styles.form}>
-        <TextField label={t("Rule name")} value={demoDisplayName(rule.name)} onChangeText={(value) => setField("name", value)} />
-        <SwitchRow
-          title={t("Enabled")}
-          value={rule.enabled}
-          disabled={!rule.entityId}
-          onValueChange={(value) => setField("enabled", value)}
-          subtitle={rule.entityId ? undefined : t("Select a device before enabling")}
-        />
-      </Card>
-
-      <SectionTitle title={t("Target Device")} />
-      {devices.length || unknownSelection ? (
-        <View style={styles.deviceList}>
-          {unknownSelection ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={rule.entityId}
-              accessibilityState={{ selected: true, disabled: true }} disabled
-              style={[styles.deviceChoice, styles.deviceChoiceSelected]}>
-              <View style={styles.deviceCopy}>
-                <Text style={styles.deviceName} numberOfLines={1}>{rule.entityId}</Text>
-                <Text style={styles.deviceCategory}>{t("Unknown device")}</Text>
-              </View>
-              <StatusPill label={t("Selected")} tone="info" />
-            </Pressable>
-          ) : null}
-          {devices.map((device) => (
-            <Pressable
-              key={device.id}
-              accessibilityRole="button"
-              accessibilityLabel={demoDisplayName(device.name)}
-              accessibilityHint={`${t(device.category ?? device.id)}, ${!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")}`}
-              accessibilityState={{ selected: rule.entityId === device.id }}
-              onPress={() => { Keyboard.dismiss(); setField("entityId", device.id); }}
-              style={[styles.deviceChoice, rule.entityId === device.id && styles.deviceChoiceSelected]}
-            >
-              <View style={styles.deviceCopy}>
-                <Text style={styles.deviceName} numberOfLines={1}>{demoDisplayName(device.name)}</Text>
-                <Text style={styles.deviceCategory}>{t(device.category ?? device.id)}</Text>
-              </View>
-              <StatusPill label={!device.online ? t("Offline") : device.stateKnown !== true ? t("State unavailable") : device.isOn ? t("ON") : t("OFF")} tone={!device.online || device.stateKnown !== true ? "neutral" : device.isOn ? "success" : "warning"} />
-            </Pressable>
-          ))}
-        </View>
-      ) : (
-        <EmptyState title={t("No devices loaded.")} />
-      )}
-
-      <SectionTitle title={t("Source inverter")} />
-      <Card style={styles.form}>
-        <ErrorBanner message={sourceError} />
-        <AppButton label={isDemo ? t("Demo inverter") : t("Socket-linked or installation default inverter")} variant={!rule.sourceInverterId ? "primary" : "secondary"}
-          disabled={saving} onPress={() => setField("sourceInverterId", null)} />
-        {unknownSource ? <Text style={styles.deviceCategory}>{t("{0}: selected source is unavailable. Its reference is preserved.", rule.sourceInverterId)}</Text> : null}
-        {inverters.map(inverter => <AppButton key={inverter.id} translateLabel={false} label={inverter.name}
-          variant={rule.sourceInverterId === inverter.id ? "primary" : "secondary"} disabled={saving}
-          onPress={() => setField("sourceInverterId", inverter.id)} />)}
-        {!isDemo ? <AppButton label={t("Reload inverter sources")} variant="secondary" disabled={saving}
-          onPress={() => void loadSources()} loading={loadingSources} /> : null}
-        <Text style={styles.deviceCategory}>{t("Battery and PV conditions use the selected source. The default follows this socket's linked inverter, or the installation inverter when no link is set.")}</Text>
-      </Card>
-
-      <SectionTitle title={t("Turn Conditions")} />
-      <Card style={styles.form}>
-        <TextField
-          label={t("SOC turn ON")}
-          value={String(rule.socTurnOnThreshold)}
-          onChangeText={(value) => {
-            setNumberField("socTurnOnThreshold", value);
-            if (!rule.useSeparateSocTurnOffThreshold) {
-              setNumberField("socTurnOffThreshold", value);
-            }
-          }}
-          keyboardType="number-pad"
-        />
-        <SwitchRow
-          title={t("Separate turn OFF SOC")}
-          value={rule.useSeparateSocTurnOffThreshold}
-          onValueChange={(value) => {
-            setField("useSeparateSocTurnOffThreshold", value);
-            if (!value) {
-              setField("socTurnOffThreshold", rule.socTurnOnThreshold);
-            }
-          }}
-        />
-        <TextField
-          label={t("SOC turn OFF")}
-          value={String(rule.socTurnOffThreshold)}
-          onChangeText={(value) => setNumberField("socTurnOffThreshold", value)}
-          keyboardType="number-pad"
-          editable={rule.useSeparateSocTurnOffThreshold}
-        />
-        <SwitchRow
-          title={t("Require average PV")}
-          subtitle={t("Checked only while battery SOC is below 95%; bypassed at 95% or above")}
-          value={rule.useSolarProductionThreshold}
-          onValueChange={(value) => {
-            setField("useSolarProductionThreshold", value);
-            if (value && rule.minAverageSolarProductionWatts <= 0) {
-              setField("minAverageSolarProductionWatts", 3000);
-            }
-          }}
-        />
-        <TextField
-          label={t("Average PV last hour (W)")}
-          value={String(rule.minAverageSolarProductionWatts)}
-          onChangeText={(value) => setNumberField("minAverageSolarProductionWatts", value)}
-          keyboardType="number-pad"
-          editable={rule.useSolarProductionThreshold}
-        />
-      </Card>
-
-      <SectionTitle title={t("Evaluation")} />
-      <Card style={styles.form}>
-        <TextField
-          label={t("Cooldown minutes")}
-          value={String(rule.cooldownMinutes)}
-          onChangeText={(value) => setNumberField("cooldownMinutes", value)}
-          keyboardType="number-pad"
-        />
-        <TextField
-          label={t("Interval seconds")}
-          value={String(rule.intervalSeconds)}
-          onChangeText={(value) => setNumberField("intervalSeconds", value)}
-          keyboardType="number-pad"
-        />
-        <View style={styles.timeRow}>
-          <View style={styles.timeField}>
-            <TextField
-              label={t("Active from")}
-              value={rule.activeFrom ?? ""}
-              onChangeText={(value) => setField("activeFrom", value || null)}
-              placeholder="HH:mm"
-            />
-          </View>
-          <View style={styles.timeField}>
-            <TextField
-              label={t("Active to")}
-              value={rule.activeTo ?? ""}
-              onChangeText={(value) => setField("activeTo", value || null)}
-              placeholder="HH:mm"
-            />
-          </View>
-        </View>
-      </Card>
-
-      <AppButton label={t("Save")} icon={Save} onPress={() => void save()} loading={saving} />
-    </Screen>
-  );
+  const { api } = useAuth(); const { t } = useLanguage(); const { colors } = useTheme(); const name = useDemoDisplayName(); const id = route.params?.id;
+  const [draft, setDraft] = useState<RuleRequest>(initialRule); const [original, setOriginal] = useState<RuleRequest | null>(null); const [numbers, setNumbers] = useState(numberText(initialRule)); const [devices, setDevices] = useState<Device[]>([]); const [sources, setSources] = useState<IntegrationSourceInverter[]>([]); const [sourceError, setSourceError] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [fieldError, setFieldError] = useState<{ field: keyof RuleRequest; message: string } | null>(null); const [evaluation, setEvaluation] = useState<RuleEvaluation | null>(null); const [zone, setZone] = useState<string | null>(null); const [canEdit, setCanEdit] = useState(false);
+  const actions = useScopedAction(api, `rule:${id ?? "new"}`, () => { setDraft(initialRule); setNumbers(numberText(initialRule)); setOriginal(null); setError(null); setFieldError(null); setLoading(true); setDevices([]); setSources([]); setSourceError(null); setCanEdit(false); setEvaluation(null); });
+  const dirty = original !== null && JSON.stringify(draft) !== JSON.stringify(original) || !id && (draft.name !== "" || draft.entityId !== ""); const busy = actions.busy !== null;
+  usePreventRemove(dirty && !busy, ({ data }) => Alert.alert(t("Discard changes?"), t("Your unsaved changes will be lost."), [{ text: t("Keep editing"), style: "cancel" }, { text: t("Discard"), style: "destructive", onPress: () => navigation.dispatch(data.action) }]));
+  const load = useCallback(() => actions.run("load", async context => {
+    const [inventory, rule, permissions, settings] = await Promise.all([api.getDevices(false, context.signal), id ? api.getRule(id) : Promise.resolve(null), api.accountSecurity.getPermissions(context.signal), api.getSettings(context.signal)]);
+    const sourceResults = await Promise.allSettled([api.integrations.getSocketSources(context.signal), id ? api.getRuleEvaluation(id, context.signal) : Promise.resolve(null)]);
+    const template = route.params?.template;
+    const next = rule ? ruleToRequest(rule) : template === "solar" ? { ...initialRule, name: t("Use solar surplus"), useSolarProductionThreshold: true } : template === "reserve" ? { ...initialRule, name: t("Keep a battery reserve"), socTurnOnThreshold: 90, socTurnOffThreshold: 70 } : template === "daylight" ? { ...initialRule, name: t("Daylight only"), useSolarProductionThreshold: true, minAverageSolarProductionWatts: 100, activeFrom: "06:00", activeTo: "18:00" } : { ...initialRule };
+    context.publish(() => { setDraft(next); setNumbers(numberText(next)); setOriginal(next); setDevices(inventory.devices); setCanEdit(permissions.permissions.includes("ManageRules")); setZone(settings.display.timeZoneId); setLoading(false); setError(null); setFieldError(null); const sources = sourceResults[0]!; if (sources.status === "fulfilled") { setSources(sources.value as IntegrationSourceInverter[]); setSourceError(null); } else setSourceError("Inverter sources are unavailable. Pull down to try again."); const evaluation = sourceResults[1]!; setEvaluation(evaluation.status === "fulfilled" ? evaluation.value as RuleEvaluation | null : null); });
+  }, { failed: exception => { setError(exception instanceof Error ? exception.message : "Unable to load rule."); setLoading(false); } }), [api, id, route.params?.template, actions.run]);
+  useEffect(() => { void load(); }, [load]);
+  const pull = async () => { if (!dirty) { await load(); return; } await new Promise<void>(resolve => Alert.alert(t("Discard changes?"), t("Reloading replaces your unsaved changes."), [{ text: t("Keep editing"), style: "cancel", onPress: () => resolve() }, { text: t("Discard"), style: "destructive", onPress: () => { void load().then(() => resolve()); } }], { onDismiss: () => resolve() })); };
+  const field = <K extends keyof RuleRequest>(key: K, value: RuleRequest[K]) => { setDraft(current => ({ ...current, [key]: value })); setFieldError(current => current?.field === key ? null : current); };
+  const number = (key: NumberField, value: string) => { setNumbers(current => ({ ...current, [key]: value })); const parsed = value.trim() === "" ? NaN : Number(value.replace(",", ".")); field(key, key === "minAverageSolarProductionWatts" ? Math.round(parsed * 1000) : parsed); if (key === "socTurnOffThreshold" || key === "socTurnOnThreshold") field("useSeparateSocTurnOffThreshold", true); };
+  const message = (key: keyof RuleRequest) => fieldError?.field === key ? fieldError.message : null;
+  const selected = devices.find(device => device.id === draft.entityId); const sourceUnavailable = Boolean(draft.sourceInverterId && !sources.some(source => source.id === draft.sourceInverterId));
+  const save = () => actions.run("save", async context => {
+    Keyboard.dismiss(); const invalid = editorRuleError(draft, original); const payload = normalizeRuleDraft(draft);
+    if (invalid) { context.publish(() => setFieldError(invalid)); return; }
+    if (draft.enabled && draft.sourceInverterId && (sourceError || sourceUnavailable)) { context.publish(() => setFieldError({ field: "sourceInverterId", message: "Select an available source inverter." })); return; }
+    if (id) { if (!payload.configurationVersion) throw new Error(t("Unable to save rule.")); await api.updateRule(id, { ...payload, configurationVersion: payload.configurationVersion }); } else await api.createRule(payload);
+    context.publish(() => { setOriginal(payload); navigation.goBack(); });
+  }, { started: () => setError(null), failed: exception => setError(exception instanceof Error ? exception.message : "Unable to save rule.") });
+  const remove = () => Alert.alert(t("Delete automation?"), name(draft.name), [{ text: t("Cancel"), style: "cancel" }, { text: t("Delete"), style: "destructive", onPress: () => void actions.run("delete", async context => { if (id && draft.configurationVersion) await api.deleteRule(id, draft.configurationVersion); context.publish(() => navigation.goBack()); }, { failed: exception => setError(exception instanceof Error ? exception.message : "Unable to delete rule.") }) }]);
+  return <Screen refreshing={loading || busy} onRefresh={pull}><Header title={id ? "Edit automation" : "New automation"} /><ErrorBanner message={error} />{loading ? <LoadingState label="Loading rule..." /> : <>
+    {!canEdit ? <Banner>{t("You can view this automation. Ask the installation owner to change it.")}</Banner> : null}
+    <TextField label="Name" value={name(draft.name)} onChangeText={value => field("name", value)} error={message("name")} editable={canEdit && !busy} maxLength={100} />
+    <Card style={{ gap: 14 }}><SectionTitle title="Battery charge" /><ThresholdRange off={draft.socTurnOffThreshold} on={draft.socTurnOnThreshold} disabled={busy || !canEdit} onChange={(which, value) => number(which === "on" ? "socTurnOnThreshold" : "socTurnOffThreshold", String(value))} /><View style={{ flexDirection: "row", gap: 12 }}><View style={{ flex: 1 }}><TextField label="Turn off below" unit="%" keyboardType="number-pad" value={numbers.socTurnOffThreshold} onChangeText={value => number("socTurnOffThreshold", value)} editable={canEdit && !busy} error={message("socTurnOffThreshold")} /></View><View style={{ flex: 1 }}><TextField label="Turn on at" unit="%" keyboardType="number-pad" value={numbers.socTurnOnThreshold} onChangeText={value => number("socTurnOnThreshold", value)} editable={canEdit && !busy} error={message("socTurnOnThreshold")} /></View></View><Text style={{ color: colors.ink2, fontSize: 13 }}>{t("Separate thresholds keep the plug from switching back and forth.")}</Text>{original && !original.useSeparateSocTurnOffThreshold ? <Text style={{ color: colors.ink3, fontSize: 13 }}>{t("This saved rule uses one threshold. It stays unchanged unless you edit the range.")}</Text> : null}</Card>
+    <Card style={{ gap: 14 }}><SwitchRow title="Require solar" subtitle="Average over the last hour; skipped at 95% battery or above." value={draft.useSolarProductionThreshold} disabled={busy || !canEdit} onValueChange={value => field("useSolarProductionThreshold", value)} />{draft.useSolarProductionThreshold ? <TextField label="Minimum solar power" value={numbers.minAverageSolarProductionWatts} unit="kW" keyboardType="decimal-pad" onChangeText={value => number("minAverageSolarProductionWatts", value)} error={message("minAverageSolarProductionWatts")} editable={canEdit && !busy} /> : null}</Card>
+    <SelectField label="Target device" value={draft.entityId} disabled={busy || !canEdit} error={message("entityId")} options={[{ value: "", label: t("Choose a device") }, ...(!selected && draft.entityId ? [{ value: draft.entityId, label: t("Unknown device · reference preserved"), disabled: true }] : []), ...devices.map(device => ({ value: device.id, label: name(device.name) }))]} onChange={value => field("entityId", value)} />
+    <SelectField label="Battery & solar source" value={draft.sourceInverterId ?? "default"} disabled={busy || !canEdit} error={message("sourceInverterId") ?? sourceError} helper="Default follows the socket’s linked inverter or the installation primary inverter." options={[{ value: "default", label: t("Default") }, ...(sourceUnavailable ? [{ value: draft.sourceInverterId!, label: t("Unavailable source · reference preserved"), disabled: true }] : []), ...sources.map(source => ({ value: source.id, label: source.name }))]} onChange={value => field("sourceInverterId", value === "default" ? null : value)} />
+    <Card style={{ gap: 14 }}><SectionTitle title="Schedule & timing" /><View style={{ flexDirection: "row", gap: 12 }}><View style={{ flex: 1 }}><TextField label="From" value={draft.activeFrom ?? ""} placeholder="HH:mm" onChangeText={value => field("activeFrom", value || null)} error={message("activeFrom")} editable={canEdit && !busy} /></View><View style={{ flex: 1 }}><TextField label="Until" value={draft.activeTo ?? ""} placeholder="HH:mm" onChangeText={value => field("activeTo", value || null)} error={message("activeFrom")} editable={canEdit && !busy} /></View></View><Text style={{ fontSize: 13, color: colors.ink3 }}>{t("Leave both empty for all day. An earlier end time runs overnight. Time zone: {0}", zone ?? "—")}</Text>{draft.activeFrom && draft.activeTo ? <Text style={{ fontSize: 13, color: colors.ink3 }}>{t("The saved schedule uses fixed times. Review it when daylight hours change.")}</Text> : null}<TextField label="Check every" unit="s" value={numbers.intervalSeconds} onChangeText={value => number("intervalSeconds", value)} keyboardType="number-pad" error={message("intervalSeconds")} editable={canEdit && !busy} /><TextField label="Wait between switches" unit="min" value={numbers.cooldownMinutes} onChangeText={value => number("cooldownMinutes", value)} keyboardType="number-pad" error={message("cooldownMinutes")} editable={canEdit && !busy} /></Card>
+    <Card style={{ gap: 12 }}><SectionTitle title="Preview" /><Text style={{ color: colors.ink2 }}>{t("When the battery reaches {0}%, turn on {1}. Turn it off below {2}%.", Number.isFinite(draft.socTurnOnThreshold) ? draft.socTurnOnThreshold : "—", selected ? name(selected.name) : t("the selected device"), Number.isFinite(draft.socTurnOffThreshold) ? draft.socTurnOffThreshold : "—")}</Text>{draft.useSolarProductionThreshold ? <Text style={{ color: colors.ink2 }}>{t("Also require at least {0} average solar power.", formatWatts(draft.minAverageSolarProductionWatts))}</Text> : null}<SwitchRow title="Enable automation" value={draft.enabled} onValueChange={value => field("enabled", value)} disabled={busy || !canEdit || !draft.entityId} /></Card>
+    {evaluation ? <Card style={{ gap: 12 }}><SectionTitle title="Latest saved-rule check" /><StatusPill label={ruleDecisionLabel(evaluation.decision)} tone={evaluation.freshness === "current" ? "neutral" : "warning"} /><DataRow label="Checked at" value={evaluation.checkedAt ? formatDateTime(evaluation.checkedAt) : "—"} /><DataRow label="Next check" value={evaluation.nextCheckAt ? formatDateTime(evaluation.nextCheckAt) : "—"} />{evaluation.freshness !== "current" ? <Text style={{ color: colors.warningText, fontSize: 13 }}>{t(evaluation.freshness === "source_changed" || evaluation.freshness === "configuration_changed" ? "Configuration changed · waiting for fresh readings" : "Previous check · waiting for fresh readings")}</Text> : null}{evaluation.conditions.map(condition => <DataRow key={condition.kind} label={condition.kind === "battery_soc" ? "Battery charge" : condition.kind === "solar_average" ? "Average solar power" : condition.kind === "cooldown" ? "Cooldown" : condition.kind === "active_window" ? "Active window" : "Measurement freshness"} value={condition.observed === null ? "—" : condition.kind === "solar_average" ? formatWatts(condition.observed) : String(condition.observed)} detail={`${t(condition.status === "passed" ? "Passed" : condition.status === "blocked" ? "Not met" : condition.status === "bypassed" ? "Skipped at high battery charge" : condition.status === "skipped" ? "Skipped" : "Unavailable")}${condition.threshold !== null ? ` · ${t("Threshold")}: ${condition.kind === "solar_average" ? formatWatts(condition.threshold) : condition.threshold}` : ""}`} />)}<Text style={{ color: colors.ink3, fontSize: 13 }}>{t("These are recorded values for the saved automation. Unsaved changes are not evaluated, and opening this page does not switch a device.")}</Text></Card> : null}
+    <AppButton label="Save automation" loading={actions.busy === "save"} disabled={busy || !canEdit} onPress={() => void save()} />{id ? <AppButton label="Delete automation" variant="critical" disabled={busy || !canEdit} onPress={remove} /> : null}
+  </>}</Screen>;
 }
-
-function toRequest(rule: Rule): RuleRequest {
-  return {
-    configurationVersion: rule.configurationVersion,
-    name: rule.name,
-    entityId: rule.entityId,
-    sourceInverterId: rule.sourceInverterId ?? null,
-    enabled: rule.enabled,
-    socTurnOnThreshold: rule.socTurnOnThreshold,
-    useSeparateSocTurnOffThreshold: rule.useSeparateSocTurnOffThreshold,
-    socTurnOffThreshold: rule.socTurnOffThreshold,
-    useSolarProductionThreshold: rule.useSolarProductionThreshold,
-    minAverageSolarProductionWatts: rule.minAverageSolarProductionWatts,
-    cooldownMinutes: rule.cooldownMinutes,
-    intervalSeconds: rule.intervalSeconds,
-    activeFrom: rule.activeFrom,
-    activeTo: rule.activeTo
-  };
-}
-
-const styles = StyleSheet.create({
-  form: {
-    gap: spacing.lg
-  },
-  deviceList: {
-    gap: spacing.sm
-  },
-  deviceChoice: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
-    padding: spacing.md
-  },
-  deviceChoiceSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceRaised
-  },
-  deviceCopy: {
-    flex: 1,
-    gap: spacing.xs
-  },
-  deviceName: {
-    color: colors.text,
-    fontSize: typography.body,
-    fontWeight: "800"
-  },
-  deviceCategory: {
-    color: colors.muted,
-    fontSize: typography.caption
-  },
-  timeRow: {
-    flexDirection: "row",
-    gap: spacing.md
-  },
-  timeField: {
-    flex: 1
-  }
-});

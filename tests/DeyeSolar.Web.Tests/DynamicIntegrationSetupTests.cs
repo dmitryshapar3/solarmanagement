@@ -31,13 +31,180 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
-using MudBlazor.Services;
-using MudBlazor;
+using DeyeSolar.Domain.Billing;
+using DeyeSolar.Web.Billing;
 
 namespace DeyeSolar.Web.Tests;
 
 public class DynamicIntegrationSetupTests
 {
+    [SqlServerFact]
+    public async Task SavedConnectionCardActionsOpenTheCorrectDialogAndOnlyRunTheirExplicitReadOperation()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.CreateSavedAsync("site-a", "A");
+        var selected = await fixture.CreateSavedAsync("site-a", "B");
+        await using var services = fixture.ComponentServices(new Catalog());
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        var before = await fixture.StateAsync();
+        var initialCalls = fixture.Executor.Calls;
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            await renderer.InvokeAsync("OpenSavedAsync", selected.Id, "settings");
+            Assert.Contains("Connection settings", renderer.Text(root));
+            Assert.Equal(selected.Id, renderer.CurrentId());
+            Assert.Equal(initialCalls, fixture.Executor.Calls);
+            await renderer.ClickAsync(root, "Close");
+            await renderer.InvokeAsync("OpenSavedAsync", selected.Id, "test");
+            Assert.Equal("saved-B", fixture.Executor.LastDraft!.Secrets["apiKey"]);
+            Assert.Equal(initialCalls + 1, fixture.Executor.Calls);
+            Assert.Contains("Connection verified.", renderer.Text(root));
+            await renderer.ClickAsync(root, "Close");
+            await renderer.InvokeAsync("OpenSavedAsync", selected.Id, "discover");
+            Assert.Equal(initialCalls + 2, fixture.Executor.Calls);
+            Assert.Single(renderer.Discovery().Devices);
+            Assert.Contains("Choose devices", renderer.Text(root));
+            Assert.DoesNotContain("saved-B", renderer.Text(root));
+        });
+        Assert.Equal(before, await fixture.StateAsync());
+    }
+
+    [SqlServerFact]
+    public async Task WebConnectionFlowUsesInstalledManufacturersPreservesDraftOnCloseAndSelectsAnAtomicDisplayName()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.CreateSavedAsync("site-a", "Existing");
+        await using var services = fixture.ComponentServices(new Catalog());
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            var beforeOpen = await fixture.StateAsync();
+            await renderer.ClickAsync(root, "Connect a service");
+            Assert.Contains("Choose a manufacturer", renderer.Text(root));
+            Assert.Contains("Unknown fixture manufacturer", renderer.Text(root));
+            Assert.DoesNotContain("disabled", renderer.ControlAttributes(root, "connection-name").Keys);
+            Assert.Equal(beforeOpen, await fixture.StateAsync());
+            await renderer.InvokeAsync("ChooseProvider", "fixture.vendor", "other");
+            await renderer.ClickAsync(root, "Add connection");
+            var created = await fixture.StateAsync();
+            renderer.SetText("region", "eu");
+            renderer.SetText("extra", "7");
+            renderer.SetCredential("apiKey", "new-flow-only-secret");
+            await renderer.ClickAsync(root, "Close");
+            Assert.Contains("Discard changes?", renderer.Text(root));
+            Assert.Equal("new-flow-only-secret", renderer.CredentialValue("apiKey"));
+            Assert.Equal(created, await fixture.StateAsync());
+            await renderer.ClickAsync(root, "Keep editing");
+            await renderer.ClickAsync(root, "Save connection");
+            await renderer.ClickAsync(root, "Find devices");
+            Assert.Contains("Choose devices", renderer.Text(root));
+            Assert.Contains("Availability", renderer.Text(root));
+            var token = renderer.Discovery().Devices.Single().SelectionToken;
+            await renderer.InvokeAsync("DeviceName", token, new ChangeEventArgs { Value = "Kitchen heater" });
+            await renderer.ClickAsync(root, "Use device");
+            Assert.Contains("Kitchen heater", renderer.Text(root));
+            Assert.DoesNotContain("new-flow-only-secret", renderer.Text(root));
+        });
+        await using var db = fixture.Factory("site-a").CreateDbContext();
+        var binding = await db.IntegrationDeviceBindings.SingleAsync();
+        Assert.Equal("Socket", binding.Name);
+        Assert.Equal("OpaqueCase", binding.RemoteId);
+        Assert.Equal("Kitchen heater", IntegrationDeviceDisplayName.Read(binding));
+        Assert.Equal("enabled", (await db.IntegrationInstances.SingleAsync(instance => instance.Id == binding.InstanceId)).State);
+    }
+
+    [SqlServerFact]
+    public async Task WebDiscoveryShowsCanonicalCapabilityAndTrialQuotaAndCannotBypassDisabledSelection()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        await fixture.CreateSavedAsync("site-a", "A");
+        fixture.Executor.Devices = [new("OpaqueCase", "0", "socket", "Socket", "verified-account",
+            IntegrationJson.Element(new { capabilities = new { canSwitch = false } }))];
+        var now = DateTimeOffset.UtcNow;
+        var access = new BillingAccess("trial", true, now.AddDays(10), null, Guid.NewGuid(), 1, false, now, now.AddMinutes(5)) { SocketUsage = 1 };
+        await using var services = fixture.ComponentServices(new Catalog(), billing: new ComponentBilling(access));
+        await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.MountAsync();
+            await renderer.ClickAsync(root, "Find devices");
+            Assert.Contains("Your free month includes 1 smart plug", renderer.Text(root));
+            Assert.Contains("This device does not support switching.", renderer.Text(root));
+            Assert.Contains("Unknown", renderer.Text(root));
+            Assert.True(renderer.ButtonDisabled(root, "Use device"));
+            var before = await fixture.StateAsync();
+            var calls = fixture.Executor.Calls;
+            await renderer.InvokeAsync("ChooseDevice", renderer.Discovery().Devices.Single().SelectionToken);
+            Assert.Equal(before, await fixture.StateAsync());
+            Assert.Equal(calls, fixture.Executor.Calls);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task SelectedDisplayNameIsAtomicAndNeverReplacesProviderIdentityOrCapabilityMetadata()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var instance = await fixture.CreateSavedAsync("site-a", "A");
+        await fixture.CreateSavedAsync("site-b", "B");
+        fixture.Executor.Devices = [new("provider-id", "relay-0", "socket", "Provider name", "verified-account",
+            IntegrationJson.Element(new { smartSolarDisplayName = "Injected name", online = true, capabilities = new { canSwitch = false, canMeasurePower = true } }))];
+        var service = fixture.Service("site-a");
+        var draft = fixture.Change(instance, null);
+        var discovery = await service.DiscoverAsync(instance.Id, draft, fixture.Actor("site-a"), default);
+        Assert.DoesNotContain("Injected name", JsonSerializer.Serialize(discovery));
+        var token = discovery.Devices.Single().SelectionToken;
+        var selected = await service.SelectDeviceAsync(instance.Id, new(draft, token, "  Kitchen heater  "), fixture.Actor("site-a"), default);
+        Assert.Equal("Kitchen heater", selected.DisplayName);
+        Assert.Equal("Provider name", selected.Name);
+        Assert.Equal("provider-id", selected.RemoteId);
+        Assert.Equal("relay-0", selected.Channel);
+        await using (var db = fixture.Factory("site-a").CreateDbContext())
+        {
+            var binding = await db.IntegrationDeviceBindings.SingleAsync(b => b.Id == selected.Id);
+            using var metadata = JsonDocument.Parse(binding.MetadataJson);
+            Assert.False(metadata.RootElement.GetProperty("capabilities").GetProperty("canSwitch").GetBoolean());
+            Assert.True(metadata.RootElement.GetProperty("capabilities").GetProperty("canMeasurePower").GetBoolean());
+            Assert.False(metadata.RootElement.TryGetProperty("online", out _));
+            binding.MetadataJson = DeyeSolar.Web.Integrations.IntegrationDeviceDisplayName.Write(binding, "Kitchen heater");
+            var other = System.Text.Json.Nodes.JsonNode.Parse(binding.MetadataJson)!.AsObject();
+            other["automationPolicy"] = "preserved";
+            binding.MetadataJson = other.ToJsonString();
+            await db.SaveChangesAsync();
+        }
+        // Older clients omit the new field: replay retains both host label and unrelated host policy.
+        Assert.Equal("Kitchen heater", (await service.SelectDeviceAsync(instance.Id, new(draft, token), fixture.Actor("site-a"), default)).DisplayName);
+        var cleared = await service.SelectDeviceAsync(instance.Id, new(draft, token, ""), fixture.Actor("site-a"), default);
+        Assert.Null(cleared.DisplayName);
+        Assert.Equal(selected.Id, cleared.Id);
+        await using var final = fixture.Factory("site-a").CreateDbContext();
+        var stored = await final.IntegrationDeviceBindings.SingleAsync(b => b.Id == selected.Id);
+        Assert.Contains("preserved", stored.MetadataJson);
+        Assert.Contains("canSwitch", stored.MetadataJson);
+        Assert.Equal("Provider name", stored.Name);
+        Assert.Empty(await final.IntegrationDeviceBindings.IgnoreQueryFilters().Where(b => b.InstallationId == "site-b").ToArrayAsync());
+    }
+
+    [SqlServerFact]
+    public async Task InvalidSelectedDisplayNamesCannotCreateBindingsOrChangeSavedConnection()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var instance = await fixture.CreateSavedAsync("site-a", "A");
+        var service = fixture.Service("site-a");
+        var draft = fixture.Change(instance, null);
+        var found = await service.DiscoverAsync(instance.Id, draft, fixture.Actor("site-a"), default);
+        var before = await fixture.StateAsync();
+        foreach (var name in new[] { new string('x', 81), "Kitchen\nheater" })
+        {
+            var error = await Assert.ThrowsAsync<IntegrationRequestException>(() => service.SelectDeviceAsync(instance.Id,
+                new(draft, found.Devices.Single().SelectionToken, name), fixture.Actor("site-a"), default));
+            Assert.Equal("validation", error.Code);
+            Assert.Equal(before, await fixture.StateAsync());
+        }
+        Assert.Empty(await service.DevicesAsync(instance.Id, default));
+    }
+
     [SqlServerFact]
     public Task ARevokedWebCookieStampCannotReadAFreshReadyAuthorization() => AssertRevokedWebStampAsync("status");
     [SqlServerFact]
@@ -121,11 +288,11 @@ public class DynamicIntegrationSetupTests
             Assert.DoesNotContain("oauth-web-secret", renderer.Attributes(root));
             Assert.DoesNotContain("oauth-web-secret", renderer.Text(root));
             flowId = renderer.Draft().OAuthFlowId!.Value;
-            await renderer.ClickAsync(root, "Test connection");
+            await renderer.ClickAsync(root, "Check connection");
             await renderer.ClickAsync(root, "Find devices");
             Assert.Equal(before, await fixture.StateAsync());
             Assert.Equal("oauth-web-secret", fixture.Executor.LastDraft!.Secrets["apiKey"]);
-            await renderer.ClickAsync(root, "Save settings");
+            await renderer.ClickAsync(root, "Save connection");
             Assert.Contains("Settings saved", renderer.Text(root));
             Assert.Null(renderer.Draft().OAuthFlowId);
         });
@@ -164,7 +331,7 @@ public class DynamicIntegrationSetupTests
             Assert.Null(renderer.Draft().OAuthFlowId);
             Assert.Contains("The draft changed", renderer.Text(root));
             var calls = fixture.Executor.Calls;
-            await renderer.ClickAsync(root, "Test connection");
+            await renderer.ClickAsync(root, "Check connection");
             Assert.Equal(calls, fixture.Executor.Calls);
             Assert.Contains("Enter API key", renderer.Text(root));
             await renderer.ClickAsync(root, "Authorize provider account");
@@ -204,7 +371,7 @@ public class DynamicIntegrationSetupTests
             await renderer.ClickAsync(root, "Next step");
             Assert.Contains("Step 2 of 2 · Devices", renderer.Text(root));
             Assert.Contains("Advanced threshold", renderer.Text(root));
-            await renderer.ClickAsync(root, "Save settings");
+            await renderer.ClickAsync(root, "Save connection");
             Assert.Contains("Enter Advanced threshold", renderer.Text(root));
             renderer.SetText("limit", "7");
             await renderer.ClickAsync(root, "Previous step");
@@ -215,7 +382,7 @@ public class DynamicIntegrationSetupTests
             await renderer.ClickAsync(root, "Find devices");
             Assert.Contains("Socket", renderer.Text(root));
             Assert.Equal(before, await fixture.StateAsync());
-            await renderer.ClickAsync(root, "Save settings");
+            await renderer.ClickAsync(root, "Save connection");
             Assert.Contains("Settings saved", renderer.Text(root));
         });
         var view = await service.ReadAsync(saved.Id, default);
@@ -282,9 +449,9 @@ public class DynamicIntegrationSetupTests
             Assert.DoesNotContain("Conditional threshold", renderer.Text(root));
             Assert.Equal(JsonValueKind.Null, renderer.Draft().Values["enabled"].ValueKind);
             Assert.Equal(JsonValueKind.Null, renderer.Draft().Values["threshold"].ValueKind);
-            await renderer.ClickAsync(root, "Test connection");
+            await renderer.ClickAsync(root, "Check connection");
             Assert.Equal(JsonValueKind.Null, fixture.Executor.LastDraft!.Values.GetProperty("enabled").ValueKind);
-            await renderer.ClickAsync(root, "Save settings");
+            await renderer.ClickAsync(root, "Save connection");
         });
         Assert.Equal(before, await fixture.StateAsync());
         Assert.Equal(saved.Instance.Revision, (await service.ReadAsync(instance.Id, default)).Instance.Revision);
@@ -313,7 +480,7 @@ public class DynamicIntegrationSetupTests
             await renderer.ClickAsync(root, "Next step");
             Assert.Contains("Step 2 of 2", renderer.Text(root));
             Assert.DoesNotContain("Conditional threshold", renderer.Text(root));
-            await renderer.ClickAsync(root, "Save settings");
+            await renderer.ClickAsync(root, "Save connection");
         });
         var saved = await service.ReadAsync(instance.Id, default);
         Assert.Equal(JsonValueKind.False, saved.Values["enabled"].ValueKind);
@@ -335,7 +502,7 @@ public class DynamicIntegrationSetupTests
             Assert.Contains("Keep saved credential", renderer.Text(root));
             Assert.DoesNotContain("saved-A", renderer.Text(root));
             renderer.SetCredential("apiKey", "draft-web-only");
-            await renderer.ClickAsync(root, "Test connection");
+            await renderer.ClickAsync(root, "Check connection");
             Assert.Contains("Connection verified.", renderer.Text(root));
             Assert.DoesNotContain("draft-web-only", renderer.Text(root));
         });
@@ -354,7 +521,7 @@ public class DynamicIntegrationSetupTests
         await renderer.Dispatcher.InvokeAsync(async () =>
         {
             var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Disable A");
+            await renderer.ClickAsync(root, "Disconnect A");
             Assert.Contains("Integration disabled.", renderer.Text(root));
         });
         var saved = await fixture.Service("site-a").ReadAsync(instance.Id, default);
@@ -377,7 +544,7 @@ public class DynamicIntegrationSetupTests
         {
             var root = await renderer.MountAsync();
             Assert.DoesNotContain("No provider packages are installed", renderer.Text(root));
-            await renderer.ClickAsync(root, "Disable A");
+            await renderer.ClickAsync(root, "Disconnect A");
             Assert.Contains("Integration disabled.", renderer.Text(root));
         });
         Assert.Equal("disabled", (await fixture.Service("site-a").ReadAsync(instance.Id, default)).Instance.Status);
@@ -721,7 +888,7 @@ public class DynamicIntegrationSetupTests
     {
         await using var fixture = await Fixture.CreateAsync();
         var instance = await fixture.CreateSavedAsync("site-a", "A");
-        await using var services = fixture.ComponentServices(new Catalog());
+        await using var services = fixture.ComponentServices(new Catalog(), platformOperator: true);
         await using var renderer = new SetupRenderer(services, NullLoggerFactory.Instance);
         await renderer.Dispatcher.InvokeAsync(async () =>
         {
@@ -924,20 +1091,22 @@ public class DynamicIntegrationSetupTests
         public IntegrationSecretStore Secrets { get; } = new(new EphemeralDataProtectionProvider());
         private readonly IntegrationChangeNotifier _changes = new(NullLogger<IntegrationChangeNotifier>.Instance);
         private readonly IntegrationSetupGate _gate = new();
-        public ServiceProvider ComponentServices(IIntegrationProviderCatalog catalog)
+        public ServiceProvider ComponentServices(IIntegrationProviderCatalog catalog, bool platformOperator = false, IBillingAccessReader? billing = null)
         {
             var services = new ServiceCollection();
             services.AddLogging();
         services.AddComponentLocalization();
-            services.AddMudServices();
-            services.AddSingleton<IJSRuntime, NoJs>();
+                services.AddSingleton<IJSRuntime, NoJs>();
             services.AddSingleton<NavigationManager, ComponentNavigation>();
-            services.AddSingleton<AuthenticationStateProvider>(new ComponentAuthentication(Actor("site-a")));
+            var actor = Actor("site-a");
+            if (platformOperator) ((ClaimsIdentity)actor.Identity!).AddClaim(new Claim(ClaimTypes.Role, "PlatformOperator"));
+            services.AddSingleton<AuthenticationStateProvider>(new ComponentAuthentication(actor));
             var current = new CurrentInstallation(); current.BindOnce("site-a");
             services.AddSingleton(current);
             services.AddSingleton(catalog);
             services.AddSingleton(_changes);
             services.AddSingleton(Service("site-a", catalog: catalog));
+            if (billing is not null) services.AddSingleton(billing);
             return services.BuildServiceProvider();
         }
         public async Task<WebApplication> StartHttpAsync()
@@ -1189,6 +1358,7 @@ public class DynamicIntegrationSetupTests
     private sealed class ComponentNavigation : NavigationManager
     {
         public ComponentNavigation() => Initialize("http://localhost/", "http://localhost/");
+        protected override void SetNavigationLockState(bool value) { }
         protected override void NavigateToCore(string uri, bool forceLoad) { }
     }
     private sealed class NoJs : IJSRuntime
@@ -1222,6 +1392,72 @@ public class DynamicIntegrationSetupTests
         }
         public string FieldValue(string key) => (string)_component!.GetType().GetMethod("TextValue", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [key])!;
         public IntegrationConfigurationChange Draft() => (IntegrationConfigurationChange)_component!.GetType().GetMethod("Draft", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(_component, [])!;
+        public IntegrationDiscoveryResponse Discovery()
+        {
+            var form = _component!.GetType().GetProperty("Current", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(_component)!;
+            return (IntegrationDiscoveryResponse)form.GetType().GetProperty("Discovery")!.GetValue(form)!;
+        }
+        public Guid CurrentId()
+        {
+            var form = _component!.GetType().GetProperty("Current", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(_component)!;
+            return ((IntegrationConfigurationDto)form.GetType().GetProperty("Configuration")!.GetValue(form)!).Instance.Id;
+        }
+        public IReadOnlyDictionary<string, object?> ControlAttributes(int componentId, string id)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            for (var index = 0; index < frames.Count; index++)
+            {
+                var frame = frames.Array[index];
+                if (frame.FrameType == RenderTreeFrameType.Component)
+                {
+                    var nested = FindControlAttributes(frame.ComponentId, id);
+                    if (nested is not null) return nested;
+                }
+            }
+            return FindControlAttributes(componentId, id) ?? throw new InvalidOperationException("Control was not rendered: " + id);
+        }
+        private IReadOnlyDictionary<string, object?>? FindControlAttributes(int componentId, string id)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            for (var index = 0; index < frames.Count; index++)
+            {
+                var frame = frames.Array[index];
+                if (frame.FrameType == RenderTreeFrameType.Component && FindControlAttributes(frame.ComponentId, id) is {} nested) return nested;
+                if (frame.FrameType != RenderTreeFrameType.Element || frame.ElementName is not ("input" or "select")) continue;
+                var attributes = frames.Array.Skip(index + 1).TakeWhile(item => item.FrameType == RenderTreeFrameType.Attribute)
+                    .ToDictionary(item => item.AttributeName, item => item.AttributeValue);
+                if (attributes.GetValueOrDefault("id")?.ToString() == id) return attributes;
+            }
+            return null;
+        }
+        public async Task InvokeAsync(string method, params object[] values)
+        {
+            var result = _component!.GetType().GetMethod(method, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)!.Invoke(_component, values);
+            if (result is Task task) await task;
+            Repaint();
+        }
+        public bool ButtonDisabled(int componentId, string label)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            foreach (var frame in frames.Array.Take(frames.Count))
+            {
+                if (frame.FrameType == RenderTreeFrameType.Component && ButtonState(frame.ComponentId, label) is {} nested) return nested;
+            }
+            return ButtonState(componentId, label) ?? throw new InvalidOperationException("Button was not rendered: " + label);
+        }
+        private bool? ButtonState(int componentId, string label)
+        {
+            var frames = GetCurrentRenderTreeFrames(componentId);
+            for (var index = 0; index < frames.Count; index++)
+            {
+                var frame = frames.Array[index];
+                if (frame.FrameType == RenderTreeFrameType.Component && ButtonState(frame.ComponentId, label) is {} nested) return nested;
+                if (frame.FrameType != RenderTreeFrameType.Element || frame.ElementName != "button") continue;
+                var subtree = frames.Array.Skip(index + 1).Take(frame.ElementSubtreeLength - 1).ToArray();
+                if (Text(subtree).Trim() == label) return subtree.Any(item => item.FrameType == RenderTreeFrameType.Attribute && item.AttributeName == "disabled" && item.AttributeValue is true);
+            }
+            return null;
+        }
         public async Task SelectFieldAsync(int root, string key, string value)
         {
             var callback = FindFieldCallback(root, key) ?? throw new InvalidOperationException("The field is not rendered: " + key);
@@ -1308,12 +1544,17 @@ public class DynamicIntegrationSetupTests
         public IntegrationSettings? Form { get; private set; }
         protected override void BuildRenderTree(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder)
         {
-            builder.OpenComponent<MudPopoverProvider>(0);
-            builder.CloseComponent();
             builder.OpenComponent<IntegrationSettings>(1);
             builder.AddComponentReferenceCapture(2, value => Form = (IntegrationSettings)value);
             builder.CloseComponent();
         }
+    }
+    private sealed class ComponentBilling(BillingAccess access) : IBillingAccessReader
+    {
+        public Task<BillingAccess> ReadAsync(string userId, CancellationToken ct = default) => Task.FromResult(access);
+        public Task EnsureUserAsync(ClaimsPrincipal actor, CancellationToken ct) => Task.CompletedTask;
+        public Task<bool> InstallationHasAccessAsync(string installationId, CancellationToken ct) => Task.FromResult(access.HasAccess);
+        public Task EnsureInstallationAsync(string installationId, CancellationToken ct) => Task.CompletedTask;
     }
     private sealed class Executor : IIntegrationSetupExecutor
     {

@@ -1,5 +1,5 @@
 import { translate as t } from "../i18n";
-import type { IntegrationApi, SocketCommandReceipt } from "./IntegrationApi";
+import type { IntegrationApi, RuleConflictChoice, SocketCommandReceipt } from "./IntegrationApi";
 
 type CommandApi = Pick<IntegrationApi, "sendDeviceCommand" | "getDeviceCommand" | "getUnresolvedCommands" | "releaseDeviceCommand">;
 export type SocketCommandState = SocketCommandReceipt & { message?: string };
@@ -46,7 +46,7 @@ export class SocketCommandCoordinator {
     this.notify();
   }
 
-  async send(deviceId: string, isOn: boolean): Promise<SocketCommandState> {
+  async send(deviceId: string, isOn: boolean, onRuleConflict?: RuleConflictChoice): Promise<SocketCommandState> {
     const existing = this.receipts.get(deviceId);
     if (this.running.has(deviceId) || existing && commandUnresolved(existing)) {
       throw new Error(t("A previous command is unconfirmed. Check its result before sending another command."));
@@ -68,7 +68,7 @@ export class SocketCommandCoordinator {
       pending = { commandId, deviceId, isOn, status: "pending", rejection: null, createdAt: new Date().toISOString(), completedAt: null };
       this.receipts.set(deviceId, pending);
       this.notify();
-      const receipt = validateReceipt(await this.api.sendDeviceCommand(deviceId, commandId, isOn), deviceId, commandId, isOn);
+      const receipt = validateReceipt(await this.api.sendDeviceCommand(deviceId, commandId, isOn, onRuleConflict), deviceId, commandId, isOn);
       if (generation !== this.generation) throw new Error(t("The command session changed."));
       this.receipts.set(deviceId, receipt);
       return { ...receipt };

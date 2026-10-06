@@ -1,0 +1,6 @@
+<span class="status-pill @Kind">@if (Dot) { <span class="status-dot" aria-hidden="true"></span> }@ChildContent</span>
+@code {
+    [Parameter] public string Kind { get; set; } = "neutral";
+    [Parameter] public bool Dot { get; set; } = true;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

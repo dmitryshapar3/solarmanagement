@@ -14,9 +14,7 @@
 
 @if (_subscriptionRequired)
 {
-    <p role="alert">@T["Your trial has ended. Subscribe to read or control your sockets."]</p>
-    <a href="/billing">@T["Subscription"]</a>
-    <a href="/account">@T["Account"]</a>
+    <div class="gate-state"><UiCard><UiState Kind="error" Title="@T["Your trial has ended. Subscribe to read or control your sockets."]"><div class="form-actions"><UiButton Href="/settings/account#premium" Variant="primary">@T["Subscription"]</UiButton><UiButton Href="/settings/account" Variant="outline">@T["Account"]</UiButton></div></UiState></UiCard></div>
 }
 else if (_ready)
 {
@@ -24,12 +22,11 @@ else if (_ready)
 }
 else if (_error)
 {
-    <p role="alert">@T["Your installation could not be opened. Please sign in again or contact support."]</p>
-    <a href="/login">@T["Sign in"]</a>
+    <div class="gate-state"><UiCard><UiState Kind="error" Title="@T["Your installation could not be opened. Please sign in again or contact support."]"><UiButton Href="/signin" Variant="primary">@T["Sign in"]</UiButton></UiState></UiCard></div>
 }
 else
 {
-    <p role="status">@T["Opening your installation…"]</p>
+    <div class="gate-state"><UiCard><UiState Kind="loading" Title="@T["Opening your installation…"]" /></UiCard></div>
 }
 
 @code {

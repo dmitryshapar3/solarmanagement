@@ -1,2 +1,3 @@
 /* Generated from i18n/it.json by scripts/sync-ios-localizations.mjs. */
-"NSFaceIDUsageDescription" = "Consenti a DeyeSolar di utilizzare Face ID per l'accesso sicuro.";
+"NSFaceIDUsageDescription" = "Consenti a SmartSolar di utilizzare Face ID per l'accesso sicuro.";
+"NSLocationWhenInUseUsageDescription" = "Usa la tua posizione per impostare le coordinate dell’impianto solare.";

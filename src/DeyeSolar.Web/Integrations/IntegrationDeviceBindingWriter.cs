@@ -35,6 +35,7 @@ public sealed class IntegrationDeviceBindingWriter : IIntegrationDeviceBindingWr
                 InstallationId = instance.InstallationId,
                 InstanceId = instance.Id,
                 Kind = device.Kind,
+                AddedAt = DateTimeOffset.UtcNow,
                 AddedByUserId = device.Kind == "socket" ? actor.FindFirstValue(ClaimTypes.NameIdentifier) : null,
                 RemoteId = device.RemoteId,
                 Channel = channel,

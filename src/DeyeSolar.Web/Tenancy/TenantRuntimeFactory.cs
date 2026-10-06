@@ -103,8 +103,10 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<ISolarEstimateStore, SolarEstimateStore>();
         services.AddSingleton<SolarEstimateService>();
         services.AddSingleton<ISolarHistoryRadiationSource>(provider => provider.GetRequiredService<OpenMeteoSolarHistoryClient>());
+        services.AddSingleton<ISolarDayForecastSource>(provider => provider.GetRequiredService<OpenMeteoSolarHistoryClient>());
         services.AddSingleton<ISolarHistoryStore, SolarHistoryStore>();
         services.AddSingleton<ISolarHistoryService, SolarHistoryService>();
+        services.AddSingleton<Redesign.SolarProductionService>();
         services.AddSingleton<InverterDataSnapshot>();
         services.AddSingleton<IInverterRefreshService, InverterRefreshService>();
         services.AddSingleton<DeviceStatusSnapshot>();

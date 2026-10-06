@@ -18,11 +18,13 @@ public static class AccountIdentityEndpoints
         var api = app.MapGroup("/api/auth").RequireRateLimiting("identity-auth");
         api.MapGet("/options", (AuthProviderOptions options) => Results.Ok(new
         {
-            registrationEnabled = options.RegistrationEnabled && (options.EmailEnabled || options.PhoneEnabled || options.GoogleEnabled),
+            registrationEnabled = options.RegistrationEnabled && (options.EmailEnabled || options.PhoneEnabled || options.GoogleEnabled || options.Apple.NativeAvailable),
             googleRegistrationEnabled = options.GoogleEnabled && options.AllowGoogleRegistration,
             emailEnabled = options.EmailEnabled,
             phoneEnabled = options.PhoneEnabled,
-            googleEnabled = options.GoogleEnabled
+            googleEnabled = options.GoogleEnabled,
+            appleEnabled = options.Apple.NativeAvailable,
+            appleWebEnabled = options.Apple.WebAvailable
         })).AllowAnonymous();
 
         api.MapGet("/identities", async Task<IResult> (HttpContext context, AccountIdentityService accounts, CancellationToken ct) =>
@@ -33,6 +35,30 @@ public static class AccountIdentityEndpoints
             var identities = await accounts.IdentitiesAsync(userId, ct);
             return identities is null ? Results.Unauthorized() : Results.Ok(identities);
         }).RequireAuthorization(ApiAuthorization.BearerUser);
+
+        api.MapPost("/code/start", async Task<IResult> (CodeSignInStartRequest request, HttpContext context,
+            UnifiedCodeSignIn signIn, CancellationToken ct) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            try { return Results.Ok(await signIn.StartAsync(request.Channel, request.Destination, ct)); }
+            catch (VerificationRateLimitException) { context.Response.Headers.RetryAfter = "60"; return Error("Please wait before requesting another verification code.", 429, "rate_limited"); }
+            catch (ArgumentException) { return Error("Enter a valid email address or phone number, including the country code.", code: "invalid_contact"); }
+            catch (VerificationDeliveryException) { return Error("Verification delivery is temporarily unavailable. Please try again later.", 503, "delivery_unavailable"); }
+        }).AllowAnonymous();
+
+        api.MapPost("/code/complete", async Task<IResult> (VerificationCompleteRequest request,
+            UnifiedCodeSignIn signIn, AccountIdentityService accounts, HttpContext context, CancellationToken ct) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var user = await signIn.CompleteAsync(request.VerificationId, request.Code, ct);
+                var session = await accounts.SessionAsync(user.Id, ct);
+                return session is null ? Results.Unauthorized() : Results.Ok(session);
+            }
+            catch (AccountIdentityException error) { return Error(error.Message, 409, error.Code); }
+            catch (DbUpdateException) { return Error("Sign in to your existing account to link this identity.", 409, "link_required"); }
+        }).AllowAnonymous();
 
         api.MapPost("/verification/start", async Task<IResult> (VerificationStartRequest request, HttpContext context,
             OneTimeVerificationService verification, CancellationToken ct) =>
@@ -99,13 +125,19 @@ public static class AccountIdentityEndpoints
             catch (Exception) when (!ct.IsCancellationRequested) { return Error("The identity could not be linked. Please try again.", 503); }
         }).RequireAuthorization(ApiAuthorization.BearerUser);
 
-        api.MapPost("/google/link/start", (GoogleMobileLinkStartRequest request, HttpContext context,
-            AuthProviderOptions options, GoogleMobileTicketStore tickets) =>
+        api.MapPost("/google/link/start", async Task<IResult> (GoogleMobileLinkStartRequest request, HttpContext context,
+            AuthProviderOptions options, GoogleMobileTicketStore tickets, [Microsoft.AspNetCore.Mvc.FromServices] IServiceProvider services, CancellationToken ct) =>
         {
             var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (userId is null) return Results.Unauthorized();
             if (!options.GoogleEnabled) return Error("Google sign-in is currently unavailable.", 503);
             if (!GoogleMobileTicketStore.ValidFlow(request.CodeChallenge, request.State)) return Error("The sign-in request is invalid.");
+            // New clients confirm the current account before linking. The legacy PKCE shape remains supported.
+            if (request.Proof is not null)
+            {
+                try { _ = await services.GetRequiredService<AccountFreshProofVerifier>().ProveAsync(context.User, request.Proof, ct, "identity-link"); }
+                catch (AccountSecurityException exception) { return ApiProblems.Describe(exception); }
+            }
             var ticket = tickets.StartLink(new(request.CodeChallenge, request.State, userId));
             return Results.Ok(new
             {

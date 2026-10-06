@@ -1,6 +1,6 @@
 # Languages on web and mobile
 
-Users can choose English, Russian, Ukrainian, Polish, German, French, Spanish, Italian, Portuguese, Dutch, Czech, Turkish, Chinese, Japanese or Korean in Settings. Both clients compile the same offline dictionaries from `i18n/*.json`. Provider setup instructions, chart captions, authentication errors, rule-run reasons, accessibility labels, public pages and MudBlazor controls use those dictionaries. Equipment names, user-entered names, brands, protocol values and measurement units retain their original values.
+Users can choose English, Russian, Ukrainian, Polish, German, French, Spanish, Italian, Portuguese, Dutch, Czech, Turkish, Chinese, Japanese or Korean in Settings. Both clients compile the same offline dictionaries from `i18n/*.json`. Provider setup instructions, chart captions, authentication errors, automation reasons, accessibility labels, public pages and native UI components use those dictionaries. Equipment names, user-entered names, brands, protocol values and measurement units retain their original values.
 
 The account preference is stored as a `solar.language` claim in the existing Identity user-claims table. It belongs to the user, independently of shared installation settings; no database migration is needed for this preference. The web settings form posts to `/account/language` with an antiforgery token and reloads the page in the selected culture. Before signing in, the web chooses a saved language cookie or a supported browser language, respecting `Accept-Language` quality values.
 

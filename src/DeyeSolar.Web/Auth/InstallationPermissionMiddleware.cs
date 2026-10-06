@@ -8,7 +8,7 @@ public sealed class InstallationPermissionMiddleware(RequestDelegate next)
         IAntiforgery antiforgery)
     {
         if (context.User.Identity?.IsAuthenticated == true && current.Id is not null
-            && !IsAccountPath(context.Request.Path))
+            && !IsAccountPath(context.Request.Path) && !Operations.UiRoutePolicy.IsDevelopmentGallery(context))
         {
             security.BindOnce(context.User);
             var permission = context.GetEndpoint()?.Metadata.GetMetadata<InstallationPermissionMetadata>()?.Permission ?? InstallationPermission.Read;
@@ -21,6 +21,7 @@ public sealed class InstallationPermissionMiddleware(RequestDelegate next)
         await next(context);
     }
     private static bool IsAccountPath(PathString path) => path.StartsWithSegments("/api/auth") || path.StartsWithSegments("/api/billing")
+        || Operations.UiRoutePolicy.IsAccount(path)
         || path.StartsWithSegments("/auth") || path.StartsWithSegments("/account") || path == "/billing"
         || path == "/login" || path == "/register" || path == "/verify" || path == "/logout";
 }

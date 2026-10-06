@@ -1,62 +1,22 @@
 using System.Globalization;
-using DeyeSolar.Web.Localization;
-using Microsoft.Extensions.DependencyInjection;
-
+using DeyeSolar.Web.Components.Ui;
 namespace DeyeSolar.Web.Tests;
-
 public class LocalizedInputTests
 {
-    [Fact]
-    public void InputsKeepIndependentConversionErrorsAndReuseTheirOwnState()
+    [Theory]
+    [InlineData("pl-PL", "12,5", 12.5)]
+    [InlineData("en-GB", "12.5", 12.5)]
+    public void NativeNumberInputsUseTheSelectedCultureAndRejectNonFiniteValues(string culture, string input, double expected)
     {
-        using var services = Services();
-        var text = services.GetRequiredService<UiText>();
-        var owner = new object();
-        var first = text.InputConverter<int>(owner, "first");
-        var second = text.InputConverter<int>(owner, "second");
-
-        first.Get("invalid");
-        Assert.True(first.GetError);
-        Assert.Equal(80, second.Get("80"));
-        Assert.False(second.GetError);
-        Assert.True(first.GetError);
-        Assert.Same(first, text.InputConverter<int>(owner, "first"));
-        Assert.Equal(90, first.Get("90"));
-        Assert.False(first.GetError);
+        var format = CultureInfo.GetCultureInfo(culture);
+        Assert.True(UiInputParser.TryNumber(input, format, out var parsed)); Assert.Equal(expected, parsed);
+        foreach (var invalid in new[] { "invalid", "", "NaN", "Infinity" }) Assert.False(UiInputParser.TryNumber(invalid, format, out _));
     }
-
     [Fact]
-    public void NumericInputPreservesSelectedCultureForParsingAndDisplay()
+    public void NativeTimeInputPreservesHourMinuteAndEmptyOptionalValue()
     {
-        var previous = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            using var services = Services();
-            var converter = services.GetRequiredService<UiText>().InputConverter<double>(new object(), "capacity");
-            Assert.Equal(12.5, converter.Get("12,5"));
-            Assert.False(converter.GetError);
-            Assert.Equal("12,5", converter.Set(12.5));
-        }
-        finally { CultureInfo.CurrentCulture = previous; }
-    }
-
-    [Fact]
-    public void TimeInputPreservesHourMinuteFormatAndEmptyOptionalValue()
-    {
-        using var services = Services();
-        var converter = services.GetRequiredService<UiText>().InputConverter<TimeSpan?>(new object(), "active-from", "HH:mm");
-        Assert.Equal("17:30", converter.Set(new TimeSpan(17, 30, 0)));
-        Assert.Equal(new TimeSpan(17, 30, 0), converter.Get("17:30"));
-        Assert.Null(converter.Get(""));
-        Assert.False(converter.GetError);
-    }
-
-    private static ServiceProvider Services()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddComponentLocalization();
-        return services.BuildServiceProvider();
+        Assert.True(UiInputParser.TryTime("17:30", out var time)); Assert.Equal(new TimeSpan(17, 30, 0), time);
+        Assert.True(UiInputParser.TryTime("", out time)); Assert.Null(time);
+        foreach (var invalid in new[] { "24:00", "17:60", "09:12:13", "invalid" }) Assert.False(UiInputParser.TryTime(invalid, out _));
     }
 }

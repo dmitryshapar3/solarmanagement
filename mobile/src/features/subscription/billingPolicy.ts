@@ -12,6 +12,7 @@ export type BillingAccess = {
   accessValidUntil: string | null;
   appAccountToken: string;
   socketLimit: number | null;
+  socketUsage?: number;
   appleSubscriptionsEnabled: boolean;
   serverNow: string;
 };

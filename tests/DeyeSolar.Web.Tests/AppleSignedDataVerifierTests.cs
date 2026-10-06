@@ -9,6 +9,29 @@ namespace DeyeSolar.Web.Tests;
 
 public sealed class AppleSignedDataVerifierTests
 {
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    public void SignedRenewalOptionalFieldsPreserveVerifiedAutoRenewAndNextDate(int status, bool enabled)
+    {
+        using var fixture = new AppleSignedFixture(); var payload = fixture.Transaction();
+        payload["autoRenewStatus"] = status; payload["renewalDate"] = fixture.Now.AddMonths(1).ToUnixTimeMilliseconds();
+        var renewal = fixture.Verifier.VerifyRenewal(fixture.Sign(payload));
+        Assert.Equal(enabled, renewal.AutoRenewEnabled); Assert.Equal(fixture.Now.AddMonths(1), renewal.RenewalAt);
+        payload.Remove("autoRenewStatus"); payload.Remove("renewalDate");
+        renewal = fixture.Verifier.VerifyRenewal(fixture.Sign(payload)); Assert.Null(renewal.AutoRenewEnabled); Assert.Null(renewal.RenewalAt);
+    }
+    [Theory]
+    [InlineData("2")]
+    [InlineData("-1")]
+    [InlineData("true")]
+    [InlineData("\"1\"")]
+    [InlineData("null")]
+    public void MalformedSignedRenewalStatusCannotBecomeTrustedDisclosure(string status)
+    {
+        using var fixture = new AppleSignedFixture(); var payload = fixture.Transaction(); payload["autoRenewStatus"] = JsonSerializer.Deserialize<JsonElement>(status);
+        Assert.Throws<AppleBillingException>(() => fixture.Verifier.VerifyRenewal(fixture.Sign(payload)));
+    }
     [Fact]
     public void TrustedSignedSubscriptionPreservesExpirationRevocationAndAccountToken()
     {

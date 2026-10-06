@@ -210,9 +210,15 @@ public static class MobileApiEndpointRouteBuilderExtensions
             { return ApiProblems.Describe(error, ApiProblemScope.Rules); }
         }).WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageRules));
 
-        authorized.MapGet("/readings", async (int? hours, int? take,
-            IDbContextFactory<DeyeSolarDbContext> dbFactory, TimeProvider clock, CancellationToken ct) =>
+        authorized.MapGet("/readings", async (int? hours, int? take, string? aggregate, string? view, string? cursor,
+            IServiceProvider services, IDbContextFactory<DeyeSolarDbContext> dbFactory, TimeProvider clock, CancellationToken ct) =>
         {
+            if (aggregate is not null || view is not null || cursor is not null)
+            {
+                if (view is not (null or "details")) return ApiProblems.Error("Choose a valid readings view.", code: "validation");
+                try { return Results.Ok(await services.GetRequiredService<Redesign.RedesignQueries>().ReadingsAsync(hours ?? 6, aggregate ?? "raw", cursor, ct)); }
+                catch (ArgumentException error) { return ApiProblems.Error(error.Message, code: "validation"); }
+            }
             var range = HistoryQueryPolicy.Range(clock.GetUtcNow(), hours, take);
             await using var db = await dbFactory.CreateDbContextAsync(ct);
             var readings = await HistoryQueryPolicy.Readings(db.Readings, range).ToListAsync(ct);

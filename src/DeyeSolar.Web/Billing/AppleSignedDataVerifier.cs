@@ -10,7 +10,11 @@ public sealed record AppleTransaction(string TransactionId, string OriginalTrans
     DateTimeOffset SignedAt, bool IsUpgraded, bool IsFreeTrial = false);
 
 public sealed record AppleRenewal(string OriginalTransactionId, string ProductId, Guid? AppAccountToken,
-    DateTimeOffset? GracePeriodExpiresAt, DateTimeOffset SignedAt);
+    DateTimeOffset? GracePeriodExpiresAt, DateTimeOffset SignedAt)
+{
+    public bool? AutoRenewEnabled { get; init; }
+    public DateTimeOffset? RenewalAt { get; init; }
+}
 
 public sealed record AppleNotification(string NotificationId, string Type, AppleTransaction? Transaction);
 
@@ -83,8 +87,15 @@ public sealed class AppleSignedDataVerifier : IAppleSignedDataVerifier, IDisposa
             if (token.ValueKind != JsonValueKind.String || !Guid.TryParse(token.GetString(), out var parsed) || parsed == Guid.Empty) throw Invalid();
             accountToken = parsed;
         }
+        bool? autoRenew = null;
+        if (data.TryGetProperty("autoRenewStatus", out var auto))
+        {
+            if (auto.ValueKind != JsonValueKind.Number || !auto.TryGetInt32(out var value) || value is not (0 or 1)) throw Invalid();
+            autoRenew = value == 1;
+        }
         return new AppleRenewal(Identifier(data, "originalTransactionId"), product, accountToken,
-            OptionalDate(data, "gracePeriodExpiresDate"), Date(data, "signedDate"));
+            OptionalDate(data, "gracePeriodExpiresDate"), Date(data, "signedDate"))
+            { AutoRenewEnabled = autoRenew, RenewalAt = OptionalDate(data, "renewalDate") };
     }
 
     public AppleNotification VerifyNotification(string signedPayload)

@@ -1,36 +1,12 @@
-<MudNavMenu>
-    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
-        @T["Dashboard"]
-    </MudNavLink>
-    <MudNavLink Href="/generation" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.WbSunny">
-        @T["Generation"]
-    </MudNavLink>
-    <MudNavLink Href="/sales" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Payments">
-        @T["Sales"]
-    </MudNavLink>
-    <MudNavLink Href="/devices" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Power">
-        @T["Devices"]
-    </MudNavLink>
-    <MudNavLink Href="/rules" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Rule">
-        @T["Rules"]
-    </MudNavLink>
-    <MudNavLink Href="/runs" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.PlaylistPlay">
-        @T["Run History"]
-    </MudNavLink>
-    <MudNavLink Href="/history" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.History">
-        @T["Readings"]
-    </MudNavLink>
-    <MudNavLink Href="/settings" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Settings">
-        @T["Settings"]
-    </MudNavLink>
-    <MudDivider Class="my-2" />
-    <MudNavLink Href="/account" Icon="@Icons.Material.Filled.AccountCircle" ForceLoad="true">
-        @T["Account"]
-    </MudNavLink>
-    <MudNavLink Href="/privacy" Icon="@Icons.Material.Filled.PrivacyTip" ForceLoad="true">
-        @T["Privacy policy"]
-    </MudNavLink>
-    <MudNavLink Href="/support" Icon="@Icons.Material.Filled.HelpOutline" ForceLoad="true">
-        @T["Support"]
-    </MudNavLink>
-</MudNavMenu>
+<nav class="app-nav" aria-label="@T["Main navigation"]">
+<NavLink @onclick="OnNavigate" href="/" Match="NavLinkMatch.All"><UiIcon Name="home" />@T["Home"]</NavLink>
+<NavLink @onclick="OnNavigate" href="/energy"><UiIcon Name="energy" />@T["Energy"]</NavLink>
+<NavLink @onclick="OnNavigate" href="/devices"><UiIcon Name="devices" />@T["Devices"]</NavLink>
+<NavLink @onclick="OnNavigate" href="/automations"><UiIcon Name="automations" />@T["Automations"]</NavLink>
+<NavLink @onclick="OnNavigate" href="/activity"><UiIcon Name="activity" />@T["Activity"]</NavLink>
+<div class="nav-divider"></div>
+<NavLink @onclick="OnNavigate" href="/settings"><UiIcon Name="settings" />@T["Settings"]</NavLink>
+<a href="/support" target="_top"><UiIcon Name="help" />@T["Help & support"]</a>
+</nav>
+
+@code{[Parameter]public EventCallback OnNavigate{get;set;}}

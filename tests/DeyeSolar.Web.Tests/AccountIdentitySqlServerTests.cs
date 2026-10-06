@@ -46,7 +46,7 @@ public class AccountIdentitySqlServerTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.True(response.Headers.CacheControl?.NoStore);
             var status = await response.Content.ReadFromJsonAsync<AccountIdentitiesResponse>();
-            Assert.Equal(new AccountIdentitiesResponse(session.Username, null, false), status);
+            Assert.Equal(new AccountIdentitiesResponse(session.Username, null, false) { HasPassword = true }, status);
         }
     }
 

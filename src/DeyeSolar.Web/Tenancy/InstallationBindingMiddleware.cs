@@ -12,7 +12,7 @@ public sealed class InstallationBindingMiddleware(RequestDelegate next)
         // Cookie and bearer principals both pass the same database membership check.
         if (context.User.Identity?.IsAuthenticated == true)
         {
-            if (IsIdentityPath(context.Request.Path))
+            if (IsIdentityPath(context.Request.Path) || Operations.UiRoutePolicy.IsDevelopmentGallery(context))
             {
                 await next(context);
                 return;
@@ -48,6 +48,7 @@ public sealed class InstallationBindingMiddleware(RequestDelegate next)
     }
 
     private static bool IsIdentityPath(PathString path) => path.StartsWithSegments("/api/auth")
+        || Operations.UiRoutePolicy.IsAccount(path)
         || path.StartsWithSegments("/api/billing") || path == "/billing"
         || path.StartsWithSegments("/auth") || path == "/account" || path == "/account/language" || path == "/api/account/language"
         || path == "/login"

@@ -15,7 +15,11 @@ public static class ExportSalesApi
                 return Results.BadRequest(new { error = "Choose a valid sales period and date." });
             DateOnly? Parse(string key) => DateOnly.TryParseExact(query[key], "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ? parsed : null;
-            try { return Results.Ok(await service.ReadAsync(new(period, date, Parse("from"), Parse("through")), ct)); }
+            try
+            {
+                var request = new ExportSalesRequest(period, date, Parse("from"), Parse("through"));
+                return Results.Ok(query["details"] == "true" ? await service.ReadDetailsAsync(request, ct) : await service.ReadAsync(request, ct));
+            }
             catch (ArgumentException) { return Results.BadRequest(new { error = "Choose a valid sales date range." }); }
         }).RequireAuthorization(ApiAuthorization.AuthenticatedUser);
     }

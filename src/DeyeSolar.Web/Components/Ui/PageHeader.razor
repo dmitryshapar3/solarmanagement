@@ -1,0 +1,6 @@
+<header class="page-heading"><div><h1>@Title</h1>@if (!string.IsNullOrWhiteSpace(Subtitle)) { <p>@Subtitle</p> }</div><div class="page-actions">@ChildContent</div></header>
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

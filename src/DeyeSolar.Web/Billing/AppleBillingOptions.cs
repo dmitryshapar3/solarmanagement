@@ -15,8 +15,10 @@ public sealed class AppleBillingOptions
     public string PrivateKeyPath { get; init; } = string.Empty;
     public string[] RootCertificatePaths { get; init; } = [];
     public string[] ProductIds { get; init; } = ["com.dshapar.solar.monthly", "com.dshapar.solar.yearly"];
+    public IReadOnlyDictionary<string, string> ProductPeriods { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal)
+        { ["com.dshapar.solar.monthly"] = "month", ["com.dshapar.solar.yearly"] = "year" };
     public static TimeSpan MaximumStatusAge => BillingEntitlementPolicy.MaximumStatusAge;
-    public BillingProductPolicy ProductPolicy => new(Enabled, Environment, ProductIds);
+    public BillingProductPolicy ProductPolicy => new(Enabled, Environment, ProductIds) { ProductPeriods = ProductPeriods };
     public static TimeSpan RefreshInterval => TimeSpan.FromMinutes(15);
 
     // Capture before the user-editable SQL configuration provider is installed.
@@ -34,6 +36,8 @@ public sealed class AppleBillingOptions
             KeyId = section["KeyId"] ?? string.Empty,
             PrivateKeyPath = section["PrivateKeyPath"] ?? string.Empty,
             RootCertificatePaths = section.GetSection("RootCertificatePaths").Get<string[]>() ?? [],
+            ProductPeriods = section.GetSection("ProductPeriods").Get<Dictionary<string, string>>()
+                ?? new Dictionary<string, string>(StringComparer.Ordinal) { ["com.dshapar.solar.monthly"] = "month", ["com.dshapar.solar.yearly"] = "year" },
             ProductIds = section.GetSection("ProductIds").Get<string[]>()
                 ?? ["com.dshapar.solar.monthly", "com.dshapar.solar.yearly"]
         };

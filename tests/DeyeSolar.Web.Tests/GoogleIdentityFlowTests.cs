@@ -127,7 +127,7 @@ public class GoogleIdentityFlowTests
         using (var refused = await host.CompleteAsync(external + "; " + wrong)) Assert.Contains("error=link_failed", refused.Headers.Location!.ToString());
         Assert.Equal(0, await host.LoginCountAsync()); external = await host.ExternalAsync(host.OwnerA, false);
         var right = await host.CookieAsync(host.OwnerA);
-        using (var success = await host.CompleteAsync(external + "; " + right)) Assert.Equal("/account?linked=google", success.Headers.Location!.ToString());
+        using (var success = await host.CompleteAsync(external + "; " + right)) Assert.Equal("/settings/account?linked=google", success.Headers.Location!.ToString());
         Assert.Equal(1, await host.LoginCountAsync());
     }
 

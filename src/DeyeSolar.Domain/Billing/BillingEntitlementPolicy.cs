@@ -34,7 +34,14 @@ public static class BillingEntitlementPolicy
         return new(active is not null ? "active" : trial ? "trial" : "expired", active is not null || trial,
             account.TrialEndsAt, active is null ? null : active.Subscription.Status == AppleSubscriptionStatus.BillingGracePeriod
                 ? active.Subscription.GracePeriodExpiresAt : active.Subscription.ExpiresAt,
-            account.AppAccountToken, active is not null ? null : 1, apple.Enabled, now, accessValidUntil);
+            account.AppAccountToken, active is not null ? null : 1, apple.Enabled, now, accessValidUntil)
+        {
+            ProductId = active?.Subscription.ProductId,
+            PlanPeriod = active is not null && apple.ProductPeriods.TryGetValue(active.Subscription.ProductId, out var period) ? period : null,
+            AutoRenewEnabled = active?.Subscription.AutoRenewEnabled,
+            RenewalAt = active?.Subscription.AutoRenewEnabled == true ? active.Subscription.RenewalAt : null,
+            TrialDaysRemaining = trial ? (int)Math.Ceiling((account.TrialEndsAt - now).TotalDays) : 0
+        };
     }
 
 }

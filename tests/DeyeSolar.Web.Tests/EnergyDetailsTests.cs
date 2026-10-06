@@ -1,6 +1,7 @@
 using System.Net;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Web.Pages;
+using DeyeSolar.Web.Components.Ui;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Shared;
 using Microsoft.AspNetCore.Authorization;
@@ -17,34 +18,31 @@ public class EnergyDetailsTests
     private static readonly DateOnly Today = new(2026, 10, 1);
 
     [Theory]
-    [InlineData(-2742, "Battery charging", "2,742 W")]
-    [InlineData(2742, "Battery discharging", "2,742 W")]
-    [InlineData(0, "Battery idle", "0 W")]
-    [InlineData(int.MinValue, "Battery charging", "2,147,483,648 W")]
+    [InlineData(-2742, "Charging", "-2.74 kW")]
+    [InlineData(2742, "Discharging", "2.74 kW")]
+    [InlineData(0, "Battery idle", "0.00 kW")]
+    [InlineData(int.MinValue, "Charging", "-2147483.65 kW")]
     public async Task InverterFlowUsesBatteryPowerSignAndAbsoluteWattsWithoutChangingSolar(int power, string label, string value)
     {
         var timestamp = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
         var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 4100, SolarObservedAt = timestamp,
-            Timestamp = timestamp.AddMinutes(1), BatteryPower = power, BatteryVoltage = 51.5,
+            SolarDeviceSn = "primary", Timestamp = timestamp.AddMinutes(1), BatteryPower = power, BatteryVoltage = 51.5,
             BatteryCurrent = -4.2, BatteryTemperature = 24, BatterySoc = 87 }), timestamp.AddMinutes(2));
         Assert.Contains(label, html);
         Assert.Contains(value, html);
         Assert.Contains("4.10 kW", html);
-        Assert.Contains("51.50 V", html);
-        Assert.Contains("-4.20 A", html);
-        Assert.Contains("24.00 °C", html);
-        Assert.Contains("12:00:00", html);
-        Assert.Contains("12:01:00", html);
+        Assert.Contains("Arrows are shown only for known, nonzero flows", html);
+        Assert.Contains("measurements may have different times", html);
     }
 
     [Fact]
     public async Task MissingSolarMeasurementRemainsUnavailableEvenWhenTheSourceDefaultsPowerToZero()
     {
         var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 0, SolarObservedAt = null }), DateTimeOffset.UtcNow);
-        Assert.Matches("data-testid=\"inverter-pv\"[^>]*>— kW", html);
-        Assert.Contains("Solar measurement", html);
-        Assert.Contains("Unavailable", html);
-        Assert.Matches("data-testid=\"inverter-balance\"[^>]*>—", html);
+        Assert.Matches("<dt>Solar generation</dt><dd>— kW</dd>", html);
+        Assert.Contains("Grid state unknown", html);
+        Assert.Contains("class=\"flow-line unknown\"", html);
+        Assert.Null(PowerBalance.FromReading(ConfirmedInverterReading.Create(new() { SolarProduction = 0, SolarObservedAt = null }), DateTimeOffset.UtcNow).Watts);
     }
 
     [Theory]
@@ -54,20 +52,23 @@ public class EnergyDetailsTests
     public async Task InverterBalanceDisplaysTheSignedDifferenceAndDoesNotPresentItAsMeasuredLoss(int batteryPower, string value, string direction)
     {
         var observed = new DateTimeOffset(2026, 10, 1, 10, 0, 0, TimeSpan.Zero);
-        var html = await RenderReadingsAsync(ConfirmedInverterReading.Create(new() { SolarProduction = 4100, SolarObservedAt = observed,
+        var reading = ConfirmedInverterReading.Create(new InverterData { SolarProduction = 4100, SolarObservedAt = observed,
             GridConsumption = -1200, GridObservedAt = observed, SolarDeviceSn = "inverter-a", GridDeviceSn = "inverter-a",
-            BatteryPower = batteryPower, LoadPower = 900, Timestamp = observed.AddMinutes(1) }), observed.AddMinutes(2));
-        Assert.Matches($"data-testid=\"inverter-balance\"[^>]*>{System.Text.RegularExpressions.Regex.Escape(value)}", html);
-        Assert.Contains(direction, html);
-        Assert.Contains("Solar + signed grid + signed battery − load", html);
-        Assert.Contains("not a measurement of inverter losses", html);
-        Assert.Contains("Measurements may be taken at different times", html);
+            BatteryPower = batteryPower, LoadPower = 900, Timestamp = observed.AddMinutes(1) });
+        var balance = PowerBalance.FromReading(reading, observed.AddMinutes(2), expectedDeviceSn: "inverter-a");
+        Assert.NotNull(balance.Watts);
+        Assert.Equal(direction, PowerBalance.Direction(balance.Watts.Value));
+        Assert.Equal(value, (balance.Watts > 0 ? "+" : "") + balance.Watts.Value.ToString("0") + " W");
+        var html = await RenderReadingsAsync(reading, observed.AddMinutes(2));
+        Assert.Contains("Signs come from the inverter", html);
+        Assert.DoesNotContain("inverter losses", html);
+
     }
 
     [Fact]
     public void NewDetailRoutesInheritAuthorizationAndNeverAllowAnonymousAccess()
     {
-        foreach (var (page, path) in new[] { (typeof(InverterDetails), "/inverter-details"), (typeof(SolarDetails), "/solar-details"), (typeof(SalesDetails), "/sales-details") })
+        foreach (var (page, path) in new[] { (typeof(ReadingsView), "/activity/readings"), (typeof(Energy), "/energy"), (typeof(EnergyExport), "/energy/export") })
         {
             Assert.Equal(path, Assert.Single(page.GetCustomAttributes(typeof(RouteAttribute), true).Cast<RouteAttribute>()).Template);
             Assert.NotEmpty(page.GetCustomAttributes(true).OfType<IAuthorizeData>());
@@ -116,7 +117,7 @@ public class EnergyDetailsTests
         collection.AddComponentLocalization();
         await using var services = collection.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<InverterReadings>(
-            ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = data, ["Now"] = now, ["TimeZoneId"] = "Europe/Warsaw" }))).ToHtmlString()));
+        return await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode((await renderer.RenderComponentAsync<EnergyFlow>(
+            ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = LiveReading.Read(data, now, data.SolarDeviceSn ?? "primary") }))).ToHtmlString()));
     }
 }

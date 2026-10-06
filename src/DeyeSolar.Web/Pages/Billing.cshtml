@@ -1,25 +1,12 @@
 @page "/billing"
 @inject DeyeSolar.Web.Localization.UiText T
 @model DeyeSolar.Web.Pages.BillingModel
-@{ Layout = "/Pages/Shared/_PublicLayout.cshtml"; ViewData["Title"] = T["Subscription"]; }
-<h1>@T["Subscription"]</h1>
-@if (Model.Access is { HasAccess: true } access)
-{
-    <p>@T[access.Status == "trial" ? "Your one-month trial is active." : "Your subscription is active."]</p>
-    <p>@T["Access until:"] @(access.SubscriptionExpiresAt ?? access.TrialEndsAt)</p>
-    <p><a href="/">@T["Dashboard"]</a></p>
-}
-else
-{
-    <p role="alert">@T["Your trial has ended. Subscribe to read or control your sockets."]</p>
-}
-@if (Model.Access?.Status != "active")
-{
-    <p>@T["The trial allows one socket. Subscribe to add more sockets."]</p>
-}
-<p>@T["Open the Solar iOS app with this account to subscribe or restore an App Store purchase."]</p>
-@if (Model.Access?.AppleSubscriptionsEnabled != true)
-{
-    <p>@T["Subscriptions are not configured yet. Contact support."]</p>
-}
-<p><a href="/account">@T["Account"]</a> · <a href="/support">@T["Support"]</a> · <a href="/logout">@T["Sign out"]</a></p>
+@{ Layout="/Pages/Shared/_AppLayout.cshtml"; ViewData["Title"]=T["Subscription"]; }
+<header class="page-heading"><div><h1>@T["Subscription"]</h1><p>@T["Your SmartSolar Premium access"]</p></div></header>
+<div class="billing-grid"><section class="ui-card premium-card"><span class="eyebrow">SmartSolar</span><h2>Premium</h2><p>@T["A complete view of your solar energy and smart plugs."]</p><ul class="premium-features"><li>@T["Live production against the weather forecast"]</li><li>@T["Battery, home and grid energy flow"]</li><li>@T["Smart plugs and automatic surplus control"]</li><li>@T["Export value and hourly settlement data"]</li><li>@T["Production, device and automation history"]</li></ul><a class="ui-button strong" href="/support">@T["Get help with your subscription"]</a><p class="caption">@T["Purchases and restores are available in the SmartSolar iOS app. App Store prices and available plans are shown there."]</p></section>
+<section class="ui-card"><header class="card-header"><h2>@T["Current access"]</h2></header>
+@if(Model.Access is {} access){<span class="status-pill @(access.HasAccess?"positive":"neutral")">@T[access.Status=="active"?"Premium":access.Status=="trial"?"Free trial":"Ended"]</span><dl class="metadata">@if(access.Status=="trial"){<div><dt>@T["Trial remaining"]</dt><dd>@T.Format("{0} days",access.TrialDaysRemaining)</dd></div>}<div><dt>@T["Access until:"]</dt><dd>@((access.SubscriptionExpiresAt??access.TrialEndsAt).ToString("d MMM yyyy HH:mm zzz"))</dd></div>@if(access.PlanPeriod is {} period){<div><dt>@T["Plan"]</dt><dd>@T[period=="year"?"Yearly":period=="month"?"Monthly":"Premium"]</dd></div>}@if(access.AutoRenewEnabled is {} renew){<div><dt>@T["Automatic renewal"]</dt><dd>@T[renew?"On":"Off"]</dd></div>}@if(access.RenewalAt is {} renewal){<div><dt>@T["Renewal date"]</dt><dd>@renewal.ToString("d MMM yyyy HH:mm zzz")</dd></div>}</dl>
+@if(!access.HasAccess){<div class="banner warning" role="alert">@T["Your trial has ended. Subscribe to read or control your sockets."]</div>}else{<p>@T[access.Status=="trial"?"Your one-month trial is active.":"Your subscription is active."]</p><a class="ui-button primary" href="/">@T["Open Home"]</a>}
+@if(access.Status!="active"){<p class="caption">@T["The trial allows one socket. Subscribe to add more sockets."]</p>}
+@if(!access.AppleSubscriptionsEnabled){<div class="banner">@T["Subscriptions are not configured yet. Contact support."]</div>}}
+<p>@T["Manage or cancel an App Store subscription in your Apple account settings. Deleting your SmartSolar account does not cancel it."]</p><div class="form-actions"><a class="ui-button outline" href="/settings/account">@T["Account"]</a><a class="ui-button quiet" href="/logout">@T["Sign out"]</a></div></section></div>

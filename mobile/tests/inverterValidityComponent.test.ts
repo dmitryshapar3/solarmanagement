@@ -17,34 +17,12 @@ function inverterFixture(): InverterData {
     loadPowerValid: false, gridPowerValid: false, solarPowerValid: false };
 }
 
+import { globals as uiGlobals, uiHarness } from "./support/uiHarness";
 async function components() {
-  const bundle = await build({
-    stdin: { contents: 'export { InverterDetailsScreen } from "./src/features/dashboard/InverterDetailsScreen"; export { DashboardScreen } from "./src/features/dashboard/DashboardScreen"; export { CurrentSolarSnapshot } from "./src/features/generation/GenerationScreen";', resolveDir: process.cwd(), loader: "ts" },
-    bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime", "expo-crypto"],
-    plugins: [{ name: "inverter-display-boundaries", setup(builder) {
-      builder.onResolve({ filter: /^(react-native|lucide-react-native|@react-navigation\/native)$/ }, args => ({ path: args.path, namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)(GenerationScreen|SalesScreen|TileHeader)$/ }, args => args.path.endsWith("GenerationScreen") && !args.importer.endsWith("DashboardScreen.tsx")
-        ? undefined : ({ path: "panels", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)(EnergyChart|EnergyControls)$/ }, () => ({ path: "panels", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)i18n$/ }, () => ({ path: "i18n", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)application\/LanguageContext$/ }, () => ({ path: "language", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)core\/components$/ }, () => ({ path: "components", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)application\/AuthContext$/ }, () => ({ path: "auth", namespace: "native-test" }));
-      builder.onResolve({ filter: /(?:^|\/)useFocusedResource$/ }, () => ({ path: "resource", namespace: "native-test" }));
-      builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => ({ loader: "js", contents: args.path === "i18n" ? 'export const currentLocale = () => "en"; export const formattingLocale = () => "en-GB"; export const translate = (phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token,index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""));' : args.path === "language" ? 'export const useLanguage = () => ({language:"en", t:(phrase,...args) => (phrase ?? "").replace(/\\{(\\d+)\\}/g, (token, index) => args[Number(index)] === undefined ? token : String(args[Number(index)] ?? ""))});' : args.path === "react-native"
-        ? 'export const StyleSheet = {create: value => value}; export const Text = "Text"; export const View = "View"; export const Pressable = "Pressable"; export const ScrollView = "ScrollView"; export const Linking = {};'
-        : args.path === "lucide-react-native" ? 'export const RefreshCcw = () => null; export const CirclePower = () => null; export const PlugZap = () => null;'
-        : args.path === "@react-navigation/native" ? 'import React from "react"; export const useFocusEffect = callback => React.useEffect(callback,[callback]); export const useNavigation = () => ({navigate(){}});'
-        : args.path === "panels" ? 'export const GenerationPanel = () => null; export const SalesPanel = () => null; export const TileHeader = () => null; export const EnergyChart = () => null; export const PeriodNavigation = () => null; export const energyStyles = {};'
-        : args.path === "auth" ? 'const api = {socketCommands:{sessionEpoch:0,subscribe:()=>()=>{},get:()=>null,isRunning:()=>false}}; export const useAuth = () => ({api,isDemo:false});'
-        : args.path === "resource" ? 'export const useFocusedResource = () => ({data:{inverter:globalThis.__inverterValidityReading,timeZoneId:"UTC",manualDevices:[],devices:[],rules:[]},loading:false,error:null,refresh:async()=>{}});'
-        : 'import React from "react"; export const AppButton = props => React.createElement("button", props, props.label); export const Card = "Card"; export const SectionTitle = "SectionTitle"; export const ErrorBanner = "ErrorBanner"; export const EmptyState = "EmptyState"; export const Header = "Header"; export const LoadingState = "LoadingState"; export const ProgressBar = "ProgressBar"; export const Screen = "Screen"; export const StatusPill = "StatusPill"; export const SegmentedControl = "SegmentedControl";'
-      }));
-    } }]
-  });
-  const module = { exports: {} as { InverterDetailsScreen: React.ComponentType; DashboardScreen: React.ComponentType; CurrentSolarSnapshot: React.ComponentType<any> } };
-  new Function("require", "module", "exports", bundle.outputFiles[0]!.text)(createRequire(path.join(process.cwd(), "package.json")), module, module.exports);
-  return module.exports;
+  const resources: Record<string, any> = {};
+  for (const key of ["inverter-details", "home-dashboard"]) Object.defineProperty(resources, key, { get: () => ({ data: { inverter: (globalThis as any).__inverterValidityReading, timeZoneId: "UTC", manualDevices: [], devices: [], rules: [] }, loading: false, error: null, refresh: async () => {}, invalidate() {} }) });
+  uiGlobals.__smartUi = { auth: { api: {}, isDemo: true }, resources };
+  return await uiHarness('export { LiveReadingsScreen as InverterDetailsScreen } from "./src/features/readings/LiveReadingsScreen"; export { DashboardScreen } from "./src/features/dashboard/DashboardScreen"; export { SolarComparison as CurrentSolarSnapshot } from "./src/features/generation/ProductionView";', { stubComponents: true, resources: true, stubs: { ProductionChart: 'export const ProductionChart=()=>null;' } });
 }
 
 test("the actual inverter details hide missing power values while retaining only explicitly valid zeros", async () => {
@@ -67,7 +45,7 @@ test("the actual inverter details hide missing power values while retaining only
     for (const label of ["State of charge", "Power", "Load", "Grid power"]) assert.equal(value(label), "-", label);
     for (const label of ["Voltage", "Current", "Temperature", "Battery power", "Balance difference"]) assert.equal(value(label), "—", label);
     assert.equal(value("Solar generation"), "4.1 kW");
-    assert.equal(renderer!.root.findAllByType("ProgressBar").length, 0);
+    assert.equal(renderer!.root.findAllByProps({ accessibilityRole: "progressbar" }).length, 0);
     assert.ok(metric("Grid power").findAllByType("Text").some(item => item.props.children === "Unavailable"));
     globals.__inverterValidityReading = { ...reading, solarProduction: 0, solarPowerValid: false, gridPowerValid: true };
     await act(async () => { renderer!.update(React.createElement(Component)); });
@@ -82,7 +60,8 @@ test("the actual inverter details hide missing power values while retaining only
       assert.equal(value("Voltage"), "0 V");
       assert.equal(value("Current"), "0 A");
       assert.equal(value("Temperature"), "0 °C");
-      assert.equal(renderer!.root.findAllByType("ProgressBar").length, 1);
+      assert.equal(renderer!.root.findAllByProps({ accessibilityRole: "progressbar" }).length, 1);
+      assert.equal(renderer!.root.findByProps({ accessibilityRole: "progressbar" }).props.accessibilityValue.now, 0);
       assert.equal(value("Grid power"), "0 W");
       assert.ok(metric("Grid power").findAllByType("Text").some(item => item.props.children === "Idle"));
       assert.equal(value("Solar generation"), "0 W");
@@ -95,12 +74,12 @@ test("the actual inverter details hide missing power values while retaining only
       await act(async () => { renderer!.update(React.createElement(Component)); });
       for (const label of ["State of charge", "Power", "Load", "Grid power", "Solar generation"]) assert.equal(value(label), "-", label);
       assert.equal(value("Balance difference"), "—");
-      assert.equal(renderer!.root.findAllByType("ProgressBar").length, 0);
+      assert.equal(renderer!.root.findAllByProps({ accessibilityRole: "progressbar" }).length, 0);
     }
 
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
-    delete globals.__inverterValidityReading;
+    delete globals.__inverterValidityReading; delete uiGlobals.__smartUi;
     delete globals.IS_REACT_ACT_ENVIRONMENT;
   }
 });
@@ -116,29 +95,21 @@ test("the actual dashboard shows missing grid and solar as unavailable and prese
   try {
     const Component = (await components()).DashboardScreen;
     await act(async () => { renderer = create(React.createElement(Component)); });
-    const metric = (label: string) => renderer!.root.findAllByType("View").find(item => {
-      const text = item.findAllByType("Text");
-      return text[0]?.props.children === label && text.length === 3;
-    })!;
-    const metricText = (label: string) => metric(label).findAllByType("Text").map(item => item.props.children);
-    assert.deepEqual(metricText("Grid"), ["Grid", "—", "Awaiting reading"]);
-    assert.deepEqual(metricText("Solar power"), ["Solar power", "—", "Awaiting reading"]);
-    for (const flag of [true]) {
-      globals.__inverterValidityReading = { ...reading, gridPowerValid: flag, solarPowerValid: flag };
-      await act(async () => { renderer!.update(React.createElement(Component)); });
-      assert.deepEqual(metricText("Grid"), ["Grid", "0 W", "Idle"]);
-      assert.deepEqual(metricText("Solar power"), ["Solar power", "0 W", "Latest inverter reading"]);
-    }
+    const solar = () => renderer!.root.findAllByType("Text").find(item => item.props.style?.fontSize === 72)!.props.children;
+    const grid = () => renderer!.root.findAllByType("SvgText").find(item => item.props.x === 310 && item.props.y === 69)!.props.children;
+    assert.equal(solar(), "—"); assert.equal(grid(), "—");
+    globals.__inverterValidityReading = { ...reading, gridPowerValid: true, solarPowerValid: true };
+    await act(async () => { renderer!.update(React.createElement(Component)); });
+    assert.equal(solar(), "0.00"); assert.equal(grid(), "0 W");
     for (const flag of [null, undefined]) {
       globals.__inverterValidityReading = { ...reading, gridPowerValid: flag, solarPowerValid: flag } as unknown as InverterData;
       await act(async () => { renderer!.update(React.createElement(Component)); });
-      assert.deepEqual(metricText("Grid"), ["Grid", "—", "Awaiting reading"]);
-      assert.deepEqual(metricText("Solar power"), ["Solar power", "—", "Awaiting reading"]);
+      assert.equal(solar(), "—"); assert.equal(grid(), "—");
     }
 
   } finally {
     if (renderer) await act(async () => renderer!.unmount());
-    delete globals.__inverterValidityReading;
+    delete globals.__inverterValidityReading; delete uiGlobals.__smartUi;
     delete globals.IS_REACT_ACT_ENVIRONMENT;
   }
 });
@@ -151,19 +122,19 @@ test("the generation snapshot preserves the distinction between missing PV and e
   globals.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer: ReturnType<typeof create> | undefined;
   try {
-    const props = { state: null, liveInverter: { ...reading, solarPowerValid: false }, timeZoneId: "UTC" };
+    const props = { state: null, inverter: { ...reading, solarPowerValid: false }, timeZone: "UTC" };
     await act(async () => { renderer = create(React.createElement(Component, props)); });
     const value = () => renderer!.root.findAllByType("View").find(item => {
       const text = item.findAllByType("Text");
-      return text.length === 2 && text[0]?.props.children === "Latest reported inverter";
+      return text.length === 3 && text[0]?.props.children === "Inverter";
     })!.findAllByType("Text")[1]!.props.children;
     assert.equal(value(), "— kW");
     for (const flag of [true]) {
-      await act(async () => { renderer!.update(React.createElement(Component, { ...props, liveInverter: { ...reading, solarPowerValid: flag } })); });
+      await act(async () => { renderer!.update(React.createElement(Component, { ...props, inverter: { ...reading, solarPowerValid: flag } })); });
       assert.equal(value(), "0.00 kW");
     }
     for (const flag of [null, undefined]) {
-      await act(async () => { renderer!.update(React.createElement(Component, { ...props, liveInverter: { ...reading, solarPowerValid: flag } })); });
+      await act(async () => { renderer!.update(React.createElement(Component, { ...props, inverter: { ...reading, solarPowerValid: flag } })); });
       assert.equal(value(), "— kW");
     }
 

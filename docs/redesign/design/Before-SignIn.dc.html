@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Current app · Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2fd37a}a:hover{color:#1f8f57}
+</style>
+</helmet>
+<div style="width: 390px; height: 1100px; position: relative; overflow: hidden; background: #101412; color: #f3f6f2; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;">
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 63px 16px 112px;">
+
+    <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 32px;">
+      <span style="width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; border: 0.5px solid #314036; border-radius: 8px; background: #202720;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2fd37a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg></span>
+      <h1 style="margin: 0; font-size: 34px; line-height: 41px; font-weight: 800;">DeyeSolar</h1>
+      <p style="margin: 0; font-size: 15px; line-height: 22px; color: #aab7ad;">Solar Energy Management</p>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border: 0.5px solid #314036; border-radius: 8px; background: #171d1a;">
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="s-api" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">API URL</label><input id="s-api" type="url" value="https://solar.dshapar.com" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;">Password</button>
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Sign in with code</button>
+        <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Create account</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="s-user" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Username, email or phone</label><input id="s-user" type="text" placeholder="Email or username" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <div style="display: flex; flex-direction: column; gap: 4px;"><label for="s-pass" style="font-size: 12px; line-height: 15px; font-weight: 700; text-transform: uppercase; color: #aab7ad;">Password</label><input id="s-pass" type="password" placeholder="Password" style="min-height: 46px; box-sizing: border-box; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 15px;"></div>
+      <button type="button" style="min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0.5px solid #2fd37a; border-radius: 8px; background: #2fd37a; color: #07120c; font-family: inherit; font-size: 14px; font-weight: 700;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg>Sign in</button>
+      <button type="button" aria-label="Continue with Google" style="align-self: center; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border: 1px solid #DADCE0; border-radius: 26px; background: #FFFFFF;"><span aria-hidden="true" style="width: 24px; height: 24px; flex: none; box-sizing: border-box; border-radius: 12px; box-shadow: inset 0 0 0 1.5px currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; font-weight: 800;">G</span></button>
+      <span style="font-size: 12px; line-height: 20px; color: #aab7ad;">To connect Google to an existing account, sign in first and link it in Settings.</span>
+      <button type="button" style="min-height: 44px; border: 0.5px solid #314036; border-radius: 8px; background: #202720; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Try demo</button>
+      <span style="font-size: 12px; line-height: 20px; color: #aab7ad;">Explore sample data. Demo changes stay in this session and never affect real devices.</span>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+      <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Privacy policy</button>
+      <button type="button" style="min-height: 44px; padding: 0 12px; border: 0.5px solid #314036; border-radius: 8px; background: transparent; color: #f3f6f2; font-family: inherit; font-size: 14px; font-weight: 700;">Support</button>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

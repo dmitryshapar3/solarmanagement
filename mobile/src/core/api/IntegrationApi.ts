@@ -34,7 +34,7 @@ export type IntegrationProvider = {
   uiLayout?: { version: number; steps: IntegrationUiStep[] } | null;
   oauthDefinition?: { secretFieldKeys: string[] } | null;
 };
-export type IntegrationCatalog = { providers: IntegrationProvider[]; revision: string };
+export type IntegrationCatalog = { providers: IntegrationProvider[]; revision: string; providerKinds?: Record<string, ("inverter" | "socket")[]> };
 export type IntegrationInstance = {
   id: string;
   providerId: string;
@@ -77,7 +77,7 @@ export type DiscoveredIntegrationDevice = {
   kind: string;
   remoteId: string;
   channel?: string | null;
-  metadata?: Record<string, IntegrationValue> | null;
+  metadata?: Record<string, unknown> | null;
 };
 export type IntegrationDiscovery = { devices: DiscoveredIntegrationDevice[]; expiresAt: string };
 export type IntegrationDeviceBinding = {
@@ -90,6 +90,7 @@ export type IntegrationDeviceBinding = {
   isDefault: boolean;
   sourceInverterId?: string | null;
   phaseCount?: 1 | 3;
+  displayName?: string | null;
 };
 export type IntegrationSourceInverter = { id: string; name: string; isDefault: boolean };
 export type IntegrationSocketSourceChange = {
@@ -107,7 +108,9 @@ export type SocketCommandReceipt = {
   rejection: string | null;
   createdAt: string;
   completedAt: string | null;
+  pausedRuleIds?: number[];
 };
+export type RuleConflictChoice = "pause" | "once";
 
 // Provider setup may use the server's 300-second operation cap plus transport overhead.
 const setupTimeoutMs = 330000;
@@ -178,8 +181,8 @@ export class IntegrationApi {
     return this.client.request(`${instancePath(id)}/devices/${encodeURIComponent(deviceId)}/source`, { method: "PUT", body, signal });
   }
 
-  selectDevice(id: string, draft: IntegrationConfigurationChange, selectionToken: string, signal?: AbortSignal): Promise<IntegrationDeviceBinding> {
-    return this.client.request(`${instancePath(id)}/devices/selection`, { method: "POST", body: { draft, selectionToken }, signal });
+  selectDevice(id: string, draft: IntegrationConfigurationChange, selectionToken: string, signal?: AbortSignal, displayName?: string): Promise<IntegrationDeviceBinding> {
+    return this.client.request(`${instancePath(id)}/devices/selection`, { method: "POST", body: { draft, selectionToken, ...(displayName === undefined ? {} : { displayName }) }, signal });
   }
 
   setEnabled(id: string, enabled: boolean, body: IntegrationVersion, signal?: AbortSignal): Promise<IntegrationInstance> {
@@ -190,8 +193,8 @@ export class IntegrationApi {
     return this.client.request(`${instancePath(id)}/package`, { method: "POST", body: { guard, targetPackageVersion }, signal, timeoutMs: setupTimeoutMs });
   }
 
-  sendDeviceCommand(deviceId: string, commandId: string, isOn: boolean): Promise<SocketCommandReceipt> {
-    return this.client.request(`/api/v2/devices/${encodeURIComponent(deviceId)}/commands`, { method: "POST", body: { commandId, isOn }, timeoutMs: 25000 });
+  sendDeviceCommand(deviceId: string, commandId: string, isOn: boolean, onRuleConflict?: RuleConflictChoice): Promise<SocketCommandReceipt> {
+    return this.client.request(`/api/v2/devices/${encodeURIComponent(deviceId)}/commands`, { method: "POST", body: { commandId, isOn, ...(onRuleConflict ? { onRuleConflict } : {}) }, timeoutMs: 25000 });
   }
 
   getDeviceCommand(deviceId: string, commandId: string): Promise<SocketCommandReceipt> {

@@ -2,965 +2,198 @@ using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using DeyeSolar.Domain.Models;
+using DeyeSolar.Domain.Options;
 using DeyeSolar.Web.Services;
 using DeyeSolar.Web.Shared;
+using DeyeSolar.Web.Pages;
+using DeyeSolar.Web.Components.Charts;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.JSInterop;
-using MudBlazor.Services;
 
 namespace DeyeSolar.Web.Tests;
 
+// Regression coverage follows the shipped Export page/plot, rather than retaining the replaced UI.
 public class SalesStatisticsTests
 {
-    private static readonly DateOnly Today = new(2026, 9, 30);
-    private static readonly DateTimeOffset Start = new(2026, 9, 29, 22, 0, 0, TimeSpan.Zero);
-
+    private static readonly DateOnly Today = new(2026,9,30);
+    private static readonly DateTimeOffset Start = new(2026,9,29,22,0,0,TimeSpan.Zero);
     [Theory]
-    [InlineData("normal")]
-    [InlineData("zero")]
-    [InlineData("partial")]
-    [InlineData("error")]
-    [InlineData("empty")]
-    [InlineData("before-contract")]
-    [InlineData("month")]
-    [InlineData("year")]
-    [InlineData("custom")]
-    public async Task SalesInterfaceUsesEnglishForVisibleAndAccessibleText(string scenario)
+    [InlineData("normal")][InlineData("zero")][InlineData("partial")][InlineData("error")][InlineData("empty")][InlineData("before-contract")][InlineData("month")][InlineData("year")][InlineData("custom")]
+    public async Task ExportPageUsesEnglishAndKeepsFinancialProvenance(string scenario)
     {
-        var empty = Result() with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0, Buckets = [],
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null
-        };
-        var data = scenario switch
-        {
-            "normal" => Result(),
-            "zero" => Result() with
-            {
-                ExportKwh = 0, CreditedExportKwh = 0, EnergyValuePln = 0, EstimatedDepositPln = 0,
-                Buckets = [new(Start, Start.AddHours(1), 0, 0, 0, 0, 1, 1, 1)]
-            },
-            "partial" => Result() with
-            {
-                ExpectedHours = 2, EnergyValuePln = null, EstimatedDepositPln = null, ValuedHours = 0,
-                PriceError = "The price has not been published yet.",
-                Buckets = [new(Start, Start.AddHours(1), 5, 3, null, null, 1, 1, 0),
-                    new(Start.AddHours(1), Start.AddHours(2), null, null, null, null, 1, 0, 0)]
-            },
-            "error" => empty with { DataError = "Deye history is unavailable." },
-            "empty" => empty,
-            "before-contract" => empty with { Request = new(ExportSalesPeriod.Day, Today.AddDays(-3)) },
-            "month" => Result(new(ExportSalesPeriod.Month, new(2026, 9, 1))),
-            "year" => Result(new(ExportSalesPeriod.Year, new(2026, 1, 1))),
-            "custom" => Result(new(ExportSalesPeriod.Custom, Today, Today.AddDays(-2), Today)),
-            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
-        };
-        var previousCulture = CultureInfo.CurrentCulture;
-        var previousUiCulture = CultureInfo.CurrentUICulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-GB");
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-GB");
-            var html = await RenderAsync(data);
-
-            // Decode the full HTML so translated accessibility text and SVG tooltips are checked too.
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
-            Assert.Contains("Electricity sales", html);
-            Assert.Contains("Deye estimate", html);
-            Assert.Contains("aria-label=\"Refresh sales\"", html);
-            Assert.Contains("aria-label=\"Sales period\"", html);
-            Assert.Contains("Exported to grid", html);
-            Assert.Contains("Energy value", html);
-            Assert.Contains("Estimated deposit", html);
-            Assert.Contains("kWh", html);
-            foreach (var period in new[] { "Day", "Month", "Year", "Custom" })
-                Assert.Matches($">{period}</button>", html);
-            var caption = scenario switch
-            {
-                "before-contract" => "27 September 2026",
-                "month" => "September 2026",
-                "year" => "2026",
-                "custom" => "28 September 2026 – 30 September 2026",
-                _ => "30 September 2026"
-            };
-            Assert.Matches($"data-testid=\"sales-period\"[^>]*>{Regex.Escape(caption)}</span>", html);
-            if (scenario == "normal")
-            {
-                Assert.Matches("data-testid=\"sales-value\"[^>]*>1[.]20<small[^>]*>PLN", html);
-                Assert.Contains("exported 5.00 kWh, after hourly netting 3.00 kWh, value 1.20 PLN", html);
-            }
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = previousCulture;
-            CultureInfo.CurrentUICulture = previousUiCulture;
-        }
+        var data=Scenario(scenario);var html=await RenderAsync(data);
+        Assert.DoesNotMatch("[\\u0400-\\u04ff]",html);Assert.Contains("Exported to grid",html);Assert.Contains("Energy value",html);Assert.Contains("Estimated deposit",html);
+        Assert.Contains("OSD billing meter",html);Assert.Contains("not a payout or your current balance",html);Assert.Contains("Completed hours only",html);
+        Assert.Contains("aria-label=\"Sales period\"",html);Assert.Contains("Download CSV",html);Assert.DoesNotContain("Refresh sales",html);
+        foreach(var period in new[]{"Day","Month","Year","Custom"})Assert.Contains(period,html);
+        if(scenario=="normal"){Assert.Contains("1.20",html);Assert.Contains("5.00",html);}
+        if(scenario=="error")Assert.Contains("Deye history is unavailable.",html);
+        if(scenario=="partial"){Assert.Contains("Partial data",html);Assert.Contains("price has not been published",html);Assert.Contains("Some completed hours",html);}
     }
-
+    [Fact] public async Task TotalsKeepExportEnergyValueAndEstimatedCreditDistinct()
+    {
+        var html=await RenderAsync(Result());Assert.Matches("data-testid=\"sales-export\"[^>]*>5[.]00",html);Assert.Matches("data-testid=\"sales-value\"[^>]*>1[.]20",html);Assert.Matches("data-testid=\"sales-deposit\"[^>]*>1[.]48",html);
+        Assert.Contains("Estimated credit · × 1.23",html);Assert.Contains("Contract starts",html);Assert.Contains("Europe/Warsaw",html);
+    }
     [Fact]
-    public async Task OverviewKeepsTodayEnergyAndItsProvisionalChartWithoutDetailedPageControls()
+    public async Task ExportSeparatesCreditedNetEnergyAndMeasuredVersusPricedCoverage()
     {
-        var data = Result() with
-        {
-            Buckets = [new(Start, Start.AddHours(1), 5, 3, 1.2m, 1.476m, 1, 1, 1),
-                new(Start.AddHours(1), Start.AddHours(2), null, null, null, null, 0, 0, 0)],
-            CurrentHour = new(Start.AddHours(1), Start.AddHours(1).AddMinutes(15), .25m, .20m, .1m, .123m, 900),
-            UpdatedAt = Start.AddHours(1).AddMinutes(16)
-        };
-        var html = await RenderAsync(data, overview: true);
-
-        Assert.Matches("<h2[^>]*id=\"sales-title\"[^>]*>Electricity sales</h2>", html);
-        Assert.Contains("href=\"/sales-details?period=Day&date=2026-09-30&returnTo=%2Fsales\"", html);
-        Assert.Matches("<a[^>]*aria-label=\"Electricity sales details\"[^>]*>Details</a>", html);
-        Assert.Contains("Exported today", html);
-        Assert.Contains("Energy value", html);
-        Assert.Equal(2, Regex.Matches(html, "data-testid=\"sales-(?:export|value|deposit)\"").Count);
-        Assert.DoesNotContain("Estimated deposit", html);
-        Assert.DoesNotContain("aria-label=\"Sales period\"", html);
-        Assert.DoesNotContain("aria-label=\"Date\"", html);
-        Assert.DoesNotContain("aria-label=\"Previous period\"", html);
-        Assert.DoesNotContain("How the estimate is calculated", html);
-        Assert.DoesNotMatch("<div[^>]*class=\"sales-coverage\"[^>]*>", html);
-        Assert.Contains("Deye estimate", html);
-        Assert.Contains("data-testid=\"sales-progress-bar\"", html);
-        Assert.Contains("Current hour · in progress", html);
-        Assert.Contains("Totals cover completed hours. Current hour is provisional.", html);
-        Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
+        var data=Result() with{CreditedExportKwh=3m,ExpectedHours=4,ObservedHours=3,ValuedHours=2};
+        var html=await RenderAsync(data);
+        Assert.Matches("data-testid=\"sales-credited\"[^>]*>Credited after hourly netting: 3[.]00 kWh",html);
+        Assert.Matches("data-testid=\"sales-measured\"[^>]*>Measured hours: 3 / 4",html);
+        Assert.Contains("Priced hours: 2 / 4",html);
+        Assert.Contains("netted for each hour",html);
+        Assert.Contains("available RCE prices",html);
     }
-
-    [Fact]
-    public async Task OverviewRetainsCriticalPartialAndSourceWarnings()
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task CurrentHourIsSeparateFromCompletedTotalsAndNeverProjected(bool priceKnown)
     {
-        var data = Result() with
-        {
-            ExpectedHours = 2,
-            DataError = "Some Deye readings are missing.", PriceError = "Some prices are not available."
-        };
-        var html = await RenderAsync(data, overview: true);
-        Assert.Contains(data.DataError, html);
-        Assert.Contains(data.PriceError, html);
-        Assert.Contains("Partial data · totals for available hours", html);
-        Assert.DoesNotContain("Readings 1 of 2 h", html);
-        Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
+        var data=Result() with{Buckets=[Result().Buckets[0],new(Start.AddHours(1),Start.AddHours(2),null,null,null,null,0,0,0)],CurrentHour=new(Start.AddHours(1),Start.AddHours(1).AddMinutes(15),.25m,.20m,priceKnown?.08m:null,priceKnown?.0984m:null,900)};
+        var html=await RenderAsync(data);Assert.Contains("Current hour · in progress",html);Assert.Contains("Excluded from totals",html);Assert.Contains("0.25",html);Assert.Contains("5.00",html);Assert.DoesNotContain("5.25",html);Assert.Single(Regex.Matches(html,"data-testid=\"sales-progress-bar\""));Assert.Single(Regex.Matches(html,"data-testid=\"sales-bar\""));Assert.DoesNotContain("6.00",html);
     }
-
-    [Fact]
-    public async Task DetailedSalesLeadsWithTheChartAndReportsCompletedAndCurrentHoursSeparately()
+    [Theory][InlineData("zero",true)][InlineData("missing",false)]
+    public async Task MeasuredZeroGetsVisibleBaselineAndMissingEnergyRemainsAGap(string scenario,bool visible)
     {
-        var data = Result() with { CurrentHour = new(Start, Start.AddMinutes(15), .25m, .20m, null, null, 900) };
-        var html = await RenderAsync(data, detailed: true);
-        var plot = html.IndexOf("class=\"sales-plot\"", StringComparison.Ordinal);
-        var totals = html.IndexOf("class=\"sales-totals\"", StringComparison.Ordinal);
-        Assert.True(plot >= 0 && plot < totals);
-        Assert.Contains("aria-label=\"Sales period\"", html);
-        Assert.Contains("aria-label=\"Chart metric\"", html);
-        Assert.Contains("Data coverage", html);
-        Assert.Contains("Contract calculation", html);
-        Assert.Contains("Completed interval breakdown", html);
-        Assert.Contains("Provisional credited export", html);
-        Assert.Contains("Provisional value", html);
-        Assert.Matches("Provisional value[\\s\\S]*?<dd[^>]*>— PLN</dd>", html);
-        Assert.Matches("data-testid=\"sales-export\"[^>]*>5[.]00<small", html);
-        Assert.Matches("<td[^>]*>5[.]00</td>", html);
-        Assert.DoesNotContain("aria-label=\"Electricity sales details\"", html);
+        var data=Result() with{ExportKwh=visible?0:null,EnergyValuePln=visible?0:null,EstimatedDepositPln=visible?0:null,Buckets=[new(Start,Start.AddHours(1),visible?0:null,visible?0:null,visible?0:null,visible?0:null,1,visible?1:0,visible?1:0)]};
+        var html=await RenderAsync(data);Assert.Equal(visible,html.Contains("data-testid=\"sales-bar\""));if(visible){Assert.Contains("height=\"1\"",html);Assert.Contains("0.00",html);}else Assert.Contains("Partial readings",html);Assert.Contains("A dash means unavailable",html);
     }
-
-    [Fact]
-    public async Task SalesDetailsLinkRetainsTheSelectedCustomWindow()
+    [Fact] public async Task FutureBucketsStayGapsAndIncompleteCoverageStaysExplicit()
     {
-        var html = await RenderAsync(Result(new(ExportSalesPeriod.Custom, Today, Today.AddDays(-2), Today)));
-        Assert.Contains("href=\"/sales-details?period=Custom&date=2026-09-30&from=2026-09-28&through=2026-09-30&returnTo=%2Fsales\"", html);
+        var data=Result() with{ExpectedHours=2,Buckets=[Result().Buckets[0],new(Start.AddHours(1),Start.AddHours(2),null,null,null,null,1,0,0),new(Start.AddDays(1),Start.AddDays(1).AddHours(1),null,null,null,null,0,0,0)]};
+        var html=await RenderAsync(data);Assert.Single(Regex.Matches(html,"data-testid=\"sales-bar\""));Assert.Contains("Partial readings",html);Assert.Contains("Upcoming",html);Assert.Contains("Partial data",html);Assert.Contains("5.00",html);
     }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AutomaticRefreshKeepsTheGraphAndLatestUserCursorWhileItsRequestIsPending(bool overview)
+    [Theory][InlineData(ExportSalesPeriod.Month)][InlineData(ExportSalesPeriod.Year)][InlineData(ExportSalesPeriod.Custom)]
+    public async Task CalendarBucketsKeepProvisionalIncrementDistinct(ExportSalesPeriod period)
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService { ResultFactory = request => MultipleHours(request) };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync(overview: overview);
-            await renderer.ClickAsync(root, "Previous interval");
-            Assert.Equal(Start.AddHours(1).ToString("O"), Assert.Single(renderer.Attributes(root, "datetime")));
-            history.HoldNext = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2);
-            Assert.Contains("Refreshing…", renderer.Text(root));
-            Assert.Equal(3, renderer.Attributes(root, "data-testid").Count(value => value == "sales-bar"));
-            Assert.Equal(Start.AddHours(1).ToString("O"), Assert.Single(renderer.Attributes(root, "datetime")));
-            await renderer.ClickAsync(root, "Previous interval");
-            history.Complete(Today);
-            await renderer.WaitForAsync(() => !renderer.Control(root, "Refresh sales").Disabled);
-            Assert.Equal(Start.ToString("O"), Assert.Single(renderer.Attributes(root, "datetime")));
-            Assert.False(renderer.Control(root, "Next interval").Disabled);
-            Assert.Equal(2, history.Calls.Count);
-        });
+        var data=Result(new(period,Today,period==ExportSalesPeriod.Custom?Today:null,period==ExportSalesPeriod.Custom?Today:null)) with{CurrentHour=new(Start,Start.AddMinutes(15),.25m,.20m,.1m,.123m,900)};
+        var html=await RenderAsync(data);Assert.Single(Regex.Matches(html,"data-testid=\"sales-bar\""));Assert.Single(Regex.Matches(html,"data-testid=\"sales-progress-bar\""));Assert.Contains("In progress",html);Assert.DoesNotContain("5.25",html);
     }
-
-    [Fact]
-    public async Task AutomaticFailureKeepsPreviousValuesAndTheirTimestampWithAnExplicitStaleWarning()
+    [Theory][InlineData(ExportSalesPeriod.Day)][InlineData(ExportSalesPeriod.Month)][InlineData(ExportSalesPeriod.Year)]
+    public async Task PeriodBeforeContractDoesNotInventZeroSales(ExportSalesPeriod period)
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var updatedAt = Start.AddHours(2);
-        var history = new SalesService { ResultFactory = request => MultipleHours(request) with { UpdatedAt = updatedAt } };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Previous interval");
-            history.FailNext = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => renderer.Text(root).Contains("Refresh failed", StringComparison.Ordinal));
-            Assert.Contains("Refresh failed. Showing previous data; values may be out of date.", renderer.Text(root));
-            Assert.Contains("6.00", renderer.Text(root));
-            Assert.Contains(updatedAt.ToString("O"), renderer.Attributes(root, "datetime"));
-            Assert.Contains(Start.AddHours(1).ToString("O"), renderer.Attributes(root, "datetime"));
-            Assert.Equal(3, renderer.Attributes(root, "data-testid").Count(value => value == "sales-bar"));
-            await renderer.ClickAsync(root, "Retry");
-            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
-            Assert.Equal(3, history.Calls.Count);
-        });
+        var data=Result(new(period,Today.AddYears(-1))) with{ExpectedHours=0,ObservedHours=0,ValuedHours=0,ExportKwh=null,EnergyValuePln=null,EstimatedDepositPln=null,Buckets=[new(Start.AddYears(-1),Start.AddYears(-1).AddHours(1),null,null,null,null,0,0,0)]};
+        var html=await RenderAsync(data);Assert.Contains("Before contract",html);Assert.DoesNotContain("data-testid=\"sales-bar\"",html);Assert.DoesNotContain(">0.00<",html);
     }
-
-    [Fact]
-    public async Task AnAuthoritativeEmptyRefreshReplacesPreviousValuesRatherThanRetainingThemAsTrusted()
+    [Fact] public async Task RepeatedAutumnHoursRetainBothOffsetsAndIndependentBars()
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var changed = false;
-        var history = new SalesService
-        {
-            ResultFactory = request => changed ? Result(request) with
-            {
-                ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null,
-                ExpectedHours = 1, ObservedHours = 0, ValuedHours = 0, Buckets = [],
-                DataError = "Installation settings changed. Refresh the page."
-            } : Result(request)
-        };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            changed = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => renderer.Text(root).Contains("Installation settings changed", StringComparison.Ordinal));
-            Assert.Contains("Installation settings changed", renderer.Text(root));
-            Assert.DoesNotContain("5.00", renderer.Text(root));
-            Assert.DoesNotContain("sales-bar", renderer.Attributes(root, "data-testid"));
-            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
-        });
+        var at=new DateTimeOffset(2026,10,25,0,0,0,TimeSpan.Zero);var data=Result() with{Buckets=[new(at,at.AddHours(1),1,1,1,1.23m,1,1,1),new(at.AddHours(1),at.AddHours(2),2,2,2,2.46m,1,1,1)]};
+        var html=await RenderAsync(data);Assert.Contains("02:00 +02:00",html);Assert.Contains("02:00 +01:00",html);Assert.Equal(2,Regex.Matches(html,"data-testid=\"sales-bar\"").Count);
     }
-
-    [Fact]
-    public async Task AutomaticRefreshRecoversAfterAnInitialFailure()
+    [Theory][InlineData("en-GB")][InlineData("pl-PL")]
+    public async Task PlotCoordinatesAreInvariantAndAmountsUseTheChosenCulture(string culture)
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService { FailNext = true };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Contains("Sales could not be loaded", renderer.Text(root));
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2 && !renderer.Control(root, "Refresh sales").Disabled);
-            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
-            Assert.Contains("5.00", renderer.Text(root));
-            Assert.Equal(1, clock.ActiveTimers);
-        });
+        var before=CultureInfo.CurrentCulture;try{CultureInfo.CurrentCulture=CultureInfo.GetCultureInfo(culture);var html=await RenderAsync(Result());var tag=Regex.Match(html,"<rect[^>]*data-testid=\"sales-bar\"[^>]*>").Value;Assert.Matches("x=\"[0-9.]+\"",tag);Assert.DoesNotContain(",",tag);Assert.Contains(culture=="pl-PL"?"1,20":"1.20",html);}finally{CultureInfo.CurrentCulture=before;}
     }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AnHourBoundaryFollowsTheNewCurrentHourUnlessTheUserPinnedAnInterval(bool pinned)
+    [Fact] public async Task MarketPricesRemainSignedAndMissingPriceIsNotZero()
     {
-        var clock = new ManualClock(Start.AddHours(1).AddMinutes(58));
-        var advanced = false;
-        var history = new SalesService
-        {
-            ResultFactory = request => Result(request) with
-            {
-                End = Start.AddDays(1), ExportKwh = advanced ? 5.5m : 5,
-                ExpectedHours = advanced ? 2 : 1, ObservedHours = advanced ? 2 : 1, ValuedHours = advanced ? 2 : 1,
-                Buckets = [new(Start, Start.AddHours(1), 5, 3, 1.2m, 1.476m, 1, 1, 1),
-                    advanced ? new(Start.AddHours(1), Start.AddHours(2), .5m, .4m, .2m, .246m, 1, 1, 1)
-                        : new(Start.AddHours(1), Start.AddHours(2), null, null, null, null, 0, 0, 0),
-                    new(Start.AddHours(2), Start.AddHours(3), null, null, null, null, 0, 0, 0)],
-                CurrentHour = advanced ? new(Start.AddHours(2), Start.AddHours(2).AddMinutes(2), .1m, .1m, .04m, .0492m, 120)
-                    : new(Start.AddHours(1), Start.AddHours(1).AddMinutes(57), .45m, .35m, .175m, .21525m, 3420)
-            }
-        };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            if (pinned)
-            {
-                await renderer.ClickAsync(root, "Previous interval");
-                await renderer.ClickAsync(root, "Next interval");
-            }
-            advanced = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2 && !renderer.Control(root, "Refresh sales").Disabled);
-            Assert.Equal(Start.AddHours(pinned ? 1 : 2).ToString("O"), Assert.Single(renderer.Attributes(root, "datetime")));
-            Assert.Equal(2, renderer.Attributes(root, "data-testid").Count(value => value == "sales-bar"));
-            Assert.Equal(1, renderer.Attributes(root, "data-testid").Count(value => value == "sales-progress-bar"));
-            Assert.Equal(pinned ? 0 : 1, renderer.Attributes(root, "data-testid").Count(value => value == "sales-current-hour"));
-            Assert.Contains("5.50", renderer.Text(root));
-        });
+        var data=Result() with{EnergyValuePln=-.6m,EstimatedDepositPln=-.738m,Hours=[new(Start,5,2,3,-.6m,3600,-.12m){MarketAveragePricePlnPerKwh=-.12m}],Buckets=[Result().Buckets[0] with{EnergyValuePln=-.6m,EstimatedDepositPln=-.738m}]};
+        var html=await RenderAsync(data);Assert.Contains("-0.1200",html);Assert.Contains("-0.60",html);Assert.Contains("-0.74",html);Assert.Contains("retain their signs",html);
     }
-
-    [Fact]
-    public async Task OverviewMidnightRefreshKeepsTheOldDateUntilReplacementAndResetsTheOldCursor()
+    [Theory][InlineData(0)][InlineData(-.6)][InlineData(1.2)]
+    public async Task PlotMetricSwitchKeepsSignedAmountOrMeasuredZeroWithoutRefetch(double money)
     {
-        var clock = new ManualClock(new(2026, 9, 30, 21, 58, 0, TimeSpan.Zero));
-        var history = new SalesService { ResultFactory = request => MultipleHours(request) };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync(overview: true);
-            await renderer.ClickAsync(root, "Previous interval");
-            history.HoldNext = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2);
-            Assert.Contains("30 September 2026", renderer.Text(root));
-            Assert.Contains("Exported on", renderer.Text(root));
-            Assert.DoesNotContain("Exported today", renderer.Text(root));
-            Assert.DoesNotContain("Today by hour", renderer.Text(root));
-            history.Complete(Today.AddDays(1));
-            await renderer.WaitForAsync(() => !renderer.Control(root, "Refresh sales").Disabled);
-            Assert.Contains("1 October 2026", renderer.Text(root));
-            Assert.Contains("Exported today", renderer.Text(root));
-            Assert.Contains("Today by hour", renderer.Text(root));
-            Assert.True(renderer.Control(root, "Next interval").Disabled);
-            Assert.Equal(Start.AddDays(1).AddHours(2).ToString("O"), Assert.Single(renderer.Attributes(root, "datetime")));
-        });
+        var history=new SalesService{ResultFactory=r=>Result(r) with{Buckets=[Result().Buckets[0] with{EnergyValuePln=(decimal)money}]}};await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();await renderer.ClickAsync(root,"Value");Assert.Contains("PLN",renderer.Text(root));Assert.Single(history.Calls);Assert.Single(renderer.Attributes(root,"data-testid").Where(v=>v=="sales-bar"));if(money==0)Assert.Contains("1",renderer.Attributes(root,"height"));await renderer.ClickAsync(root,"Energy");Assert.Single(history.Calls);Assert.Contains("5.00",renderer.Text(root));});
     }
-
-    [Fact]
-    public async Task CurrentHourShowsMeasuredEnergyWithoutAddingItToCompletedTotalsOrProjectingIt()
+    [Fact] public async Task MissingMoneyDoesNotHideMeasuredEnergyOrCreateAValueBar()
     {
-        var data = Result() with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0,
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null,
-            Buckets = [new(Start, Start.AddHours(1), null, null, null, null, 0, 0, 0),
-                new(Start.AddHours(1), Start.AddHours(2), null, null, null, null, 0, 0, 0)],
-            CurrentHour = new(Start, Start.AddMinutes(15), .25m, .20m, .1m, .123m, 900),
-            UpdatedAt = Start.AddMinutes(16)
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Equal(3, Regex.Matches(html, "data-testid=\"sales-(?:export|value|deposit)\"[^>]*>—").Count);
-        Assert.DoesNotContain("data-testid=\"sales-bar\"", html);
-        var bar = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-progress-bar\"[^>]*>")).Value;
-        Assert.Contains("y=\"181\"", bar);
-        Assert.Contains("height=\"51\"", bar);
-        Assert.Contains("Current hour · in progress", html);
-        Assert.Contains("Measured through 30 September 00:15 (+02:00)", html);
-        Assert.Contains("exported so far 0.25 kWh", html, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Updated", html);
-        Assert.Contains("00:16 (+02:00)", html);
-        Assert.Contains("Totals cover completed hours. Current hour is provisional.", html);
-        Assert.Contains("no projection to the end of the hour", html);
-        Assert.DoesNotContain("There are no completed hours", html);
-        Assert.DoesNotMatch("[\\u0400-\\u04ff]", html);
+        var history=new SalesService{MissingPrices=true};await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();Assert.Contains("5.00",renderer.Text(root));await renderer.ClickAsync(root,"Value");Assert.DoesNotContain("sales-bar",renderer.Attributes(root,"data-testid"));Assert.Single(history.Calls);await renderer.ClickAsync(root,"Energy");Assert.Contains("sales-bar",renderer.Attributes(root,"data-testid"));});
     }
-
-    [Fact]
-    public async Task MeasuredCurrentHourZeroHasABaselineMarkerButMissingCurrentHourRemainsUnknown()
+    [Fact] public async Task KeyboardInspectorRetainsSelectedHourWhileChangingMetric()
     {
-        var data = Result() with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0,
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null,
-            Buckets = [new(Start, Start.AddHours(1), null, null, null, null, 0, 0, 0)],
-            CurrentHour = new(Start, Start.AddMinutes(15), 0, 0, null, null, 900)
-        };
-        var zero = await RenderAsync(data);
-        var bar = Assert.Single(Regex.Matches(zero, "<rect[^>]*data-testid=\"sales-progress-bar\"[^>]*>")).Value;
-        Assert.Contains("y=\"232\"", bar);
-        Assert.Contains("height=\"1.5\"", bar);
-        Assert.Contains("Awaiting current-hour prices.", zero);
-        Assert.Contains("provisional value — PLN", zero);
-
-        var missing = await RenderAsync(data with { CurrentHour = new(Start, null, null, null, null, null, 0) });
-        Assert.DoesNotContain("data-testid=\"sales-progress-bar\"", missing);
-        Assert.Contains("Awaiting current-hour readings.", missing);
-        Assert.DoesNotContain("0.00 kWh", missing);
-        Assert.DoesNotContain("0.00 PLN", missing);
+        var history=new SalesService{ResultFactory=MultipleHours};await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();await renderer.KeyAsync(root,"Home");Assert.Contains(Start.ToString("O"),renderer.Attributes(root,"datetime"));await renderer.KeyAsync(root,"ArrowRight");Assert.Contains(Start.AddHours(1).ToString("O"),renderer.Attributes(root,"datetime"));await renderer.ClickAsync(root,"Value");Assert.Contains(Start.AddHours(1).ToString("O"),renderer.Attributes(root,"datetime"));Assert.Single(history.Calls);});
     }
-
-    [Theory]
-    [InlineData(ExportSalesPeriod.Month)]
-    [InlineData(ExportSalesPeriod.Year)]
-    [InlineData(ExportSalesPeriod.Custom)]
-    public async Task CalendarBucketsDistinguishTheCurrentIncrementAndScaleForBothAmounts(ExportSalesPeriod period)
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task AutomaticRefreshKeepsGraphAndPinnedCursorUntilReplacement(bool pin)
     {
-        var data = Result(new(period, Today, period == ExportSalesPeriod.Custom ? Today : null, period == ExportSalesPeriod.Custom ? Today : null)) with
-        {
-            ExportKwh = 2, CreditedExportKwh = 2, EnergyValuePln = 1, EstimatedDepositPln = 1.23m,
-            Buckets = [new(Start, Start.AddDays(1), 2, 2, 1, 1.23m, 1, 1, 1)],
-            CurrentHour = new(Start.AddHours(1), Start.AddHours(1).AddMinutes(30), 2, 1.5m, .75m, .9225m, 1800)
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Matches("data-testid=\"sales-export\"[^>]*>2[.]00<small", html);
-        var completed = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-bar\"[^>]*>")).Value;
-        var progress = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-progress-bar\"[^>]*>")).Value;
-        Assert.Contains("y=\"130\"", completed);
-        Assert.Contains("height=\"102\"", completed);
-        Assert.Contains("y=\"28\"", progress);
-        Assert.Contains("height=\"102\"", progress);
-        Assert.Contains("sales-progress-bar", progress);
-        Assert.Contains("Completed export", html);
-        Assert.Contains("Exported so far", html);
-        Assert.Contains("Completed hours only. Current hour · in progress", html);
+        var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{ResultFactory=MultipleHours};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();if(pin)await renderer.KeyAsync(root,"Home");history.HoldNext=true;clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>history.Calls.Count==2);Assert.Contains("Refreshing…",renderer.Text(root));Assert.Equal(3,renderer.Attributes(root,"data-testid").Count(v=>v=="sales-bar"));history.Complete(Today);await renderer.WaitForAsync(()=>!renderer.Text(root).Contains("Refreshing…"));Assert.Contains(Start.AddHours(pin?0:2).ToString("O"),renderer.Attributes(root,"datetime"));});
     }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task CurrentHourMoneyUsesItsOwnKnownValueAndNeverReplacesMissingPricesWithZero(bool priceKnown)
+    [Fact] public async Task RefreshFailurePreservesTimestampAndExplicitlyLabelsOldValues()
     {
-        var history = new SalesService
-        {
-            ResultFactory = request => Result(request) with
-            {
-                ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0,
-                ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null,
-                Buckets = [new(Start, Start.AddHours(1), null, null, null, null, 0, 0, 0)],
-                CurrentHour = new(Start, Start.AddMinutes(20), .5m, .4m, priceKnown ? -.2m : null, priceKnown ? -.246m : null, 1200)
-            }
-        };
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Value");
-            Assert.Contains(priceKnown ? "-0.20 PLN" : "Awaiting current-hour prices.", renderer.Text(root));
-            Assert.Equal(priceKnown ? 1 : 0, renderer.Attributes(root, "data-testid").Count(value => value == "sales-progress-bar"));
-            Assert.DoesNotContain("0.00 PLN", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.Single(history.Calls);
-        });
+        var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{ResultFactory=r=>MultipleHours(r) with{UpdatedAt=Start.AddHours(2)}};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();history.FailNext=true;clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>renderer.Text(root).Contains("Refresh failed"));Assert.Contains("values may be out of date",renderer.Text(root));Assert.Contains("6.00",renderer.Text(root));Assert.Contains(Start.AddHours(2).ToString("O"),renderer.Attributes(root,"datetime"));clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>history.Calls.Count==3&&!renderer.Text(root).Contains("Refresh failed"));});
     }
-
-    [Fact]
-    public async Task AutomaticRefreshRunsEveryFiveMinutesAndKeepsTheHistoricalSelection()
+    [Fact] public async Task AuthoritativeEmptyRefreshReplacesPreviousValues()
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService();
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Equal(1, clock.ActiveTimers);
-            clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1));
-            await Task.Yield();
-            Assert.Single(history.Calls);
-            clock.Advance(TimeSpan.FromSeconds(1));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2);
-            Assert.Equal(2, history.Calls.Count);
-            await renderer.ClickAsync(root, "Previous period");
-            var historical = history.Calls[^1].Request;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 4);
-            Assert.Equal(4, history.Calls.Count);
-            Assert.Equal(historical, history.Calls[^1].Request);
-            Assert.False(history.Calls[^1].Token.IsCancellationRequested);
-        });
+        var clock=new ManualClock(Start.AddHours(3));var empty=false;var history=new SalesService{ResultFactory=r=>empty?Result(r) with{ExportKwh=null,EnergyValuePln=null,EstimatedDepositPln=null,ObservedHours=0,ValuedHours=0,Buckets=[],DataError="Installation settings changed. Refresh the page."}:Result(r)};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();empty=true;clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>renderer.Text(root).Contains("Installation settings changed"));Assert.DoesNotContain("sales-bar",renderer.Attributes(root,"data-testid"));Assert.DoesNotContain("5.00",renderer.Text(root));});
     }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AutomaticRefreshAtWarsawMidnightFollowsTodayOnlyForAnUnpinnedSelection(bool historical)
+    [Fact] public async Task AutomaticRefreshRecoversFromInitialError()
     {
-        var clock = new ManualClock(new(2026, 9, 30, 21, 58, 0, TimeSpan.Zero));
-        var history = new SalesService();
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            if (historical) await renderer.ClickAsync(root, "Previous period");
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == (historical ? 3 : 2));
-            Assert.Equal(historical ? Today.AddDays(-1) : Today.AddDays(1), history.Calls[^1].Request.Date);
-            Assert.Contains(historical ? "29 September 2026" : "1 October 2026", renderer.Text(root));
-        });
+        var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{FailNext=true};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();Assert.Contains("Export could not be loaded",renderer.Text(root));clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>renderer.Text(root).Contains("5.00"));Assert.Equal(2,history.Calls.Count);Assert.Equal(1,clock.ActiveTimers);});
     }
-
-    [Fact]
-    public async Task AutomaticRefreshDoesNotCancelOrDuplicateAnActiveUserRequest()
+    [Theory][InlineData(false)][InlineData(true)]
+    public async Task WarsawMidnightFollowsTodayOnlyWithoutExplicitHistoricalDate(bool pinned)
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService { HoldHistorical = true };
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var pending = renderer.ClickAsync(root, "Previous period");
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await Task.Yield();
-            Assert.Equal(2, history.Calls.Count);
-            Assert.False(history.Calls[1].Token.IsCancellationRequested);
-            history.Complete(Today.AddDays(-1));
-            await pending;
-        });
+        var clock=new ManualClock(new(2026,9,30,21,58,0,TimeSpan.Zero));var history=new SalesService{ResultFactory=MultipleHours};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(pinned?"2026-09-29":null);clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>history.Calls.Count==2);Assert.Equal(pinned?Today.AddDays(-1):Today.AddDays(1),history.Calls.Last().Request.Date);});
     }
-
-    [Fact]
-    public async Task DisposalStopsTheTimerAndFencesAnUncooperativeAutomaticResponse()
+    [Fact] public async Task AutomaticTimerDoesNotCancelOrDuplicateAnActiveSelection()
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService();
-        await using var services = Services(history, clock);
-        var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            await renderer.MountAsync();
-            history.HoldNext = true;
-            clock.Advance(TimeSpan.FromMinutes(5));
-            await renderer.WaitForAsync(() => history.Calls.Count == 2);
-            Assert.Equal(2, history.Calls.Count);
-            await renderer.DisposeAsync();
-            Assert.Equal(0, clock.ActiveTimers);
-            Assert.True(history.Calls[^1].Token.IsCancellationRequested);
-            history.Complete(Today);
-            clock.Advance(TimeSpan.FromMinutes(15));
-            await Task.Yield();
-            Assert.Equal(2, history.Calls.Count);
-        });
+        var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{HoldHistorical=true};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();var held=renderer.UpdateAsync(root,"2026-09-29");clock.Advance(TimeSpan.FromMinutes(5));await Task.Yield();Assert.Equal(2,history.Calls.Count);Assert.False(history.Calls.Last().Token.IsCancellationRequested);history.Complete(Today.AddDays(-1));await held;});
     }
-
-    [Fact]
-    public async Task SuppliedDataDoesNotStartAnAutomaticRefreshOrCallTheService()
+    [Fact] public async Task FastSelectionCancelsAndFencesUncooperativeOlderResponse()
     {
-        var clock = new ManualClock(new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
-        var history = new SalesService();
-        await using var services = Services(history, clock);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            await renderer.MountAsync(Result());
-            Assert.Equal(0, clock.ActiveTimers);
-            clock.Advance(TimeSpan.FromMinutes(20));
-            await Task.Yield();
-            Assert.Empty(history.Calls);
-        });
+        var history=new SalesService{HoldHistorical=true};await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();var old=renderer.UpdateAsync(root,"2026-09-29");var latest=renderer.UpdateAsync(root,"2026-09-28");Assert.True(history.Calls[1].Token.IsCancellationRequested);history.Complete(Today.AddDays(-2));await renderer.WaitForAsync(()=>renderer.Attributes(root,"value").Contains("2026-09-28"));history.Complete(Today.AddDays(-1));await Task.WhenAll(latest,old);Assert.Equal(Today.AddDays(-2),history.Calls.Last().Request.Date);Assert.Contains("2026-09-28",renderer.Attributes(root,"value"));});
     }
-
-    [Fact]
-    public async Task TotalsShowExportEnergyValueAndEstimatedDepositWithTheirProvenance()
+    [Fact] public async Task DisposalStopsTimerCancelsRequestAndFencesLateCompletion()
     {
-        var html = await RenderAsync(Result());
-
-        Assert.Matches("data-testid=\"sales-export\"[^>]*>5[.]00<small[^>]*>kWh", html);
-        Assert.Matches("data-testid=\"sales-value\"[^>]*>1[.]20<small[^>]*>PLN", html);
-        Assert.Matches("data-testid=\"sales-deposit\"[^>]*>1[.]48<small[^>]*>PLN", html);
-        Assert.Contains("Deye estimate", html);
-        Assert.Contains("After hourly netting", html);
-        Assert.Contains("3.00 kWh", html);
-        Assert.Contains("not a bank payout or the deposit balance", html);
-        Assert.Contains("OSD billing meter", html);
-        Assert.Contains("28 September 2026", html);
-        Assert.Contains("1.23 multiplier", html);
-        Assert.DoesNotContain("Paid", html);
-        Assert.DoesNotContain("Available to withdraw", html);
+        var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{HoldHistorical=true};await using var services=Services(history,clock);var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();var held=renderer.UpdateAsync(root,"2026-09-29");await renderer.DisposeAsync();Assert.True(history.Calls.Last().Token.IsCancellationRequested);Assert.Equal(0,clock.ActiveTimers);history.Complete(Today.AddDays(-1));await held;clock.Advance(TimeSpan.FromMinutes(10));Assert.Equal(2,history.Calls.Count);});
     }
-
-    [Fact]
-    public async Task MeasuredZeroHasVisibleBaselineBarAndZeroTotals()
+    [Theory][InlineData("Day","day")][InlineData("Month","month")][InlineData("Year","year")][InlineData("Custom","custom")]
+    public async Task PeriodControlsKeepSelectionInRouteAndFetchOnlyAfterNavigation(string label,string period)
     {
-        var data = Result() with
-        {
-            ExportKwh = 0, CreditedExportKwh = 0, EnergyValuePln = 0, EstimatedDepositPln = 0,
-            Buckets = [new(Start, Start.AddHours(1), 0, 0, 0, 0, 1, 1, 1)]
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Equal(3, Regex.Matches(html, "data-testid=\"sales-(?:export|value|deposit)\"[^>]*>0[.]00").Count);
-        var bar = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-bar\"[^>]*>"));
-        Assert.Contains("y=\"232\"", bar.Value);
-        Assert.Contains("height=\"1.5\"", bar.Value);
-        Assert.DoesNotContain("NaN", html);
-        Assert.DoesNotContain("Infinity", html);
-        Assert.DoesNotContain("No export readings", html);
+        var history=new SalesService();await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();await renderer.ClickAsync(root,label);Assert.Contains("period="+period,services.GetRequiredService<NavigationManager>().Uri);Assert.Single(history.Calls);});
     }
-
-    [Fact]
-    public async Task MissingAndFutureBucketsRemainGapsWhilePartialTotalsAreExplicit()
+    [Theory][InlineData("day","2026-09-30","2026-09-29")][InlineData("month","2026-09-01","2026-08-01")][InlineData("year","2026-01-01","2025-01-01")]
+    public async Task PreviousPeriodUsesCalendarBoundaries(string period,string date,string previous)
     {
-        var data = Result() with
-        {
-            ExpectedHours = 3, ObservedHours = 1, ValuedHours = 0, EnergyValuePln = null, EstimatedDepositPln = null,
-            PriceError = "The price has not been published yet.",
-            Buckets = [
-                new(Start, Start.AddHours(1), 5, 3, null, null, 1, 1, 0),
-                new(Start.AddHours(1), Start.AddHours(2), null, null, null, null, 1, 0, 0),
-                new(Start.AddHours(2), Start.AddHours(3), null, null, null, null, 1, 0, 0),
-                new(Start.AddDays(1), Start.AddDays(1).AddHours(1), 0, 0, 0, 0, 0, 0, 0)]
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Single(Regex.Matches(html, "data-testid=\"sales-bar\""));
-        Assert.Matches("data-testid=\"sales-value\"[^>]*>—", html);
-        Assert.Matches("data-testid=\"sales-deposit\"[^>]*>—", html);
-        Assert.Contains("Partial data · totals for available hours", html);
-        Assert.Contains("Readings 1 of 3 h · value 0 of 3 h", html);
-        Assert.Contains("The price has not been published yet.", html);
-        Assert.Contains("exported — kWh", html);
-        Assert.DoesNotContain("value 0.00 PLN", html);
+        await using var services=Services(new SalesService());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);await renderer.ClickAsync(root,"Previous period");Assert.Contains("date="+previous,services.GetRequiredService<NavigationManager>().Uri);});
     }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task EmptyPeriodsExplainContractBoundaryOrIncompleteCurrentHour(bool beforeContract)
+    [Theory][InlineData("day",null)][InlineData("month","2026-09-01")][InlineData("year","2026-01-01")]
+    public async Task NextPeriodCannotNavigateIntoFuture(string period,string? date)
     {
-        var date = beforeContract ? new DateOnly(2026, 9, 27) : Today;
-        var data = Result(new(ExportSalesPeriod.Day, date)) with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0, Buckets = [],
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Contains(beforeContract ? "This period is before the contract start date — 28 September 2026." : "There are no completed hours in this period yet.", html);
-        Assert.DoesNotContain("data-testid=\"sales-bar\"", html);
-        Assert.Equal(3, Regex.Matches(html, "data-testid=\"sales-(?:export|value|deposit)\"[^>]*>—").Count);
+        await using var services=Services(new SalesService());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);Assert.True(renderer.Control(root,"Next period").Disabled);});
     }
-
-    [Fact]
-    public async Task RepeatedAutumnHoursKeepBothOffsetsAndIndependentBars()
+    [Theory][InlineData("banana",null,null,null)][InlineData("day","2026-02-30",null,null)][InlineData("day","2026-10-01",null,null)][InlineData("custom",null,"2026-09-30","2026-09-29")][InlineData("custom",null,"2025-01-01","2026-09-30")]
+    public async Task InvalidSelectionNeverCallsSource(string period,string? date,string? from,string? to)
     {
-        var repeated = new DateTimeOffset(2026, 10, 25, 0, 0, 0, TimeSpan.Zero);
-        var data = Result(new(ExportSalesPeriod.Day, new(2026, 10, 25))) with
-        {
-            Today = new(2026, 10, 25), ExpectedHours = 2, ObservedHours = 2, ValuedHours = 2,
-            Buckets = [
-                new(repeated, repeated.AddHours(1), 2, 1, 0.4m, 0.492m, 1, 1, 1),
-                new(repeated.AddHours(1), repeated.AddHours(2), 3, 2, 0.8m, 0.984m, 1, 1, 1)]
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Contains("25 Oct 02:00 (+02:00)", html);
-        Assert.Contains("25 Oct 02:00 (+01:00)", html);
-        Assert.Equal(2, Regex.Matches(html, "data-testid=\"sales-bar\"").Count);
-        Assert.Contains("2026-10-25T00:00:00.0000000+00:00", html);
-        Assert.Contains("2026-10-25T01:00:00.0000000+00:00", html);
+        var history=new SalesService();await using var services=Services(history);var html=await RenderPage(services,new(){["RequestedDate"]=date,["RequestedPeriod"]=period,["RequestedFrom"]=from,["RequestedTo"]=to});Assert.Empty(history.Calls);Assert.Contains("valid period",html);
     }
-
-    [Theory]
-    [InlineData(ExportSalesPeriod.Month, 2026, 8, "August 2026")]
-    [InlineData(ExportSalesPeriod.Year, 2025, 1, "2025")]
-    public async Task CalendarPeriodsBeforeContractShowTheirSelectedWindowWithoutInventedSales(ExportSalesPeriod period, int year, int month, string caption)
+    [Fact] public async Task CustomLimitsAreInclusiveAndCsvRetainsExactWindow()
     {
-        var data = Result(new(period, new(year, month, 1))) with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0, Buckets = [],
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Contains(caption, html);
-        Assert.Contains("This period is before the contract start date — 28 September 2026.", html);
-        Assert.DoesNotContain("data-testid=\"sales-bar\"", html);
+        var history=new SalesService();await using var services=Services(history);var html=await RenderPage(services,new(){["RequestedPeriod"]="custom",["RequestedFrom"]="2025-09-30",["RequestedTo"]="2026-09-30"});Assert.Single(history.Calls);Assert.Equal(365,history.Calls[0].Request.Through!.Value.DayNumber-history.Calls[0].Request.From!.Value.DayNumber);Assert.Contains("from=2025-09-30",html);Assert.Contains("through=2026-09-30",html);
     }
-
-    [Fact]
-    public async Task FailedDataSourceCannotMasqueradeAsAnEmptyCurrentPeriod()
-    {
-        var data = Result() with
-        {
-            ExpectedHours = 0, ObservedHours = 0, ValuedHours = 0, Buckets = [],
-            ExportKwh = null, CreditedExportKwh = null, EnergyValuePln = null, EstimatedDepositPln = null,
-            DataError = "Deye history is unavailable."
-        };
-        var html = await RenderAsync(data);
-
-        Assert.Contains("Deye history is unavailable.", html);
-        Assert.Contains("Data for this period is unavailable.", html);
-        Assert.DoesNotContain("There are no completed hours", html);
-        Assert.DoesNotContain("data-testid=\"sales-bar\"", html);
-    }
-
-    [Fact]
-    public async Task CoordinatesRemainInvariantAndAmountsFollowPolishCulture()
-    {
-        var previous = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pl-PL");
-            var html = await RenderAsync(Result());
-            var bar = Assert.Single(Regex.Matches(html, "<rect[^>]*data-testid=\"sales-bar\"[^>]*>")).Value;
-            Assert.DoesNotMatch("(?:x|y|width|height)=\"[^\"]*,", bar);
-            Assert.Contains("1,20", html);
-        }
-        finally { CultureInfo.CurrentCulture = previous; }
-    }
-
-    [Fact]
-    public async Task CalendarNavigationRequestsDaysMonthsAndYearsAndTodayResetsTheSelection()
-    {
-        var history = new SalesService();
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            Assert.Equal(new(ExportSalesPeriod.Day, Today), Assert.Single(history.Calls).Request);
-            Assert.True(renderer.Control(root, "Next period").Disabled);
-            await renderer.ClickAsync(root, "Previous period");
-            Assert.Equal(new(ExportSalesPeriod.Day, Today.AddDays(-1)), history.Calls[^1].Request);
-            await renderer.ClickAsync(root, "Month");
-            await renderer.ClickAsync(root, "Previous period");
-            Assert.Equal(new(ExportSalesPeriod.Month, new(2026, 8, 1)), history.Calls[^1].Request);
-            await renderer.ClickAsync(root, "Year");
-            await renderer.ClickAsync(root, "Previous period");
-            Assert.Equal(new(ExportSalesPeriod.Year, new(2025, 1, 1)), history.Calls[^1].Request);
-            await renderer.ClickAsync(root, "Today");
-            Assert.Equal(new(ExportSalesPeriod.Day, Today), history.Calls[^1].Request);
-            Assert.True(renderer.Control(root, "Next period").Disabled);
-        });
-    }
-
-    [Fact]
-    public async Task DateSelectorsPreserveCalendarBoundariesAndCustomLimitsAreInclusive()
-    {
-        var history = new SalesService();
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Month");
-            await renderer.ChangeAsync(root, "Month", "2024-02");
-            Assert.Equal(new(ExportSalesPeriod.Month, new(2024, 2, 1)), history.Calls[^1].Request);
-            await renderer.ClickAsync(root, "Year");
-            await renderer.ChangeAsync(root, "Year", "2024");
-            Assert.Equal(new(ExportSalesPeriod.Year, new(2024, 1, 1)), history.Calls[^1].Request);
-            await renderer.ClickAsync(root, "Custom");
-            await renderer.ChangeAsync(root, "Start date", "2025-09-30");
-            await renderer.ChangeAsync(root, "End date, inclusive", "2026-09-30");
-            await renderer.ClickAsync(root, "Apply");
-            Assert.Equal(new(ExportSalesPeriod.Custom, Today, new(2025, 9, 30), Today), history.Calls[^1].Request);
-            var count = history.Calls.Count;
-            await renderer.ChangeAsync(root, "Start date", "2025-09-29");
-            Assert.True(renderer.Control(root, "Apply").Disabled);
-            Assert.Contains("no more than 366 days, inclusive", renderer.Text(root));
-            await renderer.ChangeAsync(root, "Start date", "");
-            await renderer.ChangeAsync(root, "End date, inclusive", "2026-09-29");
-            Assert.True(renderer.Control(root, "Apply").Disabled);
-            Assert.Contains("Enter both dates", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.Equal(count, history.Calls.Count);
-        });
-    }
-
-    [Fact]
-    public async Task MetricSwitchChangesUnitsWithoutFetchingOrLosingEnergyWhenPricesAreMissing()
-    {
-        var history = new SalesService { MissingPrices = true };
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Value");
-            Assert.Contains("Energy value is not available yet", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            await renderer.ClickAsync(root, "Energy");
-            Assert.DoesNotContain("Energy value is not available yet", renderer.Text(root));
-            Assert.Contains("kWh", renderer.Text(root));
-            Assert.Single(history.Calls);
-        });
-    }
-
-    [Fact]
-    public async Task FastNavigationCancelsTheOlderRequestAndRejectsItsLateResponse()
-    {
-        var history = new SalesService { HoldHistorical = true };
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var older = renderer.ClickAsync(root, "Previous period");
-            var newer = renderer.ClickAsync(root, "Previous period");
-            Assert.True(history.Calls[1].Token.IsCancellationRequested);
-            Assert.Equal(Today.AddDays(-2), history.Calls[2].Request.Date);
-            history.Complete(Today.AddDays(-2));
-            await newer;
-            history.Complete(Today.AddDays(-1));
-            await older;
-            Assert.Contains("28 September 2026", renderer.Text(root));
-            Assert.DoesNotContain("29 September 2026", renderer.Text(root));
-        });
-    }
-
-    [Fact]
-    public async Task SignedNegativeAmountsRemainVisibleWhenTheContractAllowsThem()
-    {
-        var history = new SalesService { SignedNegativePrices = true };
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ClickAsync(root, "Value");
-            Assert.Contains("-0.60", renderer.Text(root));
-            Assert.Contains("-0.74", renderer.Text(root));
-            Assert.Contains("-0.5", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.Single(history.Calls);
-        });
-    }
-
-    [Fact]
-    public async Task AFailedRefreshPreservesLabeledOldTotalsAndRetryRecoversTheSameSelection()
-    {
-        var history = new SalesService();
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            history.FailNext = true;
-            await renderer.ClickAsync(root, "Refresh sales");
-            Assert.Contains("Refresh failed. Showing previous data", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.Contains("5.00", renderer.Text(root));
-            await renderer.ClickAsync(root, "Retry");
-            Assert.DoesNotContain("Refresh failed", renderer.Text(root));
-            Assert.Contains("5.00", renderer.Text(root));
-            Assert.Equal(history.Calls[1].Request, history.Calls[2].Request);
-        });
-    }
-
-    [Fact]
-    public async Task LoadingStateUsesEnglishAndKeepsItsAccessibleControls()
-    {
-        var history = new SalesService { HoldHistorical = true };
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var pending = renderer.ClickAsync(root, "Previous period");
-            Assert.Contains("Loading…", renderer.Text(root));
-            Assert.Contains("Refresh sales", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            history.Complete(Today.AddDays(-1));
-            await pending;
-        });
-    }
-
-    [Theory]
-    [InlineData("", "2026-09-30", "Enter both dates.")]
-    [InlineData("1999-12-31", "2026-09-30", "The start date must be in 2000 or later.")]
-    [InlineData("2026-09-30", "2026-09-29", "The end date must not be before the start date.")]
-    [InlineData("2026-09-30", "2026-10-01", "The end date cannot be in the future.")]
-    [InlineData("2025-09-29", "2026-09-30", "Choose no more than 366 days, inclusive.")]
-    public async Task CustomDateValidationUsesEnglishAndDoesNotSubmitInvalidDates(string from, string through, string message)
-    {
-        var history = new SalesService();
-        await using var services = Services(history);
-        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            await renderer.ChangeAsync(root, "Date", "1999-12-31");
-            Assert.Contains("Choose a date from 2000 onwards and no later than today.", renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.Single(history.Calls);
-            await renderer.ClickAsync(root, "Custom");
-            var count = history.Calls.Count;
-            await renderer.ChangeAsync(root, "Start date", from);
-            await renderer.ChangeAsync(root, "End date, inclusive", through);
-            Assert.Contains(message, renderer.Text(root));
-            Assert.DoesNotMatch("[\\u0400-\\u04ff]", renderer.Text(root));
-            Assert.True(renderer.Control(root, "Apply").Disabled);
-            Assert.Equal(count, history.Calls.Count);
-        });
-    }
-
-    [Fact]
-    public async Task DisposalCancelsPendingLoadingAndIgnoresItsLateCompletion()
-    {
-        var history = new SalesService { HoldHistorical = true };
-        await using var services = Services(history);
-        var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var root = await renderer.MountAsync();
-            var pending = renderer.ClickAsync(root, "Previous period");
-            await renderer.DisposeAsync();
-            Assert.True(history.Calls[^1].Token.IsCancellationRequested);
-            history.Complete(Today.AddDays(-1));
-            await pending;
-        });
-    }
-
-    private static ExportSalesResult Result(ExportSalesRequest? request = null) => new(
-        request ?? new(ExportSalesPeriod.Day, Today), Today, new(2026, 9, 28), "Europe/Warsaw",
-        Start, Start.AddHours(1), [new(Start, Start.AddHours(1), 5, 3, 1.2m, 1.476m, 1, 1, 1)],
-        5, 3, 1.2m, 1.476m, 1, 1, 1);
-
-    private static ExportSalesResult MultipleHours(ExportSalesRequest request)
-    {
-        var start = Start.AddDays(request.Date.DayNumber - Today.DayNumber);
-        return Result(request) with
-        {
-            Start = start, End = start.AddDays(1), ExpectedHours = 3, ObservedHours = 3, ValuedHours = 3,
-            ExportKwh = 6, CreditedExportKwh = 6, EnergyValuePln = 3, EstimatedDepositPln = 3.69m,
-            Buckets = Enumerable.Range(0, 3).Select(index => new ExportSaleBucket(start.AddHours(index), start.AddHours(index + 1), index + 1, index + 1, 1, 1.23m, 1, 1, 1)).ToArray()
-        };
-    }
-
-    private static ServiceProvider Services(IExportSalesService service, TimeProvider? clock = null)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddComponentLocalization();
-        services.AddMudServices();
-        services.AddSingleton<IJSRuntime, NullJsRuntime>();
-        services.AddSingleton<TimeProvider>(clock ?? new FixedClock());
-        services.AddSingleton(service);
-        return services.BuildServiceProvider();
-    }
-
-    private static async Task<string> RenderAsync(ExportSalesResult result, bool overview = false, bool detailed = false)
-    {
-        var service = new SalesService();
-        await using var services = Services(service);
-        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
-        var html = await renderer.Dispatcher.InvokeAsync(async () =>
-        {
-            var output = await renderer.RenderComponentAsync<SalesStatistics>(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = result, ["Overview"] = overview, ["Detailed"] = detailed }));
-            return output.ToHtmlString();
-        });
-        Assert.Empty(service.Calls);
-        return WebUtility.HtmlDecode(html);
-    }
-
+    private static ExportSalesResult Scenario(string scenario)=>scenario switch{
+        "zero"=>Result() with{ExportKwh=0,CreditedExportKwh=0,EnergyValuePln=0,EstimatedDepositPln=0,Buckets=[new(Start,Start.AddHours(1),0,0,0,0,1,1,1)]},
+        "partial"=>Result() with{ExpectedHours=2,ValuedHours=0,EnergyValuePln=null,EstimatedDepositPln=null,PriceError="The price has not been published yet.",Buckets=[new(Start,Start.AddHours(1),5,3,null,null,1,1,0),new(Start.AddHours(1),Start.AddHours(2),null,null,null,null,1,0,0)]},
+        "error"=>Result() with{DataError="Deye history is unavailable.",ExportKwh=null,Buckets=[]},"empty"=>Result() with{ExportKwh=null,Buckets=[]},
+        "before-contract"=>Result(new(ExportSalesPeriod.Day,Today.AddDays(-3))) with{ExpectedHours=0,ObservedHours=0,ValuedHours=0,ExportKwh=null,Buckets=[]},
+        "month"=>Result(new(ExportSalesPeriod.Month,new(2026,9,1))),"year"=>Result(new(ExportSalesPeriod.Year,new(2026,1,1))),"custom"=>Result(new(ExportSalesPeriod.Custom,Today,Today.AddDays(-2),Today)),_=>Result()};
+    private static ExportSalesResult Result(ExportSalesRequest? request=null)=>new(request??new(ExportSalesPeriod.Day,Today),Today,new(2026,9,28),"Europe/Warsaw",Start,Start.AddHours(1),[new(Start,Start.AddHours(1),5,3,1.2m,1.476m,1,1,1)],5,3,1.2m,1.476m,1,1,1);
+    private static ExportSalesResult MultipleHours(ExportSalesRequest request){var at=Start.AddDays(request.Date.DayNumber-Today.DayNumber);return Result(request) with{Start=at,End=at.AddDays(1),ExpectedHours=3,ObservedHours=3,ValuedHours=3,ExportKwh=6,CreditedExportKwh=6,EnergyValuePln=3,EstimatedDepositPln=3.69m,Buckets=Enumerable.Range(0,3).Select(i=>new ExportSaleBucket(at.AddHours(i),at.AddHours(i+1),i+1,i+1,1,1.23m,1,1,1)).ToArray()};}
+    private static ServiceProvider Services(IExportSalesService service,TimeProvider? clock=null){var s=new ServiceCollection();s.AddLogging();s.AddComponentLocalization();s.AddSingleton<IJSRuntime,NullJsRuntime>();s.AddSingleton<TimeProvider>(clock??new FixedClock());s.AddSingleton(service);s.AddSingleton<NavigationManager,TestNavigation>();s.AddSingleton<IOptionsMonitor<SolarSalesOptions>>(new FixedOptionsMonitor<SolarSalesOptions>(new(){TimeZoneId="Europe/Warsaw"}));return s.BuildServiceProvider();}
+    private static async Task<string> RenderAsync(ExportSalesResult data){await using var services=Services(new SalesService{ResultFactory=_=>data});return await RenderPage(services,new(){["RequestedPeriod"]=data.Request.Period.ToString(),["RequestedDate"]=data.Request.Date.ToString("yyyy-MM-dd"),["RequestedFrom"]=data.Request.From?.ToString("yyyy-MM-dd"),["RequestedTo"]=data.Request.Through?.ToString("yyyy-MM-dd")});}
+    private static async Task<string> RenderPage(IServiceProvider services,Dictionary<string,object?> args){await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());return await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<ExportHost>(ParameterView.FromDictionary(args))).ToHtmlString()));}
+    private sealed class TestNavigation:NavigationManager{public TestNavigation()=>Initialize("http://localhost/","http://localhost/energy/export");protected override void NavigateToCore(string uri,bool forceLoad)=>Uri=ToAbsoluteUri(uri).ToString();}
+    // Query values normally come from the router. Forward identical inputs to the real page lifecycle.
+    private sealed class ExportHost:EnergyExport{
+        [Parameter]public string? RequestedDate{get;set;}[Parameter]public string? RequestedPeriod{get;set;}[Parameter]public string? RequestedFrom{get;set;}[Parameter]public string? RequestedTo{get;set;}
+        protected override Task OnParametersSetAsync(){DateQuery=RequestedDate;PeriodQuery=RequestedPeriod;FromQuery=RequestedFrom;ToQuery=RequestedTo;return base.OnParametersSetAsync();}}
     private sealed class FixedClock : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
@@ -1070,12 +303,15 @@ public class SalesStatisticsTests
             while (!condition()) await _displayChanged.Task.WaitAsync(TimeSpan.FromSeconds(5));
         }
         protected override void HandleException(Exception exception) => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
-        public async Task<int> MountAsync(ExportSalesResult? data = null, bool overview = false)
+        public async Task<int> MountAsync(string? date = null, string? period = null)
         {
-            var root = AssignRootComponentId(InstantiateComponent(typeof(SalesStatistics)));
-            await RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?> { ["Data"] = data, ["Overview"] = overview }));
+            var root = AssignRootComponentId(InstantiateComponent(typeof(ExportHost)));
+            await RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string, object?> { ["RequestedDate"] = date, ["RequestedPeriod"] = period }));
             return root;
         }
+        public Task UpdateAsync(int root, string? date = null, string? period = null, string? from = null, string? to = null) => RenderRootComponentAsync(root, ParameterView.FromDictionary(new Dictionary<string,object?> { ["RequestedDate"] = date, ["RequestedPeriod"] = period, ["RequestedFrom"] = from, ["RequestedTo"] = to }));
+        public Task KeyAsync(int root, string key) => DispatchEventAsync(Event(root,"onkeydown"),null,new KeyboardEventArgs{Key=key});
+        private ulong Event(int root,string name){var frames=GetCurrentRenderTreeFrames(root);foreach(var f in frames.Array.Take(frames.Count)){if(f.FrameType==RenderTreeFrameType.Component){var nested=Event(f.ComponentId,name);if(nested!=0)return nested;}if(f.FrameType==RenderTreeFrameType.Attribute&&f.AttributeName==name)return f.AttributeEventHandlerId;}return 0;}
         public IEnumerable<string?> Attributes(int componentId, string name)
         {
             var frames = GetCurrentRenderTreeFrames(componentId);

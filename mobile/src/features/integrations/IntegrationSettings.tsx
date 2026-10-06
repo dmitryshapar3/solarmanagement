@@ -228,7 +228,7 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
       {discovery?.devices.map(device => <View key={device.selectionToken} style={styles.form}>
         <Text style={styles.title}>{device.name}</Text>
         <Text style={styles.detail}>{t(device.kind)} · {device.remoteId}{device.channel ? ` · ${device.channel}` : ""}</Text>
-        <AppButton label={t("Use {0}", device.name)} variant="secondary"
+        <AppButton translateLabel={false} label={t("Use {0}", device.name)} variant="secondary"
           disabled={formDisabled || changed || !Number.isFinite(Date.parse(discovery.expiresAt)) || Date.parse(discovery.expiresAt) <= Date.now()}
           onPress={() => void run("select", async signal => {
             await api.selectDevice(draft.configuration.instance.id, integrationChange(draft), device.selectionToken, signal);
@@ -249,9 +249,9 @@ export function IntegrationSettings({ api, isDemo = false, onSelectionChanged }:
       {instances.map(instance => <Card key={instance.id} style={styles.form}>
         <Text style={styles.title}>{instance.name}</Text>
         <StatusPill label={instance.status === "enabled" ? t("Enabled") : instance.status === "disabled" ? t("Disabled") : t(instance.status)} tone={instance.status === "enabled" ? "success" : "neutral"} />
-        <AppButton label={t("Configure {0}", instance.name)} variant="secondary" disabled={Boolean(busy)}
+        <AppButton translateLabel={false} label={t("Configure {0}", instance.name)} variant="secondary" disabled={Boolean(busy)}
           onPress={() => void run("open", signal => open(instance, signal))} />
-        {instance.status === "enabled" ? <AppButton label={t("Disable {0}", instance.name)} variant="secondary" disabled={Boolean(busy)}
+        {instance.status === "enabled" ? <AppButton translateLabel={false} label={t("Disable {0}", instance.name)} variant="secondary" disabled={Boolean(busy)}
           onPress={() => void run("disable", async signal => {
             const disabled = await api.setEnabled(instance.id, false, { expectedRevision: instance.revision,
               packageVersion: instance.packageVersion, packageDigest: instance.packageDigest, descriptorDigest: instance.descriptorDigest }, signal);

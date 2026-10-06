@@ -1,0 +1,40 @@
+<section aria-label="@T["Latest inverter reading"]" aria-live="polite">
+    <UiCard Title="@T["Latest inverter reading"]">
+        <div class="toolbar">
+            <p class="caption">@T.Format("Polled {0}", Data is {} data ? UiFormat.Time(data.Timestamp, TimeZoneId, "d MMM HH:mm:ss zzz") : T["Unavailable"])</p>
+            <span class="caption">@T.Format("Source: {0}", ProviderName ?? T["Inverter"])</span>
+        </div>
+        <p class="caption">@T.Format("Solar measured {0}", Data?.SolarObservedAt is {} solarAt ? UiFormat.Time(solarAt, TimeZoneId, "d MMM HH:mm:ss zzz") : T["Unavailable"]) · @T.Format("Grid measured {0}", Data?.GridObservedAt is {} gridAt ? UiFormat.Time(gridAt, TimeZoneId, "d MMM HH:mm:ss zzz") : T["Unavailable"])</p>
+        <p class="caption">@T["Polling time may be later than the inverter measurement time. Individual panel readings are not available here. Unavailable measurements are shown with a dash."]</p>
+    </UiCard>
+    <dl class="kpi-grid readings-snapshot">
+        @Tile("Battery charge", Live.BatterySoc, "%", "0", "snapshot-charge")
+        @Tile("Solar generation", Live.SolarKw, "kW", "0.00", "snapshot-solar")
+        @Tile("Home load", Live.LoadKw, "kW", "0.00", "snapshot-load")
+        @Tile("Grid power", Live.GridKw, "kW", "0.00", "snapshot-grid")
+        @Tile(PowerBalance.BatteryLabel(Live.BatteryKw is {} battery ? (int)(battery * 1000) : null), Live.BatteryKw, "kW", "0.00", "snapshot-battery")
+        @Tile("Voltage", FreshPoll && Data?.BatteryVoltageValid == true ? Data.BatteryVoltage : null, "V", "0.00", "snapshot-voltage")
+        @Tile("Current", FreshPoll && Data?.BatteryCurrentValid == true ? Data.BatteryCurrent : null, "A", "0.00", "snapshot-current")
+        @Tile("Temperature", FreshPoll && Data?.BatteryTemperatureValid == true ? Data.BatteryTemperature : null, "°C", "0.0", "snapshot-temperature")
+    </dl>
+    <UiCard Title="@T["Power balance"]">
+        <div class="toolbar"><strong>@T["Balance difference"]</strong><strong class="metric" data-testid="snapshot-balance">@UiFormat.Signed(Balance.Watts, "0") W</strong></div>
+        <p>@T[Balance.Watts is {} watts ? PowerBalance.Direction(watts) : Balance.UnavailableReason ?? "Unavailable"]</p>
+        <p class="caption">@T["Solar + signed grid + signed battery − load. Grid import and battery discharge are positive; export and charging are negative."]</p>
+        <p class="caption">@T["This is an approximate balance of reported values. Measurements may be taken at different times. Conversion and measurement differences also contribute; this is not a measurement of inverter losses."]</p>
+    </UiCard>
+</section>
+@code {
+    [Parameter] public InverterData? Data { get; set; }
+    [Parameter] public string? ExpectedDevice { get; set; }
+    [Parameter] public string? ProviderName { get; set; }
+    [Parameter] public DateTimeOffset Now { get; set; }
+    [Parameter] public string TimeZoneId { get; set; } = "UTC";
+    [Parameter] public int MaximumAgeMinutes { get; set; } = 10;
+    private LiveReading Live => LiveReading.Read(Data, Now, ExpectedDevice, MaximumAgeMinutes);
+    private bool FreshPoll => Data is {} data && data.Timestamp <= Now && (Now - data.Timestamp).TotalMinutes <= MaximumAgeMinutes;
+    private PowerBalanceReading Balance => FreshPoll && !string.IsNullOrWhiteSpace(ExpectedDevice)
+        ? PowerBalance.FromReading(Data, Now, maximumAgeMinutes: MaximumAgeMinutes, expectedDeviceSn: ExpectedDevice)
+        : new(null, "Required power readings are unavailable.");
+    private RenderFragment Tile(string label, double? value, string unit, string format, string testId) => @<div class="kpi"><dt>@T[label]</dt><dd data-testid="@testId">@UiFormat.Signed(value, format)<small>@unit</small></dd></div>;
+}

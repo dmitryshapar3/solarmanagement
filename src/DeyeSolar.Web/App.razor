@@ -1,8 +1,4 @@
 <CascadingAuthenticationState>
-    <MudThemeProvider Theme="_theme" IsDarkMode="true" />
-    <MudPopoverProvider />
-    <MudDialogProvider />
-    <MudSnackbarProvider />
 
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
@@ -12,7 +8,7 @@
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                 <NotAuthorized>
                     @{
-                        NavigationManager.NavigateTo("/login", true);
+                        NavigationManager.NavigateTo("/signin", true);
                     }
                 </NotAuthorized>
             </AuthorizeRouteView>
@@ -22,15 +18,17 @@
            <ErrorContent>
             <p role="alert">@T["Action failed."]</p>
             <button @onclick="ReloadApplication">@T["Retry"]</button>
-            <a href="/account">@T["Account"]</a>
+            <a href="/settings/account" target="_top">@T["Account"]</a>
            </ErrorContent>
           </ErrorBoundary>
         </Found>
         <NotFound>
             <PageTitle>@T["Not found"]</PageTitle>
-            <LayoutView Layout="@typeof(MainLayout)">
-                <p role="alert">@T["Sorry, there's nothing at this address."]</p>
-            </LayoutView>
+            <header class="public-header"><BrandMark /><a href="/signin" class="ui-button outline" target="_top">@T["Sign in"]</a></header>
+            <main class="public-content">
+                <UiState Title="@T["Not found"]" Message="@T["Sorry, there's nothing at this address."]"><AuthorizeView><Authorized><UiButton Href="/" Variant="primary" target="_top">@T["Go to Home"]</UiButton></Authorized><NotAuthorized><UiButton Href="/signin" Variant="primary" target="_top">@T["Go to Home"]</UiButton></NotAuthorized></AuthorizeView></UiState>
+            </main>
+            <footer class="public-footer"><a href="/privacy" target="_top">@T["Privacy policy"]</a><a href="/support" target="_top">@T["Support"]</a></footer>
         </NotFound>
     </Router>
 </CascadingAuthenticationState>
@@ -39,24 +37,4 @@
     private void ReloadApplication() => NavigationManager.NavigateTo("/", true);
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
 
-    private readonly MudTheme _theme = new()
-    {
-        PaletteLight = new PaletteLight
-        {
-            Primary = "#1976d2",
-            Secondary = "#ff9800",
-            Success = "#4caf50",
-            Warning = "#ff9800",
-            Error = "#f44336"
-        },
-        PaletteDark = new PaletteDark
-        {
-            Primary = "#42a5f5",
-            Secondary = "#ffb74d",
-            Success = "#66bb6a",
-            Surface = "#1e1e2e",
-            Background = "#121212",
-            AppbarBackground = "#1e1e2e"
-        }
-    };
 }

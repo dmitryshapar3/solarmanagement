@@ -14,6 +14,8 @@ public sealed class AppleSubscription
     public DateTimeOffset? RevokedAt { get; set; }
     public DateTimeOffset? InvalidatedAt { get; set; }
     public bool IsFreeTrial { get; set; }
+    public bool? AutoRenewEnabled { get; set; }
+    public DateTimeOffset? RenewalAt { get; set; }
     public DateTimeOffset SourceSignedAt { get; set; }
     public DateTimeOffset CheckedAt { get; set; }
     // A slower response from an earlier refresh cannot replace a later observation.

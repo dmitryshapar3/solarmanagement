@@ -22,9 +22,9 @@ public sealed class IdentityVerificationDelivery(IHttpClientFactory clients, Aut
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ResendApiKey);
         var text = context.HttpContext?.RequestServices.GetService<UiText>();
-        const string message = "Your DeyeSolar verification code is {0}. It expires in 10 minutes. If you did not request this code, ignore this email.";
+        const string message = "Your SmartSolar verification code is {0}. It expires in 10 minutes. If you did not request this code, ignore this email.";
         request.Content = JsonContent.Create(new { from = options.EmailFrom, to = new[] { destination },
-            subject = text?["DeyeSolar verification code"] ?? "DeyeSolar verification code",
+            subject = text?["SmartSolar verification code"] ?? "SmartSolar verification code",
             text = text?.Format(message, code) ?? string.Format(CultureInfo.InvariantCulture, message, code) });
         using var response = await clients.CreateClient(ClientName).SendAsync(request, ct);
         if (!response.IsSuccessStatusCode) throw new VerificationDeliveryException();

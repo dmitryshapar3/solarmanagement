@@ -1,6 +1,6 @@
 import type { ApiClient } from "./ApiClient";
 import type { VerificationChannel, VerificationResponse } from "./types";
-export type AccountSecurityProof = { currentPassword?: string; verificationId?: string; code?: string };
+export type AccountSecurityProof = { currentPassword?: string; verificationId?: string; code?: string; externalProofId?: string };
 export type AccountPermissions = { role: string | null; permissions: ("Read" | "ManageRules" | "ControlDevices" | "ManageSettings" | "ManageIntegrations")[] };
 export type AccountExport = { exportedAt: string; account: { id: string; userName: string; email: string | null; phoneNumber: string | null }; memberships: { installationId: string; role: string }[] } & Record<string, unknown>;
 // Fresh-proof failures can return 401 without invalidating an otherwise valid session.

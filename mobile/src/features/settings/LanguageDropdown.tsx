@@ -1,38 +1,10 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { Check, ChevronDown } from "lucide-react-native";
 import { useLanguage } from "../../application/LanguageContext";
-import { colors, spacing, typography } from "../../core/theme";
-
+import { ThemedText as Text } from "../../core/components";
+import { useTheme } from "../../ui/theme/ThemeProvider";
 export function LanguageDropdown({ onError }: { onError: (error: string | null) => void }) {
-  const { t, language, languages, setLanguage } = useLanguage();
-  const [expanded, setExpanded] = useState(false);
-  return <View style={styles.container}>
-    <Pressable accessibilityRole="button" accessibilityLabel={t("Language")}
-      accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={styles.control}>
-      <Text style={styles.name}>{languages.find(option => option.code === language)?.name}</Text>
-      <ChevronDown color={colors.muted} size={20} style={expanded ? styles.openIcon : undefined} />
-    </Pressable>
-    {expanded ? <ScrollView style={styles.menu} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-      {languages.map(option => <Pressable key={option.code} accessibilityRole="button" accessibilityLabel={option.name}
-        accessibilityState={{ selected: option.code === language }} style={styles.option}
-        onPress={() => {
-          setExpanded(false); onError(null);
-          void setLanguage(option.code).catch(error => onError(error instanceof Error ? error.message : t("Unable to save your language.")));
-        }}>
-        <Text style={styles.name}>{option.name}</Text>
-        {option.code === language ? <Check color={colors.primary} size={18} /> : null}
-      </Pressable>)}
-    </ScrollView> : null}
-  </View>;
+  const { t, language, languages, setLanguage } = useLanguage(); const { colors } = useTheme(); const [expanded, setExpanded] = useState(false); const [busy, setBusy] = useState(false);
+  return <View style={{ gap: 6 }}><Pressable accessibilityRole="button" accessibilityLabel={t("Language")} accessibilityState={{ expanded, disabled: busy }} disabled={busy} onPress={() => setExpanded(value => !value)} style={{ minHeight: 52, padding: 14, borderWidth: 1, borderColor: colors.line, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}><Text>{languages.find(option => option.code === language)?.name}</Text><ChevronDown color={colors.ink3} size={20} style={expanded ? { transform: [{ rotate: "180deg" }] } : undefined} /></Pressable>{expanded ? <ScrollView style={{ maxHeight: 300, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface }} nestedScrollEnabled keyboardShouldPersistTaps="handled">{languages.map(option => <Pressable key={option.code} accessibilityRole="button" accessibilityLabel={option.name} accessibilityState={{ selected: option.code === language }} style={{ minHeight: 48, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }} onPress={() => { setExpanded(false); setBusy(true); onError(null); void setLanguage(option.code).catch(error => onError(error instanceof Error ? error.message : t("Unable to save your language."))).finally(() => setBusy(false)); }}><Text>{option.name}</Text>{option.code === language ? <Check color={colors.ink} size={18} /> : null}</Pressable>)}</ScrollView> : null}</View>;
 }
-
-const styles = StyleSheet.create({
-  container: { gap: spacing.xs },
-  control: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    gap: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-  menu: { maxHeight: 288, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surfaceRaised },
-  option: { minHeight: 48, padding: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
-  name: { color: colors.text, fontSize: typography.body, flexShrink: 1 },
-  openIcon: { transform: [{ rotate: "180deg" }] }
-});

@@ -41,6 +41,8 @@ public class RuleRepository : IRuleRepository
         await ValidateSourceAsync(db, rule, ct);
         db.TriggerRules.Add(rule);
         await db.SaveChangesAsync(ct);
+        db.ActivityEvents.Add(Redesign.ActivityEvidence.RuleChange(rule, "rule.created"));
+        await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         rule.ConfigurationVersion = RuleConfigurationVersion.Read(rule);
         return rule;
@@ -67,12 +69,26 @@ public class RuleRepository : IRuleRepository
             current.CurrentStateChangedAt = null;
             current.LastEvaluated = null;
         }
+        var wasEnabled = current.Enabled;
         RuleConfigurationSnapshot.From(rule).ApplyTo(current);
+        if (current.Enabled)
+        {
+            current.PauseReason = null;
+            current.PausedAt = null;
+            current.PausedByUserId = null;
+            current.PausedByCommandId = null;
+        }
+        db.ActivityEvents.Add(Redesign.ActivityEvidence.RuleChange(current,
+            current.Enabled != wasEnabled ? current.Enabled ? "rule.enabled" : "rule.disabled" : "rule.updated"));
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         rule.CurrentState = current.CurrentState;
         rule.CurrentStateChangedAt = current.CurrentStateChangedAt;
         rule.LastEvaluated = current.LastEvaluated;
+        rule.PauseReason = current.PauseReason;
+        rule.PausedAt = current.PausedAt;
+        rule.PausedByUserId = current.PausedByUserId;
+        rule.PausedByCommandId = current.PausedByCommandId;
         rule.ConfigurationVersion = RuleConfigurationVersion.Read(current);
     }
 
@@ -112,6 +128,7 @@ public class RuleRepository : IRuleRepository
         var rule = await db.TriggerRules.SingleOrDefaultAsync(existing => existing.Id == id, ct);
         if (rule != null)
         {
+            db.ActivityEvents.Add(Redesign.ActivityEvidence.RuleChange(rule, "rule.deleted"));
             RuleConfigurationVersion.Check(configurationVersion, rule);
             db.TriggerRules.Remove(rule);
             await db.SaveChangesAsync(ct);
