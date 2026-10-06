@@ -1,3 +1,4 @@
 /* Generated from i18n/fr.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "Autoriser SmartSolar à utiliser Face ID pour une connexion sécurisée.";
 "NSLocationWhenInUseUsageDescription" = "Utilisez votre position pour définir les coordonnées de votre installation solaire.";
+"NSMotionUsageDescription" = "SmartSolar n’utilise pas de données de mouvement ou d’activité physique. L’accès à la localisation sert uniquement à définir les coordonnées de votre installation solaire.";

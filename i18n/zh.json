@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "您的试用期已结束。订阅后即可读取插座数据或控制插座。",
   "Your trial includes one smart plug.": "试用包含一个智能插座。",
   "Your unsaved changes will be discarded.": "未保存的更改将被放弃。",
-  "Your unsaved changes will be lost.": "未保存的更改将丢失。"
+  "Your unsaved changes will be lost.": "未保存的更改将丢失。",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar 不使用运动或健身数据。位置访问仅用于设置您的太阳能装置的坐标。"
 }

@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Je proefperiode is afgelopen. Neem een abonnement om gegevens van je stopcontacten te lezen of ze te bedienen.",
   "Your trial includes one smart plug.": "Uw proefperiode omvat één slimme stekker.",
   "Your unsaved changes will be discarded.": "Uw niet-opgeslagen wijzigingen worden verwijderd.",
-  "Your unsaved changes will be lost.": "Uw niet-opgeslagen wijzigingen gaan verloren."
+  "Your unsaved changes will be lost.": "Uw niet-opgeslagen wijzigingen gaan verloren.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar gebruikt geen bewegings- of fitnessgegevens. Locatietoegang wordt alleen gebruikt om de coördinaten van je zonne-installatie in te stellen."
 }

@@ -1,3 +1,4 @@
 /* Generated from i18n/tr.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "SmartSolar'ın güvenli oturum açma için Face ID kullanmasına izin ver.";
 "NSLocationWhenInUseUsageDescription" = "Güneş enerjisi tesisinin koordinatlarını ayarlamak için konumunuzu kullanın.";
+"NSMotionUsageDescription" = "SmartSolar hareket veya fiziksel aktivite verilerini kullanmaz. Konum erişimi yalnızca güneş enerjisi tesisinizin koordinatlarını ayarlamak için kullanılır.";

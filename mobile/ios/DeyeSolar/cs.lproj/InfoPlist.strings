@@ -1,3 +1,4 @@
 /* Generated from i18n/cs.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "Povolit SmartSolar používat Face ID pro bezpečné přihlášení.";
 "NSLocationWhenInUseUsageDescription" = "Použijte svou polohu k nastavení souřadnic solární instalace.";
+"NSMotionUsageDescription" = "SmartSolar nepoužívá údaje o pohybu ani fyzické aktivitě. Přístup k poloze slouží pouze k nastavení souřadnic vaší solární instalace.";

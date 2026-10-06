@@ -7,6 +7,7 @@ const languages = ['en', 'ru', 'uk', 'pl', 'de', 'fr', 'es', 'it', 'pt', 'nl', '
 const permissions = {
   NSFaceIDUsageDescription: 'Allow SmartSolar to use Face ID for secure sign-in.',
   NSLocationWhenInUseUsageDescription: 'Use your location to set the solar site coordinates.',
+  NSMotionUsageDescription: 'SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.',
 };
 for (const language of languages) {
   const catalog = JSON.parse(fs.readFileSync(path.join(root, 'i18n', `${language}.json`), 'utf8'));

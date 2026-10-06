@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dshapar.solar",
-      "buildNumber": "12",
+      "buildNumber": "13",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleLocalizations": [
@@ -32,7 +32,8 @@
           "ko"
         ],
         "NSFaceIDUsageDescription": "Allow SmartSolar to use Face ID for secure sign-in.",
-        "NSLocationWhenInUseUsageDescription": "Use your location to set the solar site coordinates."
+        "NSLocationWhenInUseUsageDescription": "Use your location to set the solar site coordinates.",
+        "NSMotionUsageDescription": "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates."
       }
     },
     "android": {
@@ -78,7 +79,7 @@
           "locationWhenInUsePermission": "Use your location to set the solar site coordinates.",
           "locationAlwaysPermission": false,
           "locationAlwaysAndWhenInUsePermission": false,
-          "motionUsagePermission": false
+          "motionUsagePermission": "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates."
         }
       ],
       "react-native-bottom-tabs",

@@ -356,5 +356,6 @@
   "Worker frame exceeds its allowed size.",
   "You do not have permission to manage this installation's integrations.",
   "Your SmartSolar verification code is {0}. It expires in 10 minutes. If you did not request this code, ignore this email.",
-  "useAuth must be used inside AuthProvider."
+  "useAuth must be used inside AuthProvider.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates."
 ]

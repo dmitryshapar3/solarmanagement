@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Tu prueba ha terminado. Suscríbete para leer datos de tus enchufes o controlarlos.",
   "Your trial includes one smart plug.": "Tu prueba incluye un enchufe inteligente.",
   "Your unsaved changes will be discarded.": "Los cambios no guardados se descartarán.",
-  "Your unsaved changes will be lost.": "Los cambios no guardados se perderán."
+  "Your unsaved changes will be lost.": "Los cambios no guardados se perderán.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar no utiliza datos de movimiento ni de actividad física. El acceso a la ubicación se usa únicamente para establecer las coordenadas de tu instalación solar."
 }

@@ -7,7 +7,6 @@ module.exports = function withSmartSolarNative(config) {
     mod.modResults.CFBundleVersion = '$(CURRENT_PROJECT_VERSION)';
     delete mod.modResults.NSLocationAlwaysUsageDescription;
     delete mod.modResults.NSLocationAlwaysAndWhenInUseUsageDescription;
-    delete mod.modResults.NSMotionUsageDescription;
     return mod;
   });
   config = withXcodeProject(config, mod => {

@@ -1,3 +1,4 @@
 /* Generated from i18n/nl.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "SmartSolar toestaan Face ID te gebruiken voor veilige aanmelding.";
 "NSLocationWhenInUseUsageDescription" = "Gebruik je locatie om de coördinaten van je zonne-installatie in te stellen.";
+"NSMotionUsageDescription" = "SmartSolar gebruikt geen bewegings- of fitnessgegevens. Locatietoegang wordt alleen gebruikt om de coördinaten van je zonne-installatie in te stellen.";

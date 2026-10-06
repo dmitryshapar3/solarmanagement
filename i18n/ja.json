@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "試用期間が終了しました。コンセントのデータを読み取ったり操作したりするにはサブスクリプションをご購入ください。",
   "Your trial includes one smart plug.": "トライアルにはスマートプラグ 1 台が含まれます。",
   "Your unsaved changes will be discarded.": "保存されていない変更は破棄されます。",
-  "Your unsaved changes will be lost.": "未保存の変更は失われます。"
+  "Your unsaved changes will be lost.": "未保存の変更は失われます。",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolarはモーションやフィットネスのデータを使用しません。位置情報へのアクセスは、太陽光設備の座標を設定するためにのみ使用します。"
 }

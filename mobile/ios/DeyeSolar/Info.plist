@@ -71,6 +71,8 @@
     <string>Allow SmartSolar to use Face ID for secure sign-in.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Use your location to set the solar site coordinates.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.</string>
     <key>RCTMetroPort</key>
     <string>$(RCT_METRO_PORT)</string>
     <key>RCTNewArchEnabled</key>

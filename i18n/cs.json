@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Vaše zkušební období skončilo. Pro čtení údajů zásuvek a jejich ovládání si pořiďte předplatné.",
   "Your trial includes one smart plug.": "Vaše zkušební verze zahrnuje jednu chytrou zásuvku.",
   "Your unsaved changes will be discarded.": "Vaše neuložené změny budou zahozeny.",
-  "Your unsaved changes will be lost.": "Vaše neuložené změny budou ztraceny."
+  "Your unsaved changes will be lost.": "Vaše neuložené změny budou ztraceny.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar nepoužívá údaje o pohybu ani fyzické aktivitě. Přístup k poloze slouží pouze k nastavení souřadnic vaší solární instalace."
 }

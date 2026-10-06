@@ -32,4 +32,6 @@ if [[ ! -f "$solar_storekit_app/DeyeSolar" || ! -f "$solar_storekit_app/main.jsb
   echo 'The simulator application binary and its JavaScript bundle were not built.' >&2
   exit 1
 fi
+python3 "$mobile_root/../scripts/check-ios-package.py" --app "$solar_storekit_app" \
+  | tee "$script_root/.build/app-package-preflight.json"
 printf 'Native Solar application and Expo subscription bridge compiled. App: %s\n' "$solar_storekit_app"

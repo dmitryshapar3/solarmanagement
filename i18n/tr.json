@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Denemeniz sona erdi. Priz verilerinizi okumak veya prizlerinizi kontrol etmek için abone olun.",
   "Your trial includes one smart plug.": "Deneme süreniz bir akıllı priz içerir.",
   "Your unsaved changes will be discarded.": "Kaydedilmemiş değişiklikleriniz silinecektir.",
-  "Your unsaved changes will be lost.": "Kaydedilmemiş değişiklikleriniz kaybolacaktır."
+  "Your unsaved changes will be lost.": "Kaydedilmemiş değişiklikleriniz kaybolacaktır.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar hareket veya fiziksel aktivite verilerini kullanmaz. Konum erişimi yalnızca güneş enerjisi tesisinizin koordinatlarını ayarlamak için kullanılır."
 }

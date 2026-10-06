@@ -1,3 +1,4 @@
 /* Generated from i18n/ru.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "Разрешить SmartSolar использовать Face ID для безопасного входа в систему.";
 "NSLocationWhenInUseUsageDescription" = "Используйте геопозицию для указания координат солнечной установки.";
+"NSMotionUsageDescription" = "SmartSolar не использует данные о движении или физической активности. Доступ к геопозиции используется только для указания координат вашей солнечной установки.";

@@ -1931,6 +1931,7 @@
   "Smart Sockets": "Smart Sockets",
   "smart-socket": "smart-socket",
   "SmartSolar connects to a configured server. Sign in with a supported provider, a verification code, or an existing password. Where registration is enabled, a verified code can create an account. The default hosted server is": "SmartSolar connects to a configured server. Sign in with a supported provider, a verification code, or an existing password. Where registration is enabled, a verified code can create an account. The default hosted server is",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.",
   "SmartSolar Premium": "SmartSolar Premium",
   "SmartSolar support": "SmartSolar support",
   "SmartSolar trial": "SmartSolar trial",

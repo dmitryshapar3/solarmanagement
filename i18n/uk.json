@@ -2632,5 +2632,6 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Ваш пробний період завершився. Оформіть підписку для перегляду розеток і керування ними.",
   "Your trial includes one smart plug.": "Ваш пробний період включає одну розумну розетку.",
   "Your unsaved changes will be discarded.": "Ваші незбережені зміни будуть відхилені.",
-  "Your unsaved changes will be lost.": "Ваші незбережені зміни будуть втрачені."
+  "Your unsaved changes will be lost.": "Ваші незбережені зміни будуть втрачені.",
+  "SmartSolar does not use motion or fitness data. Location access is only used to set your solar site coordinates.": "SmartSolar не використовує дані про рух або фізичну активність. Доступ до геопозиції використовується лише для вказання координат вашої сонячної установки."
 }

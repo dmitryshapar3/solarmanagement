@@ -1,3 +1,4 @@
 /* Generated from i18n/ko.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "SmartSolar에서 안전한 로그인을 위해 Face ID를 사용하도록 허용합니다.";
 "NSLocationWhenInUseUsageDescription" = "위치를 사용하여 태양광 설비의 좌표를 설정하세요.";
+"NSMotionUsageDescription" = "SmartSolar는 동작이나 피트니스 데이터를 사용하지 않습니다. 위치 접근은 태양광 설비의 좌표를 설정하는 데만 사용됩니다.";

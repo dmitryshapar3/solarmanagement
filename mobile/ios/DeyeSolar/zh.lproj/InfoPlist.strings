@@ -1,3 +1,4 @@
 /* Generated from i18n/zh.json by scripts/sync-ios-localizations.mjs. */
 "NSFaceIDUsageDescription" = "允许 SmartSolar 使用面容 ID 进行安全登录。";
 "NSLocationWhenInUseUsageDescription" = "使用您的位置设置太阳能装置的坐标。";
+"NSMotionUsageDescription" = "SmartSolar 不使用运动或健身数据。位置访问仅用于设置您的太阳能装置的坐标。";
