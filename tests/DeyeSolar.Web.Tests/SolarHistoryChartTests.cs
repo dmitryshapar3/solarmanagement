@@ -73,8 +73,28 @@ public class SolarHistoryChartTests
     [Theory][InlineData(0,true)][InlineData(1,false)][InlineData(29,false)]
     public async Task EnergyPageShowsTheLoadedDateAndHonorsNextDayBound(int daysAgo,bool disabled)
     {
-        var f=new Fixture();await using var services=f.Services();await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async()=>{var date=Today.AddDays(-daysAgo);var root=await renderer.MountAsync<EnergyHost>(new(){["RequestedDate"]=date.ToString("yyyy-MM-dd")});Assert.Contains(date.ToString("d MMM yyyy",CultureInfo.GetCultureInfo("en-GB")),renderer.Text(root));Assert.Equal(disabled,renderer.Button(root,"Next day").Disabled);Assert.Equal(daysAgo==29,renderer.Button(root,"Previous day").Disabled);});
+        var previousCulture=CultureInfo.CurrentCulture;
+        var previousUiCulture=CultureInfo.CurrentUICulture;
+        var culture=CultureInfo.GetCultureInfo("en-GB");
+        try
+        {
+            CultureInfo.CurrentCulture=culture;
+            CultureInfo.CurrentUICulture=culture;
+            var f=new Fixture();await using var services=f.Services();await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+            await renderer.Dispatcher.InvokeAsync(async()=>
+            {
+                var date=Today.AddDays(-daysAgo);
+                var root=await renderer.MountAsync<EnergyHost>(new(){["RequestedDate"]=date.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture)});
+                Assert.Contains(date.ToString("d MMM yyyy",culture),renderer.Text(root));
+                Assert.Equal(disabled,renderer.Button(root,"Next day").Disabled);
+                Assert.Equal(daysAgo==29,renderer.Button(root,"Previous day").Disabled);
+            });
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture=previousCulture;
+            CultureInfo.CurrentUICulture=previousUiCulture;
+        }
     }
     [Theory][InlineData(true)][InlineData(false)]
     public async Task SourceFailureKeepsTheOtherSeriesAndDisclosesUnavailableData(bool weather)
