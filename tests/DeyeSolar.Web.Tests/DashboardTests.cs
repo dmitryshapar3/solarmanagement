@@ -10,6 +10,7 @@ using DeyeSolar.Domain.Options;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Auth;
+using DeyeSolar.Web.Localization;
 using DeyeSolar.Web.Redesign;
 using Microsoft.AspNetCore.Http;
 using DeyeSolar.Web.Services;
@@ -155,6 +156,56 @@ public class DashboardTests
         var displays = renderer.Displays; fixture.Snapshot.Update(Reading(solar: 2800));
         Assert.Equal(displays, renderer.Displays); Assert.Equal(0, fixture.Refresh.Calls); await fixture.AssertNoMutationsAsync();
     }
+
+    [SqlServerTheory]
+    [InlineData(0)]
+    [InlineData(800)]
+    public async Task FreshEstimateEventAfterTheParentSnapshotKeepsExpectedPowerVisible(double irradiance)
+    {
+        var clock = new EventClock();
+        var source = new ModelRadiationSource(irradiance);
+        var store = new MemoryEstimateStore();
+        await using var fixture = await Fixture.CreateAsync(Reading(), configure: services =>
+        {
+            services.AddSingleton<TimeProvider>(clock);
+            services.AddSingleton<ISolarRadiationSource>(source);
+            services.AddSingleton<ISolarEstimateStore>(store);
+            services.Configure<SolarEstimateOptions>(options =>
+            {
+                options.DeyeSolarPowerIsPvDcConfirmed = true;
+                options.DeyeConfirmedDeviceSn = "test-device";
+            });
+        });
+        var estimates = fixture.Services.GetRequiredService<SolarEstimateService>();
+        await estimates.UpdateAsync(default);
+        await using var renderer = fixture.Renderer();
+        var root = await renderer.Dispatcher.InvokeAsync(renderer.MountAsync);
+        await renderer.Dispatcher.InvokeAsync(() =>
+        {
+            Assert.DoesNotContain("—", renderer.TextByTestId(root, "solar-possible"));
+            // Deliver the parent snapshot first, exactly as the scheduled runtime cycle does.
+            fixture.Snapshot.Update(Reading());
+        });
+        var displays = renderer.Displays;
+        clock.Now = Timestamp.AddSeconds(1);
+
+        // Only the real estimate event can refresh the card: this clock never fires timers,
+        // and no newer inverter/device event refreshes the parent's captured timestamp.
+        await Task.Run(() => estimates.UpdateAsync(default));
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            await renderer.WaitForAsync(() => renderer.Displays > displays);
+            var current = Assert.IsType<SolarPowerEstimate>(estimates.Current.Estimate);
+            Assert.Equal(clock.Now, current.Timestamp);
+            var expected = current.CentralKw.ToString("F2", fixture.Services.GetRequiredService<UiText>().Culture);
+            Assert.Contains(expected, renderer.TextByTestId(root, "solar-possible"));
+            Assert.DoesNotContain("—", renderer.TextByTestId(root, "solar-possible"));
+            Assert.DoesNotContain("The estimate is unavailable. Waiting for fresh data.", renderer.Text(root));
+        });
+        Assert.Equal(1, source.Calls);
+        Assert.Equal(0, fixture.Refresh.Calls);
+        await fixture.AssertNoMutationsAsync();
+    }
     private static IInverterTelemetry ZeroFlows(MeasurementQuality quality) => new InverterTelemetry(new(Guid.NewGuid()), Timestamp,
         new(new Percent(87), Timestamp, MeasurementQuality.Good), new(new Watts(-2400), Timestamp, MeasurementQuality.Good),
         new(new Celsius(24), Timestamp, MeasurementQuality.Good), new(new Volts(51.5), Timestamp, MeasurementQuality.Good),
@@ -169,7 +220,8 @@ public class DashboardTests
         public RuleRepository Rules { get; } = rules;
         public ServiceProvider Services { get; } = services;
         public EventRenderer Renderer() => new(Services, Services.GetRequiredService<ILoggerFactory>());
-        public static async Task<Fixture> CreateAsync(InverterData? initial, ExportSalesResult? sales = null)
+        public static async Task<Fixture> CreateAsync(InverterData? initial, ExportSalesResult? sales = null,
+            Action<ServiceCollection>? configure = null)
         {
             var database = await SqlServerTestDatabase.CreateAsync("SolarDashboardTests", seed: async db =>
             {
@@ -214,6 +266,7 @@ public class DashboardTests
                 var security = new InteractiveSecurityContext(new ReadOnlyAccess(), installation, new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "dashboard-fixture-account")], "test")) } });
                 security.BindOnce(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "dashboard-fixture-account")], "test")));
                 services.AddSingleton(security); services.AddSingleton<RedesignQueries>();
+                configure?.Invoke(services);
                 return new(database, factory, snapshot, refresh, rules, sockets, services.BuildServiceProvider());
             }
             catch
@@ -335,6 +388,39 @@ public class DashboardTests
         public Task<IReadOnlyList<SolarActual>> ReadAsync(string deviceSn, DateTimeOffset start, DateTimeOffset end, CancellationToken ct) => Task.FromResult<IReadOnlyList<SolarActual>>([]);
     }
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Timestamp; }
+    private sealed class EventClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = Timestamp;
+        public override DateTimeOffset GetUtcNow() => Now;
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) => new IdleTimer();
+        private sealed class IdleTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+            public void Dispose() { }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+    private sealed class ModelRadiationSource(double irradiance) : ISolarRadiationSource
+    {
+        public int Calls { get; private set; }
+        public Task<SolarRadiationObservation> ReadAsync(SolarEstimateOptions options, DateTimeOffset now, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(new SolarRadiationObservation(now, irradiance, irradiance / 2, 20, 2, now, 0)
+            {
+                Kind = SolarRadiationKind.WeatherModel, RetrievedAt = now,
+                Forecast = new[] { -15, 0, 15, 30 }.Select(minutes =>
+                    new SolarWeatherSample(now.AddMinutes(minutes), irradiance, irradiance / 2, 20, 2, 0)).ToArray()
+            });
+        }
+    }
+    private sealed class MemoryEstimateStore : ISolarEstimateStore
+    {
+        public Task<CachedSolarObservation?> LoadAsync(CancellationToken ct) => Task.FromResult<CachedSolarObservation?>(null);
+        public Task SaveAsync(CachedSolarObservation observation, CancellationToken ct) => Task.CompletedTask;
+        public Task<SolarActual?> FindActualAsync(DateTimeOffset timestamp, int toleranceSeconds, DateTimeOffset now, CancellationToken ct)
+            => Task.FromResult<SolarActual?>(new(Timestamp.AddMinutes(-1), 4.1, DeyeSolar.Domain.Models.SolarPowerBasis.PvDc));
+    }
     private sealed class TestNavigation : NavigationManager
     {
         public TestNavigation() => Initialize("http://localhost/", "http://localhost/");
