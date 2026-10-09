@@ -17,6 +17,7 @@ public sealed class AccountDataExporter(DbContextOptions<DeyeSolarDbContext> dat
             installations = await db.Installations.AsNoTracking().Where(i => owned.Contains(i.Id)).ToListAsync(ct),
             rules = await db.TriggerRules.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId)).ToListAsync(ct),
             readings = await db.Readings.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId)).ToListAsync(ct),
+            exportFeedPrices = await db.ExportFeedPrices.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId)).ToListAsync(ct),
             exportReadings = await db.ExportReadings.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId)).ToListAsync(ct) };
     }
 }

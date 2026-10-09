@@ -83,7 +83,7 @@ for (const [language, loginMode] of [["en", "restored"], ["pl", "restored"], ["e
       bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
       plugins: [{ name: "native-boundaries", setup(builder) {
         builder.onResolve({ filter: /^(react-native|expo\/fetch|expo-secure-store|expo-crypto|expo-web-browser|expo-apple-authentication|@react-navigation\/native|expo-location|expo-file-system|expo-sharing|lucide-react-native|@react-native-async-storage\/async-storage)$/ }, args => ({ path: args.path, namespace: "native-test" }));
-        builder.onResolve({ filter: /(?:^|\/)(core\/components|ThemeProvider|AccountProofForm|LanguageDropdown|CompassBearing)$/ }, args => ({ path: args.path, namespace: "native-test" }));
+        builder.onResolve({ filter: /(?:^|\/)(core\/components|ThemeProvider|AccountProofForm|LanguageDropdown|CompassBearing|RoofSunDiagram)$/ }, args => ({ path: args.path, namespace: "native-test" }));
         builder.onLoad({ filter: /.*/, namespace: "native-test" }, args => {
           const state = "globalThis.__solarAccountNative";
           const contents = args.path === "react-native" ? 'export const Platform = {OS:"ios"}; export const Text = "Text"; export const View = "View"; export const Alert={alert(){}};'
@@ -97,6 +97,7 @@ for (const [language, loginMode] of [["en", "restored"], ["pl", "restored"], ["e
             : args.path.endsWith("AccountProofForm") ? 'import React from "react";export const AccountProofForm=props=>React.createElement("Proof",props);'
             : args.path.endsWith("LanguageDropdown") ? 'export const LanguageDropdown=()=>null;'
             : args.path.endsWith("CompassBearing") ? 'export const CompassBearing=()=>null;'
+            : args.path.endsWith("RoofSunDiagram") ? 'export const RoofSunDiagram=()=>null;'
             : args.path === "expo-file-system" ? 'export const Paths={cache:"cache"};export class File{}'
             : args.path === "expo-sharing" ? 'export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};'
             : args.path === "expo-location" ? 'export const Accuracy={Balanced:1};export const requestForegroundPermissionsAsync=async()=>({status:"denied"});export const getCurrentPositionAsync=async()=>{};'

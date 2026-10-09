@@ -1,0 +1,82 @@
+<div class="roof-sun-diagram">
+    <div class="roof-sun-heading"><strong>@T["Roof and sun"]</strong>@if (Day is { } day) { <span>@T.Format("Sun path · {0}", day.Date.ToString("d MMM yyyy", T.Culture)) · @TimeZoneId</span> }</div>
+    @if (Day is { } sun)
+    {
+        <svg class="roof-sun-compass" viewBox="0 0 320 320" role="img" aria-label="@T["Roof layout and calculated sun path"]">
+            <circle cx="160" cy="160" r="112" class="roof-sun-horizon" />
+            <circle cx="160" cy="160" r="56" class="roof-sun-elevation" />
+            <path d="M160 48V272M48 160H272" class="roof-sun-axis" />
+            <g class="roof-sun-cardinal"><text x="160" y="27">N</text><text x="295" y="165">E</text><text x="160" y="304">S</text><text x="25" y="165">W</text></g>
+            <g class="roof-sun-angle"><text x="165" y="63">0°</text><text x="165" y="111">45°</text></g>
+            @foreach (var path in sun.Paths)
+            {
+                <path class="roof-sun-path" d="@RoofSunGeometry.Path(path)" />
+                @if (path.Count > 4)
+                {
+                    @foreach (var fraction in new[] { 1d / 3, 2d / 3 })
+                    {
+                        var index = Math.Clamp((int)(path.Count * fraction), 0, path.Count - 2);
+                        var point = path[index]; var after = path[index + 1];
+                        var angle = Math.Atan2(after.Y - point.Y, after.X - point.X) * 180 / Math.PI;
+                        <path class="roof-sun-direction" d="M-5 -4L0 0L-5 4" transform="@($"translate({F(point.X)} {F(point.Y)}) rotate({F(angle)})")" />
+                    }
+                }
+            }
+            @foreach (var roof in Roofs)
+            {
+                <g data-roof="@roof.Number" transform="@($"translate({F(roof.CenterX)} 160)")">
+                    <g transform="@($"rotate({F(roof.Azimuth)})")">
+                        <path class="roof-sun-bearing" d="M0 -12V-61M-5 -54L0 -61L5 -54" />
+                        <rect class="roof-sun-panel roof-@roof.Number" x="@F(-roof.Width/2)" y="@F(-roof.Depth/2)" width="@F(roof.Width)" height="@F(roof.Depth)" rx="3" />
+                        <path class="roof-sun-panel-grid" d="@($"M{F(-roof.Width/6)} {F(-roof.Depth/2)}V{F(roof.Depth/2)}M{F(roof.Width/6)} {F(-roof.Depth/2)}V{F(roof.Depth/2)}M{F(-roof.Width/2)} 0H{F(roof.Width/2)}")" />
+                    </g>
+                    <circle cx="0" cy="0" r="10" class="roof-sun-number-bg" /><text x="0" y="4" class="roof-sun-number">@roof.Number</text>
+                </g>
+            }
+            @foreach (var crossing in new[] { sun.Sunrise, sun.Sunset }.Where(value => value.HasValue))
+            {
+                var point = RoofSunGeometry.Position(Latitude, Longitude, crossing!.Value);
+                <circle cx="@F(point.X)" cy="@F(point.Y)" r="4" class="roof-sun-crossing" />
+            }
+            @if (sun.Now is { } current)
+            {
+                <g class="roof-sun-current" transform="@($"translate({F(current.X)} {F(current.Y)})")"><circle r="11" /><path d="M0 -17V-14M0 14V17M-17 0H-14M14 0H17M-12 -12L-10 -10M10 10L12 12M-12 12L-10 10M10 -10L12 -12" /></g>
+            }
+        </svg>
+        <div class="roof-sun-facts">
+            @if (sun.State == "polar-day") { <p>@T["Sun stays above the horizon on this date."]</p> }
+            else if (sun.State == "polar-night") { <p>@T["Sun stays below the horizon on this date."]</p> }
+            else { <span>@T["Sunrise"] <strong>@Time(sun.Sunrise)</strong></span><span>@T["Sunset"] <strong>@Time(sun.Sunset)</strong></span> }
+            <span>@T[sun.Now is null ? "Sun below horizon" : "Sun now"] @if(sun.Now is { } currentFact){<strong>@T.Number(currentFact.Elevation,"0")°</strong>}</span>
+        </div>
+    }
+    else { <p class="caption" role="status">@T["Enter valid coordinates and a solar time zone to see the sun path."]</p> }
+    <div class="roof-sun-roofs">
+        @foreach (var roof in Roofs)
+        {
+            <div class="roof-sun-roof"><strong>@T[roof.Number == 1 ? "Roof 1" : "Roof 2"] · @T.Number(roof.Capacity, "0.##") kWp</strong><svg viewBox="0 0 144 76" aria-hidden="true"><path d="M14 60H94" class="roof-sun-axis" /><g transform="@($"translate(20 60) rotate({F(-roof.Tilt)})")"><rect x="0" y="-5" width="60" height="6" rx="2" class="roof-sun-profile" /><path d="M20 -5V1M40 -5V1" class="roof-sun-panel-grid" /></g><text x="106" y="60" class="roof-sun-tilt">@T.Number(roof.Tilt, "0.#")°</text></svg><span>@T["Azimuth"] @T.Number(roof.Azimuth, "0.#")° · @T["Tilt"] @T.Number(roof.Tilt, "0.#")°</span></div>
+        }
+    </div>
+    <p class="caption roof-sun-note">@T["Calculated geometric sun path; terrain and shadows are not included."]</p>
+</div>
+@code {
+    [Parameter] public double Latitude { get; set; }
+    [Parameter] public double Longitude { get; set; }
+    [Parameter] public string TimeZoneId { get; set; } = "";
+    [Parameter] public double Roof1Kwp { get; set; }
+    [Parameter] public double Roof1Tilt { get; set; }
+    [Parameter] public double Roof1Azimuth { get; set; }
+    [Parameter] public double Roof2Kwp { get; set; }
+    [Parameter] public double Roof2Tilt { get; set; }
+    [Parameter] public double Roof2Azimuth { get; set; }
+    [Parameter] public DateTimeOffset? At { get; set; }
+    private SolarDiagramDay? Day { get; set; }
+    private IReadOnlyList<SolarDiagramRoof> Roofs { get; set; } = [];
+    protected override void OnParametersSet()
+    {
+        Day = RoofSunGeometry.Day(Latitude, Longitude, TimeZoneId, At ?? DateTimeOffset.UtcNow);
+        Roofs = RoofSunGeometry.Roofs(Roof1Kwp, Roof1Tilt, Roof1Azimuth, Roof2Kwp, Roof2Tilt, Roof2Azimuth);
+    }
+    private static string F(double value) => RoofSunGeometry.F(value);
+    private string Time(DateTimeOffset? instant) => instant.HasValue && Day is { } day ? TimeZoneInfo.ConvertTime(instant.Value, TimeZoneInfo.FindSystemTimeZoneById(day.TimeZoneId)).ToString("t", T.Culture) : "—";
+}

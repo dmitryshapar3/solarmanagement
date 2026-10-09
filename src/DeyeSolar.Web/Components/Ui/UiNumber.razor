@@ -9,12 +9,13 @@
     [Parameter] public double Max { get; set; } = double.MaxValue;
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public bool Integer { get; set; }
+    [Parameter] public int DecimalPlaces { get; set; } = 3;
     [CascadingParameter] private UiFormState? Form { get; set; }
     private readonly string _id = "number-" + Guid.NewGuid().ToString("N");
     private string _text = "";
     private string? _error;
     private double? _last;
-    protected override void OnParametersSet() { if (_last != Value) { _text = Value.ToString("0.###", T.Culture); _last = Value; _error = null; Form?.Mark(_id, true); } }
+    protected override void OnParametersSet() { if (_last != Value) { _text = Value.ToString("0." + new string('#', Math.Clamp(DecimalPlaces, 0, 12)), T.Culture); _last = Value; _error = null; Form?.Mark(_id, true); } }
     private async Task Changed(ChangeEventArgs args)
     {
         _text = args.Value?.ToString() ?? "";

@@ -19,6 +19,7 @@ public sealed record ExportSalesResult(ExportSalesRequest Request, DateOnly Toda
     int ExpectedHours, int ObservedHours, int ValuedHours, string? DataError = null, string? PriceError = null,
     ExportSaleProgress? CurrentHour = null, DateTimeOffset? UpdatedAt = null)
 {
+    public string PriceSource { get; init; } = "pse";
     public bool IsPartial => ObservedHours < ExpectedHours || ValuedHours < ObservedHours;
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<ExportSaleHour>? Hours { get; init; }

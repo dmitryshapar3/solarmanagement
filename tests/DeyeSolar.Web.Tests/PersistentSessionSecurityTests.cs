@@ -170,6 +170,7 @@ public class PersistentSessionSecurityTests
             db.Users.Add(new IdentityUser { Id = "other", UserName = "other", NormalizedUserName = "OTHER", SecurityStamp = "other-stamp" });
             db.InstallationMemberships.Add(new() { UserId = "owner", InstallationId = "neighbour", Role = "Viewer" });
             db.InstallationMemberships.Add(new() { UserId = "other", InstallationId = "neighbour", Role = "Owner" });
+            db.ExportFeedPrices.Add(new() { SourceKey = new string('a', 64), StartUtc = DateTime.UtcNow, RetrievedAtUtc = DateTime.UtcNow, PricePlnPerMwh = 345.678m });
             var instance = Guid.NewGuid(); var device = Guid.NewGuid();
             db.IntegrationInstances.Add(new() { Id = instance, InstallationId = "installation", ProviderId = "fixture", Name = "Fixture", PackageVersion = "1", PackageDigest = "digest", DescriptorDigest = "descriptor" });
             db.IntegrationDeviceBindings.Add(new() { Id = device, InstallationId = "installation", InstanceId = instance, RemoteId = "fixture-device", Kind = "smart-socket" });
@@ -192,6 +193,7 @@ public class PersistentSessionSecurityTests
         Assert.True(await check.Installations.AnyAsync(i => i.Id == "neighbour"));
         Assert.Equal("other", (await check.InstallationMemberships.SingleAsync()).UserId);
         Assert.Empty(await check.IntegrationCommands.IgnoreQueryFilters().ToListAsync());
+        Assert.Empty(await check.ExportFeedPrices.IgnoreQueryFilters().ToListAsync());
     }
     [SqlServerFact]
     public async Task CanceledDeletionRestoresAdmissionAndStartupRecoveryClearsOnlyRecordedFences()

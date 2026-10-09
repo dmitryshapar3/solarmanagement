@@ -88,6 +88,9 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
             .ConfigurePrimaryHttpMessageHandler(SolarManagement.Http.PublicHttpTransport.CreateHandler)
             .AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
         services.AddTransient<PseExportPriceClient>();
+        services.AddHttpClient<ExportPriceFeedClient>(client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers()
+            .ConfigurePrimaryHttpMessageHandler(SolarManagement.Http.PublicHttpTransport.CreateHandler)
+            .AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping));
         services.AddOpenMeteoSolarClients(transport => transport
             .AddHttpMessageHandler(() => new TenantRequestGate(_requests, lifetime.ApplicationStopping)));
         services.AddSingleton<IInverterDataSource>(provider => provider.GetRequiredService<DynamicInverterGateway>());
@@ -95,7 +98,7 @@ public sealed class TenantRuntimeFactory(DbContextOptions<DeyeSolarDbContext> da
         services.AddSingleton<ExportReadingStore>();
         services.AddSingleton<IExportReadingStore>(provider => provider.GetRequiredService<ExportReadingStore>());
         services.AddSingleton<IExportPriceStore, ExportPriceStore>();
-        services.AddSingleton<IExportPriceSource>(provider => provider.GetRequiredService<PseExportPriceClient>());
+        services.AddSingleton<IExportPriceSource, ConfiguredExportPriceSource>();
         services.AddSingleton<IExportSalesService, ExportSalesService>();
         services.AddSingleton<ISocketController>(provider => provider.GetRequiredService<DynamicSocketGateway>());
         services.AddSingleton<ISocketInventoryService>(provider => provider.GetRequiredService<DynamicSocketGateway>());

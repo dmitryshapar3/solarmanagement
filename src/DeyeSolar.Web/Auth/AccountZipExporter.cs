@@ -17,8 +17,9 @@ public sealed class AccountZipExporter(DbContextOptions<DeyeSolarDbContext> data
         var owned = memberships.Where(m => m.Role == "Owner").Select(m => m.InstallationId).ToArray();
         var readings = db.Readings.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId));
         var exports = db.ExportReadings.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId));
+        var feedPrices = db.ExportFeedPrices.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId));
         var activity = db.ActivityEvents.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId));
-        if ((long)await readings.CountAsync(ct) + await exports.CountAsync(ct) + await activity.CountAsync(ct) > MaximumRows)
+        if ((long)await readings.CountAsync(ct) + await exports.CountAsync(ct) + await feedPrices.CountAsync(ct) + await activity.CountAsync(ct) > MaximumRows)
             throw new AccountSecurityException("export_too_large", "Contact support to export this account's full history.", 413);
         var claims = await db.UserClaims.AsNoTracking().Where(c => c.UserId == user.Id
             && (c.ClaimType == AccountManagementService.DisplayNameClaim || c.ClaimType == AccountManagementService.DisplayZoneClaim)).ToListAsync(ct);
@@ -29,7 +30,7 @@ public sealed class AccountZipExporter(DbContextOptions<DeyeSolarDbContext> data
         using (var archive = new ZipArchive(bounded, ZipArchiveMode.Create, leaveOpen: true))
         {
             await WriteAsync(archive, "manifest.json", new { formatVersion = 1, exportedAt = clock.GetUtcNow(), accountId = user.Id,
-                ownership = "Account data and installations owned by this account", datasets = new[] { "account", "memberships", "billing", "subscriptions", "installations", "settings", "rules", "rule-runs", "readings", "export-readings", "activity" } }, ct);
+                ownership = "Account data and installations owned by this account", datasets = new[] { "account", "memberships", "billing", "subscriptions", "installations", "settings", "rules", "rule-runs", "readings", "export-readings", "export-feed-prices", "activity" } }, ct);
             await WriteAsync(archive, "account.json", new { user.Id, user.UserName, user.Email, user.EmailConfirmed, user.PhoneNumber, user.PhoneNumberConfirmed,
                 displayName = claims.FirstOrDefault(c => c.ClaimType == AccountManagementService.DisplayNameClaim)?.ClaimValue,
                 displayTimeZoneId = claims.FirstOrDefault(c => c.ClaimType == AccountManagementService.DisplayZoneClaim)?.ClaimValue }, ct);
@@ -42,6 +43,7 @@ public sealed class AccountZipExporter(DbContextOptions<DeyeSolarDbContext> data
             await WriteAsync(archive, "rule-runs.json", db.RuleRunLogs.IgnoreQueryFilters().AsNoTracking().Where(r => owned.Contains(r.InstallationId)).AsAsyncEnumerable(), ct);
             await WriteAsync(archive, "readings.json", readings.AsAsyncEnumerable(), ct);
             await WriteAsync(archive, "export-readings.json", exports.AsAsyncEnumerable(), ct);
+            await WriteAsync(archive, "export-feed-prices.json", feedPrices.AsAsyncEnumerable(), ct);
             await WriteAsync(archive, "activity.json", activity.AsAsyncEnumerable(), ct);
         }
         return memory.ToArray();

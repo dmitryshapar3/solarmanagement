@@ -16,7 +16,7 @@ async function screens() {
     stdin: { contents: 'export { PasswordSessionsScreen, DeleteAccountScreen } from "./src/features/settings/SettingsPages";', resolveDir: process.cwd(), loader: "ts" },
     bundle: true, write: false, platform: "node", format: "cjs", external: ["react", "react/jsx-runtime"],
     plugins: [{ name: "native-boundaries", setup(builder) {
-      builder.onResolve({ filter: /^(react-native|@react-navigation\/native|expo-location|expo-file-system|expo-sharing|expo-crypto|expo-web-browser|lucide-react-native)$|(?:^|\/)(AuthContext|LanguageContext|core\/components|ThemeProvider|appleSignIn|googleSignIn|LanguageDropdown|CompassBearing)$/ }, args => ({ path: args.path, namespace: "security" }));
+      builder.onResolve({ filter: /^(react-native|@react-navigation\/native|expo-location|expo-file-system|expo-sharing|expo-crypto|expo-web-browser|lucide-react-native)$|(?:^|\/)(AuthContext|LanguageContext|core\/components|ThemeProvider|appleSignIn|googleSignIn|LanguageDropdown|CompassBearing|RoofSunDiagram)$/ }, args => ({ path: args.path, namespace: "security" }));
       builder.onLoad({ filter: /.*/, namespace: "security" }, args => ({ loader: "js", contents:
         args.path === "react-native" ? 'export const View="View",Platform={OS:"ios"};export const Alert={alert:(title,message,buttons)=>globalThis.__securityPages.alerts.push(buttons)};'
         : args.path === "@react-navigation/native" ? 'export const useNavigation=()=>({navigate(){},dispatch(){}}),usePreventRemove=()=>{};'
@@ -27,6 +27,7 @@ async function screens() {
         : args.path.endsWith("googleSignIn") ? 'export const googleSignIn=async()=>null;'
         : args.path.endsWith("LanguageDropdown") ? 'export const LanguageDropdown=()=>null;'
         : args.path.endsWith("CompassBearing") ? 'export const CompassBearing=()=>null;'
+            : args.path.endsWith("RoofSunDiagram") ? 'export const RoofSunDiagram=()=>null;'
         : args.path === "lucide-react-native" ? 'export const Check="Check",LocateFixed="LocateFixed",Plug="Plug",User="User";'
         : args.path === "expo-file-system" ? 'export const Paths={cache:"cache"};export class File{}'
         : args.path === "expo-sharing" ? 'export const isAvailableAsync=async()=>false;export const shareAsync=async()=>{};'

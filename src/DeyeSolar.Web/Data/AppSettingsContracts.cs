@@ -10,3 +10,6 @@ public interface IAppSettingsWriter
     Task SaveSectionAsync<T>(string section, T options) where T : class;
     Task SaveSectionsAsync(IReadOnlyDictionary<string, object> sections, CancellationToken ct = default);
 }
+
+// Internal partial updates retain properties absent from older client payloads.
+internal sealed record AppSettingsPatch(IReadOnlyDictionary<string, object?> Values);

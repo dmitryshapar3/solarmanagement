@@ -19,7 +19,11 @@ public sealed record ConnectedServiceDto(Guid Id, string ProviderId, string Name
     DateTimeOffset? LastConfirmedSwitch);
 public sealed record IntegrationStatusViewDto(IReadOnlyList<ConnectedServiceDto> Services,
     DateTimeOffset? ForecastRetrievedAt, DateTimeOffset? LatestStoredPriceAt, int MissingPriceHours,
-    DateTimeOffset PriceWindowStart, DateTimeOffset PriceWindowEnd, string SettlementTimeZoneId);
+    DateTimeOffset PriceWindowStart, DateTimeOffset PriceWindowEnd, string SettlementTimeZoneId)
+{
+    public string PriceSource { get; init; } = "pse";
+    public decimal? ManualPricePlnPerKwh { get; init; }
+}
 
 public sealed partial class RedesignQueries
 {
@@ -98,16 +102,32 @@ public sealed partial class RedesignQueries
                 owned.Count(b => b.Kind == "socket"), owned.FirstOrDefault(b => b.IsDefault)?.Name,
                 reading.HasValue ? Utc(reading.Value) : null, confirmation));
         }
-        var sales = await db.AppSettings.Where(s => s.Section == SolarSalesOptions.Section && s.Key == nameof(SolarSalesOptions.TimeZoneId)).Select(s => s.Value).SingleOrDefaultAsync(ct);
-        var zoneId = sales ?? new SolarSalesOptions().TimeZoneId;
+        var salesRows = await db.AppSettings.Where(s => s.Section == SolarSalesOptions.Section).ToDictionaryAsync(s => s.Key, s => s.Value, ct);
+        var sales = new SolarSalesOptions();
+        foreach (var property in DeyeSolar.Web.Data.SettingsSchema.Properties(SolarSalesOptions.Section, typeof(SolarSalesOptions)))
+            if (salesRows.TryGetValue(property.Name, out var value)) property.Apply(sales, value);
+        var zoneId = sales.TimeZoneId;
         var zone = TimeZoneInfo.FindSystemTimeZoneById(zoneId);
         var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
         var start = TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(TimeOnly.MinValue), zone);
         var end = TimeZoneInfo.ConvertTimeToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), zone);
-        var priceTimes = await db.ExportPrices.Where(p => p.StartUtc >= start && p.StartUtc < end).Select(p => p.StartUtc).ToListAsync(ct);
-        var missing = Enumerable.Range(0, (int)(end - start).TotalHours).Count(hour => Enumerable.Range(0, 4).Any(quarter => !priceTimes.Contains(start.AddHours(hour).AddMinutes(quarter * 15))));
-        var latestPrice = await db.ExportPrices.Select(p => (DateTime?)p.StartUtc).MaxAsync(ct);
+        List<DateTime> priceTimes;
+        DateTime? latestPrice;
+        if (sales.PriceSource == "manual") { priceTimes = []; latestPrice = null; }
+        else if (sales.PriceSource == "feed")
+        {
+            var sourceKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sales.PriceFeedUrl))).ToLowerInvariant();
+            priceTimes = await db.ExportFeedPrices.Where(p => p.SourceKey == sourceKey && p.StartUtc >= start && p.StartUtc < end).Select(p => p.StartUtc).ToListAsync(ct);
+            latestPrice = await db.ExportFeedPrices.Where(p => p.SourceKey == sourceKey).Select(p => (DateTime?)p.StartUtc).MaxAsync(ct);
+        }
+        else
+        {
+            priceTimes = await db.ExportPrices.Where(p => p.StartUtc >= start && p.StartUtc < end).Select(p => p.StartUtc).ToListAsync(ct);
+            latestPrice = await db.ExportPrices.Select(p => (DateTime?)p.StartUtc).MaxAsync(ct);
+        }
+        var missing = sales.PriceSource == "manual" ? 0 : Enumerable.Range(0, (int)(end - start).TotalHours).Count(hour => Enumerable.Range(0, 4).Any(quarter => !priceTimes.Contains(start.AddHours(hour).AddMinutes(quarter * 15))));
         return new(services, solarEstimate.Current.Estimate?.Observation.RetrievedAt,
-            latestPrice.HasValue ? Utc(latestPrice.Value) : null, missing, Utc(start), Utc(end), zoneId);
+            latestPrice.HasValue ? Utc(latestPrice.Value) : null, missing, Utc(start), Utc(end), zoneId)
+        { PriceSource = sales.PriceSource, ManualPricePlnPerKwh = sales.PriceSource == "manual" ? sales.ManualPricePlnPerKwh : null };
     }
 }

@@ -22,6 +22,7 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
     public DbSet<Reading> Readings => Set<Reading>();
     public DbSet<ExportReading> ExportReadings => Set<ExportReading>();
     public DbSet<ExportPriceRow> ExportPrices => Set<ExportPriceRow>();
+    public DbSet<ExportFeedPriceRow> ExportFeedPrices => Set<ExportFeedPriceRow>();
     public DbSet<TriggerRule> TriggerRules => Set<TriggerRule>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<RuleRunLog> RuleRunLogs => Set<RuleRunLog>();
@@ -55,10 +56,12 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
             .HasFilter("[NormalizedEmail] IS NOT NULL");
         ConfigureInstallation<Reading>(modelBuilder);
         ConfigureInstallation<ExportReading>(modelBuilder);
+        ConfigureInstallation<ExportFeedPriceRow>(modelBuilder);
         ConfigureInstallation<TriggerRule>(modelBuilder);
         ConfigureInstallation<AppSetting>(modelBuilder);
         ConfigureInstallation<RuleRunLog>(modelBuilder);
         modelBuilder.Entity<Reading>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
+        modelBuilder.Entity<ExportFeedPriceRow>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
         modelBuilder.Entity<ExportReading>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
         modelBuilder.Entity<TriggerRule>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
         modelBuilder.Entity<AppSetting>().HasQueryFilter(r => InstallationId != null && r.InstallationId == InstallationId);
@@ -88,6 +91,13 @@ public partial class DeyeSolarDbContext : IdentityDbContext<IdentityUser>
         modelBuilder.Entity<ExportPriceRow>(e =>
         {
             e.HasKey(row => row.StartUtc);
+            e.Property(row => row.PricePlnPerMwh).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<ExportFeedPriceRow>(e =>
+        {
+            e.HasKey(row => new { row.InstallationId, row.SourceKey, row.StartUtc });
+            e.Property(row => row.SourceKey).HasMaxLength(64).IsUnicode(false);
             e.Property(row => row.PricePlnPerMwh).HasPrecision(18, 6);
         });
 

@@ -7,7 +7,8 @@
 @inject Microsoft.Extensions.Options.IOptionsMonitor<SolarManagement.Inverters.Contracts.InverterConnectionOptions> InverterOptions
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SolarEstimateOptions> SolarOptions
 @implements IAsyncDisposable
-<PageTitle>@T["Live readings"] · SmartSolar</PageTitle><PageHeader Title="@T["Live readings"]" Subtitle="@T["The evidence behind your production and automations."]"><UiButton Href="/activity" Variant="outline" Icon="back">@T["Activity"]</UiButton><UiButton Href="@CsvUrl" Icon="download">@T["Download CSV"]</UiButton></PageHeader>
+<PageTitle>@T["Readings"] · SmartSolar</PageTitle><PageHeader Title="@T["Activity"]" Subtitle="@T["The evidence behind your production and automations."]"><UiButton Href="@CsvUrl" Icon="download">@T["Download CSV"]</UiButton></PageHeader>
+<ActivityTabs/>
 @if (_data is not null)
 {
     <ReadingsSnapshot Data="Snapshot.Current" ExpectedDevice="@InverterOptions.CurrentValue.DeviceKey" ProviderName="@(Snapshot.Epoch == _providerEpoch && Snapshot.Current?.InverterId == _providerSource ? _providerName : null)" Now="_now" TimeZoneId="@_zone" MaximumAgeMinutes="SolarOptions.CurrentValue.NowcastActualMaximumAgeMinutes"/>

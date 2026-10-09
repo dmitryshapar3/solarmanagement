@@ -1,4 +1,7 @@
 using SolarManagement.Inverters.Contracts;
+using System.Security.Cryptography;
+using System.Text;
+using DeyeSolar.Infrastructure.Settlement;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -14,6 +17,8 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<(string Device, DateTimeOffset Start), DateTimeOffset> _historyAttempts = new();
     private DateTimeOffset _priceRetryAfter;
+    private string? _lastPriceSource;
+    private string? _lastFeedError;
 
     public async Task<ExportSalesResult> ReadAsync(ExportSalesRequest request, CancellationToken ct)
         => await ReadCoreAsync(request, ct, false);
@@ -28,7 +33,11 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
     {
         var now = clock.GetUtcNow();
         var config = options.CurrentValue;
-        var snapshot = (config.ContractStartDate, config.TimeZoneId, config.PayNegativePrices);
+        config.Validate();
+        var pricing = ExportPriceConfiguration.Capture(config);
+        var snapshot = (config.ContractStartDate, config.TimeZoneId, config.PayNegativePrices, pricing.Source, pricing.ManualPricePlnPerKwh, pricing.FeedUrl);
+        var feedKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(pricing.FeedUrl))).ToLowerInvariant();
+        var priceIdentity = pricing.Source + ":" + feedKey + ":" + pricing.ManualPricePlnPerKwh.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (history is IInverterSelectionRefresher selection) await selection.RefreshSelectionAsync(ct);
         var sourceIdentity = InverterRefreshIdentity.Capture(devices.CurrentValue);
         var device = devices.CurrentValue.DeviceKey;
@@ -61,12 +70,13 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
                 total.ExpectedHours, total.ObservedHours, total.ValuedHours, dataError, priceError,
                 current ?? Current([], []), now)
             {
+                PriceSource = pricing.Source,
                 Hours = details ? hours : null,
                 MissingPriceHours = details ? hours.Where(h => !h.MarketAveragePricePlnPerKwh.HasValue).Select(h => h.Start).ToArray() : null
             };
         }
         bool Changed() => !sourceIdentity.Matches(devices.CurrentValue) || snapshot !=
-            (options.CurrentValue.ContractStartDate, options.CurrentValue.TimeZoneId, options.CurrentValue.PayNegativePrices);
+            (options.CurrentValue.ContractStartDate, options.CurrentValue.TimeZoneId, options.CurrentValue.PayNegativePrices, options.CurrentValue.PriceSource, options.CurrentValue.ManualPricePlnPerKwh, options.CurrentValue.PriceFeedUrl);
         if (range.DataEnd <= range.DataStart && !includesCurrent) return Result([]);
         if (string.IsNullOrWhiteSpace(device)) return Result([], "Select an inverter in Settings.");
         var from = range.DataStart.AddMinutes(-10);
@@ -145,10 +155,16 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
             ct.ThrowIfCancellationRequested();
             if (Changed()) return Result([], "Installation settings changed. Refresh the page.");
 
+            if (_lastPriceSource != priceIdentity) { _lastPriceSource = priceIdentity; _priceRetryAfter = default; _lastFeedError = null; }
             IReadOnlyList<ExportPriceInterval> storedPrices;
-            string? priceError = null;
+            string? priceError = pricing.Source == "feed" ? _lastFeedError : null;
             var priceEnd = includesCurrent ? currentStart.AddHours(1) : range.DataEnd;
-            try { storedPrices = await priceStore.ReadAsync(range.DataStart, priceEnd, ct); }
+            try { storedPrices = pricing.Source switch
+            {
+                "manual" => ConfiguredExportPriceSource.Manual(pricing.ManualPricePlnPerKwh, range.DataStart, priceEnd),
+                "feed" => await ((IScopedExportPriceStore)priceStore).ReadFeedAsync(feedKey, range.DataStart, priceEnd, ct),
+                _ => await priceStore.ReadAsync(range.DataStart, priceEnd, ct)
+            }; }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning("Sales price storage unavailable ({ErrorType})", ex.GetType().Name);
@@ -160,26 +176,35 @@ public sealed class ExportSalesService(IExportReadingStore readings, IExportGrid
             var unpriced = hours.Where(hour => recheckPrices ? !hour.MarketAveragePricePlnPerKwh.HasValue : hour.CreditedExportKwh > 0 && !hour.EnergyValuePln.HasValue)
                 .Select(hour => hour.Start).ToList();
             if (current is { CreditedExportKwh: > 0, EnergyValuePln: null }) unpriced.Add(current.Start);
-            if (unpriced.Count > 0 && (recheckPrices || _priceRetryAfter <= now))
+            if ((unpriced.Count > 0 || pricing.Source == "feed") && (recheckPrices || _priceRetryAfter <= now))
             {
                 try
                 {
-                    var fetched = await prices.ReadAsync(unpriced[0], unpriced[^1].AddHours(1), ct);
+                    var fetchStart = pricing.Source == "feed" ? range.DataStart : unpriced[0];
+                    var fetchEnd = pricing.Source == "feed" ? priceEnd : unpriced[^1].AddHours(1);
+                    var fetched = prices is IConfiguredExportPriceSource configured
+                        ? await configured.ReadAsync(pricing, fetchStart, fetchEnd, ct)
+                        : await prices.ReadAsync(fetchStart, fetchEnd, ct);
                     ct.ThrowIfCancellationRequested();
                     if (Changed()) return Result([], "Installation settings changed. Refresh the page.");
-                    foreach (var batch in fetched.Chunk(1000)) await priceStore.SaveAsync(batch, clock.GetUtcNow(), ct);
+                    foreach (var batch in fetched.Chunk(1000))
+                    {
+                        if (pricing.Source == "feed") await ((IScopedExportPriceStore)priceStore).SaveFeedAsync(feedKey, batch, clock.GetUtcNow(), ct);
+                        else if (pricing.Source == "pse") await priceStore.SaveAsync(batch, clock.GetUtcNow(), ct);
+                    }
                     // A successful but partial publication must not erase previously trusted prices.
                     storedPrices = storedPrices.Concat(fetched).GroupBy(price => price.Start).Select(group => group.Last()).ToArray();
                     _priceRetryAfter = now.AddMinutes(2);
-                    priceError = null;
+                    priceError = null; _lastFeedError = null;
                     hours = Calculate(range.DataStart, range.DataEnd, samples, storedPrices, config.PayNegativePrices);
                     current = Current(samples, storedPrices);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    logger.LogWarning("PSE sales prices unavailable ({ErrorType})", ex.GetType().Name);
+                    logger.LogWarning("Export sales prices unavailable ({ErrorType})", ex.GetType().Name);
                     _priceRetryAfter = now.AddMinutes(2);
-                    priceError = "PSE prices are temporarily unavailable. Stored prices are preserved; missing intervals have no value estimate.";
+                    priceError = pricing.Source == "pse" ? "PSE prices are temporarily unavailable. Stored prices are preserved; missing intervals have no value estimate." : "The price feed is temporarily unavailable. Saved feed prices are preserved; missing intervals have no value estimate.";
+                    if (pricing.Source == "feed") _lastFeedError = priceError;
                 }
             }
             ct.ThrowIfCancellationRequested();

@@ -39,7 +39,7 @@ Live ingestion uses Deye `/device/latest`; backfill uses `/device/historyRaw` fo
 
 `ExportReadings` stores signed integer watts by the case-sensitive composite key `(DeviceSn, ObservedAt)`, with `PolledAt` recording when the observation was obtained. Duplicate polls do not multiply energy. A later obtained correction can replace the same observation; an older retry cannot overwrite it. Live grid observations and the corresponding legacy `Reading` are saved in one transaction. Backfill batches are also atomic, and device identities remain isolated.
 
-Prices come from the official [PSE RCE publication](https://raporty.pse.pl/report/rce-pln), through its `rce-pln` API. `dtime_utc` is interpreted as the exclusive end of a 15-minute interval. `ExportPrices` stores each interval's UTC start, signed `decimal(18,6)` PLN/MWh price and retrieval time. Prices are shared market data rather than device-specific records. Negative published prices are retained unchanged; the contract floor is applied during calculation.
+By default prices come from the official [PSE RCE publication](https://raporty.pse.pl/report/rce-pln), through its `rce-pln` API. `dtime_utc` is interpreted as the exclusive end of a 15-minute interval. `ExportPrices` stores each interval's UTC start, signed `decimal(18,6)` PLN/MWh price and retrieval time. Prices are shared market data rather than device-specific records. Negative published prices are retained unchanged; the contract floor is applied during calculation.
 
 Neither export table is subject to the legacy `Readings` 31-day cleanup. They retain observations and prices for longer-term statistics. Existing legacy grid rows are **not** automatically imported: their polling timestamps and values lack the independent grid provenance needed for this calculation. Backfill depends on the history actually available from Deye; missing cloud history stays missing.
 
@@ -58,8 +58,11 @@ The application binds these fields from `SolarSales`:
 | `ContractStartDate` | `2026-09-28` | First eligible local contract date |
 | `TimeZoneId` | `Europe/Warsaw` | Contract calendar and period boundaries |
 | `PayNegativePrices` | `false` | Floors each negative quarter price at zero; `true` uses signed prices and requires the applicable contract amendment |
+| `PriceSource` | `pse` | `pse` keeps the official publication; `manual` uses a fixed sale price; `feed` reads a CSV/XML URL |
+| `ManualPricePlnPerKwh` | `0` | Fixed nonnegative PLN/kWh price, up to 1000 with at most six decimal places; used only for `manual` |
+| `PriceFeedUrl` | empty | Public HTTPS URL on port 443; used only for `feed` |
 
-The device and cloud access use the existing `DeyeCloud` settings, including `DeviceSn`. Configuration may come from application files or environment variables such as `SolarSales__ContractStartDate`; matching `AppSettings` database rows have precedence. Inspect existing overrides before changing defaults. There is no separate sales configuration form. Keep the contract timezone and price policy aligned with the agreement; changing policy recalculates stored observations and signed prices rather than rewriting them.
+The device and cloud access use the existing `DeyeCloud` settings, including `DeviceSn`. Configuration may come from application files or environment variables such as `SolarSales__ContractStartDate`; matching `AppSettings` database rows have precedence. Inspect existing overrides before changing defaults. The Export contract settings in web and mobile choose the price source, contract date and timezone. Keep the contract timezone and price policy aligned with the agreement; changing policy recalculates stored observations and signed prices rather than rewriting them.
 
 ## Upgrade and rollback
 
@@ -68,3 +71,34 @@ Migration `20260930160000_AddExportReadings` adds `ExportReadings` and `ExportPr
 Before deploying, record the current image identity, back up SQL with checksum verification, and confirm the intended image is the only Compose change. After startup, verify authenticated dashboard access, the migration marker, both tables and their keys/types, preservation of application settings, and unchanged adjacent services. A healthy login page alone does not prove the sales schema is ready.
 
 An application rollback can restore the previous image while preserving both additive tables and their collected data. Do **not** run the migration's `Down` method or restore the database automatically: both can discard observations and prices collected after the backup. Database recovery requires a separate, deliberate decision.
+
+
+## Fixed prices and CSV/XML feeds
+
+Existing installations keep PSE and the existing shared `ExportPrices` data. Choosing a fixed price applies it to the selected contract's observed export, including historical periods; it does not alter readings or overwrite published PSE prices. A new client always sends the explicit source. Older clients that omit the three new fields retain the saved pricing configuration when saving their other site settings. The v1 partial write does not write omitted pricing fields, including when another client changes pricing after the validation read; the v2 settings aggregate retains its transactional version guard. Source fetches use an immutable captured pricing configuration, so an A → B → A change cannot place another feed's response into the original cache.
+
+A custom feed is read on sales requests, at most once per two minutes per installation; the mounted sales view's existing refresh also drives updates. It is parsed automatically as UTF-8 CSV (comma or semicolon, single-line quoted fields) or XML based on its contents. Each row must provide exact `interval_start` and `interval_end` fields, plus **exactly one** of `price_pln_per_kwh` or `price_pln_per_mwh`. Column order may differ. ISO 8601 timestamps must include `Z` or an explicit UTC offset; local timestamps without offsets, implicit units and unrelated provider formats are rejected rather than guessed. An interval lasts exactly 15 minutes or one hour; an hourly price expands to its four equal quarter prices. Signed feed prices are retained and the contract's negative-price policy applies when calculating value. Empty prices remain gaps; explicit zero is a real price. Numbers use a decimal point with no thousands separators. Overlapping intervals are rejected.
+
+CSV example:
+
+```csv
+interval_start,interval_end,price_pln_per_kwh
+2026-10-09T00:00:00Z,2026-10-09T01:00:00Z,0.345678
+2026-10-09T01:00:00Z,2026-10-09T02:00:00Z,0.310000
+```
+
+Equivalent XML row:
+
+```xml
+<prices>
+  <price>
+    <interval_start>2026-10-09T00:00:00Z</interval_start>
+    <interval_end>2026-10-09T01:00:00Z</interval_end>
+    <price_pln_per_kwh>0.345678</price_pln_per_kwh>
+  </price>
+</prices>
+```
+
+Requests are bounded to 20 seconds including the response body, 2 MiB and 40,000 source rows. XML DTDs, external entities and deep nesting are prohibited. The dedicated HTTP client removes request loggers, disables redirects, cookies and proxies, and connects only to DNS results verified as public by the existing pinned public-network transport. URL user information, fragments, IP literals and local hostnames are rejected. URL query parameters are not logged. Each exact feed URL has a SHA-256 cache identity; `ExportFeedPrices` is keyed by installation, source identity and UTC quarter start. Feed revisions can replace that source's cached interval when newer, while partial/unavailable responses preserve its saved intervals. A failed refresh keeps its warning visible during the retry throttle until a successful fetch or a source change. Changing sources does not mix prices between feeds, installations or PSE.
+
+Migration `20261009174814_AddExportFeedPrices` only adds that private feed cache table and foreign key. It leaves all existing tables and data intact. Account exports include private feed prices and account deletion removes the owned installation's feed cache. Apply this migration with the separately authorized deployment migration job; application rollback keeps the additive table and data.

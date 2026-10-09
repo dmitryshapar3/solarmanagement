@@ -1,0 +1,35 @@
+@using DeyeSolar.Web.Redesign
+<UiCard Title="@Service.Name">
+    <div class="toolbar">
+        <StatusPill Kind="@(Service.Status=="connected"?"positive":Service.Status=="needs_attention"?"warning":"neutral")">@T[Service.Status=="connected"?"Connected":Service.Status=="needs_attention"?"Needs attention":"Not connected"]</StatusPill>
+        <span class="caption">@T[Service.Kind=="inverter"?"Inverter":Service.Kind=="socket"?"Smart plugs":"Service"]</span>
+    </div>
+    <dl class="metadata">
+        @if(Service.Kind=="inverter")
+        {
+            <div><dt>@T["Primary inverter"]</dt><dd>@(Service.DefaultInverterName??T["Not selected"])</dd></div>
+            <div><dt>@T["Last measured reading"]</dt><dd>@(Service.LastReadingAt is {} at?T.Time(at,TimeZoneId):T["Unavailable"])</dd></div>
+        }
+        else
+        {
+            <div><dt>@T["Selected plugs"]</dt><dd>@Service.SocketCount</dd></div>
+            <div><dt>@T["Last acknowledged command"]</dt><dd>@(Service.LastConfirmedSwitch is {} at?T.Time(at,TimeZoneId):T["Unavailable"])</dd></div>
+        }
+    </dl>
+    @if(CanManage)
+    {
+        <div class="form-actions service-actions">
+            <UiButton Variant="outline" OnClick="()=>OnCheck.InvokeAsync(Service.Id)">@T["Check connection"]</UiButton>
+            <UiButton Variant="outline" OnClick="()=>OnDiscover.InvokeAsync(Service.Id)">@T["Find devices"]</UiButton>
+            <UiButton Variant="quiet" OnClick="()=>OnManage.InvokeAsync(Service.Id)">@T["Connection settings"]</UiButton>
+        </div>
+    }
+</UiCard>
+@code {
+    [Parameter,EditorRequired]public ConnectedServiceDto Service{get;set;}=default!;
+    [Parameter]public string TimeZoneId{get;set;}="UTC";
+    [Parameter]public bool CanManage{get;set;}
+    [Parameter]public EventCallback<Guid> OnCheck{get;set;}
+    [Parameter]public EventCallback<Guid> OnDiscover{get;set;}
+    [Parameter]public EventCallback<Guid> OnManage{get;set;}
+}

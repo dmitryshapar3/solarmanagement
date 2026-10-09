@@ -63,6 +63,8 @@
   "Solar average is below the threshold",
   "Solar average is unavailable",
   "Some home data is unavailable. The latest verified readings are retained.",
+  "Sun below horizon",
+  "Sun now",
   "Switch-on conditions passed",
   "The automation could not be changed.",
   "The controlling automations could not be checked. No command was sent.",

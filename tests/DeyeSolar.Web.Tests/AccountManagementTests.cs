@@ -155,10 +155,13 @@ public sealed partial class AccountManagementTests
             own.AppSettings.Add(new() { Section = "Display", Key = "TimeZoneId", Value = "Europe/Warsaw" });
             own.AppSettings.Add(new() { Section = "DeyeCloud", Key = "Password", Value = "SECRET-EXCLUDED" });
             own.ActivityEvents.Add(new() { Kind = "rule-created", RuleName = "owned-activity", OccurredAt = DateTime.UtcNow, RecordedAt = DateTime.UtcNow });
-            own.Readings.Add(new() { Timestamp = DateTime.UtcNow, SolarProduction = 123 }); await own.SaveChangesAsync();
+            own.Readings.Add(new() { Timestamp = DateTime.UtcNow, SolarProduction = 123 });
+            own.ExportFeedPrices.Add(new() { SourceKey = new string('a', 64), StartUtc = DateTime.UtcNow, PricePlnPerMwh = 345.678m, RetrievedAtUtc = DateTime.UtcNow });
+            await own.SaveChangesAsync();
         }
         await using (var sibling = new DeyeSolarDbContext(fixture.Options, otherId))
-        { sibling.ActivityEvents.Add(new() { Kind = "rule-created", RuleName = "SIBLING-EXCLUDED", OccurredAt = DateTime.UtcNow, RecordedAt = DateTime.UtcNow }); await sibling.SaveChangesAsync(); }
+        { sibling.ActivityEvents.Add(new() { Kind = "rule-created", RuleName = "SIBLING-EXCLUDED", OccurredAt = DateTime.UtcNow, RecordedAt = DateTime.UtcNow });
+            sibling.ExportFeedPrices.Add(new() { SourceKey = new string('b', 64), StartUtc = DateTime.UtcNow, PricePlnPerMwh = 987.654m, RetrievedAtUtc = DateTime.UtcNow }); await sibling.SaveChangesAsync(); }
         var actor = await ActorAsync(scope.ServiceProvider, user);
         var zip = await scope.ServiceProvider.GetRequiredService<AccountManagementService>().ExportZipAsync(actor, new(Password), default);
         using var archive = new ZipArchive(new MemoryStream(zip)); Assert.NotNull(archive.GetEntry("manifest.json"));
@@ -166,6 +169,8 @@ public sealed partial class AccountManagementTests
         var all = string.Join("\n", text);
         Assert.Contains("owned-activity", all); Assert.Contains("Europe/Warsaw", all); Assert.DoesNotContain("SECRET-EXCLUDED", all); Assert.DoesNotContain("SIBLING-EXCLUDED", all);
         Assert.DoesNotContain("passwordHash", all); Assert.DoesNotContain("tokenHash", all); Assert.DoesNotContain("protectedRefreshToken", all);
+        using var feedPrices = JsonDocument.Parse(text[archive.Entries.ToList().FindIndex(e => e.FullName == "export-feed-prices.json")]);
+        Assert.Equal(1, feedPrices.RootElement.GetArrayLength()); Assert.Equal(345.678m, feedPrices.RootElement[0].GetProperty("pricePlnPerMwh").GetDecimal());
         using var account = JsonDocument.Parse(text[archive.Entries.ToList().FindIndex(e => e.FullName == "account.json")]);
         Assert.Equal(user.Id, account.RootElement.GetProperty("id").GetString());
     }

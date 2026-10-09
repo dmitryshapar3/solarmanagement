@@ -77,7 +77,7 @@ export type SolarSiteSettings = {
     roof1Azimuth: number; roof2Azimuth: number;
     deyeSolarPowerIsPvDcConfirmed: boolean; deyeSolarPowerConfirmedDeviceSn: string;
   };
-  solarSales: { contractStartDate: string; timeZoneId: string; payNegativePrices: boolean };
+  solarSales: { contractStartDate: string; timeZoneId: string; payNegativePrices: boolean; priceSource?: "pse" | "manual" | "feed"; manualPricePlnPerKwh?: number; priceFeedUrl?: string };
 };
 
 export type DeviceList = {
@@ -241,6 +241,7 @@ export type ExportSaleBucket = {
 };
 
 export type ExportSalesResult = {
+  priceSource?: "pse" | "manual" | "feed";
   request: { period: 0 | 1 | 2 | 3 | 4 | 5; date: string; from: string | null; through: string | null };
   today: string;
   contractStartDate: string;

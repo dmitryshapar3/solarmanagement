@@ -343,6 +343,33 @@ namespace DeyeSolar.Web.Migrations
                     b.ToTable("AppleIdentityRevocations");
                 });
 
+            modelBuilder.Entity("DeyeSolar.Web.Data.ExportFeedPriceRow", b =>
+                {
+                    b.Property<string>("InstallationId")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("StartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("PricePlnPerMwh")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<DateTime>("RetrievedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("InstallationId", "SourceKey", "StartUtc");
+
+                    b.ToTable("ExportFeedPrices");
+                });
+
             modelBuilder.Entity("DeyeSolar.Web.Data.ExportPriceRow", b =>
                 {
                     b.Property<DateTime>("StartUtc")
@@ -1269,6 +1296,15 @@ namespace DeyeSolar.Web.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DeyeSolar.Web.Data.ExportFeedPriceRow", b =>
+                {
+                    b.HasOne("DeyeSolar.Web.Data.Installation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

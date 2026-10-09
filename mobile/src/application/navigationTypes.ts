@@ -4,7 +4,7 @@ export type HomeStackParamList = { Home: undefined; LiveReadings: undefined; Set
   SolarSite: undefined; TariffExport: undefined; ConnectedServices: undefined; DataRefresh: undefined;
   Language: undefined; TimeZone: undefined; Appearance: undefined; SignInSecurity: undefined; PasswordSessions: undefined;
   ChangePassword: undefined; DeleteAccount: undefined; EditProfile: undefined; Server: undefined; };
-export type AutomationsStackParamList = { AutomationsList: undefined; Activity: undefined };
+export type AutomationsStackParamList = { AutomationsList: undefined; Activity: undefined; ReadingsLog: undefined };
 export type RootTabsParamList = { HomeTab: NavigatorScreenParams<HomeStackParamList> | undefined; Energy: { segment?: "Production" | "Export" } | undefined; Devices: undefined; Automations: NavigatorScreenParams<AutomationsStackParamList> | undefined;
  };
 export type RootStackParamList = { MainTabs: NavigatorScreenParams<RootTabsParamList> | undefined;

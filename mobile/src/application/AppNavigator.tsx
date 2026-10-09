@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, View } from "react-native";
+import { View } from "react-native";
 import { NavigationContainer, DefaultTheme, DarkTheme, type InitialState } from "@react-navigation/native";
-import { createBottomTabNavigator, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { createNativeBottomTabNavigator } from "@bottom-tabs/react-navigation";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { BlurView } from "expo-blur";
-import { House, PlugZap, ChartNoAxesCombined, Workflow } from "lucide-react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "./AuthContext";
 import { useLanguage } from "./LanguageContext";
 import type { AuthStackParamList, AutomationsStackParamList, HomeStackParamList, RootStackParamList, RootTabsParamList } from "./navigationTypes";
 import { AppButton, Banner, LoadingState, ScreenTopInsetContext, ThemedText as Text } from "../core/components";
 import { PUBLIC_PRIVACY_URL, PUBLIC_SUPPORT_URL, PUBLIC_TERMS_URL } from "../core/publicLinks";
 import { useTheme } from "../ui/theme/ThemeProvider";
-import { designTokens } from "../ui/theme/tokens";
+import { FloatingTabBar } from "./FloatingTabBar";
 import { WelcomeScreen, CodeRequestScreen, EmailCodeScreen, PasswordLoginScreen, ServerScreen } from "../features/auth/AuthScreens";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
 import { LiveReadingsScreen } from "../features/readings/LiveReadingsScreen";
@@ -34,7 +31,7 @@ import { SubscriptionGate, SubscriptionScreen, DemoPaywallScreen } from "../feat
 import { DesignGalleryScreen } from "../ui/DesignGalleryScreen";
 const Root = createNativeStackNavigator<RootStackParamList>(); const Home = createNativeStackNavigator<HomeStackParamList>();
 const Auth = createNativeStackNavigator<AuthStackParamList>(); const Automations = createNativeStackNavigator<AutomationsStackParamList>();
-const NativeTab = createNativeBottomTabNavigator<RootTabsParamList>(); const FallbackTab = createBottomTabNavigator<RootTabsParamList>();
+const Tab = createBottomTabNavigator<RootTabsParamList>();
 const subscriptionLinks = { privacyUrl: PUBLIC_PRIVACY_URL, termsUrl: PUBLIC_TERMS_URL, supportUrl: PUBLIC_SUPPORT_URL };
 export function AppNavigator() {
   const { t } = useLanguage(); const { colors } = useTheme();
@@ -74,16 +71,14 @@ function SettingsEntries() { return <>
 function HomeStack() { return <Home.Navigator screenOptions={useStackOptions()}><Home.Screen name="Home" component={DashboardScreen} options={{ headerShown: false }} /><Home.Screen name="LiveReadings" component={LiveReadingsScreen} /><Home.Screen name="ReadingsLog" component={ReadingsLogScreen} />{SettingsEntries()}</Home.Navigator>; }
 function AccountStack() { return <Home.Navigator initialRouteName="Settings" screenOptions={useStackOptions()}>{SettingsEntries()}</Home.Navigator>; }
 function AccountNavigator({ onClose }: { onClose: () => void }) { const { t } = useLanguage(); return <NavigationContainer theme={useNavigationTheme()}><Root.Navigator screenOptions={useStackOptions()}><Root.Screen name="AccountSettings" component={AccountStack} options={{ headerShown: true, headerLeft: () => <AppButton label={t("Close")} variant="ghost" compact onPress={onClose} /> }} /><Root.Screen name="Paywall" component={PaywallRoute} /></Root.Navigator></NavigationContainer>; }
-function AutomationsStack() { return <Automations.Navigator screenOptions={useStackOptions()}><Automations.Screen name="AutomationsList" component={RulesScreen as any} options={{ headerShown: false }} /><Automations.Screen name="Activity" component={ActivityScreen} options={{ headerShown: false }} /></Automations.Navigator>; }
+function AutomationsStack() { return <Automations.Navigator screenOptions={useStackOptions()}><Automations.Screen name="AutomationsList" component={RulesScreen as any} options={{ headerShown: false }} /><Automations.Screen name="Activity" component={ActivityScreen} options={{ headerShown: false }} /><Automations.Screen name="ReadingsLog" component={ReadingsLogScreen} options={{ headerShown: false }} /></Automations.Navigator>; }
 function MainTabs() {
-  const { colors } = useTheme(); const { t } = useLanguage();
-  if (Platform.OS === "ios") return <NativeTab.Navigator tabBarActiveTintColor={colors.ink} tabBarInactiveTintColor={colors.ink3} translucent scrollEdgeAppearance="default" minimizeBehavior="never" hapticFeedbackEnabled>
-    <NativeTab.Screen name="HomeTab" component={HomeStack} options={{ tabBarLabel: t("Home"), tabBarButtonTestID: "tab-home", tabBarIcon: ({ focused }) => ({ sfSymbol: focused ? "house.fill" : "house" }) }} />
-    <NativeTab.Screen name="Energy" component={EnergyScreen} options={{ tabBarLabel: t("Energy"), tabBarButtonTestID: "tab-energy", tabBarIcon: () => ({ sfSymbol: "chart.bar" }) }} />
-    <NativeTab.Screen name="Devices" component={DevicesScreen} options={{ tabBarLabel: t("Devices"), tabBarButtonTestID: "tab-devices", tabBarIcon: () => ({ sfSymbol: "powerplug" }) }} />
-    <NativeTab.Screen name="Automations" component={AutomationsStack} options={{ tabBarLabel: t("Automations"), tabBarButtonTestID: "tab-automations", tabBarIcon: () => ({ sfSymbol: "point.3.connected.trianglepath.dotted" }) }} />
-  </NativeTab.Navigator>;
-  return <FallbackTab.Navigator tabBar={props => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false }}><FallbackTab.Screen name="HomeTab" component={HomeStack} options={{ tabBarLabel: t("Home") }} /><FallbackTab.Screen name="Energy" component={EnergyScreen} options={{ tabBarLabel: t("Energy") }} /><FallbackTab.Screen name="Devices" component={DevicesScreen} options={{ tabBarLabel: t("Devices") }} /><FallbackTab.Screen name="Automations" component={AutomationsStack} options={{ tabBarLabel: t("Automations") }} /></FallbackTab.Navigator>;
+  const { t } = useLanguage();
+  return <Tab.Navigator tabBar={props => <FloatingTabBar {...props} />} screenOptions={{ headerShown: false }}>
+    <Tab.Screen name="HomeTab" component={HomeStack} options={{ tabBarLabel: t("Home"), tabBarButtonTestID: "tab-home" }} />
+    <Tab.Screen name="Energy" component={EnergyScreen} options={{ tabBarLabel: t("Energy"), tabBarButtonTestID: "tab-energy" }} />
+    <Tab.Screen name="Devices" component={DevicesScreen} options={{ tabBarLabel: t("Devices"), tabBarButtonTestID: "tab-devices" }} />
+    <Tab.Screen name="Automations" component={AutomationsStack} options={{ tabBarLabel: t("Automations"), tabBarButtonTestID: "tab-automations" }} />
+  </Tab.Navigator>;
 }
-function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) { const { colors, scheme } = useTheme(); const insets = useSafeAreaInsets(); const icons = [House, ChartNoAxesCombined, PlugZap, Workflow]; return <View style={{ position: "absolute", left: 16, right: 16, bottom: Math.max(26, insets.bottom), height: 64, borderRadius: 32, overflow: "hidden", ...(scheme === "dark" ? designTokens.shadows.tabBarDark : designTokens.shadows.tabBar) }}><BlurView intensity={24} tint={scheme} style={{ position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.glass }} /><View style={{ flexDirection: "row", padding: 6, gap: 2 }}>{state.routes.map((route, index) => { const selected = state.index === index; const Icon = icons[index]!; const label = descriptors[route.key]!.options.tabBarLabel as string; return <Pressable key={route.key} accessibilityRole="tab" accessibilityState={{ selected }} accessibilityLabel={label} onPress={() => { const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true }); if (!event.defaultPrevented) navigation.navigate(route.name, route.params); }} style={{ flex: 1, height: 52, borderRadius: 26, backgroundColor: selected ? colors.sun : "transparent", alignItems: "center", justifyContent: "center", gap: 2 }}><Icon size={22} color={selected ? colors.onSun : colors.ink3} /><Text style={{ fontSize: 11, lineHeight: 13, fontWeight: "600", color: selected ? colors.onSun : colors.ink3 }}>{label}</Text></Pressable>; })}</View></View>; }
 function PaywallRoute() { const { logout, isDemo } = useAuth(); return isDemo ? <DemoPaywallScreen /> : <SubscriptionScreen onLogout={logout} {...subscriptionLinks} />; }

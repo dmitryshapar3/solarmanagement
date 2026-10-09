@@ -13,6 +13,7 @@ import { useFocusedResource } from "../energy/useFocusedResource";
 import { useDemoDisplayName } from "../demo/useDemoDisplayName";
 import { ruleDecisionLabel } from "../rules/rulePresentation";
 import { ActivityRow } from "./ActivityRow";
+import { ActivityNavigation } from "./ActivityNavigation";
 
 export function ActivityScreen() {
   const { api } = useAuth(); const { colors } = useTheme(); const { t } = useLanguage(); const name = useDemoDisplayName();
@@ -28,6 +29,7 @@ export function ActivityScreen() {
   const next = () => actions.run("page", async context => { if (!cursor) return; const result = await api.getActivity({ ...options, cursor }, context.signal); context.publish(() => setPages(current => ({ baseline: feed.data, values: current.baseline === feed.data ? [...current.values, result] : [result] }))); }, { started: () => setError(null), failed: exception => setError(exception instanceof Error ? exception.message : "More activity could not be loaded.") });
   return <Screen refreshing={feed.loading || rules.loading || actions.busy !== null} onRefresh={async () => { await Promise.all([feed.refresh(true), rules.refresh(true)]); }}>
     <Header title="Activity" subtitle="Recorded checks, requests and observations" />
+    <ActivityNavigation value="automations" />
     <SegmentedControl value={hours} onChange={setHours} options={[{ label: "24h", value: "24" }, { label: "7d", value: "168" }, { label: "30d", value: "720" }]} />
     <SelectField label="Automation" value={ruleId} onChange={setRuleId} options={[{ value: "all", label: t("All automations") }, ...(rules.data ?? []).map(rule => ({ value: String(rule.id), label: name(rule.name) }))]} />
     <SegmentedControl value={filter} onChange={setFilter} options={[{ label: "All activity", value: "all" }, { label: "Changes only", value: "changes" }]} />

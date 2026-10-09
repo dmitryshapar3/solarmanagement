@@ -79,3 +79,21 @@ test("stored bearing360 displays north without changing it; an explicit north pr
     await act(async () => { h.preset("N").props.onPress(); }); assert.equal(h.field("Compass bearing · degrees").props.value,"0"); await h.pressSave(); assert.equal(h.puts[0].site.solarEstimate.roof1Azimuth,0);
   } finally { await h.close(); }
 });
+
+
+test("tariff saves exact manual price, rejects excess precision, and preserves it when choosing a feed", async () => {
+  const h = await harness("TariffExportScreen"); try {
+    const select = async (label: string) => { await act(async () => h.renderer.root.findAllByType("button").find(item => item.props.label === label)!.props.onPress()); };
+    await select("Fixed price"); await h.change("Sale price", "0.123456");
+    assert.equal(h.header().props.disabled, false); const captured = h.header().props.onPress;
+    await h.change("Sale price", "0.1234567"); assert.equal(h.header().props.disabled, true);
+    await act(async () => captured()); assert.equal(h.puts.length, 0);
+    await h.change("Sale price", "0.123456"); await h.pressSave();
+    assert.equal(h.puts[0].site.solarSales.priceSource, "manual"); assert.equal(h.puts[0].site.solarSales.manualPricePlnPerKwh, 0.123456);
+    await select("CSV / XML feed"); await h.change("Price feed URL", "http://localhost/prices.csv");
+    assert.equal(h.header().props.disabled, true); assert.ok(h.field("Price feed URL").props.error);
+    await h.change("Price feed URL", "https://prices.example.com/feed.xml"); await h.pressSave();
+    assert.equal(h.puts[1].site.solarSales.priceSource, "feed"); assert.equal(h.puts[1].site.solarSales.priceFeedUrl, "https://prices.example.com/feed.xml");
+    assert.equal(h.puts[1].site.solarSales.manualPricePlnPerKwh, 0.123456);
+  } finally { await h.close(); }
+});

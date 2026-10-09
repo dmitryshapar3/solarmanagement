@@ -1,4 +1,7 @@
 using SolarManagement.Inverters.Contracts;
+using DeyeSolar.Infrastructure.Settlement;
+using System.Net;
+using System.Text.Json;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Options;
@@ -856,6 +859,98 @@ public class ExportSalesServiceTests
         Assert.False(fixture.Readings.Rows.ContainsKey("selected"));
     }
 
+    [Fact]
+    public async Task ManualPriceValuesReadingsWithoutLoadingOrReplacingSharedMarketPrices()
+    {
+        var fixture = new Fixture(); fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start, 900m));
+        fixture.Options.CurrentValue.PriceSource = "manual"; fixture.Options.CurrentValue.ManualPricePlnPerKwh = 0.321456m;
+        var result = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(0.321456m, result.EnergyValuePln); Assert.Equal(0.321456m * 1.23m, result.EstimatedDepositPln);
+        Assert.Empty(fixture.PriceStore.Reads); Assert.Empty(fixture.PriceStore.Saves); Assert.Empty(fixture.Prices.Calls);
+        Assert.All(fixture.PriceStore.Rows, p => Assert.Equal(900m, p.PricePlnPerMwh));
+    }
+
+    [Fact]
+    public async Task FeedUsesPrivateCacheAndRefreshesKnownIntervalsWhilePreservingOfficialPrices()
+    {
+        var fixture = new Fixture(); fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start, 900m));
+        fixture.Options.CurrentValue.PriceSource = "feed"; fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/feed.csv";
+        fixture.Prices.Rows = PriceHour(Start, 300m);
+        var first = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(0.3m, first.EnergyValuePln); Assert.Empty(fixture.PriceStore.Reads); Assert.Empty(fixture.PriceStore.Saves);
+        Assert.Single(fixture.PriceStore.FeedSaves); Assert.Single(fixture.Prices.Calls);
+        fixture.Clock.Now = fixture.Clock.Now.AddMinutes(3); fixture.Prices.Rows = PriceHour(Start, 400m);
+        var refreshed = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(0.4m, refreshed.EnergyValuePln); Assert.Equal(2, fixture.Prices.Calls.Count);
+        Assert.All(fixture.PriceStore.Rows, p => Assert.Equal(900m, p.PricePlnPerMwh));
+        fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/different.xml"; fixture.Prices.Fail = true;
+        var missing = await fixture.Service.ReadAsync(Day, default);
+        Assert.Null(missing.EnergyValuePln); Assert.Equal(2, fixture.PriceStore.FeedRows.Count);
+        Assert.Equal("The price feed is temporarily unavailable. Saved feed prices are preserved; missing intervals have no value estimate.", missing.PriceError);
+    }
+
+    [Fact]
+    public async Task SwitchingFeedDuringFetchCannotPersistOrPublishThePreviousSourcesPrices()
+    {
+        var fixture = new Fixture(); fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.Options.CurrentValue.PriceSource = "feed"; fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/feed.csv";
+        fixture.Prices.Read = (_, _, _) => { fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/other.csv"; return Task.FromResult<IReadOnlyList<ExportPriceInterval>>(PriceHour(Start, 300m)); };
+        var result = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal("Installation settings changed. Refresh the page.", result.DataError);
+        Assert.Empty(fixture.PriceStore.FeedSaves); Assert.Empty(fixture.PriceStore.Saves); Assert.Null(result.EnergyValuePln);
+    }
+
+    [Fact]
+    public async Task FeedFetchRemainsPinnedToCapturedSourceAcrossAnAbaConfigurationChange()
+    {
+        var fixture = new Fixture(); fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.Options.CurrentValue.PriceSource = "feed"; fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/a.csv";
+        fixture.PriceStore.BeforeFeedRead = () => fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/b.csv";
+        var requested = new List<Uri>();
+        var handler = new FeedHandler(request =>
+        {
+            requested.Add(request.RequestUri!);
+            fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/a.csv";
+            return new(HttpStatusCode.OK) { Content = new StringContent("interval_start,interval_end,price_pln_per_kwh\n2026-09-27T22:00:00Z,2026-09-27T23:00:00Z,0.3") };
+        });
+        var source = new ConfiguredExportPriceSource(new PseExportPriceClient(new UnusedPseReader()),
+            new ExportPriceFeedClient(new HttpClient(handler)), fixture.Options);
+        var service = new ExportSalesService(fixture.Readings, fixture.History, fixture.PriceStore, source, fixture.Options, fixture.Devices,
+            fixture.Clock, NullLogger<ExportSalesService>.Instance);
+        var result = await service.ReadAsync(Day, default);
+        Assert.Equal("https://example.com/a.csv", Assert.Single(requested).AbsoluteUri);
+        Assert.Equal(0.3m, result.EnergyValuePln); Assert.Single(fixture.PriceStore.FeedSaves); Assert.Empty(fixture.PriceStore.Saves);
+    }
+    private sealed class FeedHandler(Func<HttpRequestMessage, HttpResponseMessage> reply) : HttpMessageHandler
+    { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => Task.FromResult(reply(request)); }
+    private sealed class UnusedPseReader : IPseJsonReader
+    { public Task<JsonDocument> ReadAsync(Uri uri, CancellationToken ct) => throw new InvalidOperationException("A feed must not access PSE."); }
+
+    [Fact]
+    public async Task FailedFeedRefreshKeepsCachedValuesAndOutageVisibleThroughoutRetryThrottle()
+    {
+        var fixture = new Fixture(); fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.Options.CurrentValue.PriceSource = "feed"; fixture.Options.CurrentValue.PriceFeedUrl = "https://example.com/feed.csv";
+        fixture.Prices.Rows = PriceHour(Start, 300m);
+        Assert.Equal(0.3m, (await fixture.Service.ReadAsync(Day, default)).EnergyValuePln);
+        fixture.Clock.Now = fixture.Clock.Now.AddMinutes(3); fixture.Prices.Fail = true;
+        var failed = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(0.3m, failed.EnergyValuePln); Assert.NotNull(failed.PriceError);
+        var calls = fixture.Prices.Calls.Count; fixture.Clock.Now = fixture.Clock.Now.AddSeconds(30);
+        var throttled = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(calls, fixture.Prices.Calls.Count); Assert.Equal(0.3m, throttled.EnergyValuePln); Assert.Equal(failed.PriceError, throttled.PriceError);
+        fixture.Clock.Now = fixture.Clock.Now.AddMinutes(2); fixture.Prices.Fail = false; fixture.Prices.Rows = PriceHour(Start, 400m);
+        var recovered = await fixture.Service.ReadAsync(Day, default);
+        Assert.Equal(0.4m, recovered.EnergyValuePln); Assert.Null(recovered.PriceError);
+    }
+
     private static ExportGridSample[] Constant(int watts, int hours) => Enumerable.Range(0, hours * 12 + 1)
         .Select(index => new ExportGridSample(Start.AddMinutes(index * 5), watts)).ToArray();
     private static ExportPriceInterval[] PriceHour(DateTimeOffset from, params decimal[] values) => Enumerable.Range(0, 4)
@@ -922,8 +1017,24 @@ public class ExportSalesServiceTests
             return Read?.Invoke(deviceSn, start, end, ct) ?? Task.FromResult<IReadOnlyList<ExportGridSample>>(Rows.Where(sample => sample.Timestamp >= start && sample.Timestamp < end).ToArray());
         }
     }
-    private sealed class PriceStore : IExportPriceStore
+    private sealed class PriceStore : IExportPriceStore, IScopedExportPriceStore
     {
+        public Dictionary<string, List<ExportPriceInterval>> FeedRows { get; } = [];
+        public List<string> FeedSaves { get; } = [];
+        public Action? BeforeFeedRead;
+        public Task<IReadOnlyList<ExportPriceInterval>> ReadFeedAsync(string sourceKey, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
+        {
+            BeforeFeedRead?.Invoke();
+            if (!FeedRows.ContainsKey(sourceKey)) FeedRows[sourceKey] = [];
+            return Task.FromResult<IReadOnlyList<ExportPriceInterval>>(FeedRows[sourceKey].Where(p => p.Start >= start && p.Start < end).ToArray());
+        }
+        public Task SaveFeedAsync(string sourceKey, IReadOnlyList<ExportPriceInterval> prices, DateTimeOffset retrievedAt, CancellationToken ct)
+        {
+            FeedSaves.Add(sourceKey);
+            if (!FeedRows.ContainsKey(sourceKey)) FeedRows[sourceKey] = [];
+            foreach (var price in prices) { FeedRows[sourceKey].RemoveAll(p => p.Start == price.Start); FeedRows[sourceKey].Add(price); }
+            return Task.CompletedTask;
+        }
         public List<ExportPriceInterval> Rows { get; } = [];
         public List<Window> Reads { get; } = [];
         public List<IReadOnlyList<ExportPriceInterval>> Saves { get; } = [];

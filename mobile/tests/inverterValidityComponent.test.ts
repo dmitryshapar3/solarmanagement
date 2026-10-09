@@ -96,7 +96,7 @@ test("the actual dashboard shows missing grid and solar as unavailable and prese
     const Component = (await components()).DashboardScreen;
     await act(async () => { renderer = create(React.createElement(Component)); });
     const solar = () => renderer!.root.findAllByType("Text").find(item => item.props.style?.fontSize === 72)!.props.children;
-    const grid = () => renderer!.root.findAllByType("SvgText").find(item => item.props.x === 310 && item.props.y === 69)!.props.children;
+    const grid = () => renderer!.root.findByProps({ testID: "energy-flow-grid-value" }).props.children;
     assert.equal(solar(), "—"); assert.equal(grid(), "—");
     globals.__inverterValidityReading = { ...reading, gridPowerValid: true, solarPowerValid: true };
     await act(async () => { renderer!.update(React.createElement(Component)); });

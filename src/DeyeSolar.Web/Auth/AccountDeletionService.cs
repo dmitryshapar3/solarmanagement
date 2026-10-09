@@ -52,6 +52,7 @@ public sealed class AccountDeletionService(DbContextOptions<DeyeSolarDbContext> 
             await db.RuleRunLogs.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.ActivityEvents.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.Readings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
+            await db.ExportFeedPrices.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.ExportReadings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.AppSettings.IgnoreQueryFilters().Where(r => owned.Contains(r.InstallationId)).ExecuteDeleteAsync(ct);
             await db.InstallationMemberships.Where(m => m.UserId == user.Id).ExecuteDeleteAsync(ct);

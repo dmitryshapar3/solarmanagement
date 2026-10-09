@@ -49,8 +49,8 @@ public class SalesStatisticsTests
         Assert.Matches("data-testid=\"sales-credited\"[^>]*>Credited after hourly netting: 3[.]00 kWh",html);
         Assert.Matches("data-testid=\"sales-measured\"[^>]*>Measured hours: 3 / 4",html);
         Assert.Contains("Priced hours: 2 / 4",html);
-        Assert.Contains("netted for each hour",html);
-        Assert.Contains("available RCE prices",html);
+        Assert.Contains("netted each hour",html);
+        Assert.Contains("price source saved in your export contract",html);
     }
     [Theory][InlineData(false)][InlineData(true)]
     public async Task CurrentHourIsSeparateFromCompletedTotalsAndNeverProjected(bool priceKnown)

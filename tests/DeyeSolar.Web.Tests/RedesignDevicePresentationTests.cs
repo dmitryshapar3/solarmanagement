@@ -63,7 +63,7 @@ public class RedesignDevicePresentationTests
     }
 
     [Fact]
-    public async Task EnergyFlowRendersRealEnabledRuleMarkersAndLinksToTheAutomation()
+    public async Task EnergyFlowKeepsRealEnabledRuleLinksWithoutTheRemovedGauge()
     {
         var collection = new ServiceCollection(); collection.AddLogging(); collection.AddComponentLocalization();
         await using var services = collection.BuildServiceProvider();
@@ -75,7 +75,7 @@ public class RedesignDevicePresentationTests
                 ["Rules"] = new TriggerRule[] { new() { Id = 7, Name = "Water heater", Enabled = true,
                     SocTurnOnThreshold = 75, UseSeparateSocTurnOffThreshold = true, SocTurnOffThreshold = 55 } }
             }))).ToHtmlString()));
-        Assert.Contains("left:75%", html); Assert.Contains("left:55%", html);
+        Assert.DoesNotContain("flow-rule-track", html); Assert.DoesNotContain("role=\"meter\"", html);
         Assert.Contains("/automations/7", html); Assert.Contains("On at 75% · off at 55%", html);
         Assert.Contains("/activity/readings", html);
     }

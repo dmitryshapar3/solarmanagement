@@ -3,7 +3,10 @@
 <NavLink @onclick="OnNavigate" href="/energy"><UiIcon Name="energy" />@T["Energy"]</NavLink>
 <NavLink @onclick="OnNavigate" href="/devices"><UiIcon Name="devices" />@T["Devices"]</NavLink>
 <NavLink @onclick="OnNavigate" href="/automations"><UiIcon Name="automations" />@T["Automations"]</NavLink>
-<NavLink @onclick="OnNavigate" href="/activity"><UiIcon Name="activity" />@T["Activity"]</NavLink>
+<details class="app-nav-group" open><summary><UiIcon Name="activity" />@T["Activity"]</summary><div class="app-nav-submenu">
+<NavLink @onclick="OnNavigate" href="/activity/readings" Match="NavLinkMatch.All">@T["Readings"]</NavLink>
+<NavLink @onclick="OnNavigate" href="/activity" Match="NavLinkMatch.All">@T["Automation"]</NavLink>
+</div></details>
 <div class="nav-divider"></div>
 <NavLink @onclick="OnNavigate" href="/settings"><UiIcon Name="settings" />@T["Settings"]</NavLink>
 <a href="/support" target="_top"><UiIcon Name="help" />@T["Help & support"]</a>

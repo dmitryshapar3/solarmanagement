@@ -34,7 +34,7 @@ const verification = object({ verificationId: str, expiresAt: date, retryAfterSe
 const settings = object({ polling: object({ intervalSeconds: num }), display: object({ timeZoneId: str }) });
 const site = object({ solarEstimate: object({ ...numbers(["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"]),
   locationLabel: str, timeZoneId: str, deyeSolarPowerIsPvDcConfirmed: bool, deyeSolarPowerConfirmedDeviceSn: str }),
-  solarSales: object({ contractStartDate: str, timeZoneId: str, payNegativePrices: bool }), selectedDeviceSn: str });
+  solarSales: object({ contractStartDate: str, timeZoneId: str, payNegativePrices: bool, priceSource: optional(oneOf("pse", "manual", "feed")), manualPricePlnPerKwh: optional(num), priceFeedUrl: optional(str) }), selectedDeviceSn: str });
 const instance = object({ ...strings(["id", "providerId", "name", "status", "packageVersion", "packageDigest", "descriptorDigest"]), revision: num, generation: num });
 const field = object({ key: str, kind: str, label: str, required: bool, secret: bool, defaultValue: optional(value), minimum: optional(nullable(num)), maximum: optional(nullable(num)),
   options: optional(nullable(array(object({ value: str, label: str })))) });
@@ -53,7 +53,7 @@ const solarState = object({ estimate: nullable(forecast), comparisonEstimate: nu
   actual: nullable(object({ timestamp: date, powerKw: num, basis: oneOf(0, 1, 2) })), deviationKw: nullable(num), deviationPercent: nullable(num), reason: nullable(str) }),
   refreshFailed: bool, lastSuccessAt: nullable(date), error: nullable(str) });
 const salesValues = Object.fromEntries(["exportKwh", "creditedExportKwh", "energyValuePln", "estimatedDepositPln"].map(k => [k, nullable(num)]));
-const sales = object({ request: object({ period: oneOf(0, 1, 2, 3, 4, 5), date: str, from: nullable(str), through: nullable(str) }),
+const sales = object({ priceSource: optional(oneOf("pse", "manual", "feed")), request: object({ period: oneOf(0, 1, 2, 3, 4, 5), date: str, from: nullable(str), through: nullable(str) }),
   ...strings(["today", "contractStartDate", "timeZoneId", "start", "end"]), ...salesValues, ...numbers(["expectedHours", "observedHours", "valuedHours"]),
   buckets: array(object({ start: date, end: date, ...salesValues, ...numbers(["expectedHours", "observedHours", "valuedHours"]) })), dataError: nullable(str), priceError: nullable(str),
   currentHour: nullable(object({ start: date, observedThrough: nullable(date), ...salesValues, observedSeconds: num })), updatedAt: nullable(date), isPartial: bool,
@@ -125,7 +125,7 @@ function contract(path: string, method: string, query?: Record<string, unknown>)
   if (path === "/api/activity") return activity;
   if (/^\/api\/activity\/groups\/\d+\/checks$/.test(path)) return object({ nextCursor: nullable(str), items: array(object({ id: num, occurredAt: date, kind: str, reasonCode: nullable(str), batterySoc: nullable(num), solarWatts: nullable(num), state: nullable(bool), configurationVersion: nullable(str), generation: nullable(num) })) });
   if (/^\/api\/v2\/devices\/[^/]+\/details$/.test(path)) return object({ id: str, name: str, device: nullable(device), providerId: nullable(str), providerDisplayName: optional(nullable(str)), model: nullable(str), instanceId: nullable(str), sourceInverterId: nullable(str), phaseCount: oneOf(1, 3), controllingRules: array(rule), lastConfirmedSwitch: nullable(date), addedAt: nullable(date), canSwitch: bool, supportsHistory: bool });
-  if (path === "/api/v2/integrations/status") return object({ services: array(object({ id: str, providerId: str, name: str, kind: str, status: str, enabled: bool, socketCount: num, defaultInverterName: nullable(str), lastReadingAt: nullable(date), lastConfirmedSwitch: nullable(date) })), forecastRetrievedAt: nullable(date), latestStoredPriceAt: nullable(date), missingPriceHours: num });
+  if (path === "/api/v2/integrations/status") return object({ services: array(object({ id: str, providerId: str, name: str, kind: str, status: str, enabled: bool, socketCount: num, defaultInverterName: nullable(str), lastReadingAt: nullable(date), lastConfirmedSwitch: nullable(date) })), forecastRetrievedAt: nullable(date), latestStoredPriceAt: nullable(date), missingPriceHours: num, priceSource: optional(oneOf("pse", "manual", "feed")), manualPricePlnPerKwh: optional(nullable(num)) });
   if (/^\/api\/v2\/devices\/[^/]+\/history$/.test(path)) return object({ start: date, end: date, onSeconds: nullable(num), knownSeconds: num,
     partial: bool, intervals: array(object({ from: date, to: date, isOn: nullable(bool), evidence: str })) });
   if (/^\/api\/rules\/\d+\/evaluation$/.test(path)) return object({ ruleId: num, configurationVersion: nullable(str), checkedAt: nullable(date), nextCheckAt: nullable(date),

@@ -10,7 +10,15 @@ namespace DeyeSolar.Web.Services;
 public sealed record SolarSiteSettings(double Latitude, double Longitude, string LocationLabel, string TimeZoneId,
     double Roof1Kwp, double Roof2Kwp, double Roof1Tilt, double Roof2Tilt, double Roof1Azimuth, double Roof2Azimuth,
     bool DeyeSolarPowerIsPvDcConfirmed = false, string DeyeSolarPowerConfirmedDeviceSn = "");
-public sealed record SalesSiteSettings(string ContractStartDate, string TimeZoneId, bool PayNegativePrices);
+public sealed record SalesSiteSettings(string ContractStartDate, string TimeZoneId, bool PayNegativePrices,
+    string? PriceSource = null, decimal? ManualPricePlnPerKwh = null, string? PriceFeedUrl = null)
+{
+    public SalesSiteSettings PreservePricing(SalesSiteSettings current) => this with
+    { PriceSource = PriceSource ?? current.PriceSource ?? "pse", ManualPricePlnPerKwh = ManualPricePlnPerKwh ?? current.ManualPricePlnPerKwh ?? 0,
+        PriceFeedUrl = PriceFeedUrl ?? current.PriceFeedUrl ?? "" };
+    public static SalesSiteSettings From(SolarSalesOptions sales) => new(sales.ContractStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        sales.TimeZoneId, sales.PayNegativePrices, sales.PriceSource, sales.ManualPricePlnPerKwh, sales.PriceFeedUrl);
+}
 public sealed record SiteSettingsDto(SolarSiteSettings SolarEstimate, SalesSiteSettings SolarSales, string SelectedDeviceSn = "");
 
 public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSettingsWriter writer, IOptionsMonitor<InverterConnectionOptions> inverter,
@@ -31,7 +39,7 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         return new(new(solar.Latitude, solar.Longitude, solar.LocationLabel, solar.TimeZoneId,
             solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
             confirmed, confirmed ? selectedSn : ""),
-            new(sales.ContractStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), sales.TimeZoneId, sales.PayNegativePrices), selectedSn);
+            SalesSiteSettings.From(sales), selectedSn);
     }
     public static bool TryValidate(SiteSettingsDto? draft, out string message)
     {
@@ -48,17 +56,30 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         if (!DateOnly.TryParseExact(sales.ContractStartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var date) || date.Year < 2000)
         { message = "Enter a contract start date from 2000 onwards as YYYY-MM-DD."; return false; }
+        try { new SolarSalesOptions { ContractStartDate = date, TimeZoneId = sales.TimeZoneId, PayNegativePrices = sales.PayNegativePrices,
+            PriceSource = sales.PriceSource ?? "pse", ManualPricePlnPerKwh = sales.ManualPricePlnPerKwh ?? 0, PriceFeedUrl = sales.PriceFeedUrl ?? "" }.Validate(); }
+        catch (ArgumentException ex) { message = ex.Message; return false; }
         message = "";
         return true;
     }
     public async Task SaveAsync(SiteSettingsDto draft)
     {
+        if (draft?.SolarSales is not { } suppliedSales || draft.SolarEstimate is null)
+            throw new ArgumentException("Enter a valid location, solar capacity, roof orientation and time zone.");
+        var saved = await settings.LoadSectionAsync<SolarSalesOptions>(SolarSalesOptions.Section);
+        draft = draft with { SolarSales = draft.SolarSales.PreservePricing(SalesSiteSettings.From(saved)) };
         if (!TryValidate(draft, out var error)) throw new ArgumentException(error);
         var selectedSn = await SelectedDeviceAsync();
         var solar = draft.SolarEstimate;
         if (solar.DeyeSolarPowerIsPvDcConfirmed && (selectedSn.Length == 0 || solar.DeyeSolarPowerConfirmedDeviceSn != selectedSn))
             throw new ArgumentException("Save and select the primary inverter in Integrations, then reload before confirming its PV readings.");
-        // Save only editable properties; advanced model assumptions and server keys remain in place.
+        var salesPatch = new Dictionary<string, object?>
+        { [nameof(SolarSalesOptions.ContractStartDate)] = suppliedSales.ContractStartDate, [nameof(SolarSalesOptions.TimeZoneId)] = suppliedSales.TimeZoneId,
+            [nameof(SolarSalesOptions.PayNegativePrices)] = suppliedSales.PayNegativePrices };
+        if (suppliedSales.PriceSource is not null) salesPatch[nameof(SolarSalesOptions.PriceSource)] = suppliedSales.PriceSource;
+        if (suppliedSales.ManualPricePlnPerKwh.HasValue) salesPatch[nameof(SolarSalesOptions.ManualPricePlnPerKwh)] = suppliedSales.ManualPricePlnPerKwh.Value;
+        if (suppliedSales.PriceFeedUrl is not null) salesPatch[nameof(SolarSalesOptions.PriceFeedUrl)] = suppliedSales.PriceFeedUrl;
+        // Save only supplied editable properties; omitted pricing, model assumptions and server keys remain in place.
         await writer.SaveSectionsAsync(new Dictionary<string, object>
         {
             [SolarEstimateOptions.Section] = new
@@ -67,7 +88,7 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
             solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
             solar.DeyeSolarPowerIsPvDcConfirmed, DeyeConfirmedDeviceSn = solar.DeyeSolarPowerIsPvDcConfirmed ? selectedSn : ""
             },
-            [SolarSalesOptions.Section] = draft.SolarSales
+            [SolarSalesOptions.Section] = new AppSettingsPatch(salesPatch)
         });
     }
 }

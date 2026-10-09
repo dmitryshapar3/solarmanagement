@@ -31,8 +31,8 @@ public class EnergyDetailsTests
         Assert.Contains(label, html);
         Assert.Contains(value, html);
         Assert.Contains("4.10 kW", html);
-        Assert.Contains("Arrows are shown only for known, nonzero flows", html);
-        Assert.Contains("measurements may have different times", html);
+        Assert.DoesNotContain("Arrows are shown only for known, nonzero flows", html);
+        Assert.Contains("data-flow=\"battery\"", html);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class EnergyDetailsTests
         Assert.Equal(direction, PowerBalance.Direction(balance.Watts.Value));
         Assert.Equal(value, (balance.Watts > 0 ? "+" : "") + balance.Watts.Value.ToString("0") + " W");
         var html = await RenderReadingsAsync(reading, observed.AddMinutes(2));
-        Assert.Contains("Signs come from the inverter", html);
+        Assert.DoesNotContain("Signs come from the inverter", html);
         Assert.DoesNotContain("inverter losses", html);
 
     }
