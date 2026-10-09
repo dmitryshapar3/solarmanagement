@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace DeyeSolar.Web.Services;
 
-public enum SolarHistoryPeriod { Today, Week, Month }
+public enum SolarHistoryPeriod { Today, Week, Month, CalendarMonth, Custom }
 
 public sealed record SolarHistoryPowerRange(double LowerKw, double UpperKw);
 

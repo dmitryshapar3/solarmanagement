@@ -1,0 +1,76 @@
+<div class="energy-filters" data-testid="energy-period-filters">
+    <div class="toolbar-controls">
+        <div class="segments energy-period-segments" aria-label="@T["Chart period"]">
+            @foreach (var choice in Choices)
+            {
+                <button type="button" class="@(Selection.Period == choice.Period ? "selected" : null)" aria-pressed="@((Selection.Period == choice.Period).ToString().ToLowerInvariant())" @onclick="() => ChangePeriod(choice.Period)">@T[choice.Label]</button>
+            }
+        </div>
+        <div class="date-navigation">
+            <button type="button" class="icon-button" @onclick="() => Move(-1)" disabled="@(!CanMove(-1))" aria-label="@T["Previous period"]"><UiIcon Name="back" /></button>
+            @if (Selection.Period != EnergyPeriod.Custom)
+            {
+                <input class="period-date" type="@(Selection.Period == EnergyPeriod.CalendarMonth ? "month" : "date")" aria-label="@T["Date"]" value="@Selection.Date.ToString(Selection.Period == EnergyPeriod.CalendarMonth ? "yyyy-MM" : "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" min="@(Selection.Period == EnergyPeriod.CalendarMonth ? "2000-01" : "2000-01-01")" max="@Today.AddDays(366).ToString(Selection.Period == EnergyPeriod.CalendarMonth ? "yyyy-MM" : "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)" @onchange="DateChanged" />
+            }
+            <button type="button" class="icon-button" @onclick="() => Move(1)" disabled="@(!CanMove(1))" aria-label="@T["Next period"]"><UiIcon Name="chevron" /></button>
+        </div>
+    </div>
+    @if (Selection.Period == EnergyPeriod.Custom)
+    {
+        <div class="energy-custom-range">
+            <label>@T["From"]<input type="date" @bind="_from" min="2000-01-01" max="@EnergyPeriodSelection.Iso(Today.AddDays(366))" /></label>
+            <label>@T["To"]<input type="date" @bind="_through" min="2000-01-01" max="@EnergyPeriodSelection.Iso(Today.AddDays(366))" /></label>
+            <UiButton Variant="primary" OnClick="Apply">@T["Apply"]</UiButton>
+            <span class="caption">@T["Inclusive · up to 366 days"]</span>
+        </div>
+    }
+    <div class="energy-window-summary">
+        <span class="caption" data-testid="history-date">@WindowLabel</span>
+        <div class="energy-forecast-shortcuts" aria-label="@T["Chart period"]">
+            <button type="button" class="text-link" @onclick="() => Choose(new(EnergyPeriod.Day, Today))">@T["Today"]</button>
+            <button type="button" class="text-link" @onclick="() => Choose(new(EnergyPeriod.Week, Today.AddDays(6)))">@T["Next 7 days"]</button>
+            <button type="button" class="text-link" @onclick="() => Choose(new(EnergyPeriod.RollingMonth, Today.AddDays(29)))">@T["Next 30 days"]</button>
+        </div>
+    </div>
+    @if (_error is not null) { <p class="field-hint" role="alert">@T[_error]</p> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EnergyPeriodSelection Selection { get; set; } = new(EnergyPeriod.Day, DateOnly.FromDateTime(DateTime.UtcNow));
+    [Parameter] public DateOnly Today { get; set; }
+    [Parameter] public EventCallback<EnergyPeriodSelection> SelectionChanged { get; set; }
+    private static readonly (EnergyPeriod Period, string Label)[] Choices = [(EnergyPeriod.Day, "Day"), (EnergyPeriod.Week, "7 days"), (EnergyPeriod.RollingMonth, "30 days"), (EnergyPeriod.CalendarMonth, "Month"), (EnergyPeriod.Custom, "Custom")];
+    private DateTime? _from, _through;
+    private EnergyPeriodSelection? _previous;
+    private string? _error;
+    private string WindowLabel => Selection.Period == EnergyPeriod.CalendarMonth ? Selection.Date.ToString("MMMM yyyy", T.Culture)
+        : Selection.FirstDate == Selection.LastDate ? Selection.FirstDate.ToString("d MMM yyyy", T.Culture)
+        : Selection.FirstDate.ToString("d MMM yyyy", T.Culture) + " – " + Selection.LastDate.ToString("d MMM yyyy", T.Culture);
+    protected override void OnParametersSet()
+    {
+        if (_previous == Selection) return;
+        _previous = Selection; _from = Selection.FirstDate.ToDateTime(TimeOnly.MinValue); _through = Selection.LastDate.ToDateTime(TimeOnly.MinValue); _error = null;
+    }
+    private Task Choose(EnergyPeriodSelection value)
+    {
+        if (!value.IsValid(Today)) { _error = "Choose a valid period of at most 366 days."; return Task.CompletedTask; }
+        _error = null; return SelectionChanged.InvokeAsync(value);
+    }
+    private Task ChangePeriod(EnergyPeriod period) => Choose(period == EnergyPeriod.Custom
+        ? new(period, Selection.FirstDate, Selection.FirstDate, Selection.LastDate) : new(period, Selection.Date));
+    private bool CanMove(int direction) { try { return Selection.Move(direction).IsValid(Today); } catch (ArgumentOutOfRangeException) { return false; } }
+    private Task Move(int direction) => CanMove(direction) ? Choose(Selection.Move(direction)) : Task.CompletedTask;
+    private Task DateChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (Selection.Period == EnergyPeriod.CalendarMonth) value += "-01";
+        return DateOnly.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date)
+            ? Choose(Selection with { Date = date }) : Task.CompletedTask;
+    }
+    private Task Apply()
+    {
+        if (_from is null || _through is null) { _error = "Choose a valid period of at most 366 days."; return Task.CompletedTask; }
+        var first = DateOnly.FromDateTime(_from.Value); var last = DateOnly.FromDateTime(_through.Value);
+        return Choose(new(EnergyPeriod.Custom, first, first, last));
+    }
+}

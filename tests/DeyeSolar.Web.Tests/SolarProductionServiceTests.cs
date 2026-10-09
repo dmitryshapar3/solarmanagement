@@ -156,4 +156,144 @@ public sealed class SolarProductionServiceTests
         Assert.Equal(days,result.Days.Count);Assert.Equal(days*24,result.Hours.Count);Assert.Equal(result.ObservedEnergyKwh,result.Days.Where(d=>d.ObservedEnergyKwh.HasValue).Sum(d=>d.ObservedEnergyKwh));
         Assert.True(result.Days.Take(days-1).All(d=>d.Partial&&d.ObservedEnergyKwh is null));
     }
+
+    [Fact]
+    public async Task TomorrowUsesForecastWithoutReadingOrInventingActualGeneration()
+    {
+        var fixture = new Fixture();
+        var tomorrow = DateOnly.FromDateTime(Now.Date).AddDays(1);
+        var result = await fixture.Service().ReadAsync(SolarHistoryPeriod.Today, tomorrow);
+
+        Assert.Equal(0, fixture.Actual.Calls);
+        Assert.Null(result.ObservedEnergyKwh);
+        Assert.Null(result.CompletedEnergyKwh);
+        Assert.Null(result.CurrentHour);
+        Assert.Null(result.ActualError);
+        Assert.All(result.Hours, hour => { Assert.Null(hour.ActualKw); Assert.Null(hour.ObservedEnergyKwh); Assert.NotNull(hour.ExpectedKw); });
+        Assert.NotNull(result.ExpectedEnergyKwh);
+        Assert.False(result.ForecastIncomplete);
+        Assert.Equal(tomorrow, result.ForecastAvailableThrough);
+        Assert.NotNull(result.BestForecastHour);
+        Assert.True(Assert.Single(result.Days).Partial);
+    }
+
+    [Fact]
+    public async Task FutureMonthPreservesAvailableForecastAndLeavesTheUnavailableTailEmpty()
+    {
+        var fixture = new Fixture();
+        var today = DateOnly.FromDateTime(Now.Date);
+        var result = await fixture.Service().ReadAsync(SolarHistoryPeriod.Month, today.AddDays(29));
+
+        Assert.Equal(today, result.FirstDate);
+        Assert.Equal(today.AddDays(29), result.LastDate);
+        Assert.Equal(30, result.Days.Count);
+        Assert.Null(result.ExpectedEnergyKwh);
+        Assert.NotNull(result.AvailableExpectedEnergyKwh);
+        Assert.Equal(result.Days.Take(16).Sum(day => day.ExpectedEnergyKwh!.Value), result.AvailableExpectedEnergyKwh);
+        Assert.True(result.ForecastIncomplete);
+        Assert.Equal(today.AddDays(15), result.ForecastAvailableThrough);
+        Assert.All(result.Days.Skip(16), day => Assert.Null(day.ExpectedEnergyKwh));
+        Assert.All(result.Hours.Skip(16 * 24), hour => { Assert.Null(hour.ExpectedKw); Assert.Null(hour.ActualKw); });
+    }
+
+    [Fact]
+    public async Task DatesEntirelyBeyondWeatherHorizonRemainNavigableWithoutProviderRequests()
+    {
+        var fixture = new Fixture();
+        var result = await fixture.Service().ReadAsync(SolarHistoryPeriod.Today, DateOnly.FromDateTime(Now.Date).AddDays(100));
+
+        Assert.Equal(0, fixture.Weather.Calls);
+        Assert.Equal(0, fixture.Actual.Calls);
+        Assert.True(result.ForecastIncomplete);
+        Assert.Null(result.ForecastAvailableThrough);
+        Assert.Null(result.AvailableExpectedEnergyKwh);
+        Assert.All(result.Hours, hour => { Assert.Null(hour.ExpectedKw); Assert.Null(hour.ActualKw); });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ClippedForecastWindowsCacheAstronomyForTheirOwnSelectedDate(bool monthFirst)
+    {
+        var fixture = new Fixture();
+        var weather = new SelectedDateForecast();
+        var service = new SolarProductionService(weather, fixture.Actual, fixture.Config, fixture.Source,
+            new Clock(), NullLogger<SolarProductionService>.Instance);
+        var today = DateOnly.FromDateTime(Now.Date);
+        var customRequest = new ProductionRequest(SolarHistoryPeriod.Custom, From: today, Through: today.AddDays(15));
+        var monthRequest = new ProductionRequest(SolarHistoryPeriod.Month, today.AddDays(29));
+
+        await service.ReadAsync(monthFirst ? monthRequest : customRequest);
+        await service.ReadAsync(monthFirst ? customRequest : monthRequest);
+        var custom = await service.ReadAsync(customRequest);
+        var month = await service.ReadAsync(monthRequest);
+
+        Assert.Equal(2, weather.Requests.Count); // Repeated matching requests still use their own cache entries.
+        Assert.Equal(weather.Requests[0].Start, weather.Requests[1].Start);
+        Assert.Equal(weather.Requests[0].End, weather.Requests[1].End);
+        Assert.NotEqual(weather.Requests[0].Selected, weather.Requests[1].Selected);
+        Assert.Equal(today.AddDays(15), custom.Date);
+        Assert.Equal(new DateTimeOffset(custom.Date.ToDateTime(new TimeOnly(6, 0)), TimeSpan.Zero), custom.Sunrise);
+        Assert.Equal(new DateTimeOffset(custom.Date.ToDateTime(new TimeOnly(18, 0)), TimeSpan.Zero), custom.Sunset);
+        Assert.Equal(today.AddDays(29), month.Date);
+        Assert.Null(month.Sunrise);
+        Assert.Null(month.Sunset);
+    }
+
+    private sealed class SelectedDateForecast : ISolarDayForecastSource
+    {
+        public List<(DateTimeOffset Start, DateTimeOffset End, DateOnly Selected)> Requests { get; } = [];
+        public Task<SolarDayForecast> ReadAsync(SolarEstimateOptions options, DateTimeOffset start,
+            DateTimeOffset end, DateOnly selectedDate, CancellationToken ct)
+        {
+            Requests.Add((start, end, selectedDate));
+            var samples = Enumerable.Range(0, (int)(end - start).TotalHours)
+                .Select(index => new SolarWeatherSample(start.AddHours(index), 500, 500, 20, 1, 0)).ToArray();
+            var available = selectedDate <= DateOnly.FromDateTime(Now.Date).AddDays(15);
+            DateTimeOffset? sunrise = available ? new(selectedDate.ToDateTime(new TimeOnly(6, 0)), TimeSpan.Zero) : null;
+            DateTimeOffset? sunset = available ? new(selectedDate.ToDateTime(new TimeOnly(18, 0)), TimeSpan.Zero) : null;
+            return Task.FromResult(new SolarDayForecast(samples, Now, sunrise, sunset, null));
+        }
+    }
+
+    [Fact]
+    public async Task CalendarMonthIncludesAllDatesAndItsDstHour()
+    {
+        var fixture = new Fixture();
+        fixture.Config.CurrentValue.TimeZoneId = "Europe/Warsaw";
+        var result = await fixture.Service().ReadAsync(new ProductionRequest(SolarHistoryPeriod.CalendarMonth, new(2026, 10, 5)));
+
+        Assert.Equal(new DateOnly(2026, 10, 1), result.FirstDate);
+        Assert.Equal(new DateOnly(2026, 10, 31), result.LastDate);
+        Assert.Equal(31, result.Days.Count);
+        Assert.Equal(745, result.Hours.Count);
+        Assert.Equal(TimeSpan.FromHours(745), result.End - result.Start);
+    }
+
+    [Fact]
+    public async Task CustomRangeIsInclusiveAndAcceptsACompleteLeapYear()
+    {
+        var fixture = new Fixture();
+        var result = await fixture.Service().ReadAsync(new ProductionRequest(SolarHistoryPeriod.Custom,
+            From: new(2024, 1, 1), Through: new(2024, 12, 31)));
+
+        Assert.Equal(new DateOnly(2024, 1, 1), result.FirstDate);
+        Assert.Equal(new DateOnly(2024, 12, 31), result.LastDate);
+        Assert.Equal(366, result.Days.Count);
+        Assert.Equal(366 * 24, result.Hours.Count);
+    }
+
+    [Theory]
+    [InlineData("2025-01-01", "2026-01-02")]
+    [InlineData("2026-10-06", "2026-10-05")]
+    [InlineData("1999-12-31", "2000-01-01")]
+    [InlineData("2027-10-07", "2027-10-07")]
+    public async Task InvalidCustomRangesAreRejectedBeforeAnyRead(string from, string through)
+    {
+        var fixture = new Fixture();
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Service().ReadAsync(new ProductionRequest(SolarHistoryPeriod.Custom,
+            From: DateOnly.Parse(from), Through: DateOnly.Parse(through))));
+        Assert.Equal(0, fixture.Weather.Calls);
+        Assert.Equal(0, fixture.Actual.Calls);
+    }
 }

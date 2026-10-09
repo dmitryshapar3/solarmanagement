@@ -59,6 +59,50 @@ public class ExportSalesRangeTests
         Assert.Equal(new[] { 24d, 25d }, buckets.Select(bucket => (bucket.End - bucket.Start).TotalHours));
     }
 
+    [Theory]
+    [InlineData(ExportSalesPeriod.Week, 7)]
+    [InlineData(ExportSalesPeriod.RollingMonth, 30)]
+    public void RollingWindowsEndOnSelectedLocalDateAndPreserveDst(ExportSalesPeriod period, int days)
+    {
+        var selected = new DateOnly(2026, 10, 25);
+        var request = new ExportSalesRequest(period, selected);
+        var range = ExportSalesRange.Create(request, Options, Now);
+        var buckets = ExportSalesRange.Buckets(request, range.Start, range.End, Options.TimeZoneId);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(Options.TimeZoneId);
+
+        Assert.Equal(selected.AddDays(1 - days), DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(range.Start, zone).DateTime));
+        Assert.Equal(selected.AddDays(1), DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(range.End, zone).DateTime));
+        Assert.Equal(days, buckets.Count);
+        Assert.Equal(days * 24 + 1, (range.End - range.Start).TotalHours);
+        Assert.Equal(25, (buckets[^1].End - buckets[^1].Start).TotalHours);
+    }
+
+    [Fact]
+    public void UpcomingDatesRequireOptInAndStayOutsideMeasuredDataRange()
+    {
+        var date = new DateOnly(2027, 1, 7);
+        var request = new ExportSalesRequest(ExportSalesPeriod.Week, date);
+        Assert.Throws<ArgumentException>(() => ExportSalesRange.Create(request, Options, Now));
+
+        var range = ExportSalesRange.Create(request with { AllowFuture = true }, Options, Now);
+        Assert.Equal(new DateTimeOffset(2026, 12, 31, 23, 0, 0, TimeSpan.Zero), range.Start);
+        Assert.True(range.DataEnd < range.DataStart);
+        Assert.Equal(7, ExportSalesRange.Buckets(request, range.Start, range.End, Options.TimeZoneId).Count);
+    }
+
+    [Fact]
+    public void OptInFutureRangesHaveBoundedDatesAndInclusiveCustomDuration()
+    {
+        var today = new DateOnly(2026, 12, 31);
+        var latest = today.AddDays(366);
+        var allowed = new ExportSalesRequest(ExportSalesPeriod.Custom, latest, latest, latest) { AllowFuture = true };
+        var range = ExportSalesRange.Create(allowed, Options, Now);
+        Assert.True(range.DataEnd < range.DataStart);
+        Assert.Throws<ArgumentException>(() => ExportSalesRange.Create(allowed with { Through = latest.AddDays(1) }, Options, Now));
+        Assert.Throws<ArgumentException>(() => ExportSalesRange.Create(new(ExportSalesPeriod.Day, latest.AddDays(1)) { AllowFuture = true }, Options, Now));
+        Assert.Throws<ArgumentException>(() => ExportSalesRange.Create(new(ExportSalesPeriod.Custom, today, today, latest) { AllowFuture = true }, Options, Now));
+    }
+
     [Fact]
     public void InvalidOrExcessiveCalendarRangesFailBeforeReadingData()
     {

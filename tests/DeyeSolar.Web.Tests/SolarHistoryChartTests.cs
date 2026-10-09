@@ -70,8 +70,8 @@ public class SolarHistoryChartTests
         await using var services=Basic(new Clock());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
         await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync<PlotHost>();Assert.Contains("06:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowRight");Assert.Contains("07:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowRight");Assert.Contains("07:00",renderer.Text(root));await renderer.KeyAsync(root,"ArrowLeft");Assert.Contains("06:00",renderer.Text(root));});
     }
-    [Theory][InlineData(0,true)][InlineData(1,false)][InlineData(29,false)]
-    public async Task EnergyPageShowsTheLoadedDateAndHonorsNextDayBound(int daysAgo,bool disabled)
+    [Theory][InlineData(0)][InlineData(1)][InlineData(29)][InlineData(-15)]
+    public async Task EnergyPageShowsTheSelectedDateAndAllowsPastAndFutureNavigation(int daysAgo)
     {
         var previousCulture=CultureInfo.CurrentCulture;
         var previousUiCulture=CultureInfo.CurrentUICulture;
@@ -86,8 +86,8 @@ public class SolarHistoryChartTests
                 var date=Today.AddDays(-daysAgo);
                 var root=await renderer.MountAsync<EnergyHost>(new(){["RequestedDate"]=date.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture)});
                 Assert.Contains(date.ToString("d MMM yyyy",culture),renderer.Text(root));
-                Assert.Equal(disabled,renderer.Button(root,"Next day").Disabled);
-                Assert.Equal(daysAgo==29,renderer.Button(root,"Previous day").Disabled);
+                Assert.False(renderer.Button(root,"Next period").Disabled);
+                Assert.False(renderer.Button(root,"Previous period").Disabled);
             });
         }
         finally
@@ -119,12 +119,12 @@ public class SolarHistoryChartTests
     }
     [Fact] public async Task EmptyActualHoursStayMissingAndRetainForecastAndDayNavigation()
     {
-        var f=new Fixture();f.Store.Empty=true;await using var services=f.Services();var html=await RenderPageAsync(services);Assert.Empty(Path(html,"actual-series"));Assert.NotEmpty(Path(html,"possible-band"));Assert.Contains("Upcoming",html);Assert.Contains("Partial coverage",html);Assert.Contains("A dash means unavailable; measured zero remains 0.00.",html);Assert.Contains("Previous day",html);
+        var f=new Fixture();f.Store.Empty=true;await using var services=f.Services();var html=await RenderPageAsync(services);Assert.Empty(Path(html,"actual-series"));Assert.NotEmpty(Path(html,"possible-band"));Assert.Contains("Forecast",html);Assert.Contains("Partial coverage",html);Assert.Contains("A dash means unavailable; measured zero remains 0.00.",html);Assert.Contains("Previous period",html);
     }
     [Theory][InlineData("999","2026-09-29")][InlineData("day","2026-02-30")]
     public async Task InvalidPeriodOrDateIsRejectedWithoutReadingSources(string period,string date)
     {
-        var f=new Fixture();await using var services=f.Services();var html=await RenderPageAsync(services,new(){["RequestedPeriod"]=period,["RequestedDate"]=date});Assert.Contains("Choose a valid period and date.",html);Assert.Equal(0,f.Store.Calls);Assert.Equal(0,f.Weather.Calls);
+        var f=new Fixture();await using var services=f.Services();var html=await RenderPageAsync(services,new(){["RequestedPeriod"]=period,["RequestedDate"]=date});Assert.Contains("Choose a valid period of at most 366 days.",html);Assert.Equal(0,f.Store.Calls);Assert.Equal(0,f.Weather.Calls);
     }
     private static async Task<string> RenderPageAsync(IServiceProvider services,Dictionary<string,object?>? parameters=null)
     {await using var renderer=new HtmlRenderer(services,services.GetRequiredService<ILoggerFactory>());return await renderer.Dispatcher.InvokeAsync(async()=>WebUtility.HtmlDecode((await renderer.RenderComponentAsync<EnergyHost>(ParameterView.FromDictionary(parameters??[]))).ToHtmlString()));}

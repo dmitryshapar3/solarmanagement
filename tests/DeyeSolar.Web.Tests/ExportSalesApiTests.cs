@@ -40,6 +40,8 @@ public class ExportSalesApiTests
             (Query: "period=Day&date=2026-09-28", Period: ExportSalesPeriod.Day, Buckets: 24),
             (Query: "period=Month&date=2026-09-28", Period: ExportSalesPeriod.Month, Buckets: 30),
             (Query: "period=Year&date=2026-09-28", Period: ExportSalesPeriod.Year, Buckets: 12),
+            (Query: "period=Week&date=2026-09-28", Period: ExportSalesPeriod.Week, Buckets: 7),
+            (Query: "period=RollingMonth&date=2026-09-28", Period: ExportSalesPeriod.RollingMonth, Buckets: 30),
             (Query: "period=Custom&date=2026-09-28&from=2026-09-28&through=2026-09-28", Period: ExportSalesPeriod.Custom, Buckets: 1)
         };
 
@@ -220,7 +222,7 @@ public class ExportSalesApiTests
         string[] invalidQueries =
         [
             "",
-            "period=Week&date=2026-09-28",
+            "period=Unknown&date=2026-09-28",
             "period=999&date=2026-09-28",
             "period=Day&date=2026-09-31",
             "period=Day&date=28.09.2026",
@@ -239,6 +241,33 @@ public class ExportSalesApiTests
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
             Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
             Assert.DoesNotContain("exportKwh", await response.Content.ReadAsStringAsync());
+            await host.AssertStateUnchangedAsync(before);
+        }
+        Assert.Equal(0, host.History.Calls);
+        Assert.Equal(0, host.Prices.Calls);
+    }
+
+    [SqlServerFact]
+    public async Task UpcomingHttpRangeRequiresExplicitOptInAndDoesNotReadOrMutateSalesStorage()
+    {
+        await using var host = await SalesHost.StartAsync();
+        var before = await host.ReadStateAsync();
+        foreach (var query in new[]
+        {
+            "period=Day&date=2026-09-30&includeUpcoming=true",
+            "period=Custom&date=2026-09-30&from=2026-09-30&through=2026-10-30&includeUpcoming=true"
+        })
+        {
+            var commandsBefore = host.Factory.DataCommands.Commands;
+            using var response = await host.GetAsync(query, AuthorizedIdentity);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var result = Assert.IsType<ExportSalesResult>(await response.Content.ReadFromJsonAsync<ExportSalesResult>());
+            Assert.Equal(commandsBefore, host.Factory.DataCommands.Commands);
+            Assert.Equal((0, 0, 0), (result.ExpectedHours, result.ObservedHours, result.ValuedHours));
+            Assert.Null(result.ExportKwh);
+            Assert.Null(result.EnergyValuePln);
+            Assert.Null(result.CurrentHour);
+            Assert.All(result.Buckets, bucket => Assert.Null(bucket.ExportKwh));
             await host.AssertStateUnchangedAsync(before);
         }
         Assert.Equal(0, host.History.Calls);

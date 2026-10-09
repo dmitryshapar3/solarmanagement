@@ -21,13 +21,13 @@ public static class RedesignEndpoints
         });
         api.MapGet("/solar/production", async (HttpContext context, [Microsoft.AspNetCore.Mvc.FromServices] SolarProductionService service, CancellationToken ct) =>
         {
-            var request = ProductionRequest(context);
-            return Results.Ok(await service.ReadAsync(request.Period, request.Date, ct));
+            var request = ParseProductionRequest(context);
+            return Results.Ok(await service.ReadAsync(request, ct));
         });
         api.MapGet("/solar/production.csv", async (HttpContext context, [Microsoft.AspNetCore.Mvc.FromServices] SolarProductionService service, CancellationToken ct) =>
         {
-            var request = ProductionRequest(context);
-            var data = await service.ReadAsync(request.Period, request.Date, ct);
+            var request = ParseProductionRequest(context);
+            var data = await service.ReadAsync(request, ct);
             return new CsvDownload("production.csv", async (writer, token) =>
             {
                 if (request.Period != SolarHistoryPeriod.Today)
@@ -107,7 +107,11 @@ public static class RedesignEndpoints
             var date = ParseDate(query["date"]);
             var from = query.ContainsKey("from") ? ParseDate(query["from"]) : (DateOnly?)null;
             var through = query.ContainsKey("through") ? ParseDate(query["through"]) : (DateOnly?)null;
-            var data = await service.ReadDetailsAsync(new(period, date, from, through), ct);
+            var request = new ExportSalesRequest(period, date, from, through)
+            {
+                AllowFuture = string.Equals(query["includeUpcoming"], "true", StringComparison.OrdinalIgnoreCase)
+            };
+            var data = await service.ReadDetailsAsync(request, ct);
             return new CsvDownload("sales.csv", async (writer, token) =>
             {
                 await CsvDownload.Row(writer, "start", "export_kwh", "import_kwh", "credited_export_kwh", "energy_value_pln", "observed_seconds", "average_price_pln_per_kwh", "market_average_price_pln_per_kwh");
@@ -127,12 +131,23 @@ public static class RedesignEndpoints
             .WithMetadata(new InstallationPermissionMetadata(InstallationPermission.ManageSettings));
     }
 
-    private static (SolarHistoryPeriod Period, DateOnly? Date) ProductionRequest(HttpContext context)
+    internal static ProductionRequest ParseProductionRequest(HttpContext context)
     {
         var query = context.Request.Query;
-        if (!Enum.TryParse<SolarHistoryPeriod>(query["period"], true, out var period) || !Enum.IsDefined(period))
-            throw new ArgumentException("Choose a valid generation period and date.");
-        return (period, query.ContainsKey("date") ? ParseDate(query["date"]) : null);
+        var token = query["period"].ToString();
+        // Preserve all original case-insensitive enum names. CalendarMonth is explicit
+        // in production CSV links; Month continues to mean the rolling thirty-day window.
+        if (!Enum.TryParse<SolarHistoryPeriod>(token, true, out var period) || !Enum.IsDefined(period))
+            period = token.ToLowerInvariant() switch
+            {
+                "day" => SolarHistoryPeriod.Today,
+                "7d" => SolarHistoryPeriod.Week,
+                "30d" or "rollingmonth" => SolarHistoryPeriod.Month,
+                _ => throw new ArgumentException("Choose a valid generation period and date.")
+            };
+        return new(period, query.ContainsKey("date") ? ParseDate(query["date"]) : null,
+            query.ContainsKey("from") ? ParseDate(query["from"]) : null,
+            query.ContainsKey("through") ? ParseDate(query["through"]) : null);
     }
     private static DateOnly ParseDate(string? value) => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
         DateTimeStyles.None, out var date) ? date : throw new ArgumentException("Choose a valid date as YYYY-MM-DD.");

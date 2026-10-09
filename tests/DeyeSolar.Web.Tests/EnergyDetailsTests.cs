@@ -88,6 +88,8 @@ public class EnergyDetailsTests
     [InlineData(ExportSalesPeriod.Month)]
     [InlineData(ExportSalesPeriod.Year)]
     [InlineData(ExportSalesPeriod.Custom)]
+    [InlineData(ExportSalesPeriod.Week)]
+    [InlineData(ExportSalesPeriod.RollingMonth)]
     public void SalesDetailsNavigationRoundTripsTheSelectedWindow(ExportSalesPeriod period)
     {
         var request = new ExportSalesRequest(period, new(2026, 9, 30),
@@ -99,6 +101,40 @@ public class EnergyDetailsTests
             query.ContainsKey("through") ? query["through"].ToString() : null, Today, out var parsed));
         Assert.Equal(request, parsed);
         Assert.Equal("/sales", query["returnTo"].ToString());
+    }
+
+    [Theory]
+    [InlineData(ExportSalesPeriod.Day)]
+    [InlineData(ExportSalesPeriod.Week)]
+    [InlineData(ExportSalesPeriod.RollingMonth)]
+    [InlineData(ExportSalesPeriod.Month)]
+    [InlineData(ExportSalesPeriod.Custom)]
+    public void UpcomingSalesNavigationRetainsSelectedPeriodWithExplicitOptIn(ExportSalesPeriod period)
+    {
+        var selected = Today.AddDays(30);
+        var request = new ExportSalesRequest(period, selected,
+            period == ExportSalesPeriod.Custom ? Today : null,
+            period == ExportSalesPeriod.Custom ? selected : null) { AllowFuture = true };
+        var query = QueryHelpers.ParseQuery(new Uri("https://local.invalid" + EnergyDetailsNavigation.SalesUrl("/energy/export", request)).Query);
+        var from = query.ContainsKey("from") ? query["from"].ToString() : null;
+        var through = query.ContainsKey("through") ? query["through"].ToString() : null;
+
+        Assert.Equal("true", query["includeUpcoming"].ToString());
+        Assert.False(EnergyDetailsNavigation.TrySalesRequest(query["period"].ToString(), query["date"].ToString(), from, through, Today, out _));
+        Assert.True(EnergyDetailsNavigation.TrySalesRequest(query["period"].ToString(), query["date"].ToString(), from, through,
+            Today, out var parsed, allowFuture: true));
+        Assert.Equal(request, parsed);
+    }
+
+    [Fact]
+    public void UpcomingNavigationStillRejectsUnboundedDatesAndOversizedRanges()
+    {
+        var latest = Today.AddDays(366);
+        Assert.True(EnergyDetailsNavigation.TrySalesRequest("Day", latest.ToString("yyyy-MM-dd"), null, null, Today, out _, true));
+        Assert.False(EnergyDetailsNavigation.TrySalesRequest("Day", latest.AddDays(1).ToString("yyyy-MM-dd"), null, null, Today, out _, true));
+        Assert.False(EnergyDetailsNavigation.TrySalesRequest("Custom", Today.ToString("yyyy-MM-dd"), Today.ToString("yyyy-MM-dd"),
+            latest.ToString("yyyy-MM-dd"), Today, out _, true));
+        Assert.False(EnergyDetailsNavigation.TrySalesRequest("Week", "2000-01-05", null, null, Today, out _, true));
     }
 
     [Theory]

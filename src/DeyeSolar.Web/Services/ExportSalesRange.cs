@@ -13,6 +13,8 @@ internal static class ExportSalesRange
         var from = request.Period switch
         {
             ExportSalesPeriod.Day => request.Date,
+            ExportSalesPeriod.Week => request.Date.AddDays(-6),
+            ExportSalesPeriod.RollingMonth => request.Date.AddDays(-29),
             ExportSalesPeriod.Month => new DateOnly(request.Date.Year, request.Date.Month, 1),
             ExportSalesPeriod.Year => new DateOnly(request.Date.Year, 1, 1),
             ExportSalesPeriod.Custom => request.From ?? throw new ArgumentException("A custom period requires a start date."),
@@ -21,12 +23,17 @@ internal static class ExportSalesRange
         var until = request.Period switch
         {
             ExportSalesPeriod.Day => from.AddDays(1),
+            ExportSalesPeriod.Week => from.AddDays(7),
+            ExportSalesPeriod.RollingMonth => from.AddDays(30),
             ExportSalesPeriod.Month => from.AddMonths(1),
             ExportSalesPeriod.Year => from.AddYears(1),
             _ => (request.Through ?? throw new ArgumentException("A custom period requires an end date.")).AddDays(1)
         };
-        if (from > today || until <= from || until.DayNumber - from.DayNumber > 366 || from.Year < 2000
-            || request.Period == ExportSalesPeriod.Custom && until > today.AddDays(1))
+        var latest = request.AllowFuture ? today.AddDays(366) : today;
+        if (from > latest || until <= from || until.DayNumber - from.DayNumber > 366 || from.Year < 2000
+            || request.Period == ExportSalesPeriod.Custom && until > latest.AddDays(1)
+            || request.Period is ExportSalesPeriod.Week or ExportSalesPeriod.RollingMonth && request.Date > latest
+            || request.AllowFuture && request.Date > latest)
             throw new ArgumentException("Choose a valid calendar period of at most 366 days.");
         DateTimeOffset Utc(DateOnly date) => new(TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
         var start = Utc(from);

@@ -13,7 +13,8 @@ namespace DeyeSolar.Infrastructure.Solar;
 /// not from measurements on the roof or previously stored current-power estimates.
 /// https://open-meteo.com/en/docs defines global_tilted_irradiance as the preceding hour's
 /// mean; temperature and wind are instantaneous at its end. Data attribution: Open-Meteo,
-/// CC BY 4.0. The free API permits non-commercial use and up to 92 past days.
+/// CC BY 4.0. Recent data uses the Forecast API (92 past days, up to 16 forecast dates);
+/// older data uses the Historical Forecast API, whose archives start in 2022.
 /// </summary>
 public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, TimeProvider clock) : ISolarHistoryRadiationSource, ISolarDayForecastSource
 {
@@ -23,23 +24,55 @@ public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, 
         DateTimeOffset end, DateOnly selectedDate, CancellationToken ct)
     {
         options.Validate();
+        ct.ThrowIfCancellationRequested();
         var now = clock.GetUtcNow();
         var from = new DateTimeOffset(start.UtcTicks - start.UtcTicks % TimeSpan.TicksPerHour, TimeSpan.Zero);
         var through = new DateTimeOffset(end.UtcTicks - end.UtcTicks % TimeSpan.TicksPerHour, TimeSpan.Zero);
         if (through < end) through = through.AddHours(1);
-        if (through <= from || through - from > TimeSpan.FromDays(31) || end > now.AddDays(2))
+        if (through <= from || through - from > TimeSpan.FromDays(367))
             throw new ArgumentException("Choose a bounded production forecast range.");
+        var utcToday = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        var earliestArchive = new DateTimeOffset(2022, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var recentFrom = utcToday.AddDays(-92);
+        // The final provider timestamp is 23:00 on its sixteenth UTC date. Mean GTI
+        // describes the preceding hour; do not invent the unreturned final hour.
+        var lastRadiationEnd = utcToday.AddDays(16).AddHours(-1);
+        from = from < earliestArchive ? earliestArchive : from;
+        through = through > lastRadiationEnd ? lastRadiationEnd : through;
+        if (through <= from) return new([], now, null, null, null);
         var roofs = await Task.WhenAll(
-            ReadRoofAsync(options, options.Roof1Tilt, options.Roof1Azimuth, from, through, ct),
-            ReadRoofAsync(options, options.Roof2Tilt, options.Roof2Azimuth, from, through, ct));
+            ReadProductionRoofAsync(options, options.Roof1Tilt, options.Roof1Azimuth, from, through, recentFrom, ct),
+            ReadProductionRoofAsync(options, options.Roof2Tilt, options.Roof2Azimuth, from, through, recentFrom, ct));
+        var samples = CombineRoofs(roofs[0], roofs[1]).ToArray();
+        if (samples.Length == 0) throw new InvalidDataException("Open-Meteo returned no common valid production hours.");
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZoneId);
+        var earliestDate = DateOnly.FromDateTime(earliestArchive.UtcDateTime);
+        var latestDate = DateOnly.FromDateTime(utcToday.AddDays(15).UtcDateTime);
+        if (selectedDate < earliestDate || selectedDate > latestDate)
+            return new(samples, now, null, null, null);
+        var dailyThrough = selectedDate.AddDays(1) < latestDate ? selectedDate.AddDays(1) : latestDate;
         var parameters = new Dictionary<string, string>
         {
             ["latitude"] = Number(options.Latitude), ["longitude"] = Number(options.Longitude),
             ["daily"] = "sunrise,sunset", ["timeformat"] = "unixtime", ["timezone"] = options.TimeZoneId,
             ["start_date"] = selectedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ["end_date"] = selectedDate.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            ["end_date"] = dailyThrough.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
-        using var document = await transport.ReadAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
+        JsonDocument document;
+        try
+        {
+            var selectedUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(selectedDate.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+            document = await transport.ReadAsync(selectedUtc < recentFrom
+                ? OpenMeteoRequestUris.HistoricalForecast(options, parameters)
+                : OpenMeteoRequestUris.Forecast(options, parameters), ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException
+            || ex is OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            // Astronomy is optional. Its failure must not discard valid radiation forecasts.
+            return new(samples, now, null, null, null);
+        }
+        using var astronomy = document;
         DateTimeOffset? ReadTime(string field, int index)
         {
             if (!HasUnit(document.RootElement, "daily", field, "unixtime")) return null;
@@ -49,13 +82,30 @@ public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, 
             try
             {
                 var value = DateTimeOffset.FromUnixTimeSeconds(seconds);
-                var zone = TimeZoneInfo.FindSystemTimeZoneById(options.TimeZoneId);
                 return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(value, zone).DateTime) == selectedDate.AddDays(index) ? value : null;
             }
             catch (ArgumentOutOfRangeException) { return null; }
         }
-        return new(CombineRoofs(roofs[0], roofs[1]).ToArray(), now,
+        return new(samples, now,
             ReadTime("sunrise", 0), ReadTime("sunset", 0), ReadTime("sunrise", 1));
+    }
+
+    private async Task<Dictionary<long, RoofWeather>> ReadProductionRoofAsync(SolarEstimateOptions options,
+        double tilt, double azimuth, DateTimeOffset start, DateTimeOffset end, DateTimeOffset recentFrom, CancellationToken ct)
+    {
+        var result = new Dictionary<long, RoofWeather>();
+        // Keep responses bounded for year-long custom windows. Split archived and current
+        // models at their documented boundary while preserving each mean-radiation row.
+        for (var from = start; from < end;)
+        {
+            var archived = from < recentFrom;
+            var through = from.AddDays(31) < end ? from.AddDays(31) : end;
+            if (archived && through > recentFrom) through = recentFrom;
+            var rows = await ReadRoofAsync(options, tilt, azimuth, from, through, ct, archived);
+            foreach (var row in rows) result[row.Key] = row.Value;
+            from = through;
+        }
+        return result;
     }
 
     public async Task<IReadOnlyList<SolarWeatherSample>> ReadAsync(SolarEstimateOptions options,
@@ -85,7 +135,7 @@ public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, 
     }
 
     private async Task<Dictionary<long, RoofWeather>> ReadRoofAsync(SolarEstimateOptions options,
-        double tilt, double compassAzimuth, DateTimeOffset start, DateTimeOffset end, CancellationToken ct)
+        double tilt, double compassAzimuth, DateTimeOffset start, DateTimeOffset end, CancellationToken ct, bool archived = false)
     {
         var parameters = new Dictionary<string, string>
         {
@@ -99,7 +149,9 @@ public sealed class OpenMeteoSolarHistoryClient(IOpenMeteoJsonReader transport, 
             ["end_date"] = end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
         // Recent history uses the Forecast API's date range, preserving the existing source.
-        using var document = await transport.ReadAsync(OpenMeteoRequestUris.Forecast(options, parameters), ct);
+        using var document = await transport.ReadAsync(archived
+            ? OpenMeteoRequestUris.HistoricalForecast(options, parameters)
+            : OpenMeteoRequestUris.Forecast(options, parameters), ct);
         var root = document.RootElement;
         if (!HasUnit(root, "hourly", "time", "unixtime") || !HasUnit(root, "hourly", GtiVariable, "W/m²"))
             throw new InvalidDataException("Open-Meteo history returned missing or unexpected radiation units.");

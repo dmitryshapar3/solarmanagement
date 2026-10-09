@@ -8,6 +8,9 @@ internal static class OpenMeteoRequestUris
     public static Uri Forecast(SolarEstimateOptions options, IReadOnlyDictionary<string, string> parameters) =>
         Build("api.open-meteo.com", "forecast", options.ApiKey, parameters);
 
+    public static Uri HistoricalForecast(SolarEstimateOptions options, IReadOnlyDictionary<string, string> parameters) =>
+        Build("historical-forecast-api.open-meteo.com", "forecast", options.ApiKey, parameters);
+
     public static Uri Satellite(SolarEstimateOptions options, IReadOnlyDictionary<string, string> parameters) =>
         Build("satellite-api.open-meteo.com", "archive", options.ApiKey, parameters);
 

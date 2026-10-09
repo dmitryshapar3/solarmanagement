@@ -13,6 +13,74 @@ public class ExportSalesServiceTests
     private static readonly DateTimeOffset Start = new(2026, 9, 27, 22, 0, 0, TimeSpan.Zero);
     private static readonly ExportSalesRequest Day = new(ExportSalesPeriod.Day, new DateOnly(2026, 9, 28));
 
+    [Theory]
+    [InlineData(ExportSalesPeriod.Day, 24)]
+    [InlineData(ExportSalesPeriod.Week, 7)]
+    [InlineData(ExportSalesPeriod.RollingMonth, 30)]
+    [InlineData(ExportSalesPeriod.Month, 31)]
+    [InlineData(ExportSalesPeriod.Year, 12)]
+    [InlineData(ExportSalesPeriod.Custom, 30)]
+    public async Task UpcomingFiltersReturnUnknownBucketsWithoutFetchingOrValuingFutureData(ExportSalesPeriod period, int buckets)
+    {
+        var fixture = new Fixture();
+        var date = new DateOnly(2027, 1, 1);
+        var request = new ExportSalesRequest(period, date,
+            period == ExportSalesPeriod.Custom ? date : null,
+            period == ExportSalesPeriod.Custom ? date.AddDays(29) : null) { AllowFuture = true };
+
+        var result = await fixture.Service.ReadDetailsAsync(request, default);
+
+        Assert.Equal(request, result.Request);
+        Assert.Equal(buckets, result.Buckets.Count);
+        Assert.All(result.Buckets, bucket =>
+        {
+            Assert.Null(bucket.ExportKwh);
+            Assert.Null(bucket.EnergyValuePln);
+            Assert.Null(bucket.EstimatedDepositPln);
+            Assert.Equal((0, 0, 0), (bucket.ExpectedHours, bucket.ObservedHours, bucket.ValuedHours));
+        });
+        Assert.Null(result.ExportKwh);
+        Assert.Null(result.EnergyValuePln);
+        Assert.Null(result.CurrentHour);
+        Assert.Null(result.DataError);
+        Assert.Null(result.PriceError);
+        Assert.Empty(result.Hours!);
+        Assert.Empty(result.MissingPriceHours!);
+        Assert.Empty(fixture.Readings.Reads);
+        Assert.Empty(fixture.Readings.Writes);
+        Assert.Empty(fixture.History.Calls);
+        Assert.Empty(fixture.PriceStore.Reads);
+        Assert.Empty(fixture.PriceStore.Saves);
+        Assert.Empty(fixture.Prices.Calls);
+    }
+
+    [Fact]
+    public async Task MixedFutureRangeValuesOnlyCompletedHoursAndLeavesUpcomingBucketsUnavailable()
+    {
+        var fixture = new Fixture();
+        fixture.Clock.Now = Start.AddHours(1);
+        fixture.Readings.Rows["selected"] = Constant(-1000, 1).ToList();
+        fixture.PriceStore.Rows.AddRange(PriceHour(Start, 500m));
+        var request = new ExportSalesRequest(ExportSalesPeriod.Custom, Day.Date, Day.Date, Day.Date.AddDays(6)) { AllowFuture = true };
+
+        var result = await fixture.Service.ReadDetailsAsync(request, default);
+
+        Assert.Equal(1m, result.ExportKwh);
+        Assert.Equal(0.5m, result.EnergyValuePln);
+        Assert.Equal((1, 1, 1), (result.ExpectedHours, result.ObservedHours, result.ValuedHours));
+        Assert.Single(result.Hours!);
+        Assert.Equal(7, result.Buckets.Count);
+        Assert.All(result.Buckets.Skip(1), bucket =>
+        {
+            Assert.Null(bucket.ExportKwh);
+            Assert.Null(bucket.EnergyValuePln);
+            Assert.Equal(0, bucket.ExpectedHours);
+        });
+        Assert.Equal(Start.AddHours(1), Assert.Single(fixture.PriceStore.Reads).End);
+        Assert.Empty(fixture.History.Calls);
+        Assert.Empty(fixture.Prices.Calls);
+    }
+
     [Fact]
     public async Task HourlyDetailsAreOptInAndNeverChangeTheLegacyAppStorePayload()
     {
@@ -26,6 +94,7 @@ public class ExportSalesServiceTests
         var json = System.Text.Json.JsonSerializer.Serialize(legacy, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
         Assert.DoesNotContain("\"hours\"", json);
         Assert.DoesNotContain("\"missingPriceHours\"", json);
+        Assert.DoesNotContain("allowFuture", json);
         var hour = Assert.Single(details.Hours!);
         Assert.Equal(1m, hour.ExportKwh);
         Assert.Equal(0.2m, hour.AveragePricePlnPerKwh);

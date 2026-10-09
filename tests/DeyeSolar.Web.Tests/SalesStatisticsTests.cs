@@ -29,8 +29,9 @@ public class SalesStatisticsTests
         var data=Scenario(scenario);var html=await RenderAsync(data);
         Assert.DoesNotMatch("[\\u0400-\\u04ff]",html);Assert.Contains("Exported to grid",html);Assert.Contains("Energy value",html);Assert.Contains("Estimated deposit",html);
         Assert.Contains("OSD billing meter",html);Assert.Contains("not a payout or your current balance",html);Assert.Contains("Completed hours only",html);
-        Assert.Contains("aria-label=\"Sales period\"",html);Assert.Contains("Download CSV",html);Assert.DoesNotContain("Refresh sales",html);
-        foreach(var period in new[]{"Day","Month","Year","Custom"})Assert.Contains(period,html);
+        Assert.Contains("aria-label=\"Chart period\"",html);Assert.Contains("Download CSV",html);Assert.DoesNotContain("Refresh sales",html);
+        foreach(var period in new[]{"Day","7 days","30 days","Month","Custom"})Assert.Contains(">"+period+"</button>",html);
+        Assert.DoesNotContain(">Year</button>",html);
         if(scenario=="normal"){Assert.Contains("1.20",html);Assert.Contains("5.00",html);}
         if(scenario=="error")Assert.Contains("Deye history is unavailable.",html);
         if(scenario=="partial"){Assert.Contains("Partial data",html);Assert.Contains("price has not been published",html);Assert.Contains("Some completed hours",html);}
@@ -136,7 +137,16 @@ public class SalesStatisticsTests
     public async Task WarsawMidnightFollowsTodayOnlyWithoutExplicitHistoricalDate(bool pinned)
     {
         var clock=new ManualClock(new(2026,9,30,21,58,0,TimeSpan.Zero));var history=new SalesService{ResultFactory=MultipleHours};await using var services=Services(history,clock);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
-        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(pinned?"2026-09-29":null);clock.Advance(TimeSpan.FromMinutes(5));await renderer.WaitForAsync(()=>history.Calls.Count==2);Assert.Equal(pinned?Today.AddDays(-1):Today.AddDays(1),history.Calls.Last().Request.Date);});
+        await renderer.Dispatcher.InvokeAsync(async()=>
+        {
+            var root=await renderer.MountAsync(pinned?"2026-09-29":null);
+            clock.Advance(TimeSpan.FromMinutes(5));
+            var expected=pinned?Today.AddDays(-1):Today.AddDays(1);
+            await renderer.WaitForAsync(()=>history.Calls.Count==2&&renderer.Attributes(root,"value").Contains(expected.ToString("yyyy-MM-dd")));
+            Assert.Equal(expected,history.Calls.Last().Request.Date);
+            Assert.Contains("/energy?period=day&date="+expected.ToString("yyyy-MM-dd"),renderer.Attributes(root,"href"));
+            Assert.Contains("/api/sales.csv?period=Day&date="+expected.ToString("yyyy-MM-dd")+"&includeUpcoming=true",renderer.Attributes(root,"href"));
+        });
     }
     [Fact] public async Task AutomaticTimerDoesNotCancelOrDuplicateAnActiveSelection()
     {
@@ -153,23 +163,41 @@ public class SalesStatisticsTests
         var clock=new ManualClock(Start.AddHours(3));var history=new SalesService{HoldHistorical=true};await using var services=Services(history,clock);var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
         await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();var held=renderer.UpdateAsync(root,"2026-09-29");await renderer.DisposeAsync();Assert.True(history.Calls.Last().Token.IsCancellationRequested);Assert.Equal(0,clock.ActiveTimers);history.Complete(Today.AddDays(-1));await held;clock.Advance(TimeSpan.FromMinutes(10));Assert.Equal(2,history.Calls.Count);});
     }
-    [Theory][InlineData("Day","day")][InlineData("Month","month")][InlineData("Year","year")][InlineData("Custom","custom")]
+    [Theory][InlineData("Day","day")][InlineData("7 days","7d")][InlineData("30 days","30d")][InlineData("Month","month")][InlineData("Custom","custom")]
     public async Task PeriodControlsKeepSelectionInRouteAndFetchOnlyAfterNavigation(string label,string period)
     {
         var history=new SalesService();await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
         await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync();await renderer.ClickAsync(root,label);Assert.Contains("period="+period,services.GetRequiredService<NavigationManager>().Uri);Assert.Single(history.Calls);});
     }
-    [Theory][InlineData("day","2026-09-30","2026-09-29")][InlineData("month","2026-09-01","2026-08-01")][InlineData("year","2026-01-01","2025-01-01")]
+    [Theory][InlineData("day","2026-09-30","2026-09-29")][InlineData("7d","2026-09-30","2026-09-23")][InlineData("30d","2026-09-30","2026-08-31")][InlineData("month","2026-09-01","2026-08-01")][InlineData("year","2026-01-01","2025-01-01")]
     public async Task PreviousPeriodUsesCalendarBoundaries(string period,string date,string previous)
     {
         await using var services=Services(new SalesService());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);await renderer.ClickAsync(root,"Previous period");Assert.Contains("date="+previous,services.GetRequiredService<NavigationManager>().Uri);});
     }
-    [Theory][InlineData("day",null)][InlineData("month","2026-09-01")][InlineData("year","2026-01-01")]
-    public async Task NextPeriodCannotNavigateIntoFuture(string period,string? date)
+    [Theory][InlineData("day",null,"2026-10-01")][InlineData("7d","2026-09-30","2026-10-07")][InlineData("30d","2026-09-30","2026-10-30")][InlineData("month","2026-09-01","2026-10-01")]
+    public async Task NextPeriodCanNavigateIntoFutureWithoutFetchingUntilNavigation(string period,string? date,string next)
     {
-        await using var services=Services(new SalesService());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);Assert.True(renderer.Control(root,"Next period").Disabled);});
+        var history=new SalesService();await using var services=Services(history);await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);Assert.False(renderer.Control(root,"Next period").Disabled);await renderer.ClickAsync(root,"Next period");Assert.Contains("date="+next,services.GetRequiredService<NavigationManager>().Uri);Assert.Single(history.Calls);});
     }
-    [Theory][InlineData("banana",null,null,null)][InlineData("day","2026-02-30",null,null)][InlineData("day","2026-10-01",null,null)][InlineData("custom",null,"2026-09-30","2026-09-29")][InlineData("custom",null,"2025-01-01","2026-09-30")]
+    [Theory][InlineData("day","2027-10-01")][InlineData("7d","2027-10-01")][InlineData("30d","2027-10-01")][InlineData("month","2027-09-01")]
+    public async Task NextPeriodStopsBeforeExceedingTheFutureRangeBound(string period,string date)
+    {
+        await using var services=Services(new SalesService());await using var renderer=new EventRenderer(services,services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async()=>{var root=await renderer.MountAsync(date,period);Assert.True(renderer.Control(root,"Next period").Disabled);});
+    }
+    [Fact]
+    public async Task LegacyYearSelectionBecomesAnExplicitCompleteCustomCalendarWindow()
+    {
+        var history=new SalesService();await using var services=Services(history);
+        var html=await RenderPage(services,new(){["RequestedPeriod"]="year",["RequestedDate"]="2026-09-30"});
+        var request=Assert.Single(history.Calls).Request;
+        Assert.Equal(ExportSalesPeriod.Custom,request.Period);
+        Assert.Equal(new DateOnly(2026,1,1),request.From);
+        Assert.Equal(new DateOnly(2026,12,31),request.Through);
+        Assert.Contains("from=2026-01-01",html);Assert.Contains("through=2026-12-31",html);
+    }
+    [Theory][InlineData("banana",null,null,null)][InlineData("day","2026-02-30",null,null)][InlineData("day","2027-10-02",null,null)][InlineData("custom",null,"2026-09-30","2026-09-29")][InlineData("custom",null,"2025-01-01","2026-09-30")]
     public async Task InvalidSelectionNeverCallsSource(string period,string? date,string? from,string? to)
     {
         var history=new SalesService();await using var services=Services(history);var html=await RenderPage(services,new(){["RequestedDate"]=date,["RequestedPeriod"]=period,["RequestedFrom"]=from,["RequestedTo"]=to});Assert.Empty(history.Calls);Assert.Contains("valid period",html);

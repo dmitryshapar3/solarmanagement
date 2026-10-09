@@ -6,8 +6,9 @@
 @inject Microsoft.Extensions.Options.IOptionsMonitor<DeyeSolar.Domain.Options.SolarSalesOptions> SalesOptions
 @implements IAsyncDisposable
 <PageTitle>@T["Export"] · SmartSolar</PageTitle><PageHeader Title="@T["Energy"]" Subtitle="@T["Your grid export and its estimated value"]"><UiButton Icon="download" Href="@CsvUrl">@T["Download CSV"]</UiButton></PageHeader>
-<div class="toolbar"><nav class="segments" aria-label="@T["Energy"]"><NavLink href="/energy" Match="NavLinkMatch.All">@T["Production"]</NavLink><NavLink href="/energy/export">@T["Export"]</NavLink></nav><div class="toolbar-controls"><div class="segments" aria-label="@T["Sales period"]">@foreach(var p in Enum.GetValues<ExportSalesPeriod>()){<button class="@(p==_request.Period?"selected":null)" aria-pressed="@((p==_request.Period).ToString().ToLowerInvariant())" @onclick="()=>Period(p)">@T[p.ToString()]</button>}</div>@if(_request.Period!=ExportSalesPeriod.Custom){<button class="icon-button" aria-label="@T["Previous period"]" disabled="@(!CanMove(-1))" @onclick="()=>Move(-1)"><UiIcon Name="back"/></button><input class="period-date" type="@DateType" aria-label="@T["Date"]" value="@DateInput" @onchange="DateChanged" min="@DateMinimum" max="@DateMaximum"/><button class="icon-button" aria-label="@T["Next period"]" disabled="@(!CanMove(1))" @onclick="()=>Move(1)"><UiIcon Name="chevron"/></button>}</div></div>
-@if(_request.Period==ExportSalesPeriod.Custom){<div class="toolbar ui-card"><label>@T["From"]<input type="date" @bind="_from" min="2000-01-01" max="@Today.ToString("yyyy-MM-dd")"/></label><label>@T["To"]<input type="date" @bind="_to" min="2000-01-01" max="@Today.ToString("yyyy-MM-dd")"/></label><UiButton Variant="primary" OnClick="Apply">@T["Apply"]</UiButton><span class="caption">@T["Inclusive · up to 366 days"]</span></div>}
+<div class="toolbar"><nav class="segments" aria-label="@T["Energy"]"><NavLink href="@_window.Url("/energy")" Match="NavLinkMatch.All">@T["Production"]</NavLink><NavLink href="@_window.Url("/energy/export")">@T["Export"]</NavLink></nav></div>
+<EnergyPeriodFilters Selection="_window" Today="Today" SelectionChanged="ChangeWindow" />
+@if(_window.LastDate>Today) { <div class="banner" role="status">@T["Future export and value are unavailable until measured. View the generation forecast on the Production tab."]</div> }
 @if(_error is not null){<UiState Kind="error" Title="@T["Export could not be loaded"]" Message="@T.Translate(_error)"/>}
 @if(_loading&&_data is not null){<p role="status">@T["Refreshing…"]</p>}
 @if(_loading&&_data is null){<UiState Kind="loading" Title="@T["Loading…"]"/>}
@@ -22,25 +23,31 @@
 </tbody><tfoot><tr><th>@T["Total · completed hours"]</th><td>@T.Number(data.ExportKwh)</td>@if(data.Request.Period==ExportSalesPeriod.Day){<td></td>}<td>@T.Number(data.EnergyValuePln)</td><td>@T.Number(data.EstimatedDepositPln)</td><td>@data.ValuedHours / @data.ExpectedHours h</td></tr></tfoot></table></div></UiCard>
 <UiCard Title="@T["How settlement works"]"><p>@T["Grid imports and exports are netted for each hour before credited export is calculated. Energy value uses the available RCE prices under the contract terms."]</p><p>@T["These are inverter-based estimates under your saved contract terms. Your supplier settles using the OSD billing meter."]</p><p>@T["Estimated deposit is the energy value multiplied by 1.23. It is not a payout or your current balance."]</p><p>@T["Positive export and negative prices retain their signs. Missing prices never become zero."]</p><p class="caption">@T.Format("Contract starts {0}",data.ContractStartDate.ToString("d MMM yyyy",T.Culture)) · @data.TimeZoneId</p><UiButton Href="/settings#contract">@T["Contract settings"]</UiButton></UiCard>
 }
-@code{
- [SupplyParameterFromQuery(Name="period")]public string? PeriodQuery{get;set;}[SupplyParameterFromQuery(Name="date")]public string? DateQuery{get;set;}[SupplyParameterFromQuery(Name="from")]public string? FromQuery{get;set;}[SupplyParameterFromQuery(Name="to")]public string? ToQuery{get;set;}
- private ExportSalesRequest _request=new(ExportSalesPeriod.Day,DateOnly.FromDateTime(DateTime.UtcNow));private ExportSalesResult? _data;private string? _error;private bool _loading;private int _selected;private DateTime? _from,_to;private readonly AsyncQueryScope _queries=new();private bool _pinnedInterval;
- private DateOnly Today=>DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(),TimeZoneInfo.FindSystemTimeZoneById(SalesOptions.CurrentValue.TimeZoneId)).DateTime);
- private string Query=>"period="+_request.Period+"&date="+_request.Date.ToString("yyyy-MM-dd")+(_request.Period==ExportSalesPeriod.Custom?"&from="+_request.From?.ToString("yyyy-MM-dd")+"&through="+_request.Through?.ToString("yyyy-MM-dd"):"");private string CsvUrl=>"/api/sales.csv?"+Query;
- private string DateType=>_request.Period==ExportSalesPeriod.Month?"month":_request.Period==ExportSalesPeriod.Year?"number":"date";private string DateInput=>_request.Date.ToString(_request.Period==ExportSalesPeriod.Month?"yyyy-MM":_request.Period==ExportSalesPeriod.Year?"yyyy":"yyyy-MM-dd");private string DateMinimum=>_request.Period==ExportSalesPeriod.Month?"2000-01":_request.Period==ExportSalesPeriod.Year?"2000":"2000-01-01";private string DateMaximum=>Today.ToString(_request.Period==ExportSalesPeriod.Month?"yyyy-MM":_request.Period==ExportSalesPeriod.Year?"yyyy":"yyyy-MM-dd");
- protected override async Task OnParametersSetAsync(){if(!EnergyDetailsNavigation.TrySalesRequest(PeriodQuery??"day",DateQuery,FromQuery,ToQuery,Today,out var request)){_error=T["Choose a valid period of at most 366 days."];_data=null;return;} _request=request;_from=request.From?.ToDateTime(TimeOnly.MinValue);_to=request.Through?.ToDateTime(TimeOnly.MinValue);await Load(request);}
- protected override void OnInitialized()=>_queries.StartRefresh(Clock,TimeSpan.FromMinutes(5),()=>InvokeAsync(()=>_queries.IsLoading?Task.CompletedTask:Load(DateQuery is null&&_request.Period==ExportSalesPeriod.Day?_request with{Date=Today}:_request)));
- private Task Load(ExportSalesRequest request)=>_queries.RunAsync(ct=>Sales.ReadDetailsAsync(request,ct),started:()=>{_loading=true;_error=null;StateHasChanged();},received:data=>{var changed=_data?.Request!=data.Request;_data=data;_request=data.Request;if(changed)_pinnedInterval=false;if(!_pinnedInterval)_selected=LatestInterval(data);else _selected=Math.Clamp(_selected,0,Math.Max(0,data.Buckets.Count-1));},failed:error=>_error=_data is null?error is ArgumentException?error.Message:"Export could not be loaded.":"Refresh failed. Showing previous data; values may be out of date.",finished:()=>{_loading=false;StateHasChanged();});
- private Task RecheckPrices()=>_queries.RunAsync(ct=>Sales.RecheckPricesAsync(_request,ct),started:()=>{_loading=true;_error=null;StateHasChanged();},received:value=>_data=value,failed:_=>_error="Prices could not be checked. The saved estimates are retained.",finished:()=>{_loading=false;StateHasChanged();});
+@code {
+ [SupplyParameterFromQuery(Name="period")] public string? PeriodQuery {get;set;}
+ [SupplyParameterFromQuery(Name="date")] public string? DateQuery {get;set;}
+ [SupplyParameterFromQuery(Name="from")] public string? FromQuery {get;set;}
+ [SupplyParameterFromQuery(Name="through")] public string? ThroughQuery {get;set;}
+ [SupplyParameterFromQuery(Name="to")] public string? ToQuery {get;set;}
+ private EnergyPeriodSelection _window = new(EnergyPeriod.Day, DateOnly.FromDateTime(DateTime.UtcNow));
+ private ExportSalesRequest _request = new(ExportSalesPeriod.Day,DateOnly.FromDateTime(DateTime.UtcNow));
+ private ExportSalesResult? _data; private string? _error; private bool _loading; private int _selected;
+ private readonly AsyncQueryScope _queries = new(); private bool _pinnedInterval;
+ private DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(),TimeZoneInfo.FindSystemTimeZoneById(SalesOptions.CurrentValue.TimeZoneId)).DateTime);
+ private string CsvUrl => "/api/sales.csv?period=" + _request.Period + "&date=" + EnergyPeriodSelection.Iso(_request.Date)
+     + (_request.Period==ExportSalesPeriod.Custom?"&from="+(_request.From is {} from?EnergyPeriodSelection.Iso(from):"")+"&through="+(_request.Through is {} through?EnergyPeriodSelection.Iso(through):""):"") + "&includeUpcoming=true";
+ protected override Task OnParametersSetAsync()
+ {
+     if(!EnergyPeriodSelection.TryParse(PeriodQuery,DateQuery,FromQuery,ThroughQuery ?? ToQuery,Today,out var window))
+     {_error="Choose a valid period of at most 366 days.";_data=null;return Task.CompletedTask;}
+     _window=window;_request=window.ToSalesRequest();return Load(_request);
+ }
+ protected override void OnInitialized() => _queries.StartRefresh(Clock,TimeSpan.FromMinutes(5),()=>InvokeAsync(()=>_queries.IsLoading?Task.CompletedTask:Load(DateQuery is null&&_request.Period==ExportSalesPeriod.Day?_request with{Date=Today}:_request)));
+ private Task Load(ExportSalesRequest request) => _queries.RunAsync(ct=>Sales.ReadDetailsAsync(request,ct),started:()=>{_loading=true;_error=null;StateHasChanged();},received:data=>{var changed=_data?.Request!=data.Request;_data=data;_request=data.Request;if(DateQuery is null&&_window.Period==EnergyPeriod.Day)_window=_window with{Date=data.Request.Date};if(changed)_pinnedInterval=false;if(!_pinnedInterval)_selected=LatestInterval(data);else _selected=Math.Clamp(_selected,0,Math.Max(0,data.Buckets.Count-1));},failed:error=>_error=_data is null?error is ArgumentException?error.Message:"Export could not be loaded.":"Refresh failed. Showing previous data; values may be out of date.",finished:()=>{_loading=false;StateHasChanged();});
+ private Task RecheckPrices() => _queries.RunAsync(ct=>Sales.RecheckPricesAsync(_request,ct),started:()=>{_loading=true;_error=null;StateHasChanged();},received:value=>_data=value,failed:_=>_error="Prices could not be checked. The saved estimates are retained.",finished:()=>{_loading=false;StateHasChanged();});
  private static int LatestInterval(ExportSalesResult data){var current=data.CurrentHour;var index=current is null?-1:data.Buckets.ToList().FindIndex(b=>current.Start>=b.Start&&current.Start<b.End);return index>=0?index:Math.Max(0,data.Buckets.ToList().FindLastIndex(b=>b.ExportKwh.HasValue));}
  private void SelectInterval(int index){_selected=index;_pinnedInterval=true;}
- private void Navigate(ExportSalesRequest r)=>Nav.NavigateTo("/energy/export?period="+r.Period.ToString().ToLowerInvariant()+"&date="+r.Date.ToString("yyyy-MM-dd")+(r.Period==ExportSalesPeriod.Custom?"&from="+r.From?.ToString("yyyy-MM-dd")+"&to="+r.Through?.ToString("yyyy-MM-dd"):""));
- private void Period(ExportSalesPeriod p)=>Navigate(new(p,_request.Date,p==ExportSalesPeriod.Custom?_request.Date:null,p==ExportSalesPeriod.Custom?_request.Date:null));
- private DateOnly Adjacent(int delta)=>_request.Period==ExportSalesPeriod.Month?_request.Date.AddMonths(delta):_request.Period==ExportSalesPeriod.Year?_request.Date.AddYears(delta):_request.Date.AddDays(delta);
- private bool CanMove(int d){try{var next=Adjacent(d);return next.Year>=2000&&next<=Today;}catch(ArgumentOutOfRangeException){return false;}}
- private void Move(int d){if(CanMove(d))Navigate(_request with{Date=Adjacent(d)});}
- private void DateChanged(ChangeEventArgs e){var text=e.Value?.ToString();var format=_request.Period==ExportSalesPeriod.Month?"yyyy-MM-dd":"yyyy-MM-dd";if(_request.Period==ExportSalesPeriod.Month)text+="-01";if(_request.Period==ExportSalesPeriod.Year)text+="-01-01";if(DateOnly.TryParseExact(text,format,out var date))Navigate(_request with{Date=date});}
- private void Apply(){if(_from is null||_to is null||_to<_from||(_to.Value-_from.Value).TotalDays>=366||DateOnly.FromDateTime(_to.Value)>Today){_error=T["Choose a valid period of at most 366 days."];return;}Navigate(new(ExportSalesPeriod.Custom,DateOnly.FromDateTime(_from.Value),DateOnly.FromDateTime(_from.Value),DateOnly.FromDateTime(_to.Value)));}
+ private void ChangeWindow(EnergyPeriodSelection window) => Nav.NavigateTo(window.Url("/energy/export"));
  private void RowKey(KeyboardEventArgs e,int i){if(e.Key is "Enter" or " ")SelectInterval(i);}
- public ValueTask DisposeAsync()=>_queries.DisposeAsync();
+ public ValueTask DisposeAsync() => _queries.DisposeAsync();
 }

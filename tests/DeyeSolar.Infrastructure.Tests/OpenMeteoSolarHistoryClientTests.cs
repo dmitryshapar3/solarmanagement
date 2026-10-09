@@ -42,6 +42,109 @@ public sealed class OpenMeteoSolarHistoryClientTests
     private sealed class ForecastClock(DateTimeOffset now):TimeProvider {public override DateTimeOffset GetUtcNow()=>now;}
 
     [Fact]
+    public async Task ForwardMonthStopsAtLastReturnedRadiationHourWithoutRequestingDatesBeyondTheProviderHorizon()
+    {
+        var today = new DateTimeOffset(Start.UtcDateTime.Date, TimeSpan.Zero);
+        var handler = new RoutedHttpHandler((uri, _) => Json(WindowWeather(uri)));
+        var clock = new ForecastClock(Start);
+        var client = new OpenMeteoSolarHistoryClient(new OpenMeteoJsonReader(new HttpClient(handler), clock), clock);
+
+        var result = await client.ReadAsync(new() { TimeZoneId = "UTC" }, today, today.AddDays(30),
+            DateOnly.FromDateTime(today.AddDays(29).Date), default);
+
+        Assert.Equal(today, result.Samples[0].Timestamp);
+        Assert.Equal(today.AddDays(16).AddHours(-2), result.Samples[^1].Timestamp);
+        Assert.Equal(16 * 24 - 1, result.Samples.Count);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, uri => Assert.Contains("end_date=" + today.AddDays(15).ToString("yyyy-MM-dd"), uri.Query));
+        Assert.Null(result.Sunrise);
+        Assert.Null(result.NextSunrise);
+    }
+
+    [Fact]
+    public async Task ProductionBeyondForecastHorizonReturnsNoWeatherWithoutIssuingAnInvalidRequest()
+    {
+        var handler = new RoutedHttpHandler((_, _) => throw new InvalidOperationException("No request expected."));
+        var clock = new ForecastClock(Start);
+        var client = new OpenMeteoSolarHistoryClient(new OpenMeteoJsonReader(new HttpClient(handler), clock), clock);
+
+        var result = await client.ReadAsync(new(), Start.AddDays(20), Start.AddDays(21),
+            DateOnly.FromDateTime(Start.AddDays(20).Date), default);
+
+        Assert.Empty(result.Samples);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task CustomHistorySplitsArchivedAndRecentModelsAndBoundsIndividualRequests()
+    {
+        var today = new DateTimeOffset(Start.UtcDateTime.Date, TimeSpan.Zero);
+        var recentBoundary = today.AddDays(-92);
+        var requestedFrom = today.AddDays(-120);
+        const string apiKey = "server/history?value&other=1";
+        var handler = new RoutedHttpHandler((uri, _) => Json(WindowWeather(uri)));
+        var clock = new ForecastClock(Start);
+        var client = new OpenMeteoSolarHistoryClient(new OpenMeteoJsonReader(new HttpClient(handler), clock), clock);
+
+        var result = await client.ReadAsync(new() { TimeZoneId = "UTC", ApiKey = apiKey }, requestedFrom,
+            today.AddDays(1), DateOnly.FromDateTime(today.Date), default);
+
+        Assert.Equal(121 * 24, result.Samples.Count);
+        Assert.Equal(requestedFrom, result.Samples[0].Timestamp);
+        Assert.Equal(today.AddDays(1).AddHours(-1), result.Samples[^1].Timestamp);
+        Assert.Equal(result.Samples.Count, result.Samples.Select(sample => sample.Timestamp).Distinct().Count());
+        Assert.Contains(handler.Requests, uri => uri.Host == "customer-historical-forecast-api.open-meteo.com");
+        Assert.Contains(handler.Requests, uri => uri.Host == "customer-api.open-meteo.com");
+        Assert.All(handler.Requests.Where(uri => !uri.Query.Contains("daily=")), uri =>
+        {
+            var query = Query(uri);
+            var from = DateOnly.Parse(query["start_date"]);
+            var through = DateOnly.Parse(query["end_date"]);
+            Assert.InRange(through.DayNumber - from.DayNumber, 0, 31);
+            if (uri.Host == "customer-historical-forecast-api.open-meteo.com") Assert.True(through <= DateOnly.FromDateTime(recentBoundary.Date));
+            else Assert.True(from >= DateOnly.FromDateTime(recentBoundary.Date));
+            Assert.Contains("apikey=" + Uri.EscapeDataString(apiKey), uri.Query);
+            Assert.DoesNotContain("&other=1", uri.Query);
+        });
+    }
+
+    [Fact]
+    public async Task AstronomyFailureDoesNotDiscardValidGenerationForecast()
+    {
+        var handler = new RoutedHttpHandler((uri, _) => uri.Query.Contains("daily=")
+            ? new(HttpStatusCode.BadRequest) : Json(WindowWeather(uri)));
+        var clock = new ForecastClock(Start);
+        var client = new OpenMeteoSolarHistoryClient(new OpenMeteoJsonReader(new HttpClient(handler), clock), clock);
+
+        var result = await client.ReadAsync(new() { TimeZoneId = "UTC" }, Start, Start.AddHours(24),
+            DateOnly.FromDateTime(Start.Date), default);
+
+        Assert.Equal(24, result.Samples.Count);
+        Assert.Null(result.Sunrise);
+        Assert.Null(result.Sunset);
+        Assert.Null(result.NextSunrise);
+    }
+
+    private static Dictionary<string, string> Query(Uri uri) => uri.Query.TrimStart('?').Split('&')
+        .Select(pair => pair.Split('=', 2)).ToDictionary(pair => pair[0], pair => Uri.UnescapeDataString(pair[1]));
+
+    private static string WindowWeather(Uri uri)
+    {
+        if (uri.Query.Contains("daily=")) return "{}";
+        var query = Query(uri);
+        var from = new DateTimeOffset(DateOnly.Parse(query["start_date"]).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var end = new DateTimeOffset(DateOnly.Parse(query["end_date"]).AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var count = (int)(end - from).TotalHours;
+        return JsonSerializer.Serialize(new
+        {
+            hourly_units = new { time = "unixtime", global_tilted_irradiance = "W/m²", temperature_2m = "°C", wind_speed_10m = "m/s", cloud_cover = "%" },
+            hourly = new { time = Enumerable.Range(0, count).Select(hour => from.AddHours(hour).ToUnixTimeSeconds()),
+                global_tilted_irradiance = Enumerable.Repeat(500, count), temperature_2m = Enumerable.Repeat(20, count),
+                wind_speed_10m = Enumerable.Repeat(1, count), cloud_cover = Enumerable.Repeat(0, count) }
+        });
+    }
+
+    [Fact]
     public async Task MeanRadiationTimestampBecomesPreviousHourStartWithMatchingEndpointWeather()
     {
         var handler = new RoutedHttpHandler((uri, _) => Json(Weather(gti: IsRoof1(uri)

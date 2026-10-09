@@ -8,6 +8,9 @@ using SolarManagement.Inverters.Contracts;
 
 namespace DeyeSolar.Web.Redesign;
 
+public sealed record ProductionRequest(SolarHistoryPeriod Period, DateOnly? Date = null,
+    DateOnly? From = null, DateOnly? Through = null);
+
 public sealed record ProductionHourDto(DateTimeOffset Timestamp, double? ActualKw, double? ObservedEnergyKwh,
     double CoveredSeconds, double ExpectedSeconds, double? ExpectedKw, double? LowerKw, double? UpperKw, bool Partial);
 public sealed record ProductionDayDto(DateOnly Date, double? ObservedEnergyKwh, double CoveredSeconds,
@@ -17,7 +20,16 @@ public sealed record ProductionViewDto(DateTimeOffset Start, DateTimeOffset End,
     double? ObservedEnergyKwh, double? CompletedEnergyKwh, double CoveredSeconds, double ExpectedSeconds,
     double? ExpectedEnergyKwh, ProductionHourDto? BestHour, ProductionHourDto? CurrentHour,
     DateTimeOffset? Sunrise, DateTimeOffset? Sunset, DateTimeOffset? NextSunrise, DateTimeOffset? ForecastRetrievedAt,
-    string? WeatherError, string? ActualError, bool Partial);
+    string? WeatherError, string? ActualError, bool Partial)
+{
+    public DateOnly FirstDate { get; init; }
+    public DateOnly LastDate { get; init; }
+    public DateOnly? ForecastAvailableFrom { get; init; }
+    public DateOnly? ForecastAvailableThrough { get; init; }
+    public bool ForecastIncomplete { get; init; }
+    public double? AvailableExpectedEnergyKwh { get; init; }
+    public ProductionHourDto? BestForecastHour { get; init; }
+}
 
 public sealed class SolarProductionService(ISolarDayForecastSource forecasts, ISolarHistoryStore store,
     IOptionsMonitor<SolarEstimateOptions> options, IOptionsMonitor<InverterConnectionOptions> inverter,
@@ -26,15 +38,22 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, (DateTimeOffset Expires, SolarDayForecast Value)> _forecastCache = new();
 
-    public async Task<ProductionViewDto> ReadAsync(SolarHistoryPeriod period, DateOnly? date = null, CancellationToken ct = default)
+    public Task<ProductionViewDto> ReadAsync(SolarHistoryPeriod period, DateOnly? date = null, CancellationToken ct = default)
+        => ReadAsync(new ProductionRequest(period, date), ct);
+
+    public async Task<ProductionViewDto> ReadAsync(ProductionRequest request, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var now = clock.GetUtcNow();
         var config = options.CurrentValue;
         var zone = TimeZoneInfo.FindSystemTimeZoneById(config.TimeZoneId);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
-        var selected = date ?? today;
-        var (start, completedEnd) = SolarHistoryAggregation.Range(period, now, config.TimeZoneId, selected);
-        var end = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(selected.AddDays(1).ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+        var (firstDate, selected) = Dates(request, today);
+        DateTimeOffset Boundary(DateOnly local) => new(TimeZoneInfo.ConvertTimeToUtc(local.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+        var start = Boundary(firstDate);
+        var end = Boundary(selected.AddDays(1));
+        var completedHour = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerHour, TimeSpan.Zero);
+        var completedEnd = end < completedHour ? end : completedHour;
         var actualEnd = end < now ? end : now;
         var device = inverter.CurrentValue.DeviceKey;
         var key = SolarEstimateService.ConfigurationKey(config);
@@ -44,7 +63,11 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
         else
         {
             config.Validate();
-            try { model = await ForecastAsync(config, key, start, end, selected, now, ct); }
+            var weatherEnd = end < Boundary(today.AddDays(16)) ? end : Boundary(today.AddDays(16));
+            try
+            {
+                if (weatherEnd > start) model = await ForecastAsync(config, key, start, weatherEnd, selected, now, ct);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogWarning("Production forecast unavailable ({ErrorType}).", ex.GetType().Name);
@@ -63,6 +86,20 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
             }
         if (device != inverter.CurrentValue.DeviceKey || key != SolarEstimateService.ConfigurationKey(options.CurrentValue))
             throw new InvalidOperationException("Installation settings changed. Reload the chart.");
+        // Bucket measured readings once so a long custom window does not rescan its entire
+        // history for every hour. Adjacent buckets still preserve interpolation at boundaries.
+        var sampleHours = samples.GroupBy(p => p.Timestamp.UtcTicks / TimeSpan.TicksPerHour)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        IReadOnlyList<SolarActual> SamplesFor(DateTimeOffset from, DateTimeOffset through)
+        {
+            if (through <= from) return [];
+            var relevant = new List<SolarActual>();
+            var first = from.AddMinutes(-10).UtcTicks / TimeSpan.TicksPerHour;
+            var last = through.AddMinutes(10).UtcTicks / TimeSpan.TicksPerHour;
+            for (var hour = first; hour <= last; hour++)
+                if (sampleHours.TryGetValue(hour, out var rows)) relevant.AddRange(rows);
+            return relevant;
+        }
         // The model may be retrieved after request entry. Validate/evaluate it against the
         // current clock while retaining the entry timestamp for all measured-data boundaries.
         var evaluationNow = clock.GetUtcNow();
@@ -75,7 +112,7 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
         ProductionHourDto Hour(DateTimeOffset at, DateTimeOffset through, bool progress)
         {
             var from = at < start ? start : at;
-            var energy = SolarEnergyIntegration.Integrate(samples, from, through);
+            var energy = SolarEnergyIntegration.Integrate(SamplesFor(from, through), from, through);
             expected.TryGetValue(at, out var estimate);
             var mean = !progress && through <= completedEnd && energy.CoveredSeconds >= energy.ExpectedSeconds * .9 && energy.CoveredSeconds > 0
                 ? energy.EnergyKwh * 3600 / energy.CoveredSeconds : null;
@@ -92,7 +129,7 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
             hours.Add(hour);
         }
         var currentStart = new DateTimeOffset(now.UtcTicks - now.UtcTicks % TimeSpan.TicksPerHour, TimeSpan.Zero);
-        var current = selected == today && currentStart >= start && currentStart < end && now > currentStart ? Hour(currentStart, now, true) : null;
+        var current = currentStart >= start && currentStart < end && now > currentStart ? Hour(currentStart, now, true) : null;
         var days = new List<ProductionDayDto>();
         double? ForecastEnergy(DateTimeOffset a, DateTimeOffset b, Func<SolarPowerEstimate, double> metric)
         {
@@ -101,29 +138,60 @@ public sealed class SolarProductionService(ISolarDayForecastSource forecasts, IS
             if (covered < (b - a).TotalSeconds) return null;
             return parts.Sum(p => metric(p.Value) * ((p.Key.AddHours(1) < b ? p.Key.AddHours(1) : b) - (p.Key > a ? p.Key : a)).TotalSeconds / 3600);
         }
-        for (var local = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime); local <= selected; local = local.AddDays(1))
+        for (var local = firstDate; local <= selected; local = local.AddDays(1))
         {
-            var a = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
-            var b = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local.AddDays(1).ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+            var a = Boundary(local);
+            var b = Boundary(local.AddDays(1));
             var through = b < actualEnd ? b : actualEnd;
-            var energy = SolarEnergyIntegration.Integrate(samples, a, through);
+            var energy = SolarEnergyIntegration.Integrate(SamplesFor(a, through), a, through);
             days.Add(new(local, energy.EnergyKwh, energy.CoveredSeconds, energy.ExpectedSeconds,
                 ForecastEnergy(a, b, e => e.CentralKw), ForecastEnergy(a, b, e => e.LowerKw),
-                ForecastEnergy(a, b, e => e.UpperKw), energy.Partial));
+                ForecastEnergy(a, b, e => e.UpperKw), energy.Partial || through < b));
         }
         var total = SolarEnergyIntegration.Integrate(samples, start, actualEnd);
         var completed = SolarEnergyIntegration.Integrate(samples, start, completedEnd);
+        var availableDays = days.Where(d => d.ExpectedEnergyKwh.HasValue).ToArray();
+        var availableHours = hours.Where(h => h.ExpectedKw.HasValue).ToArray();
         return new(start, end, config.TimeZoneId, selected, today, hours, days,
             total.EnergyKwh, completed.EnergyKwh, total.CoveredSeconds, total.ExpectedSeconds,
             ForecastEnergy(start, end, e => e.CentralKw), hours.Where(h => h.ActualKw.HasValue).OrderByDescending(h => h.ActualKw).FirstOrDefault(),
             current, model?.Sunrise, model?.Sunset, model?.NextSunrise, model?.RetrievedAt,
-            weatherError, actualError, total.Partial);
+            weatherError, actualError, total.Partial || actualEnd < end)
+        {
+            FirstDate = firstDate, LastDate = selected,
+            ForecastAvailableFrom = availableHours.Length == 0 ? null : DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(availableHours[0].Timestamp, zone).DateTime),
+            ForecastAvailableThrough = availableHours.Length == 0 ? null : DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(availableHours[^1].Timestamp, zone).DateTime),
+            ForecastIncomplete = availableDays.Length != days.Count,
+            AvailableExpectedEnergyKwh = availableDays.Length == 0 ? null : availableDays.Sum(d => d.ExpectedEnergyKwh!.Value),
+            BestForecastHour = availableHours.OrderByDescending(h => h.ExpectedKw).FirstOrDefault()
+        };
+    }
+
+    internal static (DateOnly First, DateOnly Last) Dates(ProductionRequest request, DateOnly today)
+    {
+        var selected = request.Date ?? today;
+        var dates = request.Period switch
+        {
+            SolarHistoryPeriod.Today => (selected, selected),
+            SolarHistoryPeriod.Week => (selected.AddDays(-6), selected),
+            SolarHistoryPeriod.Month => (selected.AddDays(-29), selected),
+            SolarHistoryPeriod.CalendarMonth => (new DateOnly(selected.Year, selected.Month, 1),
+                new DateOnly(selected.Year, selected.Month, DateTime.DaysInMonth(selected.Year, selected.Month))),
+            SolarHistoryPeriod.Custom when request.From.HasValue && request.Through.HasValue => (request.From.Value, request.Through.Value),
+            _ => throw new ArgumentException("Choose a valid generation period and date.")
+        };
+        if (dates.Item1.Year < 2000 || dates.Item2 < dates.Item1 || dates.Item2 > today.AddDays(366)
+            || dates.Item2.DayNumber - dates.Item1.DayNumber > 365)
+            throw new ArgumentException("Choose a valid period of at most 366 days.");
+        return dates;
     }
 
     private async Task<SolarDayForecast> ForecastAsync(SolarEstimateOptions config, string key,
         DateTimeOffset start, DateTimeOffset end, DateOnly selected, DateTimeOffset now, CancellationToken ct)
     {
-        var cacheKey = $"{key}/{start.UtcTicks}/{end.UtcTicks}";
+        // Clipped windows can share radiation hours while requesting different dates'
+        // sunrise/sunset metadata. Cache both parts of the provider request together.
+        var cacheKey = $"{key}/{start.UtcTicks}/{end.UtcTicks}/{selected.DayNumber}";
         await _gate.WaitAsync(ct);
         try
         {

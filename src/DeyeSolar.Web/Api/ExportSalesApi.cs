@@ -17,7 +17,10 @@ public static class ExportSalesApi
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ? parsed : null;
             try
             {
-                var request = new ExportSalesRequest(period, date, Parse("from"), Parse("through"));
+                var request = new ExportSalesRequest(period, date, Parse("from"), Parse("through"))
+                {
+                    AllowFuture = string.Equals(query["includeUpcoming"], "true", StringComparison.OrdinalIgnoreCase)
+                };
                 return Results.Ok(query["details"] == "true" ? await service.ReadDetailsAsync(request, ct) : await service.ReadAsync(request, ct));
             }
             catch (ArgumentException) { return Results.BadRequest(new { error = "Choose a valid sales date range." }); }
