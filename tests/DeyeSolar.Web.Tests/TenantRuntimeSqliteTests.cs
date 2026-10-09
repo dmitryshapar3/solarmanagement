@@ -94,6 +94,69 @@ public class TenantRuntimeSqliteTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => factory.CreateAsync("absent"));
     }
 
+    [Fact]
+    public async Task LegacySalesDtoPreservesPricingAcrossActualReloadsAndNullableLimitsCanStillBeCleared()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        connection.CreateCollation("Latin1_General_100_BIN2", string.CompareOrdinal);
+        var options = new DbContextOptionsBuilder<DeyeSolarDbContext>().UseSqlite(connection).Options;
+        await using (var system = new DeyeSolarDbContext(options))
+        {
+            await system.Database.EnsureCreatedAsync();
+            system.Installations.AddRange(new Installation { Id = "first", CreatedAt = Now }, new Installation { Id = "second", CreatedAt = Now });
+            await system.SaveChangesAsync();
+        }
+        var secrets = new IntegrationSecretStore(new EphemeralDataProtectionProvider());
+        using var factory = new TenantRuntimeFactory(options, NullLoggerFactory.Instance, new Clock(), new Lifetime(),
+            new TenantTestExecutor(), secrets, new(NullLogger<IntegrationChangeNotifier>.Instance), "operator-weather-key");
+        await using var first = await factory.CreateAsync("first");
+        await using var second = await factory.CreateAsync("second");
+        var settings = first.Resolve<AppSettingsService>();
+        var sales = first.Resolve<IOptionsMonitor<SolarSalesOptions>>();
+        var estimate = first.Resolve<IOptionsMonitor<SolarEstimateOptions>>();
+        Assert.Equal("pse", sales.CurrentValue.PriceSource);
+        Assert.Equal(0m, sales.CurrentValue.ManualPricePlnPerKwh);
+
+        const string feedUrl = "https://prices.example.org/export.csv";
+        await settings.SaveSectionAsync(SolarSalesOptions.Section,
+            new SalesSiteSettings("2025-01-02", "UTC", false, "manual", 0.123456m, feedUrl));
+        // These are the fields sent by older clients. Missing pricing fields must not become empty SQL values.
+        await settings.SaveSectionAsync(SolarSalesOptions.Section, new SalesSiteSettings("2025-03-04", "UTC", true));
+        await settings.SaveSectionAsync(DisplayOptions.Section, new DisplayOptions { TimeZoneId = "Europe/Warsaw" });
+        await first.RefreshSettingsAsync();
+        Assert.Equal(new DateOnly(2025, 3, 4), sales.CurrentValue.ContractStartDate);
+        Assert.True(sales.CurrentValue.PayNegativePrices);
+        Assert.Equal("manual", sales.CurrentValue.PriceSource);
+        Assert.Equal(0.123456m, sales.CurrentValue.ManualPricePlnPerKwh);
+        Assert.Equal(feedUrl, sales.CurrentValue.PriceFeedUrl);
+        var loaded = await settings.LoadSectionAsync<SolarSalesOptions>(SolarSalesOptions.Section);
+        Assert.Equal(sales.CurrentValue.ManualPricePlnPerKwh, loaded.ManualPricePlnPerKwh);
+        Assert.Equal(feedUrl, loaded.PriceFeedUrl);
+
+        await settings.SaveSectionAsync(SolarEstimateOptions.Section, new { InverterAcLimitKw = (double?)5.125 });
+        Assert.Equal(5.125, estimate.CurrentValue.InverterAcLimitKw);
+        await settings.SaveSectionAsync(SolarEstimateOptions.Section, new { InverterAcLimitKw = (double?)null });
+        Assert.Null(estimate.CurrentValue.InverterAcLimitKw);
+        Assert.Null((await settings.LoadSectionAsync<SolarEstimateOptions>(SolarEstimateOptions.Section)).InverterAcLimitKw);
+        Assert.Equal(0.123456m, sales.CurrentValue.ManualPricePlnPerKwh);
+
+        await using var firstDb = new DeyeSolarDbContext(options, "first");
+        var persisted = await firstDb.AppSettings.AsNoTracking().Where(row => row.Section == SolarSalesOptions.Section)
+            .ToDictionaryAsync(row => row.Key, row => row.Value);
+        Assert.Equal("manual", persisted[nameof(SolarSalesOptions.PriceSource)]);
+        Assert.Equal("0.123456", persisted[nameof(SolarSalesOptions.ManualPricePlnPerKwh)]);
+        Assert.Equal(feedUrl, persisted[nameof(SolarSalesOptions.PriceFeedUrl)]);
+        Assert.Equal("", (await firstDb.AppSettings.AsNoTracking().SingleAsync(row => row.Section == SolarEstimateOptions.Section
+            && row.Key == nameof(SolarEstimateOptions.InverterAcLimitKw))).Value);
+        Assert.Equal("pse", second.Resolve<IOptionsMonitor<SolarSalesOptions>>().CurrentValue.PriceSource);
+        Assert.Equal(0m, second.Resolve<IOptionsMonitor<SolarSalesOptions>>().CurrentValue.ManualPricePlnPerKwh);
+        Assert.Equal("", second.Resolve<IOptionsMonitor<SolarSalesOptions>>().CurrentValue.PriceFeedUrl);
+        await using var secondDb = new DeyeSolarDbContext(options, "second");
+        Assert.Equal("0", (await secondDb.AppSettings.AsNoTracking().SingleAsync(row => row.Section == SolarSalesOptions.Section
+            && row.Key == nameof(SolarSalesOptions.ManualPricePlnPerKwh))).Value);
+    }
+
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
     private sealed class Lifetime : IHostApplicationLifetime
     {

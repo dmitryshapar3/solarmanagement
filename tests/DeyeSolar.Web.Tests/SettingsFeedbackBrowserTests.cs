@@ -27,6 +27,7 @@ public sealed class SettingsFeedbackBrowserTests
         var panels = page.Locator("#panels");
         var diagram = panels.Locator(".roof-sun-diagram");
         await Assertions.Expect(diagram).ToBeVisibleAsync();
+        await Assertions.Expect(diagram.Locator(".roof-sun-compass")).ToBeVisibleAsync();
         await panels.GetByLabel("Installed capacity", new() { Exact = true }).First.FillAsync("4.5");
         var roof = diagram.Locator("[data-roof='1'] > g");
         await Assertions.Expect(roof).ToHaveCountAsync(1);

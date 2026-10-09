@@ -119,7 +119,10 @@ public class DashboardTests
         Assert.Contains("12.30",Regex.Match(html,"data-testid=\"sales-deposit\"[^>]*>(.*?)</strong>",RegexOptions.Singleline).Value);
         Assert.Contains("In progress: 1.25 kWh, excluded from totals",html);
         Assert.Contains("In progress: 2.50 PLN, excluded from totals",html);
-        Assert.Contains("It is not a cash payout",html);
+        Assert.Contains("Completed hours only",html);
+        Assert.Contains("Deposit credit, estimated",html);
+        Assert.DoesNotContain("Estimated deposit credit is energy value × 1.23.",html);
+        Assert.DoesNotContain("It is not a cash payout",html);
         await fixture.AssertNoMutationsAsync();
     }
     [SqlServerFact]
@@ -127,7 +130,13 @@ public class DashboardTests
     {
         await using var fixture = await Fixture.CreateAsync(Reading());
         var html = await RenderAsync<DeyeSolar.Web.Pages.ReadingsView>(fixture.Services);
-        Assert.Contains("Live readings", html);
+        Assert.Contains("<h1>Activity</h1>", html);
+        var activityNavigation = Regex.Match(html, "<nav[^>]*aria-label=\"Activity\"[^>]*>.*?</nav>", RegexOptions.Singleline).Value;
+        Assert.Contains("href=\"/activity/readings\"", activityNavigation);
+        Assert.Contains(">Readings</a>", activityNavigation);
+        Assert.Contains("href=\"/activity\"", activityNavigation);
+        Assert.Contains(">Automation</a>", activityNavigation);
+        Assert.DoesNotContain("Live readings", html);
         Assert.Contains("Europe/Warsaw", html);
         Assert.Contains("4.10", html);
         Assert.Contains("Polled", html);

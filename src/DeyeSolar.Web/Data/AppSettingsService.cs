@@ -70,10 +70,12 @@ public sealed class AppSettingsService : IAppSettingsReader, IAppSettingsWriter
         foreach (var (section, options) in sections)
         {
             var values = options is AppSettingsPatch patch
-                ? patch.Values.Where(pair => SettingsSchema.IsRuntimeSetting(section, pair.Key)).Select(pair => new KeyValuePair<string, string>(pair.Key, InvariantSettingCodec.Format(pair.Value)))
-                : SettingsSchema.Properties(section, options.GetType()).Where(property => property.CanRead).Select(property => new KeyValuePair<string, string>(property.Name, property.Read(options)));
-            foreach (var (key, value) in values)
+                ? patch.Values.Where(pair => SettingsSchema.IsRuntimeSetting(section, pair.Key))
+                : SettingsSchema.Properties(section, options.GetType()).Where(property => property.CanRead).Select(property => new KeyValuePair<string, object?>(property.Name, property.ReadValue(options)));
+            foreach (var (key, rawValue) in values)
             {
+                if (rawValue is null && !SettingsSchema.CanPersistNull(section, key)) continue;
+                var value = InvariantSettingCodec.Format(rawValue);
                 var setting = existing.SingleOrDefault(s => s.Section == section && s.Key == key);
                 if (setting is null) db.AppSettings.Add(new AppSetting { Section = section, Key = key, Value = value });
                 else setting.Value = value;

@@ -42,6 +42,11 @@ internal static class SettingsSchema
     public static bool IsRuntimeSetting(string section, string name) => RuntimeTypes.TryGetValue(section, out var type)
         && Properties(section, type).Any(property => property.Name == name);
 
+    // Null in an older DTO means an omitted non-nullable runtime field, not an empty numeric value.
+    // Nullable runtime options retain explicit clearing; legacy non-runtime sections retain their codec.
+    public static bool CanPersistNull(string section, string name) => !RuntimeTypes.TryGetValue(section, out var type)
+        || Properties(section, type).SingleOrDefault(property => property.Name == name)?.AllowsNull == true;
+
     public static Dictionary<string, string?> RuntimeDefaults()
     {
         var result = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
@@ -72,6 +77,7 @@ internal sealed class SettingProperty(PropertyInfo property)
     public string Name => property.Name;
     public bool CanRead => property.CanRead;
     public bool CanWrite => property.CanWrite;
+    public bool AllowsNull => Nullable.GetUnderlyingType(property.PropertyType) is not null;
     public object? ReadValue(object value) => property.GetValue(value);
     public string Read(object value) => InvariantSettingCodec.Format(ReadValue(value));
     public void Apply(object target, string value)

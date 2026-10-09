@@ -498,10 +498,21 @@ public class BillingSqlServerTests
             var accountState = JsonSerializer.Serialize(accounts);
             await db.Database.MigrateAsync();
             Assert.Equal(accountState, JsonSerializer.Serialize(await db.BillingAccounts.AsNoTracking().OrderBy(a => a.UserId).ToListAsync()));
-            var migrations = await db.Database.GetAppliedMigrationsAsync();
+            var latestMigrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(db.Database.GetMigrations(), latestMigrations);
+            var capabilities = db.Database.GetMigrations().Single(migration => migration.EndsWith("_SmartSolarRedesignCapabilities", StringComparison.Ordinal));
+            // Exercise the protected migration itself, independently of later reversible additions.
+            await db.GetService<IMigrator>().MigrateAsync(capabilities);
+            var protectedHistory = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            Assert.Equal(capabilities, protectedHistory.Last());
             var downgrade = await Assert.ThrowsAsync<SqlException>(() => db.GetService<IMigrator>().MigrateAsync("20261004010452_DynamicIntegrationOAuth"));
             Assert.Equal(51000, downgrade.Number);
-            Assert.Equal(migrations, await db.Database.GetAppliedMigrationsAsync());
+            Assert.Contains("SmartSolar capabilities", downgrade.Message);
+            Assert.Equal(protectedHistory, await db.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(accountState, JsonSerializer.Serialize(await db.BillingAccounts.AsNoTracking().OrderBy(a => a.UserId).ToListAsync()));
+            Assert.Equal(socketsBefore, JsonSerializer.Serialize(await historicalSockets.ToListAsync()));
+            await db.Database.MigrateAsync();
+            Assert.Equal(latestMigrations, await db.Database.GetAppliedMigrationsAsync());
             Assert.Equal(accountState, JsonSerializer.Serialize(await db.BillingAccounts.AsNoTracking().OrderBy(a => a.UserId).ToListAsync()));
             Assert.Equal(socketsBefore, JsonSerializer.Serialize(await historicalSockets.ToListAsync()));
         }
@@ -538,14 +549,19 @@ public class BillingSqlServerTests
     {
         await using var database = await SqlServerTestDatabase.CreateAsync("SolarCapabilityDowngrade");
         await using var db = database.Factory.CreateDbContext();
+        var latestHistory = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Equal(db.Database.GetMigrations(), latestHistory);
+        var capabilities = db.Database.GetMigrations().Single(migration => migration.EndsWith("_SmartSolarRedesignCapabilities", StringComparison.Ordinal));
+        await db.GetService<IMigrator>().MigrateAsync(capabilities);
         Assert.Equal(0, await db.BillingAccounts.CountAsync());
         await db.Database.ExecuteSqlRawAsync("""
             INSERT INTO [AppleIdentityRevocations] ([Id], [Audience], [ProtectedRefreshToken], [Attempts], [NextAttemptAt])
             VALUES ('55555555-5555-4555-8555-555555555555', 'fixture.mobile', 'protected-fixture-token', 2, '2026-10-06T12:00:00');
             """);
-        var history = await db.Database.GetAppliedMigrationsAsync();
+        var history = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.Equal(capabilities, history.Last());
         var before = JsonSerializer.Serialize(await db.AppleIdentityRevocations.AsNoTracking().ToListAsync());
-        var previous = history.Last(migration => !migration.EndsWith("_SmartSolarRedesignCapabilities", StringComparison.Ordinal));
+        var previous = history.TakeWhile(migration => migration != capabilities).Last();
         var error = await Assert.ThrowsAsync<SqlException>(() => db.GetService<IMigrator>().MigrateAsync(previous));
         Assert.Equal(51000, error.Number);
         Assert.Contains("SmartSolar capabilities", error.Message);
@@ -557,6 +573,7 @@ public class BillingSqlServerTests
         Assert.Empty(await db.AppleIdentityCredentials.AsNoTracking().ToListAsync());
         Assert.Empty(await db.ActivityEvents.IgnoreQueryFilters().AsNoTracking().ToListAsync());
         await db.Database.MigrateAsync();
+        Assert.Equal(latestHistory, await db.Database.GetAppliedMigrationsAsync());
         Assert.Equal(before, JsonSerializer.Serialize(await db.AppleIdentityRevocations.AsNoTracking().ToListAsync()));
     }
 

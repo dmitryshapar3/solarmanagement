@@ -17,10 +17,11 @@ public sealed class SettingsSchemaTests
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
             var timestamp = new DateTimeOffset(2026, 10, 5, 12, 34, 56, TimeSpan.FromHours(2));
-            object[] values = [5.125, new DateOnly(2026, 10, 5), new TimeOnly(12, 34, 56), timestamp, true];
+            object[] values = [5.125, 0.123456m, 0m, new DateOnly(2026, 10, 5), new TimeOnly(12, 34, 56), timestamp, true];
             foreach (var value in values)
                 Assert.Equal(value, InvariantSettingCodec.Parse(InvariantSettingCodec.Format(value), value.GetType()));
             Assert.Equal("5.125", InvariantSettingCodec.Format(5.125));
+            Assert.Equal("0.123456", InvariantSettingCodec.Format(0.123456m));
             Assert.Null(InvariantSettingCodec.Parse("", typeof(double?)));
             Assert.Equal("", InvariantSettingCodec.Parse("", typeof(string)));
         }
