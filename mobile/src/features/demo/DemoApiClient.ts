@@ -1,9 +1,10 @@
 import { translate as t } from "../../core/i18n";
 import { normalizeRuleDraft, validateRuleDraft } from "../rules/RuleDraftPolicy";
+import { addDays } from "../energy/chartPolicy";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
 import type { DisplaySettings, PollingSettings, Rule, RuleRequest, SolarSiteSettings } from "../../core/api/types";
 import {
-  createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, demoProduction, type DemoState
+  createDemoState, DEMO_API_BASE_URL, DEMO_USERNAME, demoEstimate, demoInverter, demoReadings, demoSales, demoSolarHistory, demoProduction, demoProductionDates, type DemoState
 } from "./fixtures";
 
 /** A separate offline installation. No request, credential, or command can reach a server. */
@@ -87,8 +88,16 @@ export class DemoApiClient extends ApiClient {
     }
     if (route === "GET /api/solar/production") {
       const period = options.query?.period ?? "Today";
-      if (period !== "Today" && period !== "Week" && period !== "Month") throw new ApiError(400, t("Select a valid generation period."));
-      return demoProduction(period, optionalDate(options.query?.date), now, timeZone);
+      if (period !== "Today" && period !== "Week" && period !== "Month" && period !== "CalendarMonth" && period !== "Custom") throw new ApiError(400, t("Select a valid generation period."));
+      const date = optionalDate(options.query?.date) ?? localDate(now, timeZone);
+      const from = optionalDate(options.query?.from); const through = optionalDate(options.query?.through);
+      const range = from && through ? { from, through } : undefined;
+      const { firstDate, lastDate } = demoProductionDates(period, date, range);
+      if (period === "Custom" && (!from || !through) || firstDate < "2000-01-01" || lastDate < firstDate
+        || lastDate > addDays(localDate(now, timeZone), 366)
+        || (Date.parse(lastDate) - Date.parse(firstDate)) / 86400000 + 1 > 366)
+        throw new ApiError(400, t("Choose a valid period of at most 366 days."));
+      return demoProduction(period, date, now, timeZone, range);
     }
     if (route === "GET /api/activity") {
       const from = typeof options.query?.from === "string" ? options.query.from : new Date(now.getTime() - 168 * 3600000).toISOString();
@@ -139,10 +148,12 @@ export class DemoApiClient extends ApiClient {
     if (route === "GET /api/sales" || route === "POST /api/sales/prices/recheck") {
       if (method === "POST") options = { ...options, query: objectBody(options.body) as RequestOptions["query"] };
       const period = options.query?.period ?? "Day";
-      if (period !== "Day" && period !== "Month" && period !== "Year" && period !== "Custom") throw new ApiError(400, t("Select a valid sales period."));
+      if (period !== "Day" && period !== "Month" && period !== "Year" && period !== "Custom" && period !== "Week" && period !== "RollingMonth") throw new ApiError(400, t("Select a valid sales period."));
       const date = optionalDate(options.query?.date) ?? localDate(now, timeZone);
       const from = optionalDate(options.query?.from); const through = optionalDate(options.query?.through);
-      if (period === "Custom" && (!from || !through || from > through || (Date.parse(through) - Date.parse(from)) / 86400000 + 1 > 366 || through > localDate(now, timeZone))) throw new ApiError(400, t("Choose a range of at most 366 days, ending today or earlier."));
+      const allowFuture = method === "GET" && options.query?.includeUpcoming === true;
+      const latest = allowFuture ? addDays(localDate(now, timeZone), 366) : localDate(now, timeZone);
+      if (date < "2000-01-01" || date > latest || period === "Custom" && (!from || !through || from < "2000-01-01" || from > through || (Date.parse(through) - Date.parse(from)) / 86400000 + 1 > 366 || through > latest)) throw new ApiError(400, t("Choose a valid period of at most 366 days."));
       return demoSales(period, date, now, timeZone, from && through ? { from, through } : undefined);
     }
     if (route === "GET /api/devices") return { devices: this.state.devices, lastUpdated: now.toISOString() };

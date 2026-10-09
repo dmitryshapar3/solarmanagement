@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
+import type { ExportSalesPeriod, SolarHistoryPeriod } from "../core/api/types";
 export type HomeStackParamList = { Home: undefined; LiveReadings: undefined; Settings: undefined; ReadingsLog: undefined;
   SolarSite: undefined; TariffExport: undefined; ConnectedServices: undefined; DataRefresh: undefined;
   Language: undefined; TimeZone: undefined; Appearance: undefined; SignInSecurity: undefined; PasswordSessions: undefined;
@@ -10,7 +11,7 @@ export type RootStackParamList = { MainTabs: NavigatorScreenParams<RootTabsParam
   AccountSettings: NavigatorScreenParams<HomeStackParamList> | undefined;
   AutomationEditor: { id?: number; template?: "solar" | "reserve" | "daylight" } | undefined; DeviceSheet: { id: string }; ManualOverride: { id: string; isOn: boolean };
   Connect: { kind?: "inverter" | "socket"; instanceId?: string } | undefined; Paywall: undefined;
-  ProductionHourlySheet: { period?: "Today" | "Week" | "Month"; date?: string; selectedTimestamp?: string } | undefined;
-  ExportHourlySheet: { period?: "Day" | "Month" | "Year" | "Custom"; date?: string; from?: string; through?: string } | undefined;
+  ProductionHourlySheet: { period?: SolarHistoryPeriod; date?: string; from?: string; through?: string; selectedTimestamp?: string } | undefined;
+  ExportHourlySheet: { period?: ExportSalesPeriod; date?: string; from?: string; through?: string; includeUpcoming?: boolean } | undefined;
   DesignGallery: undefined; };
 export type AuthStackParamList = { Welcome: undefined; CodeRequest: { channel?: "email" | "phone" } | undefined; EmailCode: { channel: "email" | "phone"; destination: string; verificationId: string; expiresAt: string; retryAfterSeconds: number }; PasswordLogin: undefined; Server: undefined; };

@@ -34,8 +34,8 @@ export class DeyeSolarApi {
   completeCodeSignIn(verificationId: string, code: string, signal?: AbortSignal): Promise<AuthResponse> {
     return this.client.request("/api/auth/code/complete", { method: "POST", body: { verificationId, code }, signal, skipUnauthorizedHandler: true });
   }
-  getProduction(period: SolarHistoryPeriod, date?: string, signal?: AbortSignal): Promise<ProductionView> {
-    return this.client.request("/api/solar/production", { query: { period, date }, signal });
+  getProduction(period: SolarHistoryPeriod, date?: string, signal?: AbortSignal, range?: { from: string; through: string }): Promise<ProductionView> {
+    return this.client.request("/api/solar/production", { query: { period, date, ...range }, signal });
   }
   getActivity(options: { from?: string; to?: string; ruleId?: number; changesOnly?: boolean; cursor?: string } = {}, signal?: AbortSignal): Promise<ActivityFeed> {
     return this.client.request("/api/activity", { query: options, signal });
@@ -167,11 +167,11 @@ export class DeyeSolarApi {
     return this.client.request<SolarHistoryResult>("/api/solar/history", { query: { period, date }, signal });
   }
 
-  getSales(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }): Promise<ExportSalesResult> {
-    return this.client.request<ExportSalesResult>("/api/sales", { query: { period, date, ...range }, signal });
+  getSales(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }, options?: { includeUpcoming?: boolean }): Promise<ExportSalesResult> {
+    return this.client.request<ExportSalesResult>("/api/sales", { query: { period, date, ...range, ...(options?.includeUpcoming ? { includeUpcoming: true } : {}) }, signal });
   }
-  getSalesDetails(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }): Promise<ExportSalesResult> {
-    return this.client.request("/api/sales", { query: { period, date, ...range, details: true }, signal });
+  getSalesDetails(period: ExportSalesPeriod, date: string, signal?: AbortSignal, range?: { from: string; through: string }, options?: { includeUpcoming?: boolean }): Promise<ExportSalesResult> {
+    return this.client.request("/api/sales", { query: { period, date, ...range, details: true, ...(options?.includeUpcoming ? { includeUpcoming: true } : {}) }, signal });
   }
   recheckSalesPrices(period: ExportSalesPeriod, date: string, range?: { from: string; through: string }, signal?: AbortSignal): Promise<ExportSalesResult> {
     return this.client.request("/api/sales/prices/recheck", { method: "POST", body: { period, date, ...range }, signal, timeoutMs: 60000 });

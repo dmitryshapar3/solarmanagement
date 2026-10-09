@@ -167,7 +167,7 @@ export type Settings = {
 };
 
 export type SolarPowerBasis = 0 | 1 | 2;
-export type SolarHistoryPeriod = "Today" | "Week" | "Month";
+export type SolarHistoryPeriod = "Today" | "Week" | "Month" | "CalendarMonth" | "Custom";
 export type SolarPowerEstimate = {
   timestamp: string;
   calculatedAt: string;
@@ -217,7 +217,7 @@ export type SolarHistoryResult = {
   today: string;
 };
 
-export type ExportSalesPeriod = "Day" | "Month" | "Year" | "Custom";
+export type ExportSalesPeriod = "Day" | "Month" | "Year" | "Custom" | "Week" | "RollingMonth";
 export type ExportSaleProgress = {
   start: string;
   observedThrough: string | null;
@@ -241,7 +241,7 @@ export type ExportSaleBucket = {
 };
 
 export type ExportSalesResult = {
-  request: { period: 0 | 1 | 2 | 3; date: string; from: string | null; through: string | null };
+  request: { period: 0 | 1 | 2 | 3 | 4 | 5; date: string; from: string | null; through: string | null };
   today: string;
   contractStartDate: string;
   timeZoneId: string;

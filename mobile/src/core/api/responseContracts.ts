@@ -53,7 +53,7 @@ const solarState = object({ estimate: nullable(forecast), comparisonEstimate: nu
   actual: nullable(object({ timestamp: date, powerKw: num, basis: oneOf(0, 1, 2) })), deviationKw: nullable(num), deviationPercent: nullable(num), reason: nullable(str) }),
   refreshFailed: bool, lastSuccessAt: nullable(date), error: nullable(str) });
 const salesValues = Object.fromEntries(["exportKwh", "creditedExportKwh", "energyValuePln", "estimatedDepositPln"].map(k => [k, nullable(num)]));
-const sales = object({ request: object({ period: oneOf(0, 1, 2, 3), date: str, from: nullable(str), through: nullable(str) }),
+const sales = object({ request: object({ period: oneOf(0, 1, 2, 3, 4, 5), date: str, from: nullable(str), through: nullable(str) }),
   ...strings(["today", "contractStartDate", "timeZoneId", "start", "end"]), ...salesValues, ...numbers(["expectedHours", "observedHours", "valuedHours"]),
   buckets: array(object({ start: date, end: date, ...salesValues, ...numbers(["expectedHours", "observedHours", "valuedHours"]) })), dataError: nullable(str), priceError: nullable(str),
   currentHour: nullable(object({ start: date, observedThrough: nullable(date), ...salesValues, observedSeconds: num })), updatedAt: nullable(date), isPartial: bool,
@@ -65,7 +65,9 @@ const production = object({ start: date, end: date, timeZoneId: str, date: str, 
     expectedEnergyKwh: nullable(num), lowerEnergyKwh: nullable(num), upperEnergyKwh: nullable(num), partial: bool })),
   observedEnergyKwh: nullable(num), completedEnergyKwh: nullable(num), coveredSeconds: num, expectedSeconds: num, expectedEnergyKwh: nullable(num),
   bestHour: nullable(productionHour), currentHour: nullable(productionHour), sunrise: nullable(date), sunset: nullable(date), nextSunrise: nullable(date),
-  forecastRetrievedAt: nullable(date), weatherError: nullable(str), actualError: nullable(str), partial: bool });
+  forecastRetrievedAt: nullable(date), weatherError: nullable(str), actualError: nullable(str), partial: bool,
+  firstDate: optional(str), lastDate: optional(str), forecastAvailableFrom: optional(nullable(str)), forecastAvailableThrough: optional(nullable(str)),
+  forecastIncomplete: optional(bool), availableExpectedEnergyKwh: optional(nullable(num)), bestForecastHour: optional(nullable(productionHour)) });
 const activity = object({ start: date, end: date, nextCursor: nullable(str), items: array(object({ id: num, start: date, end: date,
   kind: str, ruleId: nullable(num), ruleName: nullable(str), deviceId: nullable(str), reasonCode: nullable(str), state: nullable(bool), checkCount: num,
   socMin: nullable(num), socMax: nullable(num), solarMinWatts: nullable(num), solarMaxWatts: nullable(num), actorUserId: nullable(str), client: nullable(str) })),

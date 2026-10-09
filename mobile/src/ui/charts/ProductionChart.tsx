@@ -13,13 +13,12 @@ export function ProductionChart({ points, unit = "kW", bars = false, compact = f
   const lineColor = hero ? colors.onSun : colors.solar;
   const latest = Math.max(0, points.findLastIndex(p => known(p.actual)));
   const [selection, setSelection] = useState(latest); const selected = Math.max(0, Math.min(points.length - 1, selectedIndex ?? selection));
-  const geometry = useMemo(() => chartGeometry(points, "generation"), [points]); const point = points[selected];
+  const geometry = useMemo(() => chartGeometry(points, "generation", undefined, bars ? 86400000 : 3600000), [points, bars]); const point = points[selected];
   const pick = (index: number) => { const safe = Math.max(0, Math.min(points.length - 1,index)); setSelection(safe); onSelect?.(safe); };
   const scrub = (x: number) => pick(Math.round(((x / width) * chartWidth - 38) / geometry.step - .5));
   const ticks = [...new Set(Array.from({ length: Math.min(5,points.length) },(_,i)=>Math.round(i*(points.length-1)/Math.max(1,Math.min(5,points.length)-1))))];
   const nowIndex = now && points[0] && !bars ? (Date.parse(now)-Date.parse(points[0].timestamp))/3600000-.5 : null;
-  const maxValue = Math.max(1,...points.flatMap(p=>[p.actual,p.possible?.upperKw]).filter(known));
-  const maximum = Math.ceil(maxValue); const y = (value: number) => 176 - value/maximum*158;
+  const y = geometry.y;
   return <View style={{ gap: 10 }}>
     {!compact && point ? <Text accessibilityLiveRegion="polite" style={{ fontSize: 13, lineHeight: 18, color: colors.ink2 }}>{point.description}</Text> : null}
     <View onLayout={event=>setWidth(event.nativeEvent.layout.width)} accessibilityRole="adjustable" accessibilityLabel={t("Production chart in {0}",unit)} accessibilityValue={{ text: point?.description ?? t("No data") }}
@@ -37,6 +36,8 @@ export function ProductionChart({ points, unit = "kW", bars = false, compact = f
           {!compact && point && known(point.actual) ? <Circle cx={geometry.x(selected)} cy={y(point.actual)} r={5} fill={colors.surface} stroke={colors.solar} strokeWidth={2.5} /> : null}
           {nowIndex !== null && nowIndex>=0 && nowIndex<=points.length ? <><Line x1={geometry.x(nowIndex)} x2={geometry.x(nowIndex)} y1={18} y2={176} stroke={colors.ink3} strokeDasharray="4 4" />{!compact ? <SvgText x={Math.min(325,geometry.x(nowIndex)+4)} y={28} fill={colors.ink2} fontFamily="Onest-SemiBold" fontSize={12}>{t("Now")}</SvgText> : null}</> : null}
         </>}
+        {geometry.expectedPaths.map((path,i)=><Path key={`forecast${i}`} testID="forecast-series" d={path} fill="none" stroke={lineColor} strokeWidth={2} strokeDasharray="6 4" strokeLinecap="round" strokeLinejoin="round" />)}
+        {geometry.expectedDots.map((dot,i)=><Circle key={`forecast-dot${i}`} testID="forecast-point" cx={dot.x} cy={dot.y} r={2.5} fill={hero ? colors.sun : colors.surface} stroke={lineColor} strokeWidth={1.5} />)}
         {!compact ? ticks.map(i=><SvgText key={`x${i}`} x={geometry.x(i)} y={198} fill={colors.ink3} fontSize={12} fontFamily="Onest-Medium" textAnchor="middle">{points[i]?.label}</SvgText>) : null}
       </Svg>
     </View>

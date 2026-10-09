@@ -8,6 +8,7 @@ export type ChartPoint = {
   description: string;
   possible?: PowerRange | null;
   actual?: number | null;
+  expected?: number | null;
   completed?: number | null;
   provisional?: number | null;
 };
@@ -88,9 +89,9 @@ export function validRange(range: PowerRange | null | undefined): range is Power
   return Boolean(range && known(range.lowerKw) && known(range.upperKw) && range.lowerKw >= 0 && range.upperKw >= range.lowerKw);
 }
 
-export function chartGeometry(points: readonly ChartPoint[], mode: "generation" | "sales", domain?: { minimum: number; maximum: number }) {
+export function chartGeometry(points: readonly ChartPoint[], mode: "generation" | "sales", domain?: { minimum: number; maximum: number }, intervalMilliseconds = 3600000) {
   const values = points.flatMap((point) => mode === "generation"
-    ? [validRange(point.possible) ? point.possible.upperKw : null, point.actual]
+    ? [validRange(point.possible) ? point.possible.upperKw : null, point.actual, point.expected]
     : [point.completed, known(point.provisional) ? (point.completed ?? 0) + point.provisional : null]).filter(known);
   const bounded = domain && known(domain.minimum) && known(domain.maximum) && domain.maximum > domain.minimum;
   const min = bounded ? domain.minimum : Math.min(0, Math.floor(Math.min(0, ...values)));
@@ -102,6 +103,8 @@ export function chartGeometry(points: readonly ChartPoint[], mode: "generation" 
   const bandPaths: string[] = [];
   const actualPaths: string[] = [];
   const actualDots: { x: number; y: number }[] = [];
+  const expectedPaths: string[] = [];
+  const expectedDots: { x: number; y: number }[] = [];
   let run: number[] = [];
   const finishBand = () => {
     if (!run.length) return;
@@ -119,9 +122,10 @@ export function chartGeometry(points: readonly ChartPoint[], mode: "generation" 
     run = [];
   };
   let actual = "";
+  let expected = "";
   points.forEach((point, index) => {
     const previous = points[index - 1];
-    const gap = previous && new Date(point.timestamp).getTime() - new Date(previous.timestamp).getTime() > 3600000;
+    const gap = previous && new Date(point.timestamp).getTime() - new Date(previous.timestamp).getTime() > intervalMilliseconds;
     if (gap || !validRange(point.possible)) finishBand();
     if (validRange(point.possible)) run.push(index);
     if (gap || !known(point.actual)) {
@@ -132,9 +136,18 @@ export function chartGeometry(points: readonly ChartPoint[], mode: "generation" 
       actual += `${actual ? " L" : "M"}${coordinate(x(index))} ${coordinate(y(point.actual))}`;
       actualDots.push({ x: x(index), y: y(point.actual) });
     }
+    if (gap || !known(point.expected)) {
+      if (expected) expectedPaths.push(expected);
+      expected = "";
+    }
+    if (known(point.expected)) {
+      expected += `${expected ? " L" : "M"}${coordinate(x(index))} ${coordinate(y(point.expected))}`;
+      expectedDots.push({ x: x(index), y: y(point.expected) });
+    }
   });
   finishBand();
   if (actual) actualPaths.push(actual);
+  if (expected) expectedPaths.push(expected);
   const bars = points.flatMap((point, index) => {
     const bar = (start: number, end: number, provisional: boolean) => ({
       x: x(index) - step * .32, y: Math.min(y(start), y(end)), width: Math.max(.5, step * .64),
@@ -145,13 +158,13 @@ export function chartGeometry(points: readonly ChartPoint[], mode: "generation" 
       ...(known(point.provisional) ? [bar(point.completed ?? 0, (point.completed ?? 0) + point.provisional, true)] : [])
     ];
   });
-  return { min, max, step, x, y, baseline: y(0), bandPaths, actualPaths, actualDots, bars,
+  return { min, max, step, x, y, baseline: y(0), bandPaths, actualPaths, actualDots, expectedPaths, expectedDots, bars,
     ticks: Array.from({ length: 5 }, (_, index) => ({ value: min + (max - min) * index / 4, y: y(min + (max - min) * index / 4) })) };
 }
 
 export function defaultPointIndex(points: readonly ChartPoint[]): number {
   for (let index = points.length - 1; index >= 0; index--)
-    if (validRange(points[index]?.possible) || known(points[index]?.actual) || known(points[index]?.completed) || known(points[index]?.provisional)) return index;
+    if (validRange(points[index]?.possible) || known(points[index]?.actual) || known(points[index]?.expected) || known(points[index]?.completed) || known(points[index]?.provisional)) return index;
   return 0;
 }
 export function salesPointValues(bucket: ExportSaleBucket, progress: ExportSaleProgress | null, metric: "energy" | "value") {

@@ -145,9 +145,11 @@ export function demoReadings(hours: number, now: Date, timeZone: string): Readin
 }
 
 export function demoSales(period: ExportSalesPeriod, date: string, now: Date, timeZone: string, custom?: { from: string; through: string }): ExportSalesResult {
-  const calendarPeriod = period === "Custom" ? "Day" : period;
-  const anchor = period === "Custom" ? custom?.from ?? date : periodAnchor(date, calendarPeriod);
-  const throughDate = period === "Custom" ? addDays(custom?.through ?? date, 1) : movePeriod(anchor, calendarPeriod, 1);
+  const calendarPeriod = period === "Month" || period === "Year" ? period : "Day";
+  const anchor = period === "Custom" ? custom?.from ?? date : period === "Week" ? addDays(date, -6)
+    : period === "RollingMonth" ? addDays(date, -29) : periodAnchor(date, calendarPeriod);
+  const throughDate = period === "Custom" ? addDays(custom?.through ?? date, 1)
+    : period === "Week" || period === "RollingMonth" ? addDays(date, 1) : movePeriod(anchor, calendarPeriod, 1);
   const start = midnight(anchor, timeZone);
   const end = midnight(throughDate, timeZone);
   const currentStart = Math.floor(now.getTime() / 3600000) * 3600000;
@@ -167,7 +169,7 @@ export function demoSales(period: ExportSalesPeriod, date: string, now: Date, ti
     };
   };
   const buckets: ExportSaleBucket[] = [];
-  if (calendarPeriod === "Day" && period !== "Custom") {
+  if (period === "Day") {
     for (let instant = start.getTime(); instant < end.getTime(); instant += 3600000) buckets.push(bucket(new Date(instant), new Date(instant + 3600000)));
   } else {
     for (let cursor = anchor; cursor < throughDate;) {
@@ -181,7 +183,7 @@ export function demoSales(period: ExportSalesPeriod, date: string, now: Date, ti
   const seconds = Math.floor((now.getTime() - currentStart) / 1000);
   const currentExport = solarKw(new Date(currentStart), timeZone) * .4 * seconds / 3600;
   return {
-    request: { period: period === "Day" ? 0 : period === "Month" ? 1 : period === "Year" ? 2 : 3, date: anchor, from: period === "Custom" ? anchor : null, through: period === "Custom" ? custom?.through ?? date : null },
+    request: { period: period === "Day" ? 0 : period === "Month" ? 1 : period === "Year" ? 2 : period === "Custom" ? 3 : period === "Week" ? 4 : 5, date, from: period === "Custom" ? anchor : null, through: period === "Custom" ? custom?.through ?? date : null },
     today: zonedDate(now, timeZone), contractStartDate: "2000-01-01", timeZoneId: timeZone, ...totals, buckets,
     hours: Array.from({ length: Math.max(0, Math.floor((Math.min(end.getTime(), currentStart) - start.getTime()) / 3600000)) }, (_, index) => {
       const from = new Date(start.getTime() + index * 3600000); const measured = bucket(from, new Date(from.getTime() + 3600000));
@@ -199,31 +201,59 @@ export function demoSales(period: ExportSalesPeriod, date: string, now: Date, ti
 
 function rounded(value: number): number { return Number(value.toFixed(2)); }
 
-export function demoProduction(period: SolarHistoryPeriod, date: string | undefined, now: Date, timeZone: string): import("../../core/api/redesignTypes").ProductionView {
-  const history = demoSolarHistory(period, date, now, timeZone);
+export function demoProductionDates(period: SolarHistoryPeriod, selected: string, custom?: { from: string; through: string }) {
+  const firstDate = period === "CalendarMonth" ? periodAnchor(selected, "Month") : period === "Custom" ? custom?.from ?? selected
+    : addDays(selected, period === "Week" ? -6 : period === "Month" ? -29 : 0);
+  const lastDate = period === "CalendarMonth" ? addDays(movePeriod(firstDate, "Month", 1), -1) : period === "Custom" ? custom?.through ?? selected : selected;
+  return { firstDate, lastDate };
+}
+
+export function demoProduction(period: SolarHistoryPeriod, date: string | undefined, now: Date, timeZone: string,
+  custom?: { from: string; through: string }): import("../../core/api/redesignTypes").ProductionView {
+  const today = zonedDate(now, timeZone);
+  const { firstDate, lastDate } = demoProductionDates(period, date ?? today, custom);
+  const start = midnight(firstDate, timeZone); const end = midnight(addDays(lastDate, 1), timeZone);
   const completedThrough = Math.floor(now.getTime() / 3600000) * 3600000;
-  const hours = history.points.map(point => {
-    const at = Date.parse(point.timestamp); const elapsed = Math.max(0, Math.min(3600, (now.getTime() - at) / 1000));
-    const actual = point.actualKw;
-    return { timestamp: point.timestamp, actualKw: at < completedThrough ? actual : null,
-      observedEnergyKwh: actual === null || !elapsed ? null : actual * elapsed / 3600,
-      coveredSeconds: actual === null ? 0 : elapsed, expectedSeconds: elapsed,
-      expectedKw: solarKw(new Date(at), timeZone), lowerKw: point.possible?.lowerKw ?? null, upperKw: point.possible?.upperKw ?? null, partial: false };
-  });
+  const forecastThrough = addDays(today, 15);
+  const hours: import("../../core/api/redesignTypes").ProductionHour[] = [];
+  const observed = new Map<string, { energy: number | null; seconds: number }>();
+  for (let at = start.getTime(); at < end.getTime(); at += 3600000) {
+    const timestamp = new Date(at).toISOString(); const power = solarKw(new Date(at), timeZone);
+    const elapsed = Math.max(0, Math.min(3600, (now.getTime() - at) / 1000));
+    const actual = rounded(power * (.88 + .04 * Math.sin(at / 3600000)));
+    const expectedKw = zonedDate(new Date(at), timeZone) <= forecastThrough ? power : null;
+    observed.set(timestamp, { energy: elapsed > 0 ? actual * elapsed / 3600 : null, seconds: elapsed });
+    hours.push({ timestamp, actualKw: at < completedThrough ? actual : null, observedEnergyKwh: at < completedThrough ? actual : null,
+      coveredSeconds: at < completedThrough ? 3600 : 0, expectedSeconds: 3600, expectedKw,
+      lowerKw: expectedKw === null ? null : rounded(expectedKw * .8), upperKw: expectedKw === null ? null : rounded(expectedKw * 1.2),
+      partial: at >= completedThrough });
+  }
   const daily = new Map<string, typeof hours>();
-  for (const hour of hours) { const day = zonedDate(new Date(hour.timestamp), timeZone); daily.set(day, [...(daily.get(day) ?? []), hour]); }
+  for (const hour of hours) { const day = zonedDate(new Date(hour.timestamp), timeZone); const rows = daily.get(day) ?? []; rows.push(hour); daily.set(day, rows); }
+  const sum = (values: (number | null)[]) => values.some(value => value !== null) ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
   const days = [...daily].map(([date, points]) => ({ date,
-    observedEnergyKwh: points.some(p => p.observedEnergyKwh !== null) ? points.reduce((sum,p) => sum + (p.observedEnergyKwh ?? 0),0) : null,
-    coveredSeconds: points.reduce((sum,p) => sum+p.coveredSeconds,0), expectedSeconds: points.reduce((sum,p) => sum+p.expectedSeconds,0),
-    expectedEnergyKwh: points.reduce((sum,p) => sum+(p.expectedKw ?? 0),0), lowerEnergyKwh: points.reduce((sum,p) => sum+(p.lowerKw ?? 0),0),
-    upperEnergyKwh: points.reduce((sum,p) => sum+(p.upperKw ?? 0),0), partial: false }));
-  const sunrise = new Date(midnight(history.selectedDate,timeZone).getTime()+6*3600000).toISOString();
-  const sunset = new Date(midnight(history.selectedDate,timeZone).getTime()+18*3600000).toISOString();
-  const currentHour = history.selectedDate === history.today ? hours.find(p => Date.parse(p.timestamp) === completedThrough) ?? null : null;
-  const sum = (rows: typeof hours) => rows.some(h=>h.observedEnergyKwh!==null) ? rows.reduce((total,h)=>total+(h.observedEnergyKwh??0),0) : null;
-  return { start: history.start, end: history.end, timeZoneId: timeZone, date: history.selectedDate, today: history.today, hours, days,
-    observedEnergyKwh: sum(hours), completedEnergyKwh: sum(hours.filter(h=>Date.parse(h.timestamp)<completedThrough)), coveredSeconds: hours.reduce((total,h)=>total+h.coveredSeconds,0),
-    expectedSeconds: hours.reduce((total,h)=>total+h.expectedSeconds,0), expectedEnergyKwh: hours.reduce((total,h)=>total+(h.expectedKw??0),0),
-    bestHour: hours.filter(h=>h.actualKw!==null).sort((a,b)=>(b.actualKw??0)-(a.actualKw??0))[0]??null, currentHour, sunrise, sunset,
-    nextSunrise: new Date(midnight(addDays(history.today, now.toISOString() >= sunset ? 1 : 0),timeZone).getTime()+6*3600000).toISOString(), forecastRetrievedAt: now.toISOString(), weatherError: null, actualError: null, partial: false };
+    observedEnergyKwh: sum(points.map(point => observed.get(point.timestamp)!.energy)),
+    coveredSeconds: points.reduce((total, point) => total + observed.get(point.timestamp)!.seconds, 0),
+    expectedSeconds: points.reduce((total, point) => total + observed.get(point.timestamp)!.seconds, 0),
+    expectedEnergyKwh: points.every(point => point.expectedKw !== null) ? sum(points.map(point => point.expectedKw)) : null,
+    lowerEnergyKwh: points.every(point => point.lowerKw !== null) ? sum(points.map(point => point.lowerKw)) : null,
+    upperEnergyKwh: points.every(point => point.upperKw !== null) ? sum(points.map(point => point.upperKw)) : null,
+    partial: midnight(addDays(date, 1), timeZone).getTime() > now.getTime() }));
+  const current = hours.find(point => Date.parse(point.timestamp) === completedThrough);
+  const currentHour = current ? { ...current, observedEnergyKwh: observed.get(current.timestamp)!.energy,
+    coveredSeconds: observed.get(current.timestamp)!.seconds, expectedSeconds: observed.get(current.timestamp)!.seconds } : null;
+  const available = hours.filter(hour => hour.expectedKw !== null);
+  const expected = days.map(day => day.expectedEnergyKwh);
+  const sunrise = lastDate <= forecastThrough ? new Date(midnight(lastDate, timeZone).getTime() + 6 * 3600000).toISOString() : null;
+  const sunset = lastDate <= forecastThrough ? new Date(midnight(lastDate, timeZone).getTime() + 18 * 3600000).toISOString() : null;
+  return { start: start.toISOString(), end: end.toISOString(), timeZoneId: timeZone, date: lastDate, today, firstDate, lastDate, hours, days,
+    observedEnergyKwh: sum(days.map(day => day.observedEnergyKwh)), completedEnergyKwh: sum(hours.map(hour => hour.observedEnergyKwh)),
+    coveredSeconds: days.reduce((total, day) => total + day.coveredSeconds, 0), expectedSeconds: days.reduce((total, day) => total + day.expectedSeconds, 0),
+    expectedEnergyKwh: expected.every(value => value !== null) ? sum(expected) : null, availableExpectedEnergyKwh: sum(expected),
+    forecastIncomplete: expected.some(value => value === null), forecastAvailableFrom: available[0] ? zonedDate(new Date(available[0].timestamp), timeZone) : null,
+    forecastAvailableThrough: available.at(-1) ? zonedDate(new Date(available.at(-1)!.timestamp), timeZone) : null,
+    bestHour: hours.filter(hour => hour.actualKw !== null).sort((a, b) => b.actualKw! - a.actualKw!)[0] ?? null,
+    bestForecastHour: available.slice().sort((a, b) => b.expectedKw! - a.expectedKw!)[0] ?? null,
+    currentHour, sunrise, sunset, nextSunrise: lastDate < forecastThrough ? new Date(midnight(addDays(lastDate, 1), timeZone).getTime() + 6 * 3600000).toISOString() : null,
+    forecastRetrievedAt: available.length ? now.toISOString() : null, weatherError: null, actualError: null, partial: now.getTime() < end.getTime() };
 }
