@@ -20,6 +20,9 @@ public sealed class SettingsFeedbackBrowserTests
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
         await page.WaitForURLAsync(app.Address + "/");
         await page.GotoAsync(app.Address + "/settings");
+        await BrowserBillingDeadlineTests.AssertLiveDrawerEventAsync(page,
+            page.GetByRole(AriaRole.Button, new() { Name = "Open navigation", Exact = true }));
+        await page.GetByRole(AriaRole.Button, new() { Name = "Close navigation", Exact = true }).ClickAsync();
 
         var panels = page.Locator("#panels");
         var diagram = panels.Locator(".roof-sun-diagram");
