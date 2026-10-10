@@ -69,6 +69,9 @@ public sealed class AppSettingsService : IAppSettingsReader, IAppSettingsWriter
         var existing = await db.AppSettings.Where(s => names.Contains(s.Section)).ToListAsync(ct);
         foreach (var (section, options) in sections)
         {
+            // Validate omitted partners against this transaction's current rows, before any write is saved.
+            if (options is AppSettingsPatch guarded)
+                guarded.ValidateCurrent?.Invoke(existing.Where(s => s.Section == section).ToDictionary(s => s.Key, s => s.Value));
             var values = options is AppSettingsPatch patch
                 ? patch.Values.Where(pair => SettingsSchema.IsRuntimeSetting(section, pair.Key))
                 : SettingsSchema.Properties(section, options.GetType()).Where(property => property.CanRead).Select(property => new KeyValuePair<string, object?>(property.Name, property.ReadValue(options)));

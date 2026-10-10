@@ -112,9 +112,37 @@ public sealed class PanelLayoutSettingsTests
         Assert.Equal(before.OrderBy(p => p.Key), (await fixture.Rows()).OrderBy(p => p.Key));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LegacyPartialWriteRevalidatesTheOmittedPartnerInsideItsActualWriterTransaction(bool changeRow)
+    {
+        await using var fixture = await Fixture.Create();
+        await fixture.Save(false, Site() with { SolarEstimate = Site().SolarEstimate with { Roof1PanelCount = 9, Roof1PanelsPerRow = 1 } });
+        Dictionary<string, string>? concurrentRows = null;
+        var interleaved = fixture.LegacyWithInterleaving(async () =>
+        {
+            // Commit after the request's initial read/validation but before its writer transaction begins.
+            var latest = await fixture.Legacy.LoadAsync();
+            var concurrent = changeRow ? latest.SolarEstimate with { Roof1PanelCount = 5 }
+                : latest.SolarEstimate with { Roof1PanelsPerRow = 3 };
+            await fixture.Legacy.SaveAsync(latest with { SolarEstimate = concurrent });
+            concurrentRows = await fixture.Rows();
+        });
+        var requested = Site().SolarEstimate with { LocationLabel = "Rejected draft must not persist" };
+        requested = changeRow ? requested with { Roof1PanelsPerRow = 8 } : requested with { Roof1PanelCount = 2 };
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => interleaved.SaveAsync(Site() with { SolarEstimate = requested }));
+        Assert.Contains("positive row size", error.Message);
+        Assert.NotNull(concurrentRows);
+        Assert.Equal(concurrentRows.OrderBy(p => p.Key), (await fixture.Rows()).OrderBy(p => p.Key));
+        var saved = (await fixture.Legacy.LoadAsync()).SolarEstimate;
+        Assert.Equal(changeRow ? 5 : 9, saved.Roof1PanelCount);
+        Assert.Equal(changeRow ? 1 : 3, saved.Roof1PanelsPerRow);
+    }
+
     private static SiteSettingsDto Site() => new(new(50, 20, "Fictional panel site", "UTC", 5, 3, 25, 30, 230, 50), new("2026-10-01", "UTC", false));
 
-    private sealed class Fixture(SqliteConnection connection, Factory factory, SiteSettingsService legacy,
+    private sealed class Fixture(SqliteConnection connection, Factory factory, AppSettingsService settings, SiteSettingsService legacy,
         InstallationSettingsService installation) : IAsyncDisposable
     {
         public SiteSettingsService Legacy => legacy;
@@ -136,9 +164,11 @@ public sealed class PanelLayoutSettingsTests
             var current = new CurrentInstallation(); current.BindOnce(TestInstallation.Id);
             var security = new InteractiveSecurityContext(new Owner(), current, new HttpContextAccessor());
             security.BindOnce(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "panel-owner")], "PanelTest")));
-            return new(connection, factory, legacy, new(factory, settings, security,
+            return new(connection, factory, settings, legacy, new(factory, settings, security,
                 new IntegrationChangeNotifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrationChangeNotifier>.Instance)));
         }
+        public SiteSettingsService LegacyWithInterleaving(Func<Task> beforeWrite) => new(settings,
+            new InterleavingWriter(settings, beforeWrite), new FixedOptionsMonitor<InverterConnectionOptions>(new()), new NoInverter());
         public async Task Save(bool installationApi, SiteSettingsDto site)
         {
             if (!installationApi) { await legacy.SaveAsync(site); return; }
@@ -148,6 +178,13 @@ public sealed class PanelLayoutSettingsTests
         public async Task<Dictionary<string, string>> Rows()
         { await using var db = factory.CreateDbContext(); return await db.AppSettings.AsNoTracking().ToDictionaryAsync(x => x.Section + ":" + x.Key, x => x.Value); }
         public ValueTask DisposeAsync() => connection.DisposeAsync();
+    }
+    private sealed class InterleavingWriter(IAppSettingsWriter actual, Func<Task> beforeWrite) : IAppSettingsWriter
+    {
+        public async Task SaveSectionAsync<T>(string section, T options) where T : class
+        { await beforeWrite(); await actual.SaveSectionAsync(section, options); }
+        public async Task SaveSectionsAsync(IReadOnlyDictionary<string, object> sections, CancellationToken ct = default)
+        { await beforeWrite(); await actual.SaveSectionsAsync(sections, ct); }
     }
     private sealed class Factory(DbContextOptions<DeyeSolarDbContext> options) : IDbContextFactory<DeyeSolarDbContext>
     { public DeyeSolarDbContext CreateDbContext() => new(options, TestInstallation.Id); }

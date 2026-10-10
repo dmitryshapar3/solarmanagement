@@ -59,11 +59,7 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         var geometry = new SolarSiteGeometry(solar.Latitude, solar.Longitude, solar.Roof1Kwp, solar.Roof2Kwp,
             solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth);
         if (!geometry.IsValid || geometry.TotalKwp > 10000) return false;
-        if (new[] { solar.Roof1PanelCount, solar.Roof2PanelCount, solar.Roof1PanelsPerRow, solar.Roof2PanelsPerRow }.Any(value => value is < 0 or > 1000))
-        { message = "Enter a whole panel count from 0 to 1000, or leave it blank if unknown."; return false; }
-        if (solar.Roof1PanelCount is > 0 && solar.Roof1PanelsPerRow > solar.Roof1PanelCount
-            || solar.Roof2PanelCount is > 0 && solar.Roof2PanelsPerRow > solar.Roof2PanelCount)
-        { message = "Use 0 for automatic rows. A positive row size cannot exceed the panel count."; return false; }
+        if (!TryValidatePanelLayout(solar, out message)) return false;
         if (!DateOnly.TryParseExact(sales.ContractStartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var date) || date.Year < 2000)
         { message = "Enter a contract start date from 2000 onwards as YYYY-MM-DD."; return false; }
@@ -71,6 +67,16 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
             PriceSource = sales.PriceSource ?? "pse", ManualPricePlnPerKwh = sales.ManualPricePlnPerKwh ?? 0, PriceFeedUrl = sales.PriceFeedUrl ?? "" }.Validate(); }
         catch (ArgumentException ex) { message = ex.Message; return false; }
         message = "";
+        return true;
+    }
+    private static bool TryValidatePanelLayout(SolarSiteSettings solar, out string message)
+    {
+        message = "";
+        if (new[] { solar.Roof1PanelCount, solar.Roof2PanelCount, solar.Roof1PanelsPerRow, solar.Roof2PanelsPerRow }.Any(value => value is < 0 or > 1000))
+        { message = "Enter a whole panel count from 0 to 1000, or leave it blank if unknown."; return false; }
+        if (solar.Roof1PanelCount is > 0 && solar.Roof1PanelsPerRow > solar.Roof1PanelCount
+            || solar.Roof2PanelCount is > 0 && solar.Roof2PanelsPerRow > solar.Roof2PanelCount)
+        { message = "Use 0 for automatic rows. A positive row size cannot exceed the panel count."; return false; }
         return true;
     }
     public async Task SaveAsync(SiteSettingsDto draft)
@@ -116,6 +122,18 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         foreach (var (key, value) in new[] { (nameof(solar.Roof1PanelCount), solar.Roof1PanelCount), (nameof(solar.Roof2PanelCount), solar.Roof2PanelCount),
             (nameof(solar.Roof1PanelsPerRow), solar.Roof1PanelsPerRow), (nameof(solar.Roof2PanelsPerRow), solar.Roof2PanelsPerRow) })
             if (value.HasValue) values[key] = value.Value;
-        return new(values);
+        return new(values, current =>
+        {
+            int? Saved(string key) => current.TryGetValue(key, out var value)
+                && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) ? number : null;
+            var effective = solar with
+            {
+                Roof1PanelCount = solar.Roof1PanelCount ?? Saved(nameof(solar.Roof1PanelCount)),
+                Roof2PanelCount = solar.Roof2PanelCount ?? Saved(nameof(solar.Roof2PanelCount)),
+                Roof1PanelsPerRow = solar.Roof1PanelsPerRow ?? Saved(nameof(solar.Roof1PanelsPerRow)),
+                Roof2PanelsPerRow = solar.Roof2PanelsPerRow ?? Saved(nameof(solar.Roof2PanelsPerRow))
+            };
+            if (!TryValidatePanelLayout(effective, out var error)) throw new ArgumentException(error);
+        });
     }
 }

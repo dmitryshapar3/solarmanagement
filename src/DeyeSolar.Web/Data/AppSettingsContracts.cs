@@ -12,4 +12,5 @@ public interface IAppSettingsWriter
 }
 
 // Internal partial updates retain properties absent from older client payloads.
-internal sealed record AppSettingsPatch(IReadOnlyDictionary<string, object?> Values);
+internal sealed record AppSettingsPatch(IReadOnlyDictionary<string, object?> Values,
+    Action<IReadOnlyDictionary<string, string>>? ValidateCurrent = null);
