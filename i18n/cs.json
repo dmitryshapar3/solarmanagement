@@ -367,7 +367,6 @@
   "By hour": "Po hodinách",
   "Cached weather is too old for a current estimate.": "Uložené počasí je pro aktuální odhad příliš staré.",
   "Calculated at": "Vypočteno v",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Vypočtená geometrická dráha slunce; terén a stíny nejsou zahrnuty.",
   "Calculated range": "Vypočtený rozsah",
   "Cancel": "Zrušit",
   "Cancel authorization": "Zrušit autorizaci",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Vaše zkušební období skončilo. Pro čtení údajů zásuvek a jejich ovládání si pořiďte předplatné.",
   "Your trial includes one smart plug.": "Vaše zkušební verze zahrnuje jednu chytrou zásuvku.",
   "Your unsaved changes will be discarded.": "Vaše neuložené změny budou zahozeny.",
-  "Your unsaved changes will be lost.": "Vaše neuložené změny budou ztraceny."
+  "Your unsaved changes will be lost.": "Vaše neuložené změny budou ztraceny.",
+  "Drag to rotate · Pinch to zoom": "Tažením otáčejte · Sevřením nebo rozevřením prstů měňte přiblížení",
+  "Drag to rotate · Scroll to zoom": "Tažením otáčejte · Posouváním měňte přiblížení",
+  "Zoom in": "Přiblížit",
+  "Zoom out": "Oddálit",
+  "Reset view": "Obnovit pohled",
+  "Rotate left": "Otočit doleva",
+  "Rotate right": "Otočit doprava",
+  "Tilt view up": "Zvýšit bod pohledu",
+  "Tilt view down": "Snížit bod pohledu",
+  "Schematic roof; dimensions and shadows are not modelled.": "Schematická střecha; rozměry a stíny se nemodelují.",
+  "Vertical arrays are shown standing on the schematic roof.": "Svislé panely jsou zobrazeny stojící na schematické střeše."
 }

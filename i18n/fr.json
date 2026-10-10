@@ -367,7 +367,6 @@
   "By hour": "Par heure",
   "Cached weather is too old for a current estimate.": "Les données météorologiques en cache sont trop anciennes pour une estimation actuelle.",
   "Calculated at": "Calculé à",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Course géométrique calculée du soleil ; le relief et les ombres ne sont pas pris en compte.",
   "Calculated range": "Plage calculée",
   "Cancel": "Annuler",
   "Cancel authorization": "Annuler l'autorisation",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Votre essai est terminé. Abonnez-vous pour lire les données de vos prises ou les contrôler.",
   "Your trial includes one smart plug.": "Votre période d'essai inclut une prise connectée.",
   "Your unsaved changes will be discarded.": "Vos modifications non enregistrées seront perdues.",
-  "Your unsaved changes will be lost.": "Vos modifications non enregistrées seront perdues."
+  "Your unsaved changes will be lost.": "Vos modifications non enregistrées seront perdues.",
+  "Drag to rotate · Pinch to zoom": "Faites glisser pour tourner · Pincez pour zoomer",
+  "Drag to rotate · Scroll to zoom": "Faites glisser pour tourner · Faites défiler pour zoomer",
+  "Zoom in": "Agrandir",
+  "Zoom out": "Réduire",
+  "Reset view": "Réinitialiser la vue",
+  "Rotate left": "Tourner à gauche",
+  "Rotate right": "Tourner à droite",
+  "Tilt view up": "Relever le point de vue",
+  "Tilt view down": "Abaisser le point de vue",
+  "Schematic roof; dimensions and shadows are not modelled.": "Toit schématique ; les dimensions et les ombres ne sont pas modélisées.",
+  "Vertical arrays are shown standing on the schematic roof.": "Les panneaux verticaux sont représentés debout sur le toit schématique."
 }

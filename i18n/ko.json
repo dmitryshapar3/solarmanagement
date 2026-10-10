@@ -367,7 +367,6 @@
   "By hour": "시간별",
   "Cached weather is too old for a current estimate.": "캐시된 날씨 정보가 너무 오래되어 현재 예상 범위를 계산할 수 없습니다.",
   "Calculated at": "계산 시간",
-  "Calculated geometric sun path; terrain and shadows are not included.": "계산된 태양의 기하학적 경로이며 지형과 그림자는 포함하지 않습니다.",
   "Calculated range": "계산된 범위",
   "Cancel": "취소",
   "Cancel authorization": "승인 취소",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "체험 기간이 끝났습니다. 소켓 데이터를 읽거나 소켓을 제어하려면 구독하세요.",
   "Your trial includes one smart plug.": "체험에는 스마트 플러그 1개가 포함됩니다.",
   "Your unsaved changes will be discarded.": "저장하지 않은 변경 사항은 삭제됩니다.",
-  "Your unsaved changes will be lost.": "저장하지 않은 변경사항은 사라집니다."
+  "Your unsaved changes will be lost.": "저장하지 않은 변경사항은 사라집니다.",
+  "Drag to rotate · Pinch to zoom": "드래그하여 회전 · 두 손가락을 모으거나 벌려 확대/축소",
+  "Drag to rotate · Scroll to zoom": "드래그하여 회전 · 스크롤하여 확대/축소",
+  "Zoom in": "확대",
+  "Zoom out": "축소",
+  "Reset view": "보기 초기화",
+  "Rotate left": "왼쪽으로 회전",
+  "Rotate right": "오른쪽으로 회전",
+  "Tilt view up": "시점 높이기",
+  "Tilt view down": "시점 낮추기",
+  "Schematic roof; dimensions and shadows are not modelled.": "지붕은 개략도이며 치수와 그림자는 모델링하지 않습니다.",
+  "Vertical arrays are shown standing on the schematic roof.": "수직 패널은 개략적인 지붕 위에 세워진 모습으로 표시됩니다."
 }

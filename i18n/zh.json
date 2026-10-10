@@ -367,7 +367,6 @@
   "By hour": "按小时",
   "Cached weather is too old for a current estimate.": "缓存的天气数据过旧，无法进行当前预估。",
   "Calculated at": "计算于",
-  "Calculated geometric sun path; terrain and shadows are not included.": "计算的太阳几何轨迹；未考虑地形和阴影。",
   "Calculated range": "计算范围",
   "Cancel": "取消",
   "Cancel authorization": "取消授权",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "您的试用期已结束。订阅后即可读取插座数据或控制插座。",
   "Your trial includes one smart plug.": "试用包含一个智能插座。",
   "Your unsaved changes will be discarded.": "未保存的更改将被放弃。",
-  "Your unsaved changes will be lost.": "未保存的更改将丢失。"
+  "Your unsaved changes will be lost.": "未保存的更改将丢失。",
+  "Drag to rotate · Pinch to zoom": "拖动旋转 · 双指捏合缩放",
+  "Drag to rotate · Scroll to zoom": "拖动旋转 · 滚动缩放",
+  "Zoom in": "放大",
+  "Zoom out": "缩小",
+  "Reset view": "重置视图",
+  "Rotate left": "向左旋转",
+  "Rotate right": "向右旋转",
+  "Tilt view up": "抬高视角",
+  "Tilt view down": "降低视角",
+  "Schematic roof; dimensions and shadows are not modelled.": "屋顶为示意图，未模拟尺寸和阴影。",
+  "Vertical arrays are shown standing on the schematic roof.": "垂直面板显示为竖立在示意屋顶上。"
 }

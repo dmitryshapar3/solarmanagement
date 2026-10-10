@@ -367,7 +367,6 @@
   "By hour": "Stündlich",
   "Cached weather is too old for a current estimate.": "Die zwischengespeicherten Wetterdaten sind zu alt für eine aktuelle Schätzung.",
   "Calculated at": "Berechnet um",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Berechnete geometrische Sonnenbahn; Gelände und Schatten sind nicht berücksichtigt.",
   "Calculated range": "Berechnete Reichweite",
   "Cancel": "Abbrechen",
   "Cancel authorization": "Autorisierung abbrechen",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Dein Testzeitraum ist abgelaufen. Schließe ein Abonnement ab, um Steckdosendaten zu lesen oder Steckdosen zu steuern.",
   "Your trial includes one smart plug.": "Ihre Testphase beinhaltet einen Smart Plug.",
   "Your unsaved changes will be discarded.": "Ihre nicht gespeicherten Änderungen werden verworfen.",
-  "Your unsaved changes will be lost.": "Ihre nicht gespeicherten Änderungen gehen verloren."
+  "Your unsaved changes will be lost.": "Ihre nicht gespeicherten Änderungen gehen verloren.",
+  "Drag to rotate · Pinch to zoom": "Zum Drehen ziehen · Zum Zoomen Finger zusammen- oder auseinanderziehen",
+  "Drag to rotate · Scroll to zoom": "Zum Drehen ziehen · Zum Zoomen scrollen",
+  "Zoom in": "Vergrößern",
+  "Zoom out": "Verkleinern",
+  "Reset view": "Ansicht zurücksetzen",
+  "Rotate left": "Nach links drehen",
+  "Rotate right": "Nach rechts drehen",
+  "Tilt view up": "Blickwinkel anheben",
+  "Tilt view down": "Blickwinkel absenken",
+  "Schematic roof; dimensions and shadows are not modelled.": "Schematisches Dach; Maße und Schatten werden nicht modelliert.",
+  "Vertical arrays are shown standing on the schematic roof.": "Senkrechte Module werden auf dem schematischen Dach stehend dargestellt."
 }

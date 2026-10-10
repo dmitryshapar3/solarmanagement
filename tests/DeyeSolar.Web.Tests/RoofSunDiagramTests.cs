@@ -85,21 +85,31 @@ public class RoofSunDiagramTests
     }
 
     [Fact]
-    public async Task ComponentBindsCurrentDraftRatherThanSavedValuesAndDisplaysTiltProfile()
+    public async Task ComponentBindsCurrentDraftToConnectedRoofAndOrbitControls()
     {
         var parameters = new Dictionary<string, object?> { ["Latitude"] = 50.095278, ["Longitude"] = 20.070278, ["TimeZoneId"] = "Europe/Warsaw",
             ["Roof1Kwp"] = 4.32d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d, ["At"] = DateTimeOffset.Parse("2026-10-09T10:00:00Z") };
         var before = await Render(parameters);
+        if (Environment.GetEnvironmentVariable("SOLAR_ROOF_QA_DIRECTORY") is { Length: > 0 } folder)
+        {
+            Directory.CreateDirectory(folder);
+            await File.WriteAllTextAsync(Path.Combine(folder, "component.html"), before);
+        }
         Assert.Contains("Sun path · 9 Oct 2026", before); Assert.Contains("data-roof=\"1\"", before);
         Assert.DoesNotContain("data-roof=\"2\"", before);
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(before, "class=\"roof-sun-direction\"").Count);
-        Assert.Contains("rotate(230)", before); Assert.Contains("rotate(-25)", before);
+        Assert.Contains("roof-scene-roof", before); Assert.Contains("roof-scene-wall", before);
+        Assert.Contains("data-roof-action=\"zoom-in\"", before); Assert.Contains("data-roof-action=\"reset\"", before);
+        Assert.Contains("Tilt", before);
+        var beforeRoof = RoofPolygon(before);
         parameters["Roof1Azimuth"] = 90d; parameters["Roof1Tilt"] = 60d; parameters["Latitude"] = -33.8688;
         var after = await Render(parameters);
-        Assert.Contains("rotate(90)", after); Assert.Contains("rotate(-60)", after); Assert.NotEqual(before, after);
+        Assert.NotEmpty(beforeRoof); Assert.NotEqual(beforeRoof, RoofPolygon(after));
         parameters["Latitude"] = double.NaN;
-        var invalid = await Render(parameters); Assert.DoesNotContain("roof-sun-compass", invalid); Assert.Contains("Enter valid coordinates", invalid);
+        var invalid = await Render(parameters); Assert.DoesNotContain("roof-scene-sun-path", invalid); Assert.Contains("roof-scene-roof", invalid); Assert.Contains("Enter valid coordinates", invalid);
     }
+
+    private static string RoofPolygon(string html) => System.Text.RegularExpressions.Regex.Match(html,
+        "class=\"roof-scene-face roof-scene-roof\" data-roof=\"1\" points=\"([^\"]+)\"").Groups[1].Value;
 
     private static async Task<string> Render(Dictionary<string, object?> parameters)
     {

@@ -367,7 +367,6 @@
   "By hour": "Per uur",
   "Cached weather is too old for a current estimate.": "De opgeslagen weersgegevens zijn te oud voor een actuele schatting.",
   "Calculated at": "Berekend op",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Berekende geometrische zonnebaan; terrein en schaduwen zijn niet meegenomen.",
   "Calculated range": "Berekend bereik",
   "Cancel": "Annuleren",
   "Cancel authorization": "Autorisatie annuleren",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Je proefperiode is afgelopen. Neem een abonnement om gegevens van je stopcontacten te lezen of ze te bedienen.",
   "Your trial includes one smart plug.": "Uw proefperiode omvat één slimme stekker.",
   "Your unsaved changes will be discarded.": "Uw niet-opgeslagen wijzigingen worden verwijderd.",
-  "Your unsaved changes will be lost.": "Uw niet-opgeslagen wijzigingen gaan verloren."
+  "Your unsaved changes will be lost.": "Uw niet-opgeslagen wijzigingen gaan verloren.",
+  "Drag to rotate · Pinch to zoom": "Sleep om te draaien · Knijp om te zoomen",
+  "Drag to rotate · Scroll to zoom": "Sleep om te draaien · Scrol om te zoomen",
+  "Zoom in": "Inzoomen",
+  "Zoom out": "Uitzoomen",
+  "Reset view": "Weergave herstellen",
+  "Rotate left": "Naar links draaien",
+  "Rotate right": "Naar rechts draaien",
+  "Tilt view up": "Kijkpunt verhogen",
+  "Tilt view down": "Kijkpunt verlagen",
+  "Schematic roof; dimensions and shadows are not modelled.": "Schematisch dak; afmetingen en schaduwen worden niet gemodelleerd.",
+  "Vertical arrays are shown standing on the schematic roof.": "Verticale panelen worden staand op het schematische dak weergegeven."
 }

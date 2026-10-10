@@ -27,22 +27,35 @@ public sealed class SettingsFeedbackBrowserTests
         var panels = page.Locator("#panels");
         var diagram = panels.Locator(".roof-sun-diagram");
         await Assertions.Expect(diagram).ToBeVisibleAsync();
-        await Assertions.Expect(diagram.Locator(".roof-sun-compass")).ToBeVisibleAsync();
+        var scene = diagram.Locator(".roof-scene-interactive");
+        await Assertions.Expect(scene).ToBeVisibleAsync();
         await panels.GetByLabel("Installed capacity", new() { Exact = true }).First.FillAsync("4.5");
-        var roof = diagram.Locator("[data-roof='1'] > g");
+        var roof = scene.Locator(".roof-scene-roof[data-roof='1']");
         await Assertions.Expect(roof).ToHaveCountAsync(1);
+        var originalRoof = await roof.GetAttributeAsync("points");
         await panels.GetByLabel("Azimuth", new() { Exact = true }).First.FillAsync("90");
-        await Assertions.Expect(roof).ToHaveAttributeAsync("transform", "rotate(90)");
+        await Assertions.Expect(roof).Not.ToHaveAttributeAsync("points", originalRoof!);
+        var bearingRoof = await roof.GetAttributeAsync("points");
         await panels.GetByLabel("Tilt", new() { Exact = true }).First.FillAsync("45");
-        await Assertions.Expect(diagram.Locator(".roof-sun-roofs svg g").First).ToHaveAttributeAsync("transform", "translate(20 60) rotate(-45)");
+        await Assertions.Expect(roof).Not.ToHaveAttributeAsync("points", bearingRoof!);
 
-        var path = diagram.Locator(".roof-sun-path").First;
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Zoom in", Exact = true }).ClickAsync();
+        await Assertions.Expect(scene).Not.ToHaveAttributeAsync("data-zoom", "1");
+        var zoom = await scene.GetAttributeAsync("data-zoom");
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate left", Exact = true }).ClickAsync();
+        await Assertions.Expect(scene).Not.ToHaveAttributeAsync("data-yaw", "-35");
+        var path = scene.Locator(".roof-scene-sun-path").First;
         await Assertions.Expect(path).ToHaveCountAsync(1);
-        var originalPath = await path.GetAttributeAsync("d");
+        var originalPath = await path.GetAttributeAsync("points");
         Assert.False(string.IsNullOrWhiteSpace(originalPath));
         await page.GetByLabel("Latitude", new() { Exact = true }).FillAsync("-33.87");
-        await Assertions.Expect(path).Not.ToHaveAttributeAsync("d", originalPath!);
+        await Assertions.Expect(path).Not.ToHaveAttributeAsync("points", originalPath!);
         await page.GetByLabel("Longitude", new() { Exact = true }).FillAsync("0");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-zoom", zoom!);
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Reset view", Exact = true }).ClickAsync();
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "-35");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-zoom", "1");
+        var savedRoof = await roof.GetAttributeAsync("points");
 
         var contract = page.Locator("#contract");
         await contract.GetByLabel("Price source", new() { Exact = true }).SelectOptionAsync("manual");
@@ -52,7 +65,7 @@ public sealed class SettingsFeedbackBrowserTests
         await page.ReloadAsync();
         await Assertions.Expect(contract.GetByLabel("Price source", new() { Exact = true })).ToHaveValueAsync("manual");
         await Assertions.Expect(contract.GetByLabel("Sale price", new() { Exact = true })).ToHaveValueAsync("0.42");
-        await Assertions.Expect(roof).ToHaveAttributeAsync("transform", "rotate(90)");
+        await Assertions.Expect(roof).ToHaveAttributeAsync("points", savedRoof!);
         Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"));
         await Assertions.Expect(page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
         if (Environment.GetEnvironmentVariable("SOLAR_FEEDBACK_QA_DIRECTORY") is { Length: > 0 } folder)

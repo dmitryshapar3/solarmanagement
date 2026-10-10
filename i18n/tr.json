@@ -367,7 +367,6 @@
   "By hour": "Saate göre",
   "Cached weather is too old for a current estimate.": "Önbelleğe alınmış hava durumu, güncel bir tahmin için çok eski.",
   "Calculated at": "Hesaplama tarihi:",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Hesaplanan geometrik güneş yolu; arazi ve gölgeler dahil değildir.",
   "Calculated range": "Hesaplanan aralık",
   "Cancel": "İptal",
   "Cancel authorization": "Yetkilendirmeyi iptal et",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Denemeniz sona erdi. Priz verilerinizi okumak veya prizlerinizi kontrol etmek için abone olun.",
   "Your trial includes one smart plug.": "Deneme süreniz bir akıllı priz içerir.",
   "Your unsaved changes will be discarded.": "Kaydedilmemiş değişiklikleriniz silinecektir.",
-  "Your unsaved changes will be lost.": "Kaydedilmemiş değişiklikleriniz kaybolacaktır."
+  "Your unsaved changes will be lost.": "Kaydedilmemiş değişiklikleriniz kaybolacaktır.",
+  "Drag to rotate · Pinch to zoom": "Döndürmek için sürükleyin · Yakınlaştırmak için parmaklarınızı açıp kapatın",
+  "Drag to rotate · Scroll to zoom": "Döndürmek için sürükleyin · Yakınlaştırmak için kaydırın",
+  "Zoom in": "Yakınlaştır",
+  "Zoom out": "Uzaklaştır",
+  "Reset view": "Görünümü sıfırla",
+  "Rotate left": "Sola döndür",
+  "Rotate right": "Sağa döndür",
+  "Tilt view up": "Bakış açısını yükselt",
+  "Tilt view down": "Bakış açısını alçalt",
+  "Schematic roof; dimensions and shadows are not modelled.": "Şematik çatı; boyutlar ve gölgeler modellenmez.",
+  "Vertical arrays are shown standing on the schematic roof.": "Dikey paneller şematik çatının üzerinde dik dururken gösterilir."
 }

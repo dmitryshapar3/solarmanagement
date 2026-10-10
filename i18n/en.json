@@ -367,7 +367,6 @@
   "By hour": "By hour",
   "Cached weather is too old for a current estimate.": "Cached weather is too old for a current estimate.",
   "Calculated at": "Calculated at",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Calculated geometric sun path; terrain and shadows are not included.",
   "Calculated range": "Calculated range",
   "Cancel": "Cancel",
   "Cancel authorization": "Cancel authorization",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Your trial has ended. Subscribe to read or control your sockets.",
   "Your trial includes one smart plug.": "Your trial includes one smart plug.",
   "Your unsaved changes will be discarded.": "Your unsaved changes will be discarded.",
-  "Your unsaved changes will be lost.": "Your unsaved changes will be lost."
+  "Your unsaved changes will be lost.": "Your unsaved changes will be lost.",
+  "Drag to rotate · Pinch to zoom": "Drag to rotate · Pinch to zoom",
+  "Drag to rotate · Scroll to zoom": "Drag to rotate · Scroll to zoom",
+  "Zoom in": "Zoom in",
+  "Zoom out": "Zoom out",
+  "Reset view": "Reset view",
+  "Rotate left": "Rotate left",
+  "Rotate right": "Rotate right",
+  "Tilt view up": "Tilt view up",
+  "Tilt view down": "Tilt view down",
+  "Schematic roof; dimensions and shadows are not modelled.": "Schematic roof; dimensions and shadows are not modelled.",
+  "Vertical arrays are shown standing on the schematic roof.": "Vertical arrays are shown standing on the schematic roof."
 }

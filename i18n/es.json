@@ -367,7 +367,6 @@
   "By hour": "Por hora",
   "Cached weather is too old for a current estimate.": "La información meteorológica almacenada en caché es demasiado antigua para una estimación actual.",
   "Calculated at": "Calculado en",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Trayectoria solar geométrica calculada; no se incluyen el relieve ni las sombras.",
   "Calculated range": "Rango calculado",
   "Cancel": "Cancelar",
   "Cancel authorization": "Cancelar autorización",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Tu prueba ha terminado. Suscríbete para leer datos de tus enchufes o controlarlos.",
   "Your trial includes one smart plug.": "Tu prueba incluye un enchufe inteligente.",
   "Your unsaved changes will be discarded.": "Los cambios no guardados se descartarán.",
-  "Your unsaved changes will be lost.": "Los cambios no guardados se perderán."
+  "Your unsaved changes will be lost.": "Los cambios no guardados se perderán.",
+  "Drag to rotate · Pinch to zoom": "Arrastra para girar · Pellizca para cambiar el zoom",
+  "Drag to rotate · Scroll to zoom": "Arrastra para girar · Desplázate para cambiar el zoom",
+  "Zoom in": "Acercar",
+  "Zoom out": "Alejar",
+  "Reset view": "Restablecer vista",
+  "Rotate left": "Girar a la izquierda",
+  "Rotate right": "Girar a la derecha",
+  "Tilt view up": "Elevar el punto de vista",
+  "Tilt view down": "Bajar el punto de vista",
+  "Schematic roof; dimensions and shadows are not modelled.": "Tejado esquemático; no se modelan las dimensiones ni las sombras.",
+  "Vertical arrays are shown standing on the schematic roof.": "Los paneles verticales se muestran de pie sobre el tejado esquemático."
 }

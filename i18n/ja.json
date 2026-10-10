@@ -367,7 +367,6 @@
   "By hour": "時間別",
   "Cached weather is too old for a current estimate.": "キャッシュされた天気データは古すぎて、現在の推定値には対応していません。",
   "Calculated at": "計算された時刻",
-  "Calculated geometric sun path; terrain and shadows are not included.": "計算された太陽の幾何学的軌道です。地形や影は考慮していません。",
   "Calculated range": "計算された範囲",
   "Cancel": "キャンセル",
   "Cancel authorization": "承認をキャンセル",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "試用期間が終了しました。コンセントのデータを読み取ったり操作したりするにはサブスクリプションをご購入ください。",
   "Your trial includes one smart plug.": "トライアルにはスマートプラグ 1 台が含まれます。",
   "Your unsaved changes will be discarded.": "保存されていない変更は破棄されます。",
-  "Your unsaved changes will be lost.": "未保存の変更は失われます。"
+  "Your unsaved changes will be lost.": "未保存の変更は失われます。",
+  "Drag to rotate · Pinch to zoom": "ドラッグで回転 · ピンチで拡大・縮小",
+  "Drag to rotate · Scroll to zoom": "ドラッグで回転 · スクロールで拡大・縮小",
+  "Zoom in": "拡大",
+  "Zoom out": "縮小",
+  "Reset view": "表示をリセット",
+  "Rotate left": "左に回転",
+  "Rotate right": "右に回転",
+  "Tilt view up": "視点を上げる",
+  "Tilt view down": "視点を下げる",
+  "Schematic roof; dimensions and shadows are not modelled.": "屋根は模式図です。寸法と影は再現していません。",
+  "Vertical arrays are shown standing on the schematic roof.": "垂直パネルは模式図の屋根の上に直立した状態で表示されます。"
 }

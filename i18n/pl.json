@@ -367,7 +367,6 @@
   "By hour": "Według godziny",
   "Cached weather is too old for a current estimate.": "Pamięć podręczna pogody jest zbyt stara, aby uzyskać aktualną prognozę.",
   "Calculated at": "Obliczono dla",
-  "Calculated geometric sun path; terrain and shadows are not included.": "Obliczona geometryczna droga słońca; teren i zacienienie nie są uwzględnione.",
   "Calculated range": "Obliczony zakres",
   "Cancel": "Anuluj",
   "Cancel authorization": "Anuluj autoryzację",
@@ -2654,5 +2653,16 @@
   "Your trial has ended. Subscribe to read or control your sockets.": "Twój okres próbny zakończył się. Wykup subskrypcję, aby odczytywać dane gniazdek i sterować nimi.",
   "Your trial includes one smart plug.": "Twój okres próbny obejmuje jedną inteligentne gniazdko.",
   "Your unsaved changes will be discarded.": "Niezapisane zmiany zostaną odrzucone.",
-  "Your unsaved changes will be lost.": "Niezapisane zmiany zostaną utracone."
+  "Your unsaved changes will be lost.": "Niezapisane zmiany zostaną utracone.",
+  "Drag to rotate · Pinch to zoom": "Przeciągnij, aby obrócić · Zsuń lub rozsuń palce, aby zmienić skalę",
+  "Drag to rotate · Scroll to zoom": "Przeciągnij, aby obrócić · Przewiń, aby zmienić skalę",
+  "Zoom in": "Przybliż",
+  "Zoom out": "Oddal",
+  "Reset view": "Zresetuj widok",
+  "Rotate left": "Obróć w lewo",
+  "Rotate right": "Obróć w prawo",
+  "Tilt view up": "Podnieś punkt widzenia",
+  "Tilt view down": "Obniż punkt widzenia",
+  "Schematic roof; dimensions and shadows are not modelled.": "Dach schematyczny; wymiary i cienie nie są modelowane.",
+  "Vertical arrays are shown standing on the schematic roof.": "Pionowe panele są przedstawione jako stojące na schematycznym dachu."
 }

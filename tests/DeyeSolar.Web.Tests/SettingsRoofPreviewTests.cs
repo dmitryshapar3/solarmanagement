@@ -50,8 +50,8 @@ public sealed class SettingsRoofPreviewTests
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
         var html = await renderer.Dispatcher.InvokeAsync(async () => WebUtility.HtmlDecode(
             (await renderer.RenderComponentAsync<DeyeSolar.Web.Pages.Settings>(ParameterView.Empty)).ToHtmlString()));
-        Assert.Contains("class=\"roof-sun-compass\"", html);
-        Assert.Contains("class=\"roof-sun-path\"", html);
+        Assert.Contains("roof-sun-compass roof-scene-fallback", html);
+        Assert.Contains("roof-scene-sun-path roof-sun-path", html);
         Assert.Contains("data-roof=\"1\"", html);
         Assert.DoesNotContain("data-roof=\"2\"", html);
         Assert.Contains("Australia/Sydney", html);
