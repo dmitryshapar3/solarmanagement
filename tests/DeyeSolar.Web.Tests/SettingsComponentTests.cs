@@ -7,6 +7,7 @@ using DeyeSolar.Domain.Models;
 using DeyeSolar.Domain.Interfaces;
 using DeyeSolar.Domain.Services;
 using DeyeSolar.Web.Auth;
+using DeyeSolar.Web.Components.Ui;
 using DeyeSolar.Web.Data;
 using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Redesign;
@@ -26,6 +27,37 @@ namespace DeyeSolar.Web.Tests;
 
 public class SettingsComponentTests
 {
+    [Fact]
+    public async Task RoofSceneJsHarnessImportsMountsUpdatesAndDisposesTheActualComponent()
+    {
+        var js = new NullJs();
+        var collection = new ServiceCollection();
+        collection.AddLogging(); collection.AddComponentLocalization(); collection.AddSingleton<IJSRuntime>(js);
+        await using var services = collection.BuildServiceProvider();
+        SceneModule module;
+        await using (var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>()))
+        {
+            await renderer.Dispatcher.InvokeAsync(async () =>
+            {
+                var parameters = new Dictionary<string, object?> { ["Latitude"] = 50d, ["Longitude"] = 20d,
+                    ["TimeZoneId"] = "UTC", ["Roof1Kwp"] = 4d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
+                    ["Roof1PanelCount"] = 2, ["At"] = DateTimeOffset.Parse("2026-10-10T12:00:00Z") };
+                var root = await renderer.MountRoofSceneAsync(parameters);
+                var mounted = Assert.Single(js.Modules);
+                Assert.Equal(["mount"], mounted.Calls);
+                Assert.Equal(2, Assert.Single(mounted.Scenes).Faces.Count(face => face.Kind == "panel"));
+                parameters["Roof1PanelCount"] = 3;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+                Assert.Single(js.Modules);
+                Assert.Equal(["mount", "update"], mounted.Calls);
+                Assert.Equal(3, mounted.Scenes[^1].Faces.Count(face => face.Kind == "panel"));
+            });
+            module = Assert.Single(js.Modules);
+        }
+        Assert.Equal(["mount", "update", "dispose"], module.Calls);
+        Assert.True(module.Disposed);
+    }
+
     [SqlServerFact]
     public async Task ReadOnlyAutomationsKeepDetailsAndEvaluationButBlockAllChanges()
     {
@@ -277,6 +309,8 @@ public class SettingsComponentTests
         public void Repaint() => typeof(ComponentBase).GetMethod("StateHasChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_component, null);
         public async Task<int> MountAsync() { _component = (DeyeSolar.Web.Pages.Settings)InstantiateComponent(typeof(DeyeSolar.Web.Pages.Settings)); var root = AssignRootComponentId(_component); await RenderAsync(root); return root; }
         public async Task<int> MountAutomationsAsync() { _component = (ComponentBase)InstantiateComponent(typeof(DeyeSolar.Web.Pages.Automations)); _parameters = ParameterView.FromDictionary(new Dictionary<string, object?> { ["Id"] = 1 }); var root = AssignRootComponentId(_component); await RenderAsync(root); return root; }
+        public async Task<int> MountRoofSceneAsync(Dictionary<string, object?> parameters) { var root = AssignRootComponentId(InstantiateComponent(typeof(RoofSunDiagram))); await RenderRoofSceneAsync(root, parameters); return root; }
+        public Task RenderRoofSceneAsync(int root, Dictionary<string, object?> parameters) => RenderRootComponentAsync(root, ParameterView.FromDictionary(parameters));
         public Task RenderAsync(int root) => RenderRootComponentAsync(root, _parameters);
         public Task DispatchAsync(ulong id) => DispatchEventAsync(id, null, new MouseEventArgs());
         private IEnumerable<RenderTreeFrame[]> Elements(int id, string tag)
@@ -331,7 +365,33 @@ public class SettingsComponentTests
     }
     private sealed class NullJs : IJSRuntime
     {
-        public ValueTask<T> InvokeAsync<T>(string id, object?[]? args) => ValueTask.FromResult(default(T)!);
-        public ValueTask<T> InvokeAsync<T>(string id, CancellationToken ct, object?[]? args) => ValueTask.FromResult(default(T)!);
+        public List<SceneModule> Modules { get; } = [];
+        public ValueTask<T> InvokeAsync<T>(string id, object?[]? args)
+        {
+            if (id != "import") return ValueTask.FromResult(default(T)!);
+            Assert.Equal(typeof(IJSObjectReference), typeof(T));
+            Assert.Equal("/js/roof-scene.js", Assert.Single(args!));
+            var module = new SceneModule(); Modules.Add(module);
+            return ValueTask.FromResult((T)(object)module);
+        }
+        public ValueTask<T> InvokeAsync<T>(string id, CancellationToken ct, object?[]? args) => InvokeAsync<T>(id, args);
+    }
+    private sealed class SceneModule : IJSObjectReference
+    {
+        public List<string> Calls { get; } = [];
+        public List<RoofScene> Scenes { get; } = [];
+        public bool Disposed { get; private set; }
+        public ValueTask<T> InvokeAsync<T>(string id, object?[]? args)
+        {
+            Assert.False(Disposed);
+            Assert.Contains(id, new[] { "mount", "update", "dispose" });
+            Assert.Equal(id == "dispose" ? 1 : 2, args!.Length);
+            Assert.IsType<ElementReference>(args[0]);
+            if (id != "dispose") Scenes.Add(Assert.IsType<RoofScene>(args[1]));
+            Calls.Add(id);
+            return ValueTask.FromResult(default(T)!);
+        }
+        public ValueTask<T> InvokeAsync<T>(string id, CancellationToken ct, object?[]? args) => InvokeAsync<T>(id, args);
+        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }
 }

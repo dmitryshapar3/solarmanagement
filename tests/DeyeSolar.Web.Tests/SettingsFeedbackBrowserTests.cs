@@ -23,7 +23,12 @@ public sealed class SettingsFeedbackBrowserTests
         await page.GotoAsync(app.Address + "/settings");
         await BrowserBillingDeadlineTests.AssertLiveDrawerEventAsync(page,
             page.GetByRole(AriaRole.Button, new() { Name = "Open navigation", Exact = true }));
-        await page.GetByRole(AriaRole.Button, new() { Name = "Close navigation", Exact = true }).ClickAsync();
+        var closeNavigation = page.GetByRole(AriaRole.Button, new() { Name = "Close navigation", Exact = true });
+        var backdropBounds = await closeNavigation.BoundingBoxAsync();
+        Assert.NotNull(backdropBounds);
+        // At 390px the drawer covers the backdrop centre; its right edge remains exposed.
+        await closeNavigation.ClickAsync(new() { Position = new() { X = backdropBounds.Width - 12, Y = backdropBounds.Height / 2 } });
+        await Assertions.Expect(closeNavigation).ToBeHiddenAsync();
 
         var panels = page.Locator("#panels");
         var diagram = panels.Locator(".roof-sun-diagram");
