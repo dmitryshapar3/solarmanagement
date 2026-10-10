@@ -28,3 +28,4 @@ else{<p class="caption">@T["Confirm with your current password, a code sent to a
 @foreach(var provider in new[]{"google","apple"}){if(provider=="google"&&Model.Identities?.GoogleLinked==true&&Model.Providers.GoogleEnabled||provider=="apple"&&Model.Identities?.AppleLinked==true&&Model.Providers.Apple.WebAvailable){<form method="post" asp-page-handler="External"><input type="hidden" asp-for="Operation"/><input type="hidden" asp-for="SessionId"/><input type="hidden" name="Provider" value="@provider"/><button type="submit" class="ui-button outline">@T.Format("Confirm with {0}",provider=="google"?"Google":"Apple")</button></form>}}}}
 </section>}
 </div></div>
+<div><a class="ui-button outline" href="/Logout" target="_top">@T["Sign out"]</a></div>

@@ -48,6 +48,6 @@ export function SettingsScreen() {
       <NavigationRow title="Privacy policy" icon={CircleHelp} onPress={() => void openPublicLink(PUBLIC_PRIVACY_URL).catch(e => setError(e.message))} />
       <NavigationRow title="Support" icon={CircleHelp} onPress={() => void openPublicLink(PUBLIC_SUPPORT_URL).catch(e => setError(e.message))} />
     </Group><SectionTitle title="Advanced" /><Group><NavigationRow title="Server" icon={Settings2} value={apiBaseUrl.replace(/^https?:\/\//, "")} onPress={() => navigation.navigate("Server")} /></Group>
-    <AppButton label={isDemo ? "Exit demo" : "Sign out"} variant="critical" onPress={() => void logout()} />
+    {isDemo ? <AppButton label="Exit demo" variant="critical" onPress={() => void logout()} /> : null}
   </Screen>;
 }

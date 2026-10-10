@@ -150,7 +150,7 @@ function useExportZip() {
 }
 
 export function SignInSecurityScreen() {
-  const navigation = useNavigation<Navigation>(); const { api, apiBaseUrl } = useAuth(); const { t } = useLanguage(); const { colors } = useTheme(); const account = useMemo(() => accountApi(api), [api]);
+  const navigation = useNavigation<Navigation>(); const { api, apiBaseUrl, logout } = useAuth(); const { t } = useLanguage(); const { colors } = useTheme(); const account = useMemo(() => accountApi(api), [api]);
   const read = useCallback((signal: AbortSignal) => account.methods(signal), [account]); const r = useAccountResource<AccountMethods | null>(read, null);
   const [provider, setProvider] = useState<"Apple" | "Google">("Google"); const [operation, setOperation] = useState("identity-unlink"); const proof = useProof(); const exportZip = useExportZip(); const busy = Boolean(r.busy);
   useEffect(() => { if (r.value) { setProvider(r.value.googleLinked || !r.value.appleLinked ? "Google" : "Apple"); setOperation(r.value.googleLinked || r.value.appleLinked ? "identity-unlink" : "identity-link"); proof.clear(); } }, [r.value]);
@@ -168,6 +168,7 @@ export function SignInSecurityScreen() {
     {operation !== "export" ? <Card style={{ gap: 12 }}><SectionTitle title={t(operation === "identity-link" ? "Link {0}" : "Remove {0}", provider)} /><AccountProofForm operation={operation} onProof={proof.setProof} disabled={busy} revision={proof.revision} /><AppButton label={operation === "identity-link" ? "Link sign-in method" : "Remove sign-in method"} variant={operation === "identity-link" ? "primary" : "critical"} disabled={!proof.proof || busy || r.isDemo} onPress={() => operation === "identity-link" ? void link() : unlink()} /></Card> : null}
     <Group><NavigationRow title="Password & sessions" onPress={() => navigation.navigate("PasswordSessions")} /><NavigationRow title="Export account data" subtitle="Download your account and installation data as a ZIP file." onPress={() => { if (!busy) { setOperation("export"); proof.clear(); } }} /><NavigationRow title="Delete account" critical onPress={() => navigation.navigate("DeleteAccount")} /></Group>
     {operation === "export" ? <Card style={{ gap: 12 }}><SectionTitle title="Export account data" /><AccountProofForm operation="export" onProof={proof.setProof} disabled={busy} revision={proof.revision} /><AppButton label="Export ZIP" disabled={!proof.proof || busy || r.isDemo} loading={r.busy === "export"} onPress={() => { if (proof.proof) void r.run("export", async context => { try { await exportZip(proof.proof!, context.signal, context.isCurrent); context.publish(() => r.setNotice("Export ready")); } finally { context.publish(proof.clear); } }); }} /></Card> : null}
+    {!r.isDemo ? <AppButton label="Sign out" variant="critical" onPress={() => void logout()} /> : null}
   </Screen>;
 }
 
