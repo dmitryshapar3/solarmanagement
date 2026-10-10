@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Vaše neuložené změny budou zahozeny.",
   "Your unsaved changes will be lost.": "Vaše neuložené změny budou ztraceny.",
   "Zoom in": "Přiblížit",
-  "Zoom out": "Oddálit"
+  "Zoom out": "Oddálit",
+  "Set house direction": "Orientace domu",
+  "Rotate sun path left": "Otočit dráhu slunce doleva",
+  "Rotate sun path right": "Otočit dráhu slunce doprava",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Otáčením dráhy slunce kolem domu nastavíte jeho orientaci. Azimuty obou střešních ploch se mění společně."
 }

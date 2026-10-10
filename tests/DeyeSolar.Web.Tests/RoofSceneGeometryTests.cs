@@ -105,8 +105,77 @@ public class RoofSceneGeometryTests
         var rise = roof.Points.Max(p => p[2]) - roof.Points.Min(p => p[2]);
         Close(width / depth, .8);
         Close(rise / width, Math.Tan(tilt * Radians));
-        Assert.InRange(scene.Faces.SelectMany(f => f.Points).Max(p => p[2]), 0, 126);
+        Assert.InRange(scene.Faces.SelectMany(f => f.Points).Max(p => p[2]), 0, 176);
+        AssertDefaultViewBounds(scene);
         AssertFinite(scene);
+    }
+
+    [Fact]
+    public void TypicalRoofUsesTheLargerExtentWhileSunCompassAndDefaultCameraStayUnchanged()
+    {
+        var at = DateTimeOffset.Parse("2026-10-10T12:00:00Z");
+        var sun = new SolarDiagramPoint(0, 0, 90, 0, at);
+        var day = new SolarDiagramDay(new(2026, 10, 10), "UTC", at, at.AddDays(1), [new[] { sun }], sun, null, null, "normal");
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4.32, 25, 230, 3.24, 25, 50), day, 50, 20, 8, 7, 4, 4);
+        var footprint = scene.Faces.Where(f => f.Kind == "wall").Select(f => f.Points[0]).ToArray();
+        Close(footprint.Max(a => footprint.Max(b => GroundDistance(a, b))), 176);
+        Assert.Equal(8, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 1));
+        Assert.Equal(7, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 2));
+        Assert.All(scene.Ground, p => Close(Math.Sqrt(p[0] * p[0] + p[1] * p[1]), 110));
+        Assert.All(scene.Labels.Where(l => l.Kind == "cardinal"), l => Close(Distance(l.Point, [0, 0, 0]), 126));
+        Close(Distance(Assert.IsType<double[]>(scene.SunNow), [0, 0, 0]), 110);
+        var origin = RoofSceneGeometry.Project([0, 0, 0]);
+        Close(origin.X, 180); Close(origin.Y, 180);
+        AssertDefaultViewBounds(scene);
+    }
+
+    [Fact]
+    public void DefaultPitchFitsWholeFacetsPanelsSupportsAndBadgeClearanceAcrossCompassBearingsSlopesAndCameraYaw()
+    {
+        // Includes the 65° west-facing / flat-roof combination which clips above the
+        // stage when the 176-unit extent is used without a projected uniform fit.
+        double[] tilts = [0, 20, 25, 45, 65, 89, 90];
+        foreach (var tilt1 in tilts)
+        foreach (var tilt2 in tilts)
+        for (var azimuth = 0; azimuth < 360; azimuth += 15)
+        foreach (var offset in new[] { 0, 45, 90, 180 })
+        {
+            var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt1, azimuth, 3, tilt2, (azimuth + offset) % 360), null, 50, 20, 8, 7, 4, 4);
+            foreach (var yaw in new[] { -180d, -135, -90, -35, 0, 45, 90, 135 }) AssertDefaultViewBounds(scene, yaw);
+            Assert.Equal(8, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 1));
+            Assert.Equal(7, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 2));
+        }
+    }
+
+    [Theory]
+    [InlineData(25, 230, 25, 50)]
+    [InlineData(65, 270, 0, 270)]
+    [InlineData(89, 137, 25, 13)]
+    [InlineData(90, 110, 25, 300)]
+    [InlineData(90, 270, 90, 90)]
+    public void TurningBothRoofBearingsKeepsTheBuildingSizePitchAndPanelAspectRatio(double tilt1, double azimuth1, double tilt2, double azimuth2)
+    {
+        var reference = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt1, azimuth1, 3, tilt2, azimuth2), null, 50, 20, 8, 7, 4, 4);
+        double Diameter(RoofScene scene)
+        {
+            var footprint = scene.Faces.Where(f => f.Kind == "wall").Select(f => f.Points[0]).ToArray();
+            return footprint.Max(a => footprint.Max(b => GroundDistance(a, b)));
+        }
+        var diameter = Diameter(reference);
+        var height = reference.Faces.SelectMany(f => f.Points).Max(p => p[2]);
+        for (var angle = 15; angle < 360; angle += 15)
+        {
+            var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt1, (azimuth1 + angle) % 360, 3, tilt2, (azimuth2 + angle) % 360), null, 50, 20, 8, 7, 4, 4);
+            Close(Diameter(scene), diameter);
+            Close(scene.Faces.SelectMany(f => f.Points).Max(p => p[2]), height);
+            foreach (var number in new[] { 1, 2 })
+            {
+                var surface = Assert.Single(scene.Faces.Where(f => f.Roof == number && f.Kind is "roof" or "vertical"));
+                AssertPlane(surface.Points, number == 1 ? tilt1 : tilt2, ((number == 1 ? azimuth1 : azimuth2) + angle) % 360);
+                Assert.All(scene.Faces.Where(f => f.Kind == "panel" && f.Roof == number), panel =>
+                    Close(Distance(panel.Points[1], panel.Points[2]) / Distance(panel.Points[0], panel.Points[1]), 1.7));
+            }
+        }
     }
 
     [Theory]
@@ -124,6 +193,30 @@ public class RoofSceneGeometryTests
         Assert.Equal(1, panel.Roof);
         Assert.Equal(4, scene.Faces.Count(f => f.Kind == "wall"));
         AssertFinite(scene);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50)]
+    [InlineData(90)]
+    [InlineData(230)]
+    [InlineData(270)]
+    public void OppositeVerticalArraysStayOnSeparateSidesOfTheSharedBuilding(double azimuth)
+    {
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 90, azimuth, 3, 90, (azimuth + 180) % 360), null, 50, 20, 8, 7);
+        var first = Assert.Single(scene.Faces.Where(f => f.Kind == "vertical" && f.Roof == 1));
+        var second = Assert.Single(scene.Faces.Where(f => f.Kind == "vertical" && f.Roof == 2));
+        var firstCenter = Enumerable.Range(0, 3).Select(i => first.Points.Average(p => p[i])).ToArray();
+        var secondCenter = Enumerable.Range(0, 3).Select(i => second.Points.Average(p => p[i])).ToArray();
+        var bearing = new[] { Math.Sin(azimuth * Radians), Math.Cos(azimuth * Radians) };
+        Assert.True(firstCenter[0] * bearing[0] + firstCenter[1] * bearing[1] < 0);
+        Assert.True(secondCenter[0] * bearing[0] + secondCenter[1] * bearing[1] > 0);
+        var normal = Normal(first.Points);
+        Assert.True(Math.Abs(normal.Select((value, i) => value * (secondCenter[i] - firstCenter[i])).Sum()) > 1,
+            "Opposite upright arrays must occupy separate parallel planes, rather than coinciding.");
+        AssertPlane(first.Points, 90, azimuth);
+        AssertPlane(second.Points, 90, (azimuth + 180) % 360);
+        AssertDefaultViewBounds(scene);
     }
 
     [Fact]
@@ -322,6 +415,16 @@ public class RoofSceneGeometryTests
     private static bool Same(double[] a, double[] b) => Distance(a, b) < Tolerance;
     private static bool Near(double actual, double expected) => Math.Abs(actual - expected) < Tolerance;
     private static void Close(double actual, double expected) => Assert.True(Near(actual, expected), $"Expected {expected:R}, actual {actual:R}");
+    private static void AssertDefaultViewBounds(RoofScene scene, double yaw = -35)
+    {
+        var points = scene.Faces.SelectMany(f => f.Points).Concat(scene.Lines.SelectMany(l => l.Points));
+        Assert.All(points, point =>
+        {
+            var projected = RoofSceneGeometry.Project(point, yaw);
+            Assert.InRange(projected.X, 12 - Tolerance, 348 + Tolerance);
+            Assert.InRange(projected.Y, 12 - Tolerance, 300 + Tolerance);
+        });
+    }
     private static void AssertFinite(RoofScene scene)
     {
         var points = scene.Faces.SelectMany(f => f.Points).Concat(scene.Lines.SelectMany(l => l.Points))

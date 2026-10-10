@@ -104,6 +104,7 @@ function draw(state) {
     svg.setAttribute("data-yaw", String(camera.yaw));
     svg.setAttribute("data-elevation", String(camera.elevation));
     svg.setAttribute("data-zoom", String(camera.zoom));
+    svg.setAttribute("data-direction-editing", String(Boolean(state.orientation?.enabled && !state.orientation.disabled)));
     root.classList.add("scene-ready");
 }
 
@@ -123,6 +124,27 @@ function rebase(state) {
     state.gesture = { camera: { ...state.camera }, first: points[0], distance: points.length > 1 ? Math.max(1, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)) : null };
 }
 
+// One server update at a time, accumulating small pointer moves while the
+// previous draft update is in flight. Only acknowledged bearings move the view.
+function rotateDirection(state, delta) {
+    if (state.disposed || !state.orientation?.enabled || state.orientation.disabled || !Number.isFinite(delta)) return;
+    state.directionPending += delta;
+    const pump = () => {
+        if (state.disposed || state.directionInFlight || !state.orientation?.enabled || state.orientation.disabled) return;
+        const amount = clamp(Math.trunc(state.directionPending), -360, 360);
+        if (!amount) return;
+        state.directionPending -= amount;
+        state.directionInFlight = true;
+        Promise.resolve().then(() => {
+            if (state.disposed || !state.orientation?.enabled || state.orientation.disabled) return;
+            return state.orientation.bridge.invokeMethodAsync("RotateHouse", amount);
+        })
+            .catch(() => { state.directionPending = 0; })
+            .finally(() => { state.directionInFlight = false; pump(); });
+    };
+    pump();
+}
+
 function action(state, name) {
     const camera = { ...state.camera };
     switch (name) {
@@ -133,6 +155,8 @@ function action(state, name) {
         case "up": camera.elevation += 5; break;
         case "down": camera.elevation -= 5; break;
         case "reset": setCamera(state, initialCamera()); rebase(state); return true;
+        case "direction-left": rotateDirection(state, -10); return true;
+        case "direction-right": rotateDirection(state, 10); return true;
         default: return false;
     }
     setCamera(state, camera); rebase(state); return true;
@@ -143,7 +167,8 @@ export function mount(root, scene) {
     const svg = root.querySelector("svg.roof-scene-interactive");
     if (!svg) return;
     const state = { root, svg, scene, window: svg.ownerDocument.defaultView, camera: initialCamera(), frame: null,
-        pointers: new Map(), gesture: null, listeners: [], disposed: false, previousTouchAction: svg.style.touchAction };
+        pointers: new Map(), gesture: null, listeners: [], disposed: false, previousTouchAction: svg.style.touchAction,
+        orientation: null, directionPending: 0, directionInFlight: false };
     const listen = (target, name, handler, options) => { target.addEventListener(name, handler, options); state.listeners.push(() => target.removeEventListener(name, handler, options)); };
     const end = event => {
         if (!state.pointers.delete(event.pointerId)) return;
@@ -160,12 +185,15 @@ export function mount(root, scene) {
     listen(svg, "pointermove", event => {
         if (!state.pointers.has(event.pointerId)) return;
         event.preventDefault();
+        const previous = state.pointers.get(event.pointerId);
         state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         const points = [...state.pointers.values()], gesture = state.gesture;
         if (!gesture?.first) return;
         if (points.length > 1 && gesture.distance !== null) {
             const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
             setCamera(state, { ...state.camera, zoom: gesture.camera.zoom * distance / gesture.distance });
+        } else if (state.orientation?.enabled && !state.orientation.disabled) {
+            rotateDirection(state, (event.clientX - previous.x) * .6);
         } else setCamera(state, { ...state.camera, yaw: gesture.camera.yaw + (points[0].x - gesture.first.x) * .45,
             elevation: gesture.camera.elevation - (points[0].y - gesture.first.y) * .35 });
     });
@@ -178,6 +206,10 @@ export function mount(root, scene) {
     }, { passive: false });
     listen(svg, "keydown", event => {
         if (event.altKey || event.ctrlKey || event.metaKey) return;
+        if (state.orientation?.enabled && !state.orientation.disabled && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
+            rotateDirection(state, event.key === "ArrowLeft" ? -10 : 10);
+            event.preventDefault(); event.stopPropagation(); return;
+        }
         const name = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", "+": "zoom-in", "=": "zoom-in", "-": "zoom-out", "_": "zoom-out", Home: "reset" }[event.key];
         if (name && action(state, name)) { event.preventDefault(); event.stopPropagation(); }
     });
@@ -197,10 +229,32 @@ export function update(root, scene) {
     schedule(state);
 }
 
+export function updateOrientation(root, scene, enabled, disabled, bridge, bearing) {
+    const state = states.get(root);
+    if (!state || state.disposed) return;
+    state.scene = scene;
+    configureOrientation(root, enabled, disabled, bridge, bearing);
+}
+
+export function configureOrientation(root, enabled, disabled, bridge, bearing) {
+    const state = states.get(root);
+    if (!state || state.disposed) return;
+    const previous = state.orientation;
+    if (previous?.enabled && Number.isFinite(bearing) && Number.isFinite(previous.bearing)) {
+        const delta = ((bearing - previous.bearing + 540) % 360 + 360) % 360 - 180;
+        if (delta) { setCamera(state, { ...state.camera, yaw: state.camera.yaw + delta }); rebase(state); }
+    }
+    state.orientation = { enabled: Boolean(enabled), disabled: Boolean(disabled), bridge, bearing };
+    if (!enabled || disabled) state.directionPending = 0;
+    rebase(state);
+    schedule(state);
+}
+
 export function dispose(root) {
     const state = states.get(root);
     if (!state) return;
     state.disposed = true;
+    state.directionPending = 0;
     if (state.frame !== null) state.window.cancelAnimationFrame(state.frame);
     for (const remove of state.listeners) remove();
     for (const id of state.pointers.keys()) if (state.svg.hasPointerCapture?.(id)) state.svg.releasePointerCapture(id);

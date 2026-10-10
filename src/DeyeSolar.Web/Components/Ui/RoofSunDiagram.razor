@@ -34,7 +34,18 @@
             <button type="button" class="roof-scene-control" data-roof-action="zoom-in" title="@T["Zoom in"]" aria-label="@T["Zoom in"]">+</button>
             <button type="button" class="roof-scene-control roof-scene-reset" data-roof-action="reset">@T["Reset view"]</button>
         </div>
-        <p class="roof-scene-hint" id="@_hintId"><span class="roof-scene-pointer-hint">@T["Drag to rotate · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag to rotate · Pinch to zoom"]</span></p>
+        @if (OrientationChanged.HasDelegate)
+        {
+            <div class="roof-scene-direction-controls">
+                <button type="button" class="roof-scene-control roof-scene-reset" aria-pressed="@_editingDirection.ToString().ToLowerInvariant()" disabled="@DirectionDisabled" @onclick="ToggleDirection">@T[_editingDirection ? "Done" : "Set house direction"]</button>
+                @if (_editingDirection)
+                {
+                    <button type="button" class="roof-scene-control" data-roof-action="direction-left" disabled="@DirectionDisabled" aria-label="@T["Rotate sun path left"]">↶</button>
+                    <button type="button" class="roof-scene-control" data-roof-action="direction-right" disabled="@DirectionDisabled" aria-label="@T["Rotate sun path right"]">↷</button>
+                }
+            </div>
+        }
+        <p class="roof-scene-hint" id="@_hintId">@if (_editingDirection) { @T["Rotate the sun path around the house to set its direction. Both roof azimuths change together."] } else { <span class="roof-scene-pointer-hint">@T["Drag to rotate · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag to rotate · Pinch to zoom"]</span> }</p>
     </div>
     @if (Day is { } sun)
     {
@@ -70,14 +81,22 @@
     [Parameter] public int? Roof2PanelCount { get; set; }
     [Parameter] public int? Roof1PanelsPerRow { get; set; }
     [Parameter] public int? Roof2PanelsPerRow { get; set; }
+    [Parameter] public EventCallback<double> OrientationChanged { get; set; }
+    [Parameter] public bool DirectionDisabled { get; set; }
     [Parameter] public DateTimeOffset? At { get; set; }
     private SolarDiagramDay? Day { get; set; }
     private IReadOnlyList<SolarDiagramRoof> Roofs { get; set; } = [];
     private RoofScene Scene { get; set; } = RoofSceneGeometry.Create([], null, 0, 0);
     private ElementReference _sceneRoot;
     private IJSObjectReference? _sceneModule;
+    private DotNetObjectReference<RoofSunDiagram>? _directionBridge;
+    private bool _editingDirection, _disposed;
     private readonly string _hintId = "roof-scene-hint-" + Guid.NewGuid().ToString("N");
     private int? PanelCount(int roof) => roof == 1 ? Roof1PanelCount : Roof2PanelCount;
+    private void ToggleDirection() { if (!DirectionDisabled) _editingDirection = !_editingDirection; }
+    [JSInvokable]
+    public Task RotateHouse(double delta) => !_disposed && _editingDirection && !DirectionDisabled && double.IsFinite(delta) && Math.Abs(delta) <= 360
+        ? OrientationChanged.InvokeAsync(delta) : Task.CompletedTask;
     private RoofSceneProjection LabelPosition(RoofSceneLabel label)
     {
         if(label.Kind=="roof" && int.TryParse(label.Text,out var number)
@@ -106,15 +125,22 @@
                 _sceneModule = await js.InvokeAsync<IJSObjectReference>("import", "/js/roof-scene.js");
                 await _sceneModule.InvokeVoidAsync("mount", _sceneRoot, Scene);
             }
-            else await _sceneModule.InvokeVoidAsync("update", _sceneRoot, Scene);
+            if (OrientationChanged.HasDelegate)
+            {
+                _directionBridge ??= DotNetObjectReference.Create(this);
+                var bearing = (Roofs.FirstOrDefault(r => r.Tilt < 90) ?? Roofs.FirstOrDefault())?.Azimuth ?? Roof1Azimuth;
+                await _sceneModule.InvokeVoidAsync("updateOrientation", _sceneRoot, Scene, _editingDirection, DirectionDisabled, _directionBridge, bearing);
+            }
+            else if (!firstRender) await _sceneModule.InvokeVoidAsync("update", _sceneRoot, Scene);
         }
         catch (JSDisconnectedException) { }
     }
     public async ValueTask DisposeAsync()
     {
-        if (_sceneModule is null) return;
-        try { await _sceneModule.InvokeVoidAsync("dispose", _sceneRoot); await _sceneModule.DisposeAsync(); }
+        _disposed = true;
+        try { if (_sceneModule is not null) { await _sceneModule.InvokeVoidAsync("dispose", _sceneRoot); await _sceneModule.DisposeAsync(); } }
         catch (JSDisconnectedException) { }
+        finally { _directionBridge?.Dispose(); }
     }
     private static string F(double value) => RoofSunGeometry.F(value);
     private string Time(DateTimeOffset? instant) => instant.HasValue && Day is { } day ? TimeZoneInfo.ConvertTime(instant.Value, TimeZoneInfo.FindSystemTimeZoneById(day.TimeZoneId)).ToString("t", T.Culture) : "—";

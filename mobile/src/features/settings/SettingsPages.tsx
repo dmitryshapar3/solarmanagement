@@ -31,10 +31,10 @@ function useDiscardGuard(dirty: boolean) {
   const navigation = useNavigation<Navigation>(); const { t } = useLanguage();
   usePreventRemove(dirty, ({ data }) => Alert.alert(t("Discard changes?"), t("Your unsaved changes will be lost."), [{ text: t("Keep editing"), style: "cancel" }, { text: t("Discard"), style: "destructive", onPress: () => navigation.dispatch(data.action) }]));
 }
-function SettingNumberField({ value, onValue, minimum, maximum, integer = false, legacyBearing, ...props }: { value: number; onValue(value: number): void; minimum: number; maximum: number; integer?: boolean; legacyBearing?: number; label: string; unit?: string; editable?: boolean }) {
+function SettingNumberField({ value, onValue, minimum, maximum, integer = false, isBearing = false, legacyBearing, ...props }: { value: number; onValue(value: number): void; minimum: number; maximum: number; integer?: boolean; isBearing?: boolean; legacyBearing?: number; label: string; unit?: string; editable?: boolean }) {
   const { t } = useLanguage(); const [text, setText] = useState(Number.isFinite(value) ? String(value) : ""); const [focused, setFocused] = useState(false);
   useEffect(() => { if (!focused || !Object.is(parseSettingNumber(text), value)) setText(Number.isFinite(value) ? String(value) : ""); }, [value, focused, text]);
-  const error = value === 360 && legacyBearing === 360 ? null : settingNumberError(value, minimum, maximum, integer);
+  const error = isBearing ? settingBearingError(value, legacyBearing) : settingNumberError(value, minimum, maximum, integer);
   return <View onTouchStart={() => setFocused(true)}><TextField {...props} value={text} onChangeText={next => { setFocused(true); setText(next); onValue(parseSettingNumber(next)); }} onBlur={() => setFocused(false)} error={error ? t(error, minimum, maximum) : null} keyboardType="numbers-and-punctuation" /></View>;
 }
 function SettingPanelField({ value, onValue, count, rows = false, editable }: { value?: number | null; onValue(value: number | null): void; count?: number | null; rows?: boolean; editable: boolean }) {
@@ -62,7 +62,17 @@ export function SolarSiteScreen() {
   const r = useInstallationSettings(); const { api } = useAuth(); const { t } = useLanguage(); const { colors } = useTheme(); const s = r.draft?.site.solarEstimate;
   const disabled = Boolean(r.busy) || !r.canEdit;
   function field(key: keyof NonNullable<typeof s>, value: string | number | boolean | null) { r.setDraft(current => current && { ...current, site: { ...current.site, solarEstimate: { ...current.site.solarEstimate, [key]: value } } }); }
-  const numberField = (key: "latitude" | "longitude" | "roof1Kwp" | "roof2Kwp" | "roof1Tilt" | "roof2Tilt" | "roof1Azimuth" | "roof2Azimuth", label: string, unit?: string) => s ? <SettingNumberField key={key} label={label} value={s[key]} onValue={value => field(key, value)} minimum={key === "latitude" ? -90 : key === "longitude" ? -180 : 0} maximum={key === "latitude" ? 90 : key === "longitude" ? 180 : key.includes("Tilt") ? 90 : key.includes("Azimuth") ? 359 : 1000} legacyBearing={key.includes("Azimuth") ? r.saved?.site.solarEstimate[key] : undefined} editable={!disabled} unit={unit} /> : null;
+  function rotateHouse(deltaDegrees: number) {
+    if (disabled || !Number.isFinite(deltaDegrees)) return;
+    r.setDraft(current => {
+      if (!current) return current;
+      const solar = current.site.solarEstimate;
+      if (!Number.isFinite(solar.roof1Azimuth) || !Number.isFinite(solar.roof2Azimuth)) return current;
+      const rotate = (value: number) => (((value + deltaDegrees) % 360) + 360) % 360;
+      return { ...current, site: { ...current.site, solarEstimate: { ...solar, roof1Azimuth: rotate(solar.roof1Azimuth), roof2Azimuth: rotate(solar.roof2Azimuth) } } };
+    });
+  }
+  const numberField = (key: "latitude" | "longitude" | "roof1Kwp" | "roof2Kwp" | "roof1Tilt" | "roof2Tilt" | "roof1Azimuth" | "roof2Azimuth", label: string, unit?: string) => s ? <SettingNumberField key={key} label={label} value={s[key]} onValue={value => field(key, value)} minimum={key === "latitude" ? -90 : key === "longitude" ? -180 : 0} maximum={key === "latitude" ? 90 : key === "longitude" ? 180 : key.includes("Tilt") ? 90 : key.includes("Azimuth") ? 360 : 1000} isBearing={key.includes("Azimuth")} legacyBearing={key.includes("Azimuth") ? r.saved?.site.solarEstimate[key] : undefined} editable={!disabled} unit={unit} /> : null;
   return <InstallationForm title="Solar site" resource={r} invalid={Boolean(s && (settingNumberError(s.latitude, -90, 90) || settingNumberError(s.longitude, -180, 180) || settingNumberError(s.roof1Kwp, 0, 1000) || settingNumberError(s.roof2Kwp, 0, 1000) || s.roof1Kwp + s.roof2Kwp <= 0 || settingNumberError(s.roof1Tilt, 0, 90) || settingNumberError(s.roof2Tilt, 0, 90) || settingBearingError(s.roof1Azimuth, r.saved?.site.solarEstimate.roof1Azimuth) || settingBearingError(s.roof2Azimuth, r.saved?.site.solarEstimate.roof2Azimuth) || settingTimeZoneError(s.timeZoneId) || panelCountError(s.roof1PanelCount) || panelCountError(s.roof2PanelCount) || panelsPerRowError(s.roof1PanelsPerRow, s.roof1PanelCount) || panelsPerRowError(s.roof2PanelsPerRow, s.roof2PanelCount)))}>{s ? <>
     <Card style={{ gap: 14 }}><SectionTitle title="Location" /><TextField label="Site name" value={s.locationLabel} onChangeText={value => field("locationLabel", value)} editable={!disabled} />
       <AppButton label="Use my location" icon={LocateFixed} variant="secondary" disabled={disabled} onPress={() => void r.run("location", async context => {
@@ -73,7 +83,7 @@ export function SolarSiteScreen() {
       <TextField label="Forecast time zone" value={s.timeZoneId} onChangeText={value => field("timeZoneId", value)} editable={!disabled} helper="Use a time zone such as Europe/Warsaw." error={settingTimeZoneError(s.timeZoneId)} />
       <Text style={{ fontSize: 13, color: colors.ink3 }}>{t("Location is used only when you tap the button. It helps estimate sunlight at your solar site.")}</Text>
     </Card>
-    <Card><RoofSunDiagram site={s} /></Card>
+    <Card><RoofSunDiagram site={s} onOrientationChange={disabled || !Number.isFinite(s.roof1Azimuth) || !Number.isFinite(s.roof2Azimuth) ? undefined : rotateHouse} /></Card>
     {[1, 2].map(array => <Card key={array} style={{ gap: 14 }}><SectionTitle title={t("Solar array {0}", array)} />
       <SettingPanelField value={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelCount" : "roof2PanelCount", value)} editable={!disabled} />
       <SettingPanelField rows value={array === 1 ? s.roof1PanelsPerRow : s.roof2PanelsPerRow} count={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelsPerRow" : "roof2PanelsPerRow", value)} editable={!disabled} />

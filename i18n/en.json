@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Your unsaved changes will be discarded.",
   "Your unsaved changes will be lost.": "Your unsaved changes will be lost.",
   "Zoom in": "Zoom in",
-  "Zoom out": "Zoom out"
+  "Zoom out": "Zoom out",
+  "Set house direction": "Set house direction",
+  "Rotate sun path left": "Rotate sun path left",
+  "Rotate sun path right": "Rotate sun path right",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Rotate the sun path around the house to set its direction. Both roof azimuths change together."
 }

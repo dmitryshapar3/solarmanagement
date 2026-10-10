@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Ваші незбережені зміни будуть відхилені.",
   "Your unsaved changes will be lost.": "Ваші незбережені зміни будуть втрачені.",
   "Zoom in": "Наблизити",
-  "Zoom out": "Віддалити"
+  "Zoom out": "Віддалити",
+  "Set house direction": "Напрямок будинку",
+  "Rotate sun path left": "Повернути дугу сонця ліворуч",
+  "Rotate sun path right": "Повернути дугу сонця праворуч",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Обертайте дугу сонця навколо будинку, щоб задати його напрямок. Азимути обох схилів змінюються разом."
 }

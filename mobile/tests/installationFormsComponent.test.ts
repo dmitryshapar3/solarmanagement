@@ -125,3 +125,21 @@ test("legacy solar settings stay unknown and omitted during unrelated edits unti
     await h.change("Panel count", "0"); await h.pressSave(); assert.equal(h.puts[1].site.solarEstimate.roof1PanelCount, 0);
   } finally { await h.close(); }
 });
+
+test("house-direction controls keep fractional roof separation and change only the unsaved draft until Save", async () => {
+  const h = await harness("SolarSiteScreen"); try {
+    await h.change("Compass bearing · degrees", "349.5"); await h.change("Compass bearing · degrees", "169.25", 1);
+    const beforePanels = [h.field("Panel count").props.value, h.field("Panel count", 1).props.value];
+    await act(async () => { h.renderer.root.findByProps({ accessibilityLabel: "Set house direction" }).props.onPress(); });
+    const captured = h.renderer.root.findByProps({ accessibilityLabel: "Rotate sun path right" }).props.onPress;
+    await act(async () => { captured(); captured(); });
+    assert.equal(h.puts.length, 0); assert.equal(h.field("Compass bearing · degrees").props.value, "9.5"); assert.equal(h.field("Compass bearing · degrees", 1).props.value, "189.25");
+    assert.equal(h.field("Compass bearing · degrees").props.error, null); assert.equal(h.header().props.disabled, false);
+    assert.deepEqual([h.field("Panel count").props.value, h.field("Panel count", 1).props.value], beforePanels);
+    await h.pressSave(); assert.equal(h.puts.length, 1);
+    assert.deepEqual([h.puts[0].site.solarEstimate.roof1Azimuth, h.puts[0].site.solarEstimate.roof2Azimuth], [9.5, 189.25]);
+    assert.equal(h.puts[0].expectedVersion, "revision-original");
+    await h.change("Compass bearing · degrees", "359.5"); assert.equal(h.field("Compass bearing · degrees").props.error, null); assert.equal(h.header().props.disabled, false);
+    await h.change("Compass bearing · degrees", "360"); assert.ok(h.field("Compass bearing · degrees").props.error); assert.equal(h.header().props.disabled, true);
+  } finally { await h.close(); }
+});

@@ -172,13 +172,24 @@ export function roofMesh(site: RoofSunSite): RoofMesh {
     }
   }
   for (const roof of roofs.filter(roof => roof.tilt === 90)) {
-    const az = roof.azimuth * rad, tangent = { x: Math.cos(az), y: -Math.sin(az) }, center = { x: roofs.length === 1 ? 0 : roof.number === 1 ? -14 : 14, y: 0 }, half = 14 * Math.sqrt(roof.capacity / maximum);
+    const az = roof.azimuth * rad, tangent = { x: Math.cos(az), y: -Math.sin(az) }, offset = roofs.length === 1 ? 0 : roof.number === 1 ? -14 : 14, center = { x: Math.sin(bearing) * offset, y: Math.cos(bearing) * offset }, half = 14 * Math.sqrt(roof.capacity / maximum);
     const a = { x: center.x - tangent.x * half, y: center.y - tangent.y * half }, b = { x: center.x + tangent.x * half, y: center.y + tangent.y * half }, base = Math.max(roofZ(a), roofZ(b)) + .5;
     const points = [{ ...a, z: base }, { ...b, z: base }, { ...b, z: base + 24 }, { ...a, z: base + 24 }];
     const grid = [[{ ...a, z: roofZ(a) }, points[0]!], [{ ...b, z: roofZ(b) }, points[1]!]], normal = { x: Math.sin(az), y: Math.cos(az), z: 0 };
     faces.push({ id: `vertical-${roof.number}`, kind: "vertical", roofNumber: roof.number, points, normal, panels: [], panelTiles: roofPanelTiles(points, normal, 90, roof.azimuth, roof.panelCount, roof.panelsPerRow), grid });
   }
-  const scale = 112 / Math.max(Math.max(...footprint.map(p => p.x)) - Math.min(...footprint.map(p => p.x)), Math.max(...footprint.map(p => p.y)) - Math.min(...footprint.map(p => p.y)), ...faces.flatMap(face => face.points.map(p => p.z)));
+  let scale = 176 / Math.max(Math.hypot(80, 64), ...faces.flatMap(face => face.points.map(p => p.z)));
+  // Fit every yaw of the initial elevation, keeping the scale independent of
+  // compass bearing while the sun path is rotated around the house. Upright
+  // modules, supports, shadow and the 20px roof-badge clearance are included.
+  const fitPoints = [...faces.flatMap(face => [...face.points, ...face.panels, ...face.panelTiles.flat(), ...face.grid.flat()]), ...footprint.map(p => ({ x: p.x * 1.07, y: p.y * 1.07, z: 0 }))];
+  const elevation = DEFAULT_ROOF_CAMERA.elevation * rad;
+  for (const point of fitPoints) {
+    const radius = Math.hypot(point.x, point.y), top = radius * Math.sin(elevation) + point.z * Math.cos(elevation), bottom = radius * Math.sin(elevation) - point.z * Math.cos(elevation);
+    if (radius) scale = Math.min(scale, 148 / radius);
+    if (top > 0) scale = Math.min(scale, 168 / top);
+    if (bottom > 0) scale = Math.min(scale, 120 / bottom);
+  }
   const fit = (p: Point3): Point3 => ({ x: p.x * scale, y: p.y * scale, z: p.z * scale });
   return { faces: faces.map(face => ({ ...face, points: face.points.map(fit), panels: face.panels.map(fit), panelTiles: face.panelTiles.map(tile => tile.map(fit)), grid: face.grid.map(line => line.map(fit)) })), ridge: ridge.map(line => line.map(fit)), footprint: footprint.map(p => fit({ ...p, z: 0 })), scale, hasVerticalPanels: roofs.some(roof => roof.tilt === 90) };
 }

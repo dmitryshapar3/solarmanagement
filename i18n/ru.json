@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Несохранённые изменения будут удалены.",
   "Your unsaved changes will be lost.": "Несохранённые изменения будут потеряны.",
   "Zoom in": "Приблизить",
-  "Zoom out": "Отдалить"
+  "Zoom out": "Отдалить",
+  "Set house direction": "Направление дома",
+  "Rotate sun path left": "Повернуть дугу солнца влево",
+  "Rotate sun path right": "Повернуть дугу солнца вправо",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Вращайте дугу солнца вокруг дома, чтобы задать его направление. Азимуты обоих скатов меняются вместе."
 }

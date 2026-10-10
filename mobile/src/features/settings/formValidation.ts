@@ -7,7 +7,8 @@ export function settingNumberError(value: number, minimum: number, maximum: numb
   return value < minimum || value > maximum ? "Use a value between {0} and {1}." : null;
 }
 export function settingBearingError(value: number, stored?: number): string | null {
-  return value === 360 && stored === 360 ? null : settingNumberError(value, 0, 359);
+  if (value === 360 && stored === 360) return null;
+  return settingNumberError(value, 0, 360) ?? (value === 360 ? "Use a value between {0} and {1}." : null);
 }
 export function panelCountError(value?: number | null): string | null {
   return value == null || Number.isInteger(value) && value >= 0 && value <= 1000 ? null : "Enter a whole panel count from 0 to 1000, or leave it blank if unknown.";

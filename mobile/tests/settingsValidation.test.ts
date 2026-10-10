@@ -18,6 +18,8 @@ test("bearing directions follow clockwise north and reject invalid new values wh
   }
   for (const bearing of [Number.NaN, Infinity, -1, 361]) assert.equal(compassPoint(bearing), null);
   assert.ok(settingBearingError(360)); assert.equal(settingBearingError(360,360),null); assert.ok(settingBearingError(360,180)); assert.equal(settingBearingError(359),null);
+  for (const bearing of [0, 12.25, 359.5, 359.999999]) assert.equal(settingBearingError(bearing), null);
+  for (const bearing of [Number.NaN, Infinity, -0.01, 360, 360.01]) assert.ok(settingBearingError(bearing));
 });
 test("contract calendar dates and time zones are validated before installation header save", () => {
   for (const date of ["", "1999-12-31", "2026-02-30", "2026-1-01", "invalid"]) assert.ok(settingContractDateError(date));

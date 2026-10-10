@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "保存されていない変更は破棄されます。",
   "Your unsaved changes will be lost.": "未保存の変更は失われます。",
   "Zoom in": "拡大",
-  "Zoom out": "縮小"
+  "Zoom out": "縮小",
+  "Set house direction": "家の向きを設定",
+  "Rotate sun path left": "太陽の軌道を左に回転",
+  "Rotate sun path right": "太陽の軌道を右に回転",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "家の周りで太陽の軌道を回して、家の向きを設定します。両方の屋根面の方位角が同時に変わります。"
 }

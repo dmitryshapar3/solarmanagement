@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Kaydedilmemiş değişiklikleriniz silinecektir.",
   "Your unsaved changes will be lost.": "Kaydedilmemiş değişiklikleriniz kaybolacaktır.",
   "Zoom in": "Yakınlaştır",
-  "Zoom out": "Uzaklaştır"
+  "Zoom out": "Uzaklaştır",
+  "Set house direction": "Evin yönü",
+  "Rotate sun path left": "Güneş yolunu sola döndür",
+  "Rotate sun path right": "Güneş yolunu sağa döndür",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Evin yönünü ayarlamak için güneş yolunu evin etrafında döndürün. Her iki çatı yüzeyinin azimutu birlikte değişir."
 }

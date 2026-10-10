@@ -70,7 +70,7 @@ public static class RoofSceneGeometry
         {
             var a = roof.Azimuth * Rad; var dx = -Math.Cos(a); var dy = Math.Sin(a);
             var offset = roofs.Count(r => r.Tilt == 90) == 1 ? 0 : roof.Number == 1 ? -10 : 10;
-            var center = new[] { Math.Sin(a) * offset, Math.Cos(a) * offset };
+            var center = new[] { Math.Sin(bearing) * offset, Math.Cos(bearing) * offset };
             var left = new[] { center[0] - dx * 24, center[1] - dy * 24 }; var right = new[] { center[0] + dx * 24, center[1] + dy * 24 };
             var bottom = Math.Max(Height(left), Height(right)) + .5;
             foreach(var foot in new[]{left,right}) lines.Add(new("bearing", [[foot[0],foot[1],Height(foot)],[foot[0],foot[1],bottom]]));
@@ -81,9 +81,20 @@ public static class RoofSceneGeometry
             labels.Add(new(roof.Number.ToString(), "roof", [center[0], center[1], bottom + 14]));
         }
         var maxHeight = faces.SelectMany(f => f.Points).Select(p => p[2]).DefaultIfEmpty(0).Max();
-        var width = footprint.Max(p => p[0]) - footprint.Min(p => p[0]);
-        var depth = footprint.Max(p => p[1]) - footprint.Min(p => p[1]);
-        var scale = 112 / Math.Max(Math.Max(width, depth), maxHeight);
+        var footprintDiagonal = Math.Sqrt(64d * 64 + 80d * 80);
+        var scale = 176 / Math.Max(footprintDiagonal, maxHeight);
+        // Rotation-invariant bounds keep the building equally sized as its bearing changes.
+        // At the default camera pitch every yaw fits, with room below for the roof badges.
+        var fitPoints = faces.SelectMany(f => f.Points).Concat(lines.SelectMany(l => l.Points))
+            .Concat(footprint.Select(p => new[] { p[0] * 1.07, p[1] * 1.07, 0d })).ToArray();
+        var sin = Math.Sin(32 * Rad); var cos = Math.Cos(32 * Rad);
+        double Radius(double[] p) => Math.Sqrt(p[0] * p[0] + p[1] * p[1]);
+        var radius = fitPoints.Select(Radius).DefaultIfEmpty(0).Max();
+        var topExtent = fitPoints.Select(p => Radius(p) * sin + p[2] * cos).DefaultIfEmpty(0).Max();
+        var bottomExtent = fitPoints.Select(p => Radius(p) * sin - p[2] * cos).DefaultIfEmpty(0).Max();
+        if (radius > 1e-12) scale = Math.Min(scale, 148 / radius);
+        if (topExtent > 1e-12) scale = Math.Min(scale, 168 / topExtent);
+        if (bottomExtent > 1e-12) scale = Math.Min(scale, 120 / bottomExtent);
         double[] Fit(double[] p) => [p[0] * scale, p[1] * scale, p[2] * scale];
         faces = faces.Select(f => f with { Points = f.Points.Select(Fit).ToArray() }).ToList();
         lines = lines.Select(l => l with { Points = l.Points.Select(Fit).ToArray() }).ToList();

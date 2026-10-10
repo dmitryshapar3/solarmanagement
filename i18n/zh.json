@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "未保存的更改将被放弃。",
   "Your unsaved changes will be lost.": "未保存的更改将丢失。",
   "Zoom in": "放大",
-  "Zoom out": "缩小"
+  "Zoom out": "缩小",
+  "Set house direction": "设置房屋朝向",
+  "Rotate sun path left": "向左旋转太阳轨迹",
+  "Rotate sun path right": "向右旋转太阳轨迹",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "围绕房屋旋转太阳轨迹以设置房屋朝向。两侧屋顶的方位角将同步变化。"
 }

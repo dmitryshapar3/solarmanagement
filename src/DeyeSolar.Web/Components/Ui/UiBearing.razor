@@ -9,7 +9,7 @@
         <g transform="@($"rotate({Angle.ToString(System.Globalization.CultureInfo.InvariantCulture)} 60 60)")" class="bearing-needle"><line x1="60" y1="60" x2="60" y2="35" /><path d="M60 25 L52 39 L68 39 Z" /><circle cx="60" cy="60" r="4" /></g>
     </svg>
     <div class="bearing-fields">
-        <UiNumber Label="@T["Azimuth"]" Unit="°" Value="Angle" ValueChanged="ValueChanged" Min="0" Max="359" Disabled="Disabled" />
+        <UiNumber Label="@T["Azimuth"]" Unit="°" Value="Angle" ValueChanged="ValueChanged" Min="0" Max="@Math.BitDecrement(360d)" Disabled="Disabled" />
         <input type="range" min="0" max="359" step="1" value="@Angle.ToString(System.Globalization.CultureInfo.InvariantCulture)" @oninput="Changed" aria-label="@Label" disabled="@Disabled" />
         <div class="bearing-presets">
             @foreach (var preset in Presets)
@@ -24,7 +24,7 @@
     [Parameter] public double Value { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public EventCallback<double> ValueChanged { get; set; }
-    private double Angle => Value == 360 ? 0 : double.IsFinite(Value) ? Math.Clamp(Value, 0, 359) : 0;
+    private double Angle => Value == 360 ? 0 : double.IsFinite(Value) ? Math.Clamp(Value, 0, Math.BitDecrement(360d)) : 0;
     private static readonly (string Symbol, double Angle)[] Presets = [("N", 0), ("E", 90), ("S", 180), ("W", 270)];
     private Task Preset(double angle) => Disabled ? Task.CompletedTask : ValueChanged.InvokeAsync(angle);
     private Task Changed(ChangeEventArgs args) => !Disabled && double.TryParse(args.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var angle) && double.IsFinite(angle) && angle is >= 0 and <= 359 ? ValueChanged.InvokeAsync(angle) : Task.CompletedTask;

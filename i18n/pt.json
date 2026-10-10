@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Suas alterações não salvas serão descartadas.",
   "Your unsaved changes will be lost.": "Suas alterações não salvas serão perdidas.",
   "Zoom in": "Ampliar",
-  "Zoom out": "Reduzir"
+  "Zoom out": "Reduzir",
+  "Set house direction": "Orientação da casa",
+  "Rotate sun path left": "Rodar a trajetória solar para a esquerda",
+  "Rotate sun path right": "Rodar a trajetória solar para a direita",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Rode a trajetória do sol à volta da casa para definir a sua orientação. Os azimutes das duas águas mudam em conjunto."
 }

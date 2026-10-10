@@ -15,3 +15,4 @@
 .roof-scene-touch-hint{display:none}@media(pointer:coarse){.roof-scene-touch-hint{display:inline}.roof-scene-pointer-hint{display:none}}
 .roof-scene ::deep .roof-scene-vertical{fill:#a8725b;stroke:#805845;stroke-width:.6;stroke-linejoin:round}
 .roof-scene ::deep .roof-scene-label-line{stroke:var(--ink3);stroke-width:.8}
+.roof-scene-direction-controls{display:none;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:12px}.roof-scene.scene-ready .roof-scene-direction-controls{display:flex}.roof-scene-direction-controls [aria-pressed=true]{background:var(--sun);color:var(--on-sun);border-color:var(--sun)}.roof-scene-interactive[data-direction-editing=true]{cursor:ew-resize}

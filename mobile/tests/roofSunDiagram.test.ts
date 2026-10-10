@@ -101,7 +101,7 @@ test("flat, coplanar, steep and vertical configurations remain finite without cl
   for (const tilt of [0, 25, 89, 89.999, 90]) {
     const mesh = roofMesh({ ...site, roof1Tilt: tilt, roof2Tilt: tilt, roof2Azimuth: site.roof1Azimuth });
     assert.ok(mesh.faces.every(face => face.points.length >= 3 && [...face.points, ...face.panels, ...face.grid.flat(), face.normal].every(p => [p.x, p.y, p.z].every(Number.isFinite))));
-    assert.ok(Math.max(...mesh.faces.flatMap(face => face.points.map(p => p.z))) <= 112 + 1e-7);
+    assert.ok(Math.max(...mesh.faces.flatMap(face => face.points.map(p => p.z))) <= 176 + 1e-7);
     assert.equal(mesh.hasVerticalPanels, tilt === 90);
     for (const face of mesh.faces.filter(face => face.roofNumber)) {
       assert.ok(Math.abs(Math.acos(face.normal.z) * 180 / Math.PI - tilt) < 1e-7);
@@ -112,6 +112,50 @@ test("flat, coplanar, steep and vertical configurations remain finite without cl
   assert.deepEqual(roofMesh({ ...site, roof1Azimuth: 0, roof2Kwp: 0 }), roofMesh({ ...site, roof1Azimuth: 360, roof2Kwp: 0 }));
   assert.equal(roofMesh({ ...site, roof1Kwp: 0, roof2Kwp: 0 }).faces.length, 0);
   assert.equal(roofMesh({ ...site, roof1Tilt: NaN, roof2Azimuth: 361 }).faces.length, 0);
+});
+
+test("larger initial building keeps the camera and sun context at their original scale", () => {
+  const mesh = roofMesh({ ...site, roof1PanelCount: 8, roof2PanelCount: 7 });
+  assert.ok(Math.abs(mesh.scale - 176 / Math.hypot(80, 64)) < 1e-9);
+  const oldExtent = Math.max(Math.max(...mesh.footprint.map(p => p.x)) - Math.min(...mesh.footprint.map(p => p.x)), Math.max(...mesh.footprint.map(p => p.y)) - Math.min(...mesh.footprint.map(p => p.y))) / mesh.scale;
+  assert.ok(mesh.scale / (112 / oldExtent) > 1.5, "The ordinary house and its individual modules are at least 50% larger");
+  assert.deepEqual(DEFAULT_ROOF_CAMERA, { yaw: -35, elevation: 32, zoom: 1 });
+  assert.ok(close(sunPoint3({ azimuth: 90, elevation: 0 }), { x: 110, y: 0, z: 0 }));
+  assert.ok(close(sunPoint3({ azimuth: 0, elevation: 0 }, 124), { x: 0, y: 124, z: 0 }));
+  assert.deepEqual(mesh.faces.filter(face => face.roofNumber).map(face => face.panelTiles.length), [8, 7]);
+});
+
+test("initial elevation fits steep roofs, upright modules, supports and shadow at every compass yaw", () => {
+  for (const tilt of [0, 25, 65, 89.999, 90]) for (const roof2Tilt of [0, 25, 90]) for (const azimuth of [0, 50, 140, 270]) {
+    const mesh = roofMesh({ ...site, roof1Tilt: tilt, roof2Tilt, roof1Azimuth: azimuth, roof2Azimuth: (azimuth + 180) % 360, roof1PanelCount: 8, roof2PanelCount: 7 });
+    const points = [...mesh.faces.flatMap(face => [...face.points, ...face.panelTiles.flat(), ...face.grid.flat()]), ...mesh.footprint.map(p => ({ ...p, x: p.x * 1.07, y: p.y * 1.07 }))];
+    for (let yaw = 0; yaw < 360; yaw += 15) for (const point of points) {
+      const p = projectRoofPoint(point, { ...DEFAULT_ROOF_CAMERA, yaw });
+      assert.ok(p.x >= 12 - 1e-7 && p.x <= 308 + 1e-7 && p.y >= 12 - 1e-7 && p.y <= 300 + 1e-7, `Default/reset view clips tilt ${tilt}/${roof2Tilt} at yaw ${yaw}`);
+    }
+    for (const face of mesh.faces.filter(face => face.roofNumber)) assert.ok(Math.abs(Math.acos(face.normal.z) * 180 / Math.PI - (face.roofNumber === 1 ? tilt : roof2Tilt)) < 1e-7);
+  }
+});
+
+test("turning both roof bearings preserves house size, module placement and distinct upright arrays", () => {
+  const rotate = (p: Point3, degrees: number): Point3 => { const a = degrees * Math.PI / 180; return { x: p.x * Math.cos(a) + p.y * Math.sin(a), y: -p.x * Math.sin(a) + p.y * Math.cos(a), z: p.z }; };
+  for (const [roof1Tilt, roof2Tilt] of [[25, 25], [65, 0], [90, 25], [90, 90]] as const) {
+    const draft = { ...site, roof1Tilt, roof2Tilt, roof1PanelCount: 8, roof2PanelCount: 7 }, before = roofMesh(draft);
+    for (const delta of [13, 90, 180, 359]) {
+      const after = roofMesh({ ...draft, roof1Azimuth: (draft.roof1Azimuth + delta) % 360, roof2Azimuth: (draft.roof2Azimuth + delta) % 360 });
+      assert.ok(Math.abs(before.scale - after.scale) < 1e-9, "Changing the compass direction cannot make the house breathe");
+      for (const face of before.faces) {
+        const next = after.faces.find(item => item.id === face.id)!;
+        const a = [...face.points, ...face.panelTiles.flat(), ...face.grid.flat()], b = [...next.points, ...next.panelTiles.flat(), ...next.grid.flat()];
+        assert.equal(a.length, b.length);
+        for (let i = 0; i < a.length; ++i) assert.ok(close(rotate(a[i]!, delta), b[i]!, 1e-6), `${face.id} must turn as one connected building`);
+      }
+    }
+    if (roof1Tilt === 90 && roof2Tilt === 90) {
+      const arrays = before.faces.filter(face => face.kind === "vertical"), centers = arrays.map(face => ({ x: face.points.reduce((sum, p) => sum + p.x, 0) / 4, y: face.points.reduce((sum, p) => sum + p.y, 0) / 4, z: 0 }));
+      assert.ok(Math.hypot(centers[0]!.x - centers[1]!.x, centers[0]!.y - centers[1]!.y) > 20 * before.scale, "Opposing upright arrays cannot coincide");
+    }
+  }
 });
 
 test("orthographic camera preserves physical directions, depth and proportional zoom", () => {
@@ -228,5 +272,39 @@ test("native individual panels redraw on count/row drafts while retaining orbit 
     assert.equal(tiles().length, 17); assert.notEqual(tiles()[0]!.props.d, before); assert.equal(renderer!.root.findByProps({ testID: "roof-sun-orbit" }).props.accessibilityValue.now, 120);
     await act(async () => renderer!.update(React.createElement(RoofSunDiagram, { site: { ...props, roof1PanelCount: null }, at })));
     assert.equal(tiles().length, 0); assert.ok(renderer!.root.findAllByType("Text").some(node => node.props.children === "Enter the panel count for each roof to show its panels."));
+  } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});
+
+test("native house-direction mode edits both bearings while the house stays still and pinch remains zoom-only", async () => {
+  globals.IS_REACT_ACT_ENVIRONMENT = true; let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const RoofSunDiagram = (await uiHarness('export { RoofSunDiagram } from "./src/ui/forms/RoofSunDiagram";', { stubComponents: true })).RoofSunDiagram!;
+    let current = { ...site, roof1PanelCount: 8, roof2PanelCount: 7 }; const deltas: number[] = [];
+    function Host({ editable = true }: { editable?: boolean }) {
+      const [draft, setDraft] = React.useState(current); current = draft;
+      return React.createElement(RoofSunDiagram, { site: draft, at: Date.parse("2026-10-09T10:00:00Z"), onOrientationChange: editable ? (delta: number) => { deltas.push(delta); setDraft(value => ({ ...value, roof1Azimuth: (value.roof1Azimuth + delta + 360) % 360, roof2Azimuth: (value.roof2Azimuth + delta + 360) % 360 })); } : undefined });
+    }
+    await act(async () => { renderer = create(React.createElement(Host)); });
+    const scene = () => renderer!.root.findByProps({ testID: "roof-sun-orbit" });
+    const event = (points: [number, number][]) => ({ nativeEvent: { touches: points.map(([pageX, pageY]) => ({ pageX, pageY })) } });
+    const initialHouse = renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, initialSun = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Set house direction" }).props.onPress(); });
+    assert.match(scene().props.accessibilityHint, /Both roof azimuths change together/);
+    await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[50, 90]])); });
+    assert.deepEqual(deltas, [30]); assert.equal(current.roof1Azimuth, 260); assert.equal(current.roof2Azimuth, 80);
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, initialHouse);
+    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialSun);
+    await act(async () => { scene().props.onResponderStart(event([[50, 90], [150, 90]])); scene().props.onResponderMove(event([[50, 90], [250, 90]])); });
+    assert.equal(scene().props.accessibilityValue.now, 200); assert.deepEqual(deltas, [30]);
+    await act(async () => { scene().props.onResponderEnd(event([[50, 90]])); scene().props.onResponderMove(event([[50, 90]])); scene().props.onResponderTerminate(); scene().props.onResponderMove(event([[100, 90]])); });
+    assert.deepEqual(deltas, [30]);
+    const captured = renderer!.root.findByProps({ accessibilityLabel: "Rotate sun path right" }).props.onPress;
+    await act(async () => { captured(); captured(); }); assert.deepEqual(deltas, [30, 10, 10]); assert.equal(current.roof1Azimuth, 280); assert.equal(current.roof2Azimuth, 100);
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Done" }).props.onPress(); });
+    await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[50, 0]])); });
+    assert.deepEqual(deltas, [30, 10, 10], "Ordinary orbit never edits installation bearings");
+    await act(async () => { renderer!.update(React.createElement(Host, { editable: false })); });
+    await act(async () => captured()); assert.deepEqual(deltas, [30, 10, 10], "A stale direction control cannot edit a disabled diagram");
+    assert.equal(renderer!.root.findAllByProps({ accessibilityLabel: "Set house direction" }).length, 0);
   } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
 });

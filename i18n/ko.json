@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "저장하지 않은 변경 사항은 삭제됩니다.",
   "Your unsaved changes will be lost.": "저장하지 않은 변경사항은 사라집니다.",
   "Zoom in": "확대",
-  "Zoom out": "축소"
+  "Zoom out": "축소",
+  "Set house direction": "집 방향 설정",
+  "Rotate sun path left": "태양 경로를 왼쪽으로 회전",
+  "Rotate sun path right": "태양 경로를 오른쪽으로 회전",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "집 주위로 태양 경로를 회전하여 집의 방향을 설정하세요. 두 지붕면의 방위각이 함께 바뀝니다."
 }

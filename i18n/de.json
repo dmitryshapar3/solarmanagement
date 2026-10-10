@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Ihre nicht gespeicherten Änderungen werden verworfen.",
   "Your unsaved changes will be lost.": "Ihre nicht gespeicherten Änderungen gehen verloren.",
   "Zoom in": "Vergrößern",
-  "Zoom out": "Verkleinern"
+  "Zoom out": "Verkleinern",
+  "Set house direction": "Haus ausrichten",
+  "Rotate sun path left": "Sonnenbahn nach links drehen",
+  "Rotate sun path right": "Sonnenbahn nach rechts drehen",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Drehen Sie die Sonnenbahn um das Haus, um es auszurichten. Die Azimute beider Dachflächen ändern sich gemeinsam."
 }

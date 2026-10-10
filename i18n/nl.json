@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Uw niet-opgeslagen wijzigingen worden verwijderd.",
   "Your unsaved changes will be lost.": "Uw niet-opgeslagen wijzigingen gaan verloren.",
   "Zoom in": "Inzoomen",
-  "Zoom out": "Uitzoomen"
+  "Zoom out": "Uitzoomen",
+  "Set house direction": "Richting van het huis",
+  "Rotate sun path left": "Zonnebaan naar links draaien",
+  "Rotate sun path right": "Zonnebaan naar rechts draaien",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Draai de zonnebaan rond het huis om de richting in te stellen. De azimuten van beide dakvlakken veranderen samen."
 }

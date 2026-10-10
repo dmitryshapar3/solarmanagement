@@ -28,6 +28,111 @@ namespace DeyeSolar.Web.Tests;
 public class SettingsComponentTests
 {
     [Fact]
+    public async Task RoofDirectionBridgeEditsOnlyTheActiveDraftAndAtomicallyUpdatesSceneAndDirectionState()
+    {
+        var js = new NullJs();
+        var collection = new ServiceCollection();
+        collection.AddLogging(); collection.AddComponentLocalization(); collection.AddSingleton<IJSRuntime>(js);
+        await using var services = collection.BuildServiceProvider();
+        var changes = new List<double>();
+        RoofSunDiagram component = null!;
+        SceneModule module = null!;
+        await using (var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>()))
+        {
+            await renderer.Dispatcher.InvokeAsync(async () =>
+            {
+                var root = 0;
+                var parameters = new Dictionary<string, object?> { ["Latitude"] = 50d, ["Longitude"] = 20d,
+                    ["TimeZoneId"] = "UTC", ["Roof1Kwp"] = 4d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 349.5d,
+                    ["Roof2Kwp"] = 3d, ["Roof2Tilt"] = 25d, ["Roof2Azimuth"] = 169.25d,
+                    ["Roof1PanelCount"] = 8, ["Roof2PanelCount"] = 7, ["At"] = DateTimeOffset.Parse("2026-10-10T12:00:00Z") };
+                parameters["OrientationChanged"] = EventCallback.Factory.Create<double>(this, async delta =>
+                {
+                    changes.Add(delta);
+                    foreach (var key in new[] { "Roof1Azimuth", "Roof2Azimuth" })
+                        parameters[key] = (((double)parameters[key]! + delta) % 360 + 360) % 360;
+                    await renderer.RenderRoofSceneAsync(root, parameters);
+                });
+                root = await renderer.MountRoofSceneAsync(parameters);
+                module = Assert.Single(js.Modules);
+                var initial = Assert.Single(module.Orientations);
+                component = initial.Bridge.Value;
+                Assert.False(initial.Editing); Assert.False(initial.Disabled); Assert.Equal(349.5, initial.Bearing);
+                Assert.Equal(15, initial.Scene.Faces.Count(face => face.Kind == "panel"));
+                await component.RotateHouse(10);
+                Assert.Empty(changes);
+
+                await renderer.DispatchAsync(renderer.Button(root, "Set house direction").Id);
+                Assert.True(module.Orientations[^1].Editing);
+                foreach (var delta in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 360.01, -360.01 })
+                    await component.RotateHouse(delta);
+                Assert.Empty(changes);
+                await component.RotateHouse(10);
+                await component.RotateHouse(10);
+                Assert.Equal([10d, 10d], changes);
+                Assert.Equal(9.5, parameters["Roof1Azimuth"]); Assert.Equal(189.25, parameters["Roof2Azimuth"]);
+                var updated = module.Orientations[^1];
+                Assert.Same(component, updated.Bridge.Value);
+                Assert.Same(module.Scenes[^1], updated.Scene);
+                Assert.True(updated.Editing); Assert.False(updated.Disabled); Assert.Equal(9.5, updated.Bearing);
+                var expected = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 9.5, 3, 25, 189.25), null, 50, 20, 8, 7);
+                Assert.Equal(RoofSceneGeometry.Points(expected.Faces.First(face => face.Kind == "roof").Points),
+                    RoofSceneGeometry.Points(updated.Scene.Faces.First(face => face.Kind == "roof").Points));
+
+                parameters["DirectionDisabled"] = true;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+                Assert.True(module.Orientations[^1].Disabled);
+                Assert.True(renderer.Button(root, "Done").Disabled);
+                await renderer.DispatchAsync(renderer.Button(root, "Done").Id);
+                await component.RotateHouse(-10);
+                Assert.Equal([10d, 10d], changes);
+                Assert.True(module.Orientations[^1].Editing);
+                parameters["DirectionDisabled"] = false;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+                await renderer.DispatchAsync(renderer.Button(root, "Done").Id);
+                Assert.False(module.Orientations[^1].Editing);
+                await component.RotateHouse(10);
+                Assert.Equal([10d, 10d], changes);
+                await renderer.DispatchAsync(renderer.Button(root, "Set house direction").Id);
+                Assert.True(module.Orientations[^1].Editing);
+            });
+        }
+        Assert.True(module.Disposed);
+        await component.RotateHouse(10);
+        Assert.Equal([10d, 10d], changes);
+    }
+
+    [Fact]
+    public async Task BearingNumberAcceptsFractionalAzimuthAndCanCorrectAnInvalidNorthValueToZero()
+    {
+        var collection = new ServiceCollection();
+        collection.AddLogging(); collection.AddComponentLocalization();
+        await using var services = collection.BuildServiceProvider();
+        await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = 0; var changes = new List<double>();
+            var parameters = new Dictionary<string, object?> { ["Label"] = "Roof direction", ["Value"] = 12.25d };
+            parameters["ValueChanged"] = EventCallback.Factory.Create<double>(this, async value =>
+            {
+                changes.Add(value); parameters["Value"] = value;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+            });
+            root = await renderer.MountBearingAsync(parameters);
+            await renderer.DispatchInputAsync(renderer.NumberInput(root).Id, "359.5");
+            Assert.Equal([359.5], changes);
+            Assert.Equal("359.5", renderer.NumberInput(root).Value);
+            await renderer.DispatchInputAsync(renderer.NumberInput(root).Id, "360");
+            Assert.Single(changes);
+            Assert.Contains("Enter a value between", renderer.Text(root));
+            await renderer.DispatchInputAsync(renderer.NumberInput(root).Id, "0");
+            Assert.Equal([359.5, 0], changes);
+            Assert.Equal("0", renderer.NumberInput(root).Value);
+            Assert.DoesNotContain("Enter a value between", renderer.Text(root));
+        });
+    }
+
+    [Fact]
     public async Task RoofSceneJsHarnessImportsMountsUpdatesAndDisposesTheActualComponent()
     {
         var js = new NullJs();
@@ -310,9 +415,11 @@ public class SettingsComponentTests
         public async Task<int> MountAsync() { _component = (DeyeSolar.Web.Pages.Settings)InstantiateComponent(typeof(DeyeSolar.Web.Pages.Settings)); var root = AssignRootComponentId(_component); await RenderAsync(root); return root; }
         public async Task<int> MountAutomationsAsync() { _component = (ComponentBase)InstantiateComponent(typeof(DeyeSolar.Web.Pages.Automations)); _parameters = ParameterView.FromDictionary(new Dictionary<string, object?> { ["Id"] = 1 }); var root = AssignRootComponentId(_component); await RenderAsync(root); return root; }
         public async Task<int> MountRoofSceneAsync(Dictionary<string, object?> parameters) { var root = AssignRootComponentId(InstantiateComponent(typeof(RoofSunDiagram))); await RenderRoofSceneAsync(root, parameters); return root; }
+        public async Task<int> MountBearingAsync(Dictionary<string, object?> parameters) { var root = AssignRootComponentId(InstantiateComponent(typeof(UiBearing))); await RenderRoofSceneAsync(root, parameters); return root; }
         public Task RenderRoofSceneAsync(int root, Dictionary<string, object?> parameters) => RenderRootComponentAsync(root, ParameterView.FromDictionary(parameters));
         public Task RenderAsync(int root) => RenderRootComponentAsync(root, _parameters);
         public Task DispatchAsync(ulong id) => DispatchEventAsync(id, null, new MouseEventArgs());
+        public Task DispatchInputAsync(ulong id, string value) => DispatchEventAsync(id, null, new ChangeEventArgs { Value = value });
         private IEnumerable<RenderTreeFrame[]> Elements(int id, string tag)
         {
             var frames = GetCurrentRenderTreeFrames(id);
@@ -327,6 +434,12 @@ public class SettingsComponentTests
         {
             var element = Assert.Single(Elements(root, "button"), e => Text(e).Trim() == label || e.Any(f => f.FrameType == RenderTreeFrameType.Attribute && f.AttributeName == "aria-label" && f.AttributeValue?.ToString() == label));
             return (element.FirstOrDefault(f => f.FrameType == RenderTreeFrameType.Attribute && f.AttributeName == "onclick").AttributeEventHandlerId, Disabled(element));
+        }
+        public (ulong Id, string? Value) NumberInput(int root)
+        {
+            var element = Assert.Single(Elements(root, "input"), e => e.Any(f => f.FrameType == RenderTreeFrameType.Attribute && f.AttributeName == "type" && f.AttributeValue?.ToString() == "text"));
+            return (element.First(f => f.FrameType == RenderTreeFrameType.Attribute && f.AttributeName == "oninput").AttributeEventHandlerId,
+                element.First(f => f.FrameType == RenderTreeFrameType.Attribute && f.AttributeName == "value").AttributeValue?.ToString());
         }
         private static bool Disabled(RenderTreeFrame[] e) => e.TakeWhile(f => f.FrameType == RenderTreeFrameType.Attribute).Any(f => f.AttributeName == "disabled" && f.AttributeValue is true);
         public int DisabledFieldsets(int root) => Elements(root, "fieldset").Count(Disabled);
@@ -378,16 +491,24 @@ public class SettingsComponentTests
     }
     private sealed class SceneModule : IJSObjectReference
     {
+        public sealed record OrientationCall(RoofScene Scene, bool Editing, bool Disabled, DotNetObjectReference<RoofSunDiagram> Bridge, double Bearing);
         public List<string> Calls { get; } = [];
         public List<RoofScene> Scenes { get; } = [];
+        public List<OrientationCall> Orientations { get; } = [];
         public bool Disposed { get; private set; }
         public ValueTask<T> InvokeAsync<T>(string id, object?[]? args)
         {
             Assert.False(Disposed);
-            Assert.Contains(id, new[] { "mount", "update", "dispose" });
-            Assert.Equal(id == "dispose" ? 1 : 2, args!.Length);
+            Assert.Contains(id, new[] { "mount", "update", "updateOrientation", "dispose" });
+            Assert.Equal(id == "dispose" ? 1 : id == "updateOrientation" ? 6 : 2, args!.Length);
             Assert.IsType<ElementReference>(args[0]);
-            if (id != "dispose") Scenes.Add(Assert.IsType<RoofScene>(args[1]));
+            if (id == "updateOrientation")
+            {
+                var scene = Assert.IsType<RoofScene>(args[1]); Scenes.Add(scene);
+                Orientations.Add(new(scene, Assert.IsType<bool>(args[2]), Assert.IsType<bool>(args[3]),
+                    Assert.IsType<DotNetObjectReference<RoofSunDiagram>>(args[4]), Assert.IsType<double>(args[5])));
+            }
+            else if (id != "dispose") Scenes.Add(Assert.IsType<RoofScene>(args[1]));
             Calls.Add(id);
             return ValueTask.FromResult(default(T)!);
         }

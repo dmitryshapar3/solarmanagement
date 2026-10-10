@@ -11,13 +11,18 @@ import { DEFAULT_ROOF_CAMERA, diagramRoofs, normalizeRoofCamera, orbitRoofGestur
 const average = (points: Point3[]): Point3 => ({ x: points.reduce((v, p) => v + p.x, 0) / points.length, y: points.reduce((v, p) => v + p.y, 0) / points.length, z: points.reduce((v, p) => v + p.z, 0) / points.length });
 const between = (a: Point3, b: Point3, t: number): Point3 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
 
-export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number }) {
+export function RoofSunDiagram({ site, at, onOrientationChange }: { site: RoofSunSite; at?: number; onOrientationChange?: (deltaDegrees: number) => void }) {
   const { colors } = useTheme(), { t } = useLanguage();
   const [clock, setClock] = useState(() => Date.now()), instant = at ?? clock;
   // Camera gestures must not recompute the entire local solar day every frame.
   useEffect(() => { if (at !== undefined) return; const timer = setInterval(() => setClock(Date.now()), 60000); return () => clearInterval(timer); }, [at]);
   const [camera, setCamera] = useState<OrbitCamera>({ ...DEFAULT_ROOF_CAMERA });
+  const [orientationMode, setOrientationMode] = useState(false);
+  const settingDirection = orientationMode && Boolean(onOrientationChange);
+  const orientation = useRef({ enabled: settingDirection, change: onOrientationChange });
+  orientation.current = { enabled: settingDirection, change: onOrientationChange };
   const touches = useRef<OrbitTouch[]>([]);
+  const directionRemainder = useRef(0);
   const day = useMemo(() => sunDay(site.latitude, site.longitude, site.timeZoneId, instant), [site.latitude, site.longitude, site.timeZoneId, instant]);
   const mesh = useMemo(() => roofMesh(site), [site.roof1Kwp, site.roof1Tilt, site.roof1Azimuth, site.roof2Kwp, site.roof2Tilt, site.roof2Azimuth, site.roof1PanelCount, site.roof2PanelCount, site.roof1PanelsPerRow, site.roof2PanelsPerRow]);
   const roofs = diagramRoofs(site), date = day ? new Intl.DateTimeFormat(formattingLocale(), { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${day.date}T12:00:00Z`)) : "";
@@ -25,8 +30,24 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
   const description = [t("Roof layout and calculated sun path"), day ? t("Sun path · {0}", date) : t("Enter valid coordinates and a solar time zone to see the sun path."), ...roofs.map(roof => `${t(roof.number === 1 ? "Roof 1" : "Roof 2")}: ${formatNumber(roof.capacity, 2)} kWp · ${t("Azimuth")} ${formatNumber(roof.azimuth, 1)}° · ${t("Tilt")} ${formatNumber(roof.tilt, 1)}°${roof.panelCount != null ? ` · ${t("{0} panels", roof.panelCount)}` : ""}`)].join(". ");
   const adjust = (change: Partial<OrbitCamera>) => setCamera(current => normalizeRoofCamera({ ...current, ...change }));
   const eventTouches = (event: GestureResponderEvent) => event.nativeEvent.touches.map(p => ({ pageX: p.pageX, pageY: p.pageY }));
-  const move = (event: GestureResponderEvent) => { const next = eventTouches(event), previous = touches.current; touches.current = next; setCamera(current => orbitRoofGesture(current, previous, next)); };
-  const clear = () => { touches.current = []; };
+  const changeDirection = (delta: number) => {
+    if (!orientation.current.enabled || !orientation.current.change || !Number.isFinite(delta) || !delta) return;
+    orientation.current.change(delta);
+    setCamera(current => normalizeRoofCamera({ ...current, yaw: current.yaw + delta }));
+  };
+  const move = (event: GestureResponderEvent) => {
+    const next = eventTouches(event), previous = touches.current; touches.current = next;
+    if (orientation.current.enabled && previous.length === 1 && next.length === 1) {
+      const dx = next[0]!.pageX - previous[0]!.pageX;
+      if (!Number.isFinite(dx)) return;
+      directionRemainder.current += dx * .6;
+      const delta = Math.round(directionRemainder.current); directionRemainder.current -= delta;
+      changeDirection(delta);
+    } else setCamera(current => orbitRoofGesture(current, previous, next));
+  };
+  const clear = () => { touches.current = []; directionRemainder.current = 0; };
+  const rebase = (event: GestureResponderEvent) => { touches.current = eventTouches(event); directionRemainder.current = 0; };
+  const gestureHint = settingDirection ? "Rotate the sun path around the house to set its direction. Both roof azimuths change together." : "Drag to rotate · Pinch to zoom";
   const yaw = camera.yaw * Math.PI / 180, elevation = camera.elevation * Math.PI / 180;
   const viewDirection = { x: Math.sin(yaw) * Math.cos(elevation), y: Math.cos(yaw) * Math.cos(elevation), z: Math.sin(elevation) };
   const visible = mesh.faces.filter(face => face.kind === "vertical" || face.normal.x * viewDirection.x + face.normal.y * viewDirection.y + face.normal.z * viewDirection.z > 1e-8)
@@ -36,8 +57,8 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
   return <View testID="roof-sun-diagram" style={{ gap: 14, borderRadius: 24, padding: 12, backgroundColor: colors.bg }}>
     <Text style={{ fontSize: 17, fontWeight: "600" }}>{t("Roof and sun")}</Text>
     {day ? <Text style={{ fontSize: 13, color: colors.ink2 }}>{t("Sun path · {0}", date)} · {site.timeZoneId}</Text> : null}
-    <View testID="roof-sun-orbit" accessible accessibilityRole="adjustable" accessibilityLabel={description} accessibilityHint={t("Drag to rotate · Pinch to zoom")} accessibilityValue={{ min: 70, max: 250, now: Math.round(camera.zoom * 100), text: `${Math.round(camera.zoom * 100)}%` }} accessibilityActions={[{ name: "increment", label: t("Zoom in") }, { name: "decrement", label: t("Zoom out") }]} onAccessibilityAction={event => setCamera(current => normalizeRoofCamera({ ...current, zoom: current.zoom + (event.nativeEvent.actionName === "increment" ? .2 : -.2) }))}
-      onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderTerminationRequest={() => false} onResponderGrant={event => { touches.current = eventTouches(event); }} onResponderStart={event => { touches.current = eventTouches(event); }} onResponderMove={move} onResponderEnd={event => { touches.current = eventTouches(event); }} onResponderRelease={clear} onResponderTerminate={clear} style={{ borderRadius: 20, overflow: "hidden", backgroundColor: colors.surface }}>
+    <View testID="roof-sun-orbit" accessible accessibilityRole="adjustable" accessibilityLabel={description} accessibilityHint={t(gestureHint)} accessibilityValue={{ min: 70, max: 250, now: Math.round(camera.zoom * 100), text: `${Math.round(camera.zoom * 100)}%` }} accessibilityActions={[{ name: "increment", label: t("Zoom in") }, { name: "decrement", label: t("Zoom out") }]} onAccessibilityAction={event => setCamera(current => normalizeRoofCamera({ ...current, zoom: current.zoom + (event.nativeEvent.actionName === "increment" ? .2 : -.2) }))}
+      onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderTerminationRequest={() => false} onResponderGrant={rebase} onResponderStart={rebase} onResponderMove={move} onResponderEnd={rebase} onResponderRelease={clear} onResponderTerminate={clear} style={{ borderRadius: 20, overflow: "hidden", backgroundColor: colors.surface }}>
       <Svg width="100%" height={320} viewBox="0 0 320 320" accessible={false}>
         <Path d={roofPath3(horizon, camera, true)} fill={colors.bg} stroke={colors.line} strokeWidth={1.5} />
         <Path d={roofPath3([{ x: -110, y: 0, z: 0 }, { x: 110, y: 0, z: 0 }], camera) + " " + roofPath3([{ x: 0, y: -110, z: 0 }, { x: 0, y: 110, z: 0 }], camera)} fill="none" stroke={colors.line} strokeDasharray="3 5" />
@@ -70,14 +91,15 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
         {day?.now ? (() => { const point = projectRoofPoint(sunPoint3(day.now), camera); return <G testID="roof-sun-current" transform={`translate(${point.x} ${point.y})`}><Circle r={10} fill={colors.sun} stroke={colors.onSun} strokeWidth={1.5} /><Path d="M0 -16V-13M0 13V16M-16 0H-13M13 0H16M-11 -11L-9 -9M9 9L11 11M-11 11L-9 9M9 -9L11 -11" fill="none" stroke={colors.solar} strokeWidth={2} strokeLinecap="round" /></G>; })() : null}
       </Svg>
     </View>
-    <Text style={{ fontSize: 13, color: colors.ink2, textAlign: "center" }}>{t("Drag to rotate · Pinch to zoom")}</Text>
+    <Text style={{ fontSize: 13, color: colors.ink2, textAlign: "center" }}>{t(gestureHint)}</Text>
+    {onOrientationChange ? <View style={{ alignItems: "center" }}>{button(settingDirection ? "Done" : "Set house direction", t(settingDirection ? "Done" : "Set house direction"), () => { clear(); setOrientationMode(current => !current); })}</View> : null}
     <View style={{ flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 8 }}>
       {button("Zoom out", "−", () => adjust({ zoom: camera.zoom - .2 }), camera.zoom <= .7)}
       {button("Reset view", t("Reset view"), () => setCamera({ ...DEFAULT_ROOF_CAMERA }))}
       {button("Zoom in", "+", () => adjust({ zoom: camera.zoom + .2 }), camera.zoom >= 2.5)}
     </View>
     <View style={{ flexDirection: "row", justifyContent: "center", gap: 8 }}>
-      {button("Rotate left", "←", () => adjust({ yaw: camera.yaw - 15 }))}{button("Rotate right", "→", () => adjust({ yaw: camera.yaw + 15 }))}
+      {settingDirection ? <>{button("Rotate sun path left", "−10°", () => changeDirection(-10))}{button("Rotate sun path right", "+10°", () => changeDirection(10))}</> : <>{button("Rotate left", "←", () => adjust({ yaw: camera.yaw - 15 }))}{button("Rotate right", "→", () => adjust({ yaw: camera.yaw + 15 }))}</>}
       {button("Tilt view up", "↑", () => adjust({ elevation: camera.elevation + 10 }), camera.elevation >= 85)}{button("Tilt view down", "↓", () => adjust({ elevation: camera.elevation - 10 }), camera.elevation <= 10)}
     </View>
     {day ? <View style={{ flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 10 }}>

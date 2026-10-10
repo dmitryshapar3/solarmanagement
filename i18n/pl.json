@@ -2671,5 +2671,9 @@
   "Your unsaved changes will be discarded.": "Niezapisane zmiany zostaną odrzucone.",
   "Your unsaved changes will be lost.": "Niezapisane zmiany zostaną utracone.",
   "Zoom in": "Przybliż",
-  "Zoom out": "Oddal"
+  "Zoom out": "Oddal",
+  "Set house direction": "Kierunek domu",
+  "Rotate sun path left": "Obróć łuk słońca w lewo",
+  "Rotate sun path right": "Obróć łuk słońca w prawo",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Obracaj łuk słońca wokół domu, aby ustawić jego kierunek. Azymuty obu połaci zmieniają się razem."
 }

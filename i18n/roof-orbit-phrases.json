@@ -8,5 +8,9 @@
   "Rotate right",
   "Tilt view up",
   "Tilt view down",
-  "Vertical arrays are shown standing on the schematic roof."
+  "Vertical arrays are shown standing on the schematic roof.",
+  "Set house direction",
+  "Rotate sun path left",
+  "Rotate sun path right",
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together."
 ]
