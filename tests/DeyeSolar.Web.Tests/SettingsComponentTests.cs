@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using DeyeSolar.Domain.Models;
@@ -13,9 +14,12 @@ using DeyeSolar.Web.Integrations;
 using DeyeSolar.Web.Redesign;
 using DeyeSolar.Web.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +35,7 @@ public class SettingsComponentTests
     public async Task RoofDirectionBridgeEditsOnlyTheActiveDraftAndAtomicallyUpdatesSceneAndDirectionState()
     {
         var js = new NullJs();
-        var collection = new ServiceCollection();
+        var collection = SceneServices();
         collection.AddLogging(); collection.AddComponentLocalization(); collection.AddSingleton<IJSRuntime>(js);
         await using var services = collection.BuildServiceProvider();
         var changes = new List<double>();
@@ -136,7 +140,7 @@ public class SettingsComponentTests
     public async Task RoofSceneJsHarnessImportsMountsUpdatesAndDisposesTheActualComponent()
     {
         var js = new NullJs();
-        var collection = new ServiceCollection();
+        var collection = SceneServices();
         collection.AddLogging(); collection.AddComponentLocalization(); collection.AddSingleton<IJSRuntime>(js);
         await using var services = collection.BuildServiceProvider();
         SceneModule module;
@@ -161,6 +165,60 @@ public class SettingsComponentTests
         }
         Assert.Equal(["mount", "update", "dispose"], module.Calls);
         Assert.True(module.Disposed);
+    }
+
+    [Fact]
+    public async Task RoofSceneImportUsesTheCurrentAssetContentHashInsteadOfTheCachedOldModuleUrl()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "solar-roof-module-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(directory, "js"));
+        try
+        {
+            var asset = Path.Combine(directory, "js", "roof-scene.js");
+            await File.WriteAllTextAsync(asset, "export function mount() {} export function update() {}");
+            var oldCollection = SceneServices(directory);
+            await using var oldServices = oldCollection.BuildServiceProvider();
+            var oldUrl = oldServices.GetRequiredService<IFileVersionProvider>().AddFileVersionToPath(PathString.Empty, "/js/roof-scene.js");
+
+            var currentBytes = await File.ReadAllBytesAsync(Path.Combine(RepositoryRoot(), "src", "DeyeSolar.Web", "wwwroot", "js", "roof-scene.js"));
+            await File.WriteAllBytesAsync(asset, currentBytes);
+            var js = new NullJs();
+            var collection = SceneServices(directory);
+            collection.AddLogging(); collection.AddComponentLocalization(); collection.AddSingleton<IJSRuntime>(js);
+            await using var services = collection.BuildServiceProvider();
+            var currentUrl = services.GetRequiredService<IFileVersionProvider>().AddFileVersionToPath(PathString.Empty, "/js/roof-scene.js");
+            Assert.Equal("/js/roof-scene.js?v=" + WebEncoders.Base64UrlEncode(SHA256.HashData(currentBytes)), currentUrl);
+            Assert.NotEqual(oldUrl, currentUrl);
+
+            await using var renderer = new EventRenderer(services, services.GetRequiredService<ILoggerFactory>());
+            await renderer.Dispatcher.InvokeAsync(() => renderer.MountRoofSceneAsync(new()
+            {
+                ["Latitude"] = 50d, ["Longitude"] = 20d, ["TimeZoneId"] = "UTC",
+                ["Roof1Kwp"] = 4d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
+                ["OrientationChanged"] = EventCallback.Factory.Create<double>(this, _ => { })
+            }));
+            Assert.Equal(currentUrl, Assert.Single(js.ImportUrls));
+            Assert.Equal(["mount", "updateOrientation"], Assert.Single(js.Modules).Calls);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    private static IServiceCollection SceneServices(string? webRoot = null)
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = "Testing", ContentRootPath = AppContext.BaseDirectory,
+            WebRootPath = webRoot ?? Path.Combine(RepositoryRoot(), "src", "DeyeSolar.Web", "wwwroot")
+        });
+        builder.Services.AddRazorPages();
+        return builder.Services;
+    }
+
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "DeyeSolar.sln"))) directory = directory.Parent;
+        return directory?.FullName ?? throw new InvalidOperationException("Repository not found");
     }
 
     [SqlServerFact]
@@ -381,7 +439,7 @@ public class SettingsComponentTests
             var access = new Access(allowed); var current = new CurrentInstallation(); current.BindOnce(TestInstallation.Id);
             var security = new InteractiveSecurityContext(access, current, new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
             security.BindOnce(new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "settings-reader")], "SettingsTest")));
-            var probe = new Probe(); var services = new ServiceCollection();
+            var probe = new Probe(); var services = SceneServices();
             services.AddLogging(); services.AddComponentLocalization(); services.AddSingleton<IJSRuntime, NullJs>(); services.AddSingleton<NavigationManager, Navigation>();
             services.AddSingleton(security); services.AddSingleton<IIntegrationTestService>(probe);
             services.AddSingleton<IDbContextFactory<DeyeSolarDbContext>>(database.Factory);
@@ -479,11 +537,14 @@ public class SettingsComponentTests
     private sealed class NullJs : IJSRuntime
     {
         public List<SceneModule> Modules { get; } = [];
+        public List<string> ImportUrls { get; } = [];
         public ValueTask<T> InvokeAsync<T>(string id, object?[]? args)
         {
             if (id != "import") return ValueTask.FromResult(default(T)!);
             Assert.Equal(typeof(IJSObjectReference), typeof(T));
-            Assert.Equal("/js/roof-scene.js", Assert.Single(args!));
+            var url = Assert.IsType<string>(Assert.Single(args!));
+            Assert.StartsWith("/js/roof-scene.js?v=", url);
+            ImportUrls.Add(url);
             var module = new SceneModule(); Modules.Add(module);
             return ValueTask.FromResult((T)(object)module);
         }
