@@ -9,7 +9,13 @@ namespace DeyeSolar.Web.Services;
 
 public sealed record SolarSiteSettings(double Latitude, double Longitude, string LocationLabel, string TimeZoneId,
     double Roof1Kwp, double Roof2Kwp, double Roof1Tilt, double Roof2Tilt, double Roof1Azimuth, double Roof2Azimuth,
-    bool DeyeSolarPowerIsPvDcConfirmed = false, string DeyeSolarPowerConfirmedDeviceSn = "");
+    bool DeyeSolarPowerIsPvDcConfirmed = false, string DeyeSolarPowerConfirmedDeviceSn = "",
+    int? Roof1PanelCount = null, int? Roof2PanelCount = null, int? Roof1PanelsPerRow = null, int? Roof2PanelsPerRow = null)
+{
+    public SolarSiteSettings PreservePanelLayout(SolarSiteSettings current) => this with
+    { Roof1PanelCount = Roof1PanelCount ?? current.Roof1PanelCount, Roof2PanelCount = Roof2PanelCount ?? current.Roof2PanelCount,
+        Roof1PanelsPerRow = Roof1PanelsPerRow ?? current.Roof1PanelsPerRow, Roof2PanelsPerRow = Roof2PanelsPerRow ?? current.Roof2PanelsPerRow };
+}
 public sealed record SalesSiteSettings(string ContractStartDate, string TimeZoneId, bool PayNegativePrices,
     string? PriceSource = null, decimal? ManualPricePlnPerKwh = null, string? PriceFeedUrl = null)
 {
@@ -38,7 +44,7 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
             && solar.DeyeConfirmedDeviceSn == selectedSn;
         return new(new(solar.Latitude, solar.Longitude, solar.LocationLabel, solar.TimeZoneId,
             solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
-            confirmed, confirmed ? selectedSn : ""),
+            confirmed, confirmed ? selectedSn : "", solar.Roof1PanelCount, solar.Roof2PanelCount, solar.Roof1PanelsPerRow, solar.Roof2PanelsPerRow),
             SalesSiteSettings.From(sales), selectedSn);
     }
     public static bool TryValidate(SiteSettingsDto? draft, out string message)
@@ -53,6 +59,11 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         var geometry = new SolarSiteGeometry(solar.Latitude, solar.Longitude, solar.Roof1Kwp, solar.Roof2Kwp,
             solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth);
         if (!geometry.IsValid || geometry.TotalKwp > 10000) return false;
+        if (new[] { solar.Roof1PanelCount, solar.Roof2PanelCount, solar.Roof1PanelsPerRow, solar.Roof2PanelsPerRow }.Any(value => value is < 0 or > 1000))
+        { message = "Enter a whole panel count from 0 to 1000, or leave it blank if unknown."; return false; }
+        if (solar.Roof1PanelCount is > 0 && solar.Roof1PanelsPerRow > solar.Roof1PanelCount
+            || solar.Roof2PanelCount is > 0 && solar.Roof2PanelsPerRow > solar.Roof2PanelCount)
+        { message = "Use 0 for automatic rows. A positive row size cannot exceed the panel count."; return false; }
         if (!DateOnly.TryParseExact(sales.ContractStartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var date) || date.Year < 2000)
         { message = "Enter a contract start date from 2000 onwards as YYYY-MM-DD."; return false; }
@@ -66,8 +77,12 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
     {
         if (draft?.SolarSales is not { } suppliedSales || draft.SolarEstimate is null)
             throw new ArgumentException("Enter a valid location, solar capacity, roof orientation and time zone.");
+        var suppliedSolar = draft.SolarEstimate;
         var saved = await settings.LoadSectionAsync<SolarSalesOptions>(SolarSalesOptions.Section);
-        draft = draft with { SolarSales = draft.SolarSales.PreservePricing(SalesSiteSettings.From(saved)) };
+        var savedSolar = await settings.LoadSectionAsync<SolarEstimateOptions>(SolarEstimateOptions.Section);
+        draft = draft with { SolarSales = draft.SolarSales.PreservePricing(SalesSiteSettings.From(saved)), SolarEstimate = suppliedSolar with
+        { Roof1PanelCount = suppliedSolar.Roof1PanelCount ?? savedSolar.Roof1PanelCount, Roof2PanelCount = suppliedSolar.Roof2PanelCount ?? savedSolar.Roof2PanelCount,
+            Roof1PanelsPerRow = suppliedSolar.Roof1PanelsPerRow ?? savedSolar.Roof1PanelsPerRow, Roof2PanelsPerRow = suppliedSolar.Roof2PanelsPerRow ?? savedSolar.Roof2PanelsPerRow } };
         if (!TryValidate(draft, out var error)) throw new ArgumentException(error);
         var selectedSn = await SelectedDeviceAsync();
         var solar = draft.SolarEstimate;
@@ -82,13 +97,25 @@ public sealed class SiteSettingsService(IAppSettingsReader settings, IAppSetting
         // Save only supplied editable properties; omitted pricing, model assumptions and server keys remain in place.
         await writer.SaveSectionsAsync(new Dictionary<string, object>
         {
-            [SolarEstimateOptions.Section] = new
-        {
-            solar.Latitude, solar.Longitude, LocationLabel = solar.LocationLabel.Trim(), solar.TimeZoneId,
-            solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
-            solar.DeyeSolarPowerIsPvDcConfirmed, DeyeConfirmedDeviceSn = solar.DeyeSolarPowerIsPvDcConfirmed ? selectedSn : ""
-            },
+            [SolarEstimateOptions.Section] = SolarPatch(suppliedSolar, selectedSn),
             [SolarSalesOptions.Section] = new AppSettingsPatch(salesPatch)
         });
+    }
+    internal static AppSettingsPatch SolarPatch(SolarSiteSettings solar, string selectedKey)
+    {
+        var values = new Dictionary<string, object?>
+        {
+            [nameof(solar.Latitude)] = solar.Latitude, [nameof(solar.Longitude)] = solar.Longitude,
+            [nameof(solar.LocationLabel)] = solar.LocationLabel.Trim(), [nameof(solar.TimeZoneId)] = solar.TimeZoneId,
+            [nameof(solar.Roof1Kwp)] = solar.Roof1Kwp, [nameof(solar.Roof2Kwp)] = solar.Roof2Kwp,
+            [nameof(solar.Roof1Tilt)] = solar.Roof1Tilt, [nameof(solar.Roof2Tilt)] = solar.Roof2Tilt,
+            [nameof(solar.Roof1Azimuth)] = solar.Roof1Azimuth, [nameof(solar.Roof2Azimuth)] = solar.Roof2Azimuth,
+            [nameof(solar.DeyeSolarPowerIsPvDcConfirmed)] = solar.DeyeSolarPowerIsPvDcConfirmed,
+            [nameof(SolarEstimateOptions.DeyeConfirmedDeviceSn)] = solar.DeyeSolarPowerIsPvDcConfirmed ? selectedKey : ""
+        };
+        foreach (var (key, value) in new[] { (nameof(solar.Roof1PanelCount), solar.Roof1PanelCount), (nameof(solar.Roof2PanelCount), solar.Roof2PanelCount),
+            (nameof(solar.Roof1PanelsPerRow), solar.Roof1PanelsPerRow), (nameof(solar.Roof2PanelsPerRow), solar.Roof2PanelsPerRow) })
+            if (value.HasValue) values[key] = value.Value;
+        return new(values);
     }
 }

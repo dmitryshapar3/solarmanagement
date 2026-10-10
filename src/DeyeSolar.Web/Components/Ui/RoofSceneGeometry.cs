@@ -16,7 +16,8 @@ public static class RoofSceneGeometry
     private sealed record Plane(SolarDiagramRoof Roof, double X, double Y);
 
     public static RoofScene Create(IReadOnlyList<SolarDiagramRoof> roofs, SolarDiagramDay? day,
-        double latitude, double longitude)
+        double latitude, double longitude, int? roof1PanelCount = null, int? roof2PanelCount = null,
+        int? roof1PanelsPerRow = null, int? roof2PanelsPerRow = null)
     {
         var planes = roofs.Where(r => r.Tilt < 90).Select(r => new Plane(r,
             Math.Tan(r.Tilt * Rad) * Math.Sin(r.Azimuth * Rad), Math.Tan(r.Tilt * Rad) * Math.Cos(r.Azimuth * Rad))).ToArray();
@@ -26,6 +27,13 @@ public static class RoofSceneGeometry
         var ridgeHeight = 14 + planes.SelectMany(p => footprint.Select(v => Math.Abs(p.X * v[0] + p.Y * v[1]))).DefaultIfEmpty(0).Max();
         double Height(double[] point) => planes.Length == 0 ? 14 : planes.Min(p => ridgeHeight - p.X * point[0] - p.Y * point[1]);
         var faces = new List<RoofSceneFace>(); var lines = new List<RoofSceneLine>(); var labels = new List<RoofSceneLabel>();
+        void AddPanels(SolarDiagramRoof roof, double[][] surface)
+        {
+            var count = roof.Number == 1 ? roof1PanelCount : roof2PanelCount;
+            var columns = roof.Number == 1 ? roof1PanelsPerRow : roof2PanelsPerRow;
+            foreach (var tile in PanelTiles(surface, roof.Tilt, roof.Azimuth, count, columns))
+                faces.Add(new("panel", roof.Number, tile));
+        }
         double[] OnPlane(Plane p, double[] v, double lift = 0) => [v[0], v[1], ridgeHeight - p.X * v[0] - p.Y * v[1] + lift];
         var division = planes.Length == 2 ? new[] { planes[0].X - planes[1].X, planes[0].Y - planes[1].Y } : new[] { 0d, 0d };
         if (planes.Length == 2 && Math.Abs(division[0]) + Math.Abs(division[1]) < 1e-8)
@@ -35,23 +43,11 @@ public static class RoofSceneGeometry
             var plane = planes[index]; var side = index == 0 ? 1 : -1;
             var polygon = planes.Length == 2 ? Clip(footprint, p => side * (division[0] * p[0] + division[1] * p[1])) : footprint;
             if (polygon.Length < 3) continue;
-            faces.Add(new("roof", plane.Roof.Number, polygon.Select(p => OnPlane(plane, p)).ToArray()));
+            var surface = polygon.Select(p => OnPlane(plane, p)).ToArray();
+            faces.Add(new("roof", plane.Roof.Number, surface));
             var center = new[] { polygon.Average(p => p[0]), polygon.Average(p => p[1]) };
             labels.Add(new(plane.Roof.Number.ToString(), "roof", OnPlane(plane, center, 2)));
-            // A regular PV lattice lies on the actual roof plane; edge tiles are clipped to its footprint.
-            var coverage = .68 + .14 * Math.Sqrt(plane.Roof.Capacity / roofs.Max(r => r.Capacity));
-            var inset = polygon.Select(p => new[] { center[0] + (p[0] - center[0]) * coverage, center[1] + (p[1] - center[1]) * coverage }).ToArray();
-            for (double x = -28; x < 28; x += 14)
-                for (double y = -36; y < 36; y += 12)
-                {
-                    double[][] tile = [World(x, y), World(x + 12.5, y), World(x + 12.5, y + 10.5), World(x, y + 10.5)];
-                    for (var edge = 0; edge < inset.Length && tile.Length >= 3; ++edge)
-                    {
-                        var a = inset[edge]; var b = inset[(edge + 1) % inset.Length];
-                        tile = Clip(tile, p => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
-                    }
-                    if (tile.Length >= 3 && Area(tile) > 4) faces.Add(new("panel", plane.Roof.Number, tile.Select(p => OnPlane(plane, p, .3)).ToArray()));
-                }
+            AddPanels(plane.Roof, surface);
         }
         if (planes.Length == 0 && roofs.Count > 0)
             faces.Add(new("roof", 0, footprint.Select(p => new[] { p[0], p[1], 14d }).ToArray()));
@@ -80,12 +76,9 @@ public static class RoofSceneGeometry
             foreach(var foot in new[]{left,right}) lines.Add(new("bearing", [[foot[0],foot[1],Height(foot)],[foot[0],foot[1],bottom]]));
             double[][] polygon = [[center[0] - dx * 24, center[1] - dy * 24, bottom], [center[0] + dx * 24, center[1] + dy * 24, bottom],
                 [center[0] + dx * 24, center[1] + dy * 24, bottom + 26], [center[0] - dx * 24, center[1] - dy * 24, bottom + 26]];
-            faces.Add(new("panel", roof.Number, polygon)); labels.Add(new(roof.Number.ToString(), "roof", [center[0], center[1], bottom + 14]));
-            for (var i = 1; i < 4; ++i)
-            {
-                var t = i / 4d; var x = polygon[0][0] + (polygon[1][0] - polygon[0][0]) * t; var y = polygon[0][1] + (polygon[1][1] - polygon[0][1]) * t;
-                lines.Add(new("grid", [[x, y, bottom], [x, y, bottom + 26]]));
-            }
+            faces.Add(new("vertical", roof.Number, polygon));
+            AddPanels(roof, polygon);
+            labels.Add(new(roof.Number.ToString(), "roof", [center[0], center[1], bottom + 14]));
         }
         var maxHeight = faces.SelectMany(f => f.Points).Select(p => p[2]).DefaultIfEmpty(0).Max();
         var width = footprint.Max(p => p[0]) - footprint.Min(p => p[0]);
@@ -113,7 +106,63 @@ public static class RoofSceneGeometry
     }
     public static string Points(IEnumerable<double[]> points) => string.Join(" ", points.Select(p => { var q = Project(p); return $"{RoofSunGeometry.F(q.X)},{RoofSunGeometry.F(q.Y)}"; }));
     public static string Path(IEnumerable<double[]> points) => string.Join(" ", points.Select((p, i) => { var q = Project(p); return $"{(i == 0 ? "M" : "L")}{RoofSunGeometry.F(q.X)} {RoofSunGeometry.F(q.Y)}"; }));
-    private static double Area(double[][] polygon) => Math.Abs(polygon.Select((p, i) => p[0] * polygon[(i + 1) % polygon.Length][1] - p[1] * polygon[(i + 1) % polygon.Length][0]).Sum()) / 2;
+    // Pack complete, separate modules in an orthonormal basis on the configured roof plane.
+    // The full row block is fitted inside every convex facet edge, so no edge clipping can
+    // silently reduce the user's count or distort an individual module's aspect ratio.
+    private static IReadOnlyList<double[][]> PanelTiles(double[][] surface, double tilt, double azimuth,
+        int? count, int? panelsPerRow)
+    {
+        if (count is null or <= 0 or > 1000 || surface.Length < 3) return [];
+        var a = azimuth * Rad; var t = tilt * Rad;
+        double[] u = [Math.Cos(a), -Math.Sin(a), 0];
+        double[] v = [Math.Sin(a) * Math.Cos(t), Math.Cos(a) * Math.Cos(t), -Math.Sin(t)];
+        double[] normal = [Math.Sin(a) * Math.Sin(t), Math.Cos(a) * Math.Sin(t), Math.Cos(t)];
+        var origin = surface[0];
+        double Dot(double[] p, double[] basis) => Enumerable.Range(0, 3).Sum(i => (p[i] - origin[i]) * basis[i]);
+        var polygon = surface.Select(p => new[] { Dot(p, u), Dot(p, v) }).ToArray();
+        var signedArea = polygon.Select((p, i) => p[0] * polygon[(i + 1) % polygon.Length][1] - p[1] * polygon[(i + 1) % polygon.Length][0]).Sum();
+        var width = polygon.Max(p => p[0]) - polygon.Min(p => p[0]);
+        var depth = polygon.Max(p => p[1]) - polygon.Min(p => p[1]);
+        if (Math.Abs(signedArea) < 1e-9 || width <= 0 || depth <= 0) return [];
+        var columns = panelsPerRow is > 0 && panelsPerRow <= count ? panelsPerRow.Value
+            : Math.Clamp((int)Math.Floor(Math.Sqrt(count.Value * 1.7 * width / depth) + .5), 1, count.Value);
+        var rows = (count.Value + columns - 1) / columns;
+        const double gap = .15;
+        var blockWidth = columns + (columns - 1) * gap;
+        var blockHeight = rows * 1.7 + (rows - 1) * gap;
+        double[] center = [polygon.Average(p => p[0]), polygon.Average(p => p[1])];
+        double[][] corners = [[-blockWidth / 2, -blockHeight / 2], [blockWidth / 2, -blockHeight / 2],
+            [blockWidth / 2, blockHeight / 2], [-blockWidth / 2, blockHeight / 2]];
+        var fit = double.PositiveInfinity; var sign = Math.Sign(signedArea);
+        for (var i = 0; i < polygon.Length; ++i)
+        {
+            var p = polygon[i]; var q = polygon[(i + 1) % polygon.Length];
+            double Cross(double[] delta) => sign * ((q[0] - p[0]) * delta[1] - (q[1] - p[1]) * delta[0]);
+            var margin = Math.Max(0, Cross([center[0] - p[0], center[1] - p[1]]));
+            foreach (var corner in corners)
+            {
+                var delta = Cross(corner);
+                if (delta < -1e-12) fit = Math.Min(fit, margin / -delta);
+            }
+        }
+        if (!double.IsFinite(fit) || fit <= 0) return [];
+        fit *= .88;
+        double[] Point(double x, double y) => Enumerable.Range(0, 3)
+            .Select(i => origin[i] + u[i] * (center[0] + x * fit) + v[i] * (center[1] + y * fit) + normal[i] * .3).ToArray();
+        var tiles = new List<double[][]>(count.Value);
+        for (var row = 0; row < rows; ++row)
+        {
+            var rowCount = Math.Min(columns, count.Value - row * columns);
+            var startX = -(rowCount + (rowCount - 1) * gap) / 2;
+            var y = -blockHeight / 2 + row * (1.7 + gap);
+            for (var column = 0; column < rowCount; ++column)
+            {
+                var x = startX + column * (1 + gap);
+                tiles.Add([Point(x, y), Point(x + 1, y), Point(x + 1, y + 1.7), Point(x, y + 1.7)]);
+            }
+        }
+        return tiles;
+    }
     private static double[][] Clip(double[][] polygon, Func<double[], double> distance)
     {
         var output = new List<double[]>();

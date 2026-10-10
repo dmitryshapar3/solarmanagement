@@ -9,6 +9,12 @@ export function settingNumberError(value: number, minimum: number, maximum: numb
 export function settingBearingError(value: number, stored?: number): string | null {
   return value === 360 && stored === 360 ? null : settingNumberError(value, 0, 359);
 }
+export function panelCountError(value?: number | null): string | null {
+  return value == null || Number.isInteger(value) && value >= 0 && value <= 1000 ? null : "Enter a whole panel count from 0 to 1000, or leave it blank if unknown.";
+}
+export function panelsPerRowError(value?: number | null, count?: number | null): string | null {
+  return value == null || Number.isInteger(value) && value >= 0 && value <= 1000 && !(count != null && count > 0 && value > count) ? null : "Use 0 for automatic rows. A positive row size cannot exceed the panel count.";
+}
 export function settingTimeZoneError(value: string): string | null {
   if (!value.trim()) return "Choose a valid time zone.";
   try { new Intl.DateTimeFormat("en", { timeZone: value }); return null; }

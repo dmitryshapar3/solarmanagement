@@ -8,9 +8,10 @@ import { createDemoState } from "../src/features/demo/fixtures";
 import type { InstallationSettings } from "../src/features/settings/settingsResource";
 import { globals, uiHarness } from "./support/uiHarness";
 
-async function harness(name: "SolarSiteScreen" | "TariffExportScreen" | "DataRefreshScreen", bearing = 180) {
+async function harness(name: "SolarSiteScreen" | "TariffExportScreen" | "DataRefreshScreen", bearing = 180, legacyPanelFields = false) {
   const fixture = createDemoState(new Date("2026-10-06T12:00:00Z")); let saved: InstallationSettings = { site: structuredClone(fixture.site), polling: { intervalSeconds: 30 }, display: { timeZoneId: "Europe/Warsaw" }, primaryInverterId: null, inverters: [], version: "revision-original", integrationVersions: {} };
   saved.site.solarEstimate.roof1Azimuth = bearing;
+  if (legacyPanelFields) for (const key of ["roof1PanelCount", "roof2PanelCount", "roof1PanelsPerRow", "roof2PanelsPerRow"] as const) delete saved.site.solarEstimate[key];
   const puts: any[] = []; let header: { headerRight?: () => React.ReactElement<any> } = {};
   const navigation = { setOptions: (options: typeof header) => { header = options; }, dispatch() {}, navigate() {} };
   const client = new ApiClient({ baseUrl: "https://fixture.invalid", token: "fixture", transport: async (url, init) => {
@@ -95,5 +96,32 @@ test("tariff saves exact manual price, rejects excess precision, and preserves i
     await h.change("Price feed URL", "https://prices.example.com/feed.xml"); await h.pressSave();
     assert.equal(h.puts[1].site.solarSales.priceSource, "feed"); assert.equal(h.puts[1].site.solarSales.priceFeedUrl, "https://prices.example.com/feed.xml");
     assert.equal(h.puts[1].site.solarSales.manualPricePlnPerKwh, 0.123456);
+  } finally { await h.close(); }
+});
+
+test("panel count drafts redraw exact modules, validate rows, and atomically save both roofs", async () => {
+  const h = await harness("SolarSiteScreen"); try {
+    assert.equal(h.field("Panel count").props.value, "8"); assert.equal(h.field("Panels per row").props.value, "4");
+    await h.change("Panel count", "17"); const captured = h.header().props.onPress;
+    await h.change("Panels per row", "18"); assert.equal(h.header().props.disabled, true); assert.ok(h.field("Panels per row").props.error);
+    await act(async () => captured()); assert.equal(h.puts.length, 0);
+    await h.change("Panels per row", "6"); await h.change("Panel count", "1.5", 1); assert.equal(h.header().props.disabled, true); assert.ok(h.field("Panel count", 1).props.error);
+    await h.change("Panel count", "7", 1); await h.change("Panels per row", "0", 1); await h.pressSave();
+    assert.equal(h.puts.length, 1); const saved = h.puts[0].site.solarEstimate;
+    assert.deepEqual([saved.roof1PanelCount, saved.roof1PanelsPerRow, saved.roof2PanelCount, saved.roof2PanelsPerRow], [17, 6, 7, 0]);
+    assert.equal(saved.roof1Kwp, 3.5); assert.equal(saved.roof1Tilt, 25); assert.equal(saved.roof1Azimuth, 180);
+    assert.equal(h.puts[0].expectedVersion, "revision-original");
+    assert.equal(h.renderer.root.findAll(node => typeof node.props.testID === "string" && node.props.testID.startsWith("roof-sun-panel-1-")).length, 17);
+  } finally { await h.close(); }
+});
+
+test("legacy solar settings stay unknown and omitted during unrelated edits until panel count is explicitly entered", async () => {
+  const h = await harness("SolarSiteScreen", 180, true); try {
+    assert.equal(h.field("Panel count").props.value, ""); assert.equal(h.field("Panels per row").props.value, "0");
+    assert.equal(h.renderer.root.findAll(node => typeof node.props.testID === "string" && node.props.testID.startsWith("roof-sun-panel-")).length, 0);
+    await h.change("Site name", "Updated site"); await h.pressSave();
+    const saved = h.puts[0].site.solarEstimate;
+    for (const key of ["roof1PanelCount", "roof2PanelCount", "roof1PanelsPerRow", "roof2PanelsPerRow"]) assert.equal(Object.hasOwn(saved, key), false);
+    await h.change("Panel count", "0"); await h.pressSave(); assert.equal(h.puts[1].site.solarEstimate.roof1PanelCount, 0);
   } finally { await h.close(); }
 });

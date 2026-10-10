@@ -19,10 +19,10 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
   const [camera, setCamera] = useState<OrbitCamera>({ ...DEFAULT_ROOF_CAMERA });
   const touches = useRef<OrbitTouch[]>([]);
   const day = useMemo(() => sunDay(site.latitude, site.longitude, site.timeZoneId, instant), [site.latitude, site.longitude, site.timeZoneId, instant]);
-  const mesh = useMemo(() => roofMesh(site), [site.roof1Kwp, site.roof1Tilt, site.roof1Azimuth, site.roof2Kwp, site.roof2Tilt, site.roof2Azimuth]);
+  const mesh = useMemo(() => roofMesh(site), [site.roof1Kwp, site.roof1Tilt, site.roof1Azimuth, site.roof2Kwp, site.roof2Tilt, site.roof2Azimuth, site.roof1PanelCount, site.roof2PanelCount, site.roof1PanelsPerRow, site.roof2PanelsPerRow]);
   const roofs = diagramRoofs(site), date = day ? new Intl.DateTimeFormat(formattingLocale(), { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${day.date}T12:00:00Z`)) : "";
   const time = (value: number | null) => value !== null && day ? new Intl.DateTimeFormat(formattingLocale(), { timeZone: day.timeZoneId, hour: "2-digit", minute: "2-digit" }).format(value) : "—";
-  const description = [t("Roof layout and calculated sun path"), day ? t("Sun path · {0}", date) : t("Enter valid coordinates and a solar time zone to see the sun path."), ...roofs.map(roof => `${t(roof.number === 1 ? "Roof 1" : "Roof 2")}: ${formatNumber(roof.capacity, 2)} kWp · ${t("Azimuth")} ${formatNumber(roof.azimuth, 1)}° · ${t("Tilt")} ${formatNumber(roof.tilt, 1)}°`)].join(". ");
+  const description = [t("Roof layout and calculated sun path"), day ? t("Sun path · {0}", date) : t("Enter valid coordinates and a solar time zone to see the sun path."), ...roofs.map(roof => `${t(roof.number === 1 ? "Roof 1" : "Roof 2")}: ${formatNumber(roof.capacity, 2)} kWp · ${t("Azimuth")} ${formatNumber(roof.azimuth, 1)}° · ${t("Tilt")} ${formatNumber(roof.tilt, 1)}°${roof.panelCount != null ? ` · ${t("{0} panels", roof.panelCount)}` : ""}`)].join(". ");
   const adjust = (change: Partial<OrbitCamera>) => setCamera(current => normalizeRoofCamera({ ...current, ...change }));
   const eventTouches = (event: GestureResponderEvent) => event.nativeEvent.touches.map(p => ({ pageX: p.pageX, pageY: p.pageY }));
   const move = (event: GestureResponderEvent) => { const next = eventTouches(event), previous = touches.current; touches.current = next; setCamera(current => orbitRoofGesture(current, previous, next)); };
@@ -50,7 +50,7 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
         </G>)}
         {mesh.faces.length ? <Path d={roofPath3(mesh.footprint.map(p => ({ ...p, x: p.x * 1.07, y: p.y * 1.07 })), camera, true)} fill={colors.ink} opacity={.09} /> : null}
         {visible.map(face => {
-          const centroid = projectRoofPoint(average(face.points), camera), light = Math.abs(face.normal.x * .4 + face.normal.y * -.5 + face.normal.z * .8);
+          const light = Math.abs(face.normal.x * .4 + face.normal.y * -.5 + face.normal.z * .8);
           return <G key={face.id} testID={face.roofNumber ? `roof-sun-roof-${face.roofNumber}` : face.id}>
             <Path testID={`roof-sun-face-${face.id}`} d={roofPath3(face.points, camera, true)} fill={face.kind === "wall" ? "#e1ded5" : face.roofNumber === 2 ? "#91604d" : "#a8725b"} stroke="#6b4c3d" strokeWidth={.7} strokeLinejoin="round" />
             <Path d={roofPath3(face.points, camera, true)} fill="#12120f" opacity={face.kind === "wall" ? .04 + .14 * (1 - light) : .08 + .2 * (1 - light)} />
@@ -58,12 +58,15 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
               const left = between(face.points[0]!, face.points[1]!, u), right = between(face.points[0]!, face.points[1]!, u + .16), topLeft = between(face.points[3]!, face.points[2]!, u), topRight = between(face.points[3]!, face.points[2]!, u + .16);
               return <Path key={u} d={roofPath3([between(left, topLeft, .3), between(right, topRight, .3), between(right, topRight, .66), between(left, topLeft, .66)], camera, true)} fill="#456775" stroke="#89b2c3" strokeWidth={.6} />;
             }) : null}
-            {face.panels.length ? <Path d={roofPath3(face.panels, camera, true)} fill="#234356" stroke="#89b2c3" strokeWidth={.8} strokeLinejoin="round" /> : null}
+            {face.panelTiles.map((tile, index) => <Path key={`panel-${index}`} testID={`roof-sun-panel-${face.roofNumber}-${index}`} d={roofPath3(tile, camera, true)} fill="#234356" stroke="#89b2c3" strokeWidth={.45} strokeLinejoin="round" />)}
             {face.grid.map((line, index) => <Path key={index} d={roofPath3(line, camera)} stroke="#89b2c3" strokeWidth={.6} opacity={.8} fill="none" />)}
-            {face.roofNumber ? <G transform={`translate(${centroid.x} ${centroid.y})`}><Circle r={8} fill={colors.sun} stroke={colors.onSun} strokeWidth={.8} /><SvgText y={3.5} fill={colors.onSun} textAnchor="middle" fontSize={10} fontWeight="700">{face.roofNumber}</SvgText></G> : null}
           </G>;
         })}
         {mesh.ridge.map((line, index) => <Path key={index} testID="roof-sun-ridge" d={roofPath3(line, camera)} stroke={colors.ink3} strokeWidth={1.5} fill="none" />)}
+        {visible.filter(face => face.roofNumber).map(face => {
+          const corner = face.points.map(point => projectRoofPoint(point, camera)).reduce((lowest, point) => point.y > lowest.y ? point : lowest);
+          return <G key={`label-${face.roofNumber}`} testID={`roof-sun-label-${face.roofNumber}`} transform={`translate(${corner.x} ${corner.y + 12})`}><Path d="M0 -12V-8" fill="none" stroke={colors.ink3} strokeWidth={.8} /><Circle r={8} fill={colors.sun} stroke={colors.onSun} strokeWidth={.8} /><SvgText y={3.5} fill={colors.onSun} textAnchor="middle" fontSize={10} fontWeight="700">{face.roofNumber}</SvgText></G>;
+        })}
         {day?.now ? (() => { const point = projectRoofPoint(sunPoint3(day.now), camera); return <G testID="roof-sun-current" transform={`translate(${point.x} ${point.y})`}><Circle r={10} fill={colors.sun} stroke={colors.onSun} strokeWidth={1.5} /><Path d="M0 -16V-13M0 13V16M-16 0H-13M13 0H16M-11 -11L-9 -9M9 9L11 11M-11 11L-9 9M9 -9L11 -11" fill="none" stroke={colors.solar} strokeWidth={2} strokeLinecap="round" /></G>; })() : null}
       </Svg>
     </View>
@@ -85,9 +88,11 @@ export function RoofSunDiagram({ site, at }: { site: RoofSunSite; at?: number })
       {roofs.map(roof => <View key={roof.number} style={{ flex: 1, minWidth: 110, borderRadius: 16, padding: 10, gap: 4, backgroundColor: colors.surface }}>
         <Text style={{ fontSize: 13, fontWeight: "600" }}>{t(roof.number === 1 ? "Roof 1" : "Roof 2")} · {formatNumber(roof.capacity, 2)} kWp</Text>
         <Text style={{ fontSize: 13, color: colors.ink2 }}>{t("Azimuth")} {formatNumber(roof.azimuth, 1)}° · {t("Tilt")} {formatNumber(roof.tilt, 1)}°</Text>
+        {roof.panelCount != null ? <Text style={{ fontSize: 13, color: colors.ink2 }}>{t("{0} panels", roof.panelCount)}</Text> : null}
       </View>)}
     </View>
     {mesh.hasVerticalPanels ? <Text style={{ fontSize: 13, lineHeight: 18, color: colors.ink3 }}>{t("Vertical arrays are shown standing on the schematic roof.")}</Text> : null}
-    <Text style={{ fontSize: 13, lineHeight: 18, color: colors.ink3 }}>{t("Schematic roof; dimensions and shadows are not modelled.")}</Text>
+    {roofs.some(roof => roof.panelCount == null) ? <Text style={{ fontSize: 13, lineHeight: 18, color: colors.ink3 }}>{t("Enter the panel count for each roof to show its panels.")}</Text> : null}
+    <Text style={{ fontSize: 13, lineHeight: 18, color: colors.ink3 }}>{t("Schematic roof; panel count and rows follow your settings. Dimensions and shadows are not modelled.")}</Text>
   </View>;
 }

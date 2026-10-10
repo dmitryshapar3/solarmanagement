@@ -167,3 +167,25 @@ test("demo redesign data provides current-hour separation, inclusive custom date
   const next = await api.getReadingsView(168, "5m", first.nextCursor!); assert.ok(next.items.length); assert.ok(first.items.every(row => next.items.every(other => other.id !== row.id)));
   const activity = await api.getActivity(); assert.ok(activity.items.length); assert.ok((await api.getActivityChecks(activity.items[0]!.id)).items.length); assert.equal(network.mock.callCount(), 0);
 });
+
+test("demo panel counts persist exactly, preserve omitted legacy fields and reject invalid aggregate row sizes atomically", async () => {
+  const api = new DeyeSolarApi(new DemoApiClient(clock));
+  const site = await api.request<any>("/api/settings/site");
+  await api.request("/api/settings/site", { method: "PUT", body: { ...site, solarEstimate: { ...site.solarEstimate, roof1PanelCount: 17, roof1PanelsPerRow: 6, roof2PanelCount: 7, roof2PanelsPerRow: 4 } } });
+  const configured = await api.request<any>("/api/settings/site");
+  assert.deepEqual([configured.solarEstimate.roof1PanelCount, configured.solarEstimate.roof1PanelsPerRow, configured.solarEstimate.roof2PanelCount, configured.solarEstimate.roof2PanelsPerRow], [17, 6, 7, 4]);
+  const legacy = structuredClone(configured);
+  for (const key of ["roof1PanelCount", "roof1PanelsPerRow", "roof2PanelCount", "roof2PanelsPerRow"]) delete legacy.solarEstimate[key];
+  legacy.solarEstimate.locationLabel = "Old client update";
+  await api.request("/api/settings/site", { method: "PUT", body: legacy });
+  const preserved = await api.request<any>("/api/settings/site");
+  assert.equal(preserved.solarEstimate.roof1PanelCount, 17); assert.equal(preserved.solarEstimate.roof1PanelsPerRow, 6);
+  await api.request("/api/settings/site", { method: "PUT", body: { ...legacy, solarEstimate: { ...legacy.solarEstimate, roof1PanelCount: null, roof1PanelsPerRow: null } } });
+  assert.deepEqual(await api.request("/api/settings/site"), preserved);
+  for (const patch of [{ roof1PanelCount: -1 }, { roof1PanelCount: 1.5 }, { roof1PanelCount: 1001 }, { roof1PanelCount: "7" }, { roof1PanelsPerRow: 18 }, { roof1PanelCount: 5 }]) {
+    await assert.rejects(api.request("/api/settings/site", { method: "PUT", body: { ...legacy, solarEstimate: { ...legacy.solarEstimate, ...patch } } }), httpStatus(400));
+    assert.deepEqual(await api.request("/api/settings/site"), preserved);
+  }
+  await api.request("/api/settings/site", { method: "PUT", body: { ...legacy, solarEstimate: { ...legacy.solarEstimate, roof1PanelCount: 0, roof1PanelsPerRow: 1000 } } });
+  assert.equal((await api.request<any>("/api/settings/site")).solarEstimate.roof1PanelCount, 0);
+});

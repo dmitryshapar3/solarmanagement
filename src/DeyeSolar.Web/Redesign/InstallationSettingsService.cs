@@ -45,7 +45,9 @@ public sealed class InstallationSettingsService(IDbContextFactory<DeyeSolarDbCon
         var current = await ReadAsync(db, ct);
         if (string.IsNullOrWhiteSpace(draft.ExpectedVersion) || current.Version != draft.ExpectedVersion)
             throw new IntegrationRequestException("settings_conflict", "Installation settings changed. Reload before saving.", 409);
-        draft = draft with { Site = draft.Site with { SolarSales = draft.Site.SolarSales.PreservePricing(current.Site.SolarSales) } };
+        var suppliedSolar = draft.Site.SolarEstimate;
+        draft = draft with { Site = draft.Site with { SolarSales = draft.Site.SolarSales.PreservePricing(current.Site.SolarSales),
+            SolarEstimate = suppliedSolar.PreservePanelLayout(current.Site.SolarEstimate) } };
         if (!SiteSettingsService.TryValidate(draft.Site, out error)) throw new ArgumentException(error);
         var notifications = new List<Guid>();
         if (current.PrimaryInverterId != draft.PrimaryInverterId)
@@ -79,12 +81,7 @@ public sealed class InstallationSettingsService(IDbContextFactory<DeyeSolarDbCon
             throw new ArgumentException("Confirm PV readings for the selected primary inverter.");
         await AppSettingsService.ApplySectionsAsync(db, new Dictionary<string, object>
         {
-            [SolarEstimateOptions.Section] = new
-            {
-                solar.Latitude, solar.Longitude, LocationLabel = solar.LocationLabel.Trim(), solar.TimeZoneId,
-                solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
-                solar.DeyeSolarPowerIsPvDcConfirmed, DeyeConfirmedDeviceSn = solar.DeyeSolarPowerIsPvDcConfirmed ? selectedKey : ""
-            },
+            [SolarEstimateOptions.Section] = SiteSettingsService.SolarPatch(suppliedSolar, selectedKey),
             [SolarSalesOptions.Section] = draft.Site.SolarSales,
             [PollingOptions.Section] = draft.Polling, [DisplayOptions.Section] = draft.Display
         }, ct);
@@ -119,7 +116,7 @@ public sealed class InstallationSettingsService(IDbContextFactory<DeyeSolarDbCon
         var confirmed = solar.DeyeSolarPowerIsPvDcConfirmed && key.Length > 0 && solar.DeyeConfirmedDeviceSn == key;
         var site = new SiteSettingsDto(new(solar.Latitude, solar.Longitude, solar.LocationLabel, solar.TimeZoneId,
             solar.Roof1Kwp, solar.Roof2Kwp, solar.Roof1Tilt, solar.Roof2Tilt, solar.Roof1Azimuth, solar.Roof2Azimuth,
-            confirmed, confirmed ? key : ""), SalesSiteSettings.From(sales), key);
+            confirmed, confirmed ? key : "", solar.Roof1PanelCount, solar.Roof2PanelCount, solar.Roof1PanelsPerRow, solar.Roof2PanelsPerRow), SalesSiteSettings.From(sales), key);
         var fingerprint = JsonSerializer.Serialize(new { site, polling, display, Sources = bindings.Select(b => new
         { BindingId = b.Binding.Id, b.Binding.IsDefault, InstanceId = b.Instance.Id, b.Instance.Revision, b.Instance.Generation, b.Instance.PackageDigest, b.Instance.DescriptorDigest }) });
         var version = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint))).ToLowerInvariant();

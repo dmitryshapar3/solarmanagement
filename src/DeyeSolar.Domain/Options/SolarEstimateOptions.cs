@@ -16,6 +16,11 @@ public sealed class SolarEstimateOptions
     // Approximate compass bearings inferred from the user's satellite screenshot, not a site survey.
     public double Roof1Azimuth { get; set; } = 230;
     public double Roof2Azimuth { get; set; } = 50;
+    // Optional display metadata. Installed DC capacity remains the energy model's input.
+    public int? Roof1PanelCount { get; set; }
+    public int? Roof2PanelCount { get; set; }
+    public int? Roof1PanelsPerRow { get; set; }
+    public int? Roof2PanelsPerRow { get; set; }
     // LONGi LR7-60HVH-540M datasheet Pmax coefficient: -0.26% per degree Celsius.
     public double TemperatureCoefficient { get; set; } = -0.0026;
     // Use the fixed nominal instead of generic module spread; this is not a zero-uncertainty certification.

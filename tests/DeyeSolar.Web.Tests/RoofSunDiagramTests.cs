@@ -88,7 +88,8 @@ public class RoofSunDiagramTests
     public async Task ComponentBindsCurrentDraftToConnectedRoofAndOrbitControls()
     {
         var parameters = new Dictionary<string, object?> { ["Latitude"] = 50.095278, ["Longitude"] = 20.070278, ["TimeZoneId"] = "Europe/Warsaw",
-            ["Roof1Kwp"] = 4.32d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d, ["At"] = DateTimeOffset.Parse("2026-10-09T10:00:00Z") };
+            ["Roof1Kwp"] = 4.32d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
+            ["Roof1PanelCount"] = 8, ["Roof1PanelsPerRow"] = 4, ["At"] = DateTimeOffset.Parse("2026-10-09T10:00:00Z") };
         var before = await Render(parameters);
         if (Environment.GetEnvironmentVariable("SOLAR_ROOF_QA_DIRECTORY") is { Length: > 0 } folder)
         {
@@ -98,6 +99,8 @@ public class RoofSunDiagramTests
         Assert.Contains("Sun path · 9 Oct 2026", before); Assert.Contains("data-roof=\"1\"", before);
         Assert.DoesNotContain("data-roof=\"2\"", before);
         Assert.Contains("roof-scene-roof", before); Assert.Contains("roof-scene-wall", before);
+        Assert.Equal(8, System.Text.RegularExpressions.Regex.Matches(before, "class=\"roof-scene-face roof-scene-panel\"").Count);
+        Assert.Contains("8 panels", before);
         Assert.Contains("data-roof-action=\"zoom-in\"", before); Assert.Contains("data-roof-action=\"reset\"", before);
         Assert.Contains("Tilt", before);
         var beforeRoof = RoofPolygon(before);
@@ -106,6 +109,13 @@ public class RoofSunDiagramTests
         Assert.NotEmpty(beforeRoof); Assert.NotEqual(beforeRoof, RoofPolygon(after));
         parameters["Latitude"] = double.NaN;
         var invalid = await Render(parameters); Assert.DoesNotContain("roof-scene-sun-path", invalid); Assert.Contains("roof-scene-roof", invalid); Assert.Contains("Enter valid coordinates", invalid);
+        parameters["Roof1PanelCount"] = 7;
+        var seven = await Render(parameters);
+        Assert.Equal(7, System.Text.RegularExpressions.Regex.Matches(seven, "class=\"roof-scene-face roof-scene-panel\"").Count);
+        parameters["Roof1PanelCount"] = null;
+        var unknown = await Render(parameters);
+        Assert.DoesNotContain("class=\"roof-scene-face roof-scene-panel\"", unknown);
+        Assert.Contains("Enter the panel count for each roof", unknown);
     }
 
     private static string RoofPolygon(string html) => System.Text.RegularExpressions.Regex.Match(html,

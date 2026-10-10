@@ -98,6 +98,23 @@ test("web roof PV cells remain above their owning surface and back faces stay hi
   dispose(root);
 });
 
+test("web upright panel parents keep each exact tile directly above the parent across orbit and count updates", async () => {
+  const { mount, update, dispose } = await renderer, value = fixture();
+  const vertical = (count: number) => ({ ...scene(), faces: [{ kind: "vertical", roof: 1, points: [[-10, 0, 10], [10, 0, 10], [10, 0, 25], [-10, 0, 25]] },
+    ...Array.from({ length: count }, (_, index) => ({ kind: "panel", roof: 1, points: [[index, .3, 11], [index + .8, .3, 11], [index + .8, .3, 13], [index, .3, 13]] }))] });
+  const assertGrouped = (count: number) => {
+    const faces = value.svg.children.filter(node => node.attributes.get("class")?.includes("roof-scene-face"));
+    assert.equal(faces.length, count + 1); assert.ok(faces[0]!.attributes.get("class")?.includes("roof-scene-vertical"));
+    assert.ok(faces.slice(1).every(node => node.attributes.get("class")?.includes("roof-scene-panel") && node.attributes.get("data-roof") === "1"));
+  };
+  mount(value.root, vertical(8)); assertGrouped(8);
+  for (let i = 0; i < 20; ++i) value.svg.fire("keydown", { key: "ArrowRight" });
+  value.document.flush(); assertGrouped(8);
+  update(value.root, vertical(7)); value.document.flush(); assertGrouped(7); assert.equal(value.camera().yaw, 165);
+  update(value.root, vertical(0)); value.document.flush(); assertGrouped(0);
+  dispose(value.root);
+});
+
 test("web roof edits retain the camera and coalesce redraws while independent scenes stay isolated", async () => {
   const { mount, update, dispose } = await renderer, first = fixture(), second = fixture();
   mount(first.root, scene()); mount(second.root, scene());

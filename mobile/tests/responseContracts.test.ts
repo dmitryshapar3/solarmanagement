@@ -6,6 +6,13 @@ import { validApiResponse } from "../src/core/api/responseContracts";
 import { demoInverter, demoReadings, createDemoState } from "../src/features/demo/fixtures";
 import { integrationFixture } from "./support/integrationFixture";
 const invalidMessage = "The server returned an invalid API response. Check the server URL and try again.";
+test("site panel fields accept legacy omission/null and bounded integer zero without accepting malformed counts", () => {
+  const site = createDemoState(new Date("2026-10-05T12:00:00Z")).site;
+  for (const key of ["roof1PanelCount", "roof2PanelCount", "roof1PanelsPerRow", "roof2PanelsPerRow"]) {
+    for (const value of [undefined, null, 0, 1, 1000]) assert.equal(validApiResponse("/api/settings/site", "GET", { ...site, solarEstimate: { ...site.solarEstimate, [key]: value } }), true, key);
+    for (const value of [-1, 1.5, 1001, Infinity, "7", true]) assert.equal(validApiResponse("/api/settings/site", "GET", { ...site, solarEstimate: { ...site.solarEstimate, [key]: value } }), false, key);
+  }
+});
 test("rule-run metrics require explicit numbers or null and preserve measured zero", () => {
   const run = { id: 1, timestamp: "2026-10-05T11:00:00Z", ruleName: "Rule", action: "NO_CHANGE", conditionKey: "unknown", reason: "No telemetry", batterySoc: null, solarProduction: null, batteryPower: null };
   assert.equal(validApiResponse("/api/rule-runs", "GET", [run]), true);

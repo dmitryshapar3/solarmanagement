@@ -13,15 +13,15 @@
                     <path class="roof-scene-sun-path roof-sun-path" d="@RoofSceneGeometry.Path(path)" />
                     @if(path.Length>4){foreach(var fraction in new[]{1d/3,2d/3}){var index=Math.Clamp((int)(path.Length*fraction),0,path.Length-2);var q=RoofSceneGeometry.Project(path[index]);var next=RoofSceneGeometry.Project(path[index+1]);var angle=Math.Atan2(next.Y-q.Y,next.X-q.X)*180/Math.PI;<path class="roof-scene-sun-direction" d="M-5 -4L0 0L-5 4" transform="@($"translate({F(q.X)} {F(q.Y)}) rotate({F(angle)})")" />}}
                 }
-                @foreach(var face in Scene.Faces.Where(f=>f.Kind!="panel" || !Scene.Faces.Any(r=>r.Kind=="roof" && r.Roof==f.Roof)).OrderBy(f=>f.Points.Average(p=>RoofSceneGeometry.Project(p).Depth)))
+                @foreach(var face in Scene.Faces.Where(f=>f.Kind!="panel" || !Scene.Faces.Any(r=>(r.Kind=="roof" || r.Kind=="vertical") && r.Roof==f.Roof)).OrderBy(f=>f.Points.Average(p=>RoofSceneGeometry.Project(p).Depth)))
                 {
                     <polygon class="roof-scene-face roof-scene-@face.Kind" data-roof="@face.Roof" points="@RoofSceneGeometry.Points(face.Points)" />
-                    @if(face.Kind=="roof"){foreach(var panel in Scene.Faces.Where(p=>p.Kind=="panel" && p.Roof==face.Roof)){<polygon class="roof-scene-face roof-scene-panel" data-roof="@panel.Roof" points="@RoofSceneGeometry.Points(panel.Points)" />}}
+                    @if(face.Kind is "roof" or "vertical"){foreach(var panel in Scene.Faces.Where(p=>p.Kind=="panel" && p.Roof==face.Roof)){<polygon class="roof-scene-face roof-scene-panel" data-roof="@panel.Roof" points="@RoofSceneGeometry.Points(panel.Points)" />}}
                 }
                 @foreach(var line in Scene.Lines){<path class="roof-scene-line roof-scene-@line.Kind" d="@RoofSceneGeometry.Path(line.Points)" />}
                 @foreach(var point in Scene.Crossings){var q=RoofSceneGeometry.Project(point);<circle class="roof-scene-crossing" cx="@F(q.X)" cy="@F(q.Y)" r="4" />}
                 @if(Scene.SunNow is {} now){var q=RoofSceneGeometry.Project(now);<circle class="roof-scene-sun-current" cx="@F(q.X)" cy="@F(q.Y)" r="10" />}
-                @foreach(var label in Scene.Labels){var q=RoofSceneGeometry.Project(label.Point);<g><text class="roof-scene-label @(label.Kind=="roof"?"roof-scene-number":"roof-scene-cardinal")" x="@F(q.X)" y="@F(q.Y)">@label.Text</text></g>}
+                @foreach(var label in Scene.Labels){var q=LabelPosition(label);<g><text class="roof-scene-label @(label.Kind=="roof"?"roof-scene-number":"roof-scene-cardinal")" x="@F(q.X)" y="@F(q.Y)">@label.Text</text></g>}
             </svg>
             <svg class="roof-sun-compass roof-scene-interactive" viewBox="0 0 360 320" role="img" tabindex="0" aria-label="@T["Roof layout and calculated sun path"]" aria-describedby="@_hintId"></svg>
         </div>
@@ -49,11 +49,12 @@
     <div class="roof-sun-roofs">
         @foreach (var roof in Roofs)
         {
-            <div class="roof-sun-roof"><strong>@T[roof.Number == 1 ? "Roof 1" : "Roof 2"] · @T.Number(roof.Capacity, "0.##") kWp</strong><span>@T["Azimuth"] @T.Number(roof.Azimuth, "0.#")° · @T["Tilt"] @T.Number(roof.Tilt, "0.#")°</span></div>
+            <div class="roof-sun-roof"><strong>@T[roof.Number == 1 ? "Roof 1" : "Roof 2"] · @T.Number(roof.Capacity, "0.##") kWp</strong>@if(PanelCount(roof.Number) is {} count){<span>@T.Format("{0} panels", count)</span>}<span>@T["Azimuth"] @T.Number(roof.Azimuth, "0.#")° · @T["Tilt"] @T.Number(roof.Tilt, "0.#")°</span></div>
         }
     </div>
     @if(Roofs.Any(r=>r.Tilt==90)){<p class="caption roof-sun-note">@T["Vertical arrays are shown standing on the schematic roof."]</p>}
-    <p class="caption roof-sun-note">@T["Schematic roof; dimensions and shadows are not modelled."]</p>
+    @if(Roofs.Any(r=>PanelCount(r.Number) is null)){<p class="caption roof-sun-note">@T["Enter the panel count for each roof to show its panels."]</p>}
+    <p class="caption roof-sun-note">@T["Schematic roof; panel count and rows follow your settings. Dimensions and shadows are not modelled."]</p>
 </div>
 @code {
     [Parameter] public double Latitude { get; set; }
@@ -65,6 +66,10 @@
     [Parameter] public double Roof2Kwp { get; set; }
     [Parameter] public double Roof2Tilt { get; set; }
     [Parameter] public double Roof2Azimuth { get; set; }
+    [Parameter] public int? Roof1PanelCount { get; set; }
+    [Parameter] public int? Roof2PanelCount { get; set; }
+    [Parameter] public int? Roof1PanelsPerRow { get; set; }
+    [Parameter] public int? Roof2PanelsPerRow { get; set; }
     [Parameter] public DateTimeOffset? At { get; set; }
     private SolarDiagramDay? Day { get; set; }
     private IReadOnlyList<SolarDiagramRoof> Roofs { get; set; } = [];
@@ -72,11 +77,24 @@
     private ElementReference _sceneRoot;
     private IJSObjectReference? _sceneModule;
     private readonly string _hintId = "roof-scene-hint-" + Guid.NewGuid().ToString("N");
+    private int? PanelCount(int roof) => roof == 1 ? Roof1PanelCount : Roof2PanelCount;
+    private RoofSceneProjection LabelPosition(RoofSceneLabel label)
+    {
+        if(label.Kind=="roof" && int.TryParse(label.Text,out var number)
+            && Scene.Faces.FirstOrDefault(f=>f.Roof==number && f.Kind is "roof" or "vertical") is {} face)
+        {
+            var polygon=face.Points.Select(p=>RoofSceneGeometry.Project(p)).ToArray();
+            var corner=polygon.MaxBy(p=>p.Y)!;
+            return corner with{X=corner.X+Math.Sign(corner.X-polygon.Average(p=>p.X))*6,Y=corner.Y+14};
+        }
+        return RoofSceneGeometry.Project(label.Point);
+    }
     protected override void OnParametersSet()
     {
         Day = RoofSunGeometry.Day(Latitude, Longitude, TimeZoneId, At ?? DateTimeOffset.UtcNow);
         Roofs = RoofSunGeometry.Roofs(Roof1Kwp, Roof1Tilt, Roof1Azimuth, Roof2Kwp, Roof2Tilt, Roof2Azimuth);
-        Scene = RoofSceneGeometry.Create(Roofs, Day, Latitude, Longitude);
+        Scene = RoofSceneGeometry.Create(Roofs, Day, Latitude, Longitude,
+            Roof1PanelCount, Roof2PanelCount, Roof1PanelsPerRow, Roof2PanelsPerRow);
     }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

@@ -1,6 +1,7 @@
 import { translate as t } from "../../core/i18n";
 import { normalizeRuleDraft, validateRuleDraft } from "../rules/RuleDraftPolicy";
 import { addDays } from "../energy/chartPolicy";
+import { panelCountError, panelsPerRowError } from "../settings/formValidation";
 import { ApiClient, ApiError, type RequestOptions } from "../../core/api/ApiClient";
 import type { DisplaySettings, PollingSettings, Rule, RuleRequest, SolarSiteSettings } from "../../core/api/types";
 import {
@@ -235,6 +236,21 @@ export class DemoApiClient extends ApiClient {
       const sales = objectBody(body.solarSales);
       for (const key of ["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"])
         if (typeof estimate[key] !== "number" || !Number.isFinite(estimate[key])) throw new ApiError(400, t("Enter valid solar site numbers."));
+      const panelKeys = ["roof1PanelCount", "roof2PanelCount", "roof1PanelsPerRow", "roof2PanelsPerRow"] as const;
+      const mergedEstimate = { ...estimate };
+      for (const key of panelKeys) {
+        const value = estimate[key];
+        if (value == null) {
+          const stored = this.state.site.solarEstimate[key];
+          if (stored === undefined) delete mergedEstimate[key]; else mergedEstimate[key] = stored;
+        } else if (typeof value !== "number" || (key.includes("Count") ? panelCountError(value) : panelsPerRowError(value))) {
+          throw new ApiError(400, t(key.includes("Count") ? "Enter a whole panel count from 0 to 1000, or leave it blank if unknown." : "Use 0 for automatic rows. A positive row size cannot exceed the panel count."));
+        }
+      }
+      for (const roof of [1, 2]) {
+        const count = mergedEstimate[roof === 1 ? "roof1PanelCount" : "roof2PanelCount"] as number | null | undefined, rows = mergedEstimate[roof === 1 ? "roof1PanelsPerRow" : "roof2PanelsPerRow"] as number | null | undefined;
+        const error = panelsPerRowError(rows, count); if (error) throw new ApiError(400, t(error));
+      }
       if (typeof estimate.locationLabel !== "string" || typeof estimate.timeZoneId !== "string"
         || typeof sales.contractStartDate !== "string" || typeof sales.timeZoneId !== "string" || typeof sales.payNegativePrices !== "boolean")
         throw new ApiError(400, t("Enter valid site and sales settings."));
@@ -242,7 +258,7 @@ export class DemoApiClient extends ApiClient {
         || estimate.deyeSolarPowerConfirmedDeviceSn !== this.state.site.selectedDeviceSn))
         throw new ApiError(400, t("Confirm the currently saved selected inverter's PV source."));
       this.state.site = JSON.parse(JSON.stringify({ ...body, selectedDeviceSn: this.state.site.selectedDeviceSn,
-        solarEstimate: { ...estimate, deyeSolarPowerConfirmedDeviceSn: estimate.deyeSolarPowerIsPvDcConfirmed === true
+        solarEstimate: { ...mergedEstimate, deyeSolarPowerConfirmedDeviceSn: estimate.deyeSolarPowerIsPvDcConfirmed === true
           ? this.state.site.selectedDeviceSn : "" } })) as SolarSiteSettings;
       return;
     }

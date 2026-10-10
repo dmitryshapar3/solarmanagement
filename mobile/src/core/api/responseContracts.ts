@@ -3,6 +3,7 @@
 type Check = (value: unknown) => boolean;
 const str: Check = v => typeof v === "string";
 const num: Check = v => typeof v === "number" && Number.isFinite(v);
+const panelInteger: Check = v => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1000;
 const bool: Check = v => typeof v === "boolean";
 const date: Check = v => str(v) && Number.isFinite(Date.parse(v as string));
 const nullable = (check: Check): Check => v => v === null || check(v);
@@ -33,6 +34,7 @@ const auth = object({ token: v => typeof v === "string" && v.length > 0 && v.len
 const verification = object({ verificationId: str, expiresAt: date, retryAfterSeconds: num });
 const settings = object({ polling: object({ intervalSeconds: num }), display: object({ timeZoneId: str }) });
 const site = object({ solarEstimate: object({ ...numbers(["latitude", "longitude", "roof1Kwp", "roof2Kwp", "roof1Tilt", "roof2Tilt", "roof1Azimuth", "roof2Azimuth"]),
+  ...Object.fromEntries(["roof1PanelCount", "roof2PanelCount", "roof1PanelsPerRow", "roof2PanelsPerRow"].map(key => [key, optional(nullable(panelInteger))])),
   locationLabel: str, timeZoneId: str, deyeSolarPowerIsPvDcConfirmed: bool, deyeSolarPowerConfirmedDeviceSn: str }),
   solarSales: object({ contractStartDate: str, timeZoneId: str, payNegativePrices: bool, priceSource: optional(oneOf("pse", "manual", "feed")), manualPricePlnPerKwh: optional(num), priceFeedUrl: optional(str) }), selectedDeviceSn: str });
 const instance = object({ ...strings(["id", "providerId", "name", "status", "packageVersion", "packageDigest", "descriptorDigest"]), revision: num, generation: num });

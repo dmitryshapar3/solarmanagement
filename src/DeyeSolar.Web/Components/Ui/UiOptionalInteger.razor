@@ -1,0 +1,36 @@
+@implements IDisposable
+<div class="ui-field">
+    <label for="@_id">@Label</label>
+    <input id="@_id" type="text" inputmode="numeric" value="@_text" @oninput="Changed" aria-invalid="@((_error is not null).ToString().ToLowerInvariant())" aria-describedby="@(_error is null ? null : _id + "-error")" disabled="@Disabled" />
+    @if (_error is not null) { <p id="@(_id + "-error")" class="field-error" role="alert">@_error</p> }
+</div>
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public int? Value { get; set; }
+    [Parameter] public EventCallback<int?> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [CascadingParameter] private UiFormState? Form { get; set; }
+    private readonly string _id = "optional-integer-" + Guid.NewGuid().ToString("N");
+    private string _text = "";
+    private string? _error;
+    private int? _last;
+    protected override void OnParametersSet()
+    {
+        if (_last == Value) return;
+        _text = Value?.ToString(T.Culture) ?? ""; _last = Value; _error = null; Form?.Mark(_id, true);
+    }
+    private async Task Changed(ChangeEventArgs args)
+    {
+        if (Disabled) return;
+        _text = args.Value?.ToString() ?? "";
+        int? value = null;
+        if (!string.IsNullOrWhiteSpace(_text))
+        {
+            if (!int.TryParse(_text, System.Globalization.NumberStyles.Integer, T.Culture, out var number) || number is < 0 or > 1000)
+            { _error = T["Enter a whole panel count from 0 to 1000, or leave it blank if unknown."]; Form?.Mark(_id, false); return; }
+            value = number;
+        }
+        _error = null; _last = value; Form?.Mark(_id, true); await ValueChanged.InvokeAsync(value);
+    }
+    public void Dispose() => Form?.Remove(_id);
+}

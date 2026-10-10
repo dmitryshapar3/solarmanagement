@@ -163,3 +163,70 @@ test("native gestures, accessible controls, draft updates and cancellation share
     assert.equal(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialPath);
   } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
 });
+
+test("each configured module is a whole 1:1.7 rectangle inside the true sloping facet, including1000 modules", () => {
+  for (const count of [1, 7, 8, 17, 1000]) for (const tilt of [0, 25, 89.999, 90]) {
+    const mesh = roofMesh({ ...site, roof1PanelCount: count, roof1PanelsPerRow: 0, roof1Tilt: tilt, roof2Kwp: 0 });
+    const face = mesh.faces.find(item => item.roofNumber === 1)!;
+    assert.equal(face.panelTiles.length, count); assert.equal(face.panels.length, 0);
+    const centroid = { x: face.points.reduce((s, p) => s + p.x, 0) / face.points.length, y: face.points.reduce((s, p) => s + p.y, 0) / face.points.length, z: face.points.reduce((s, p) => s + p.z, 0) / face.points.length };
+    for (const tile of face.panelTiles) {
+      assert.equal(tile.length, 4);
+      const width = Math.hypot(...Object.values(subtract(tile[1]!, tile[0]!))), height = Math.hypot(...Object.values(subtract(tile[3]!, tile[0]!)));
+      assert.ok(width > 0 && Number.isFinite(width) && Math.abs(height / width - 1.7) < 1e-5);
+      for (const p of tile) {
+        assert.ok([p.x, p.y, p.z].every(Number.isFinite));
+        assert.ok(Math.abs(dot(face.normal, subtract(p, face.points[0]!)) - .3 * mesh.scale) < 1e-7);
+        for (let i = 0; i < face.points.length; ++i) {
+          const a = face.points[i]!, edge = subtract(face.points[(i + 1) % face.points.length]!, a);
+          const side = (q: Point3) => { const d = subtract(q, a); return dot({ x: edge.y * d.z - edge.z * d.y, y: edge.z * d.x - edge.x * d.z, z: edge.x * d.y - edge.y * d.x }, face.normal); };
+          assert.ok(side(p) * side(centroid) >= -1e-7, "Whole module must stay inside every facet edge");
+        }
+      }
+    }
+  }
+});
+
+test("chosen rows preserve exactcount, regulargaps and centered incomplete rows even on a clipped facet", () => {
+  for (const [count, columns] of [[7, 4], [8, 4], [17, 6]] as const) {
+    const mesh = roofMesh({ ...site, roof1PanelCount: count, roof1PanelsPerRow: columns, roof1Azimuth: 40, roof1Tilt: 18, roof2Azimuth: 140, roof2Tilt: 48 }), face = mesh.faces.find(item => item.roofNumber === 1)!;
+    assert.equal(face.panelTiles.length, count);
+    const az = 40 * Math.PI / 180, u = { x: Math.cos(az), y: -Math.sin(az), z: 0 }, centers = face.panelTiles.map(tile => tile.reduce((s, p) => s + dot(p, u) / 4, 0));
+    const rows = Array.from({ length: Math.ceil(count / columns) }, (_, index) => centers.slice(index * columns, (index + 1) * columns));
+    const average = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.length;
+    for (const row of rows) assert.ok(Math.abs(average(row) - average(rows[0]!)) < 1e-7, "Incomplete final row shares the same center");
+    const first = face.panelTiles[0]!, moduleWidth = Math.hypot(...Object.values(subtract(first[1]!, first[0]!)));
+    assert.ok(Math.abs((centers[1]! - centers[0]!) / moduleWidth - 1.15) < 1e-7);
+  }
+});
+
+test("unknown, zero and invalid counts never invent panels from kWp or a fake PV grid", () => {
+  for (const count of [undefined, null, 0, -1, 1.5, 1001, Number.NaN, Infinity]) {
+    const mesh = roofMesh({ ...site, roof1PanelCount: count, roof2PanelCount: count, roof1Kwp: 9000 });
+    assert.ok(mesh.faces.every(face => face.panelTiles.length === 0 && face.panels.length === 0));
+    assert.ok(mesh.faces.filter(face => face.kind === "roof").every(face => face.grid.length === 0));
+  }
+  const a = roofMesh({ ...site, roof1PanelCount: 7, roof2PanelCount: 8 }), b = roofMesh({ ...site, roof1PanelCount: 7, roof2PanelCount: 8, roof1Kwp: 999 });
+  assert.deepEqual(a.faces.map(face => face.panelTiles), b.faces.map(face => face.panelTiles), "Capacity cannot infer or alter known panel placement");
+});
+
+test("native individual panels redraw on count/row drafts while retaining orbit and showing unknowncount hint", async () => {
+  globals.IS_REACT_ACT_ENVIRONMENT = true; let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const RoofSunDiagram = (await uiHarness('export { RoofSunDiagram } from "./src/ui/forms/RoofSunDiagram";', { stubComponents: true })).RoofSunDiagram!;
+    const at = Date.parse("2026-10-09T10:00:00Z"), props = { ...site, roof2Kwp: 0, roof1PanelCount: 7, roof1PanelsPerRow: 4 };
+    await act(async () => { renderer = create(React.createElement(RoofSunDiagram, { site: props, at })); });
+    const tiles = () => renderer!.root.findAll(node => typeof node.props.testID === "string" && node.props.testID.startsWith("roof-sun-panel-"));
+    assert.equal(tiles().length, 7); const before = tiles()[0]!.props.d;
+    const label = renderer!.root.findByProps({ testID: "roof-sun-label-1" });
+    const maximumY = Math.max(...roofMesh(props).faces.find(face => face.roofNumber === 1)!.points.map(point => projectRoofPoint(point, DEFAULT_ROOF_CAMERA).y));
+    const labelY = Number(label.props.transform.match(/translate\([^ ]+ ([^)]+)\)/)[1]);
+    assert.ok(Math.abs(labelY - maximumY - 12) < 1e-7, "Roof badge stays below the facet rather than obscuring modules");
+    const svgChildren = renderer!.root.findByType("Svg").children;
+    assert.ok(svgChildren.indexOf(label) > svgChildren.findIndex(child => typeof child !== "string" && child.props.testID === "roof-sun-roof-1"), "Badges draw after opaque surfaces");
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Zoom in" }).props.onPress(); renderer!.update(React.createElement(RoofSunDiagram, { site: { ...props, roof1PanelCount: 17, roof1PanelsPerRow: 6 }, at })); });
+    assert.equal(tiles().length, 17); assert.notEqual(tiles()[0]!.props.d, before); assert.equal(renderer!.root.findByProps({ testID: "roof-sun-orbit" }).props.accessibilityValue.now, 120);
+    await act(async () => renderer!.update(React.createElement(RoofSunDiagram, { site: { ...props, roof1PanelCount: null }, at })));
+    assert.equal(tiles().length, 0); assert.ok(renderer!.root.findAllByType("Text").some(node => node.props.children === "Enter the panel count for each roof to show its panels."));
+  } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});

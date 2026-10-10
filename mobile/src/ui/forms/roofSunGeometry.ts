@@ -5,8 +5,8 @@
  */
 export type SunPoint = { x: number; y: number; azimuth: number; elevation: number; at: number };
 export type SunDay = { date: string; timeZoneId: string; startsAt: number; endsAt: number; paths: SunPoint[][]; now: SunPoint | null; sunrise: number | null; sunset: number | null; state: "normal" | "polar-day" | "polar-night" };
-export type DiagramRoof = { number: number; capacity: number; tilt: number; azimuth: number; width: number; depth: number; centerX: number };
-export type RoofSunSite = { latitude: number; longitude: number; timeZoneId: string; roof1Kwp: number; roof1Tilt: number; roof1Azimuth: number; roof2Kwp: number; roof2Tilt: number; roof2Azimuth: number };
+export type DiagramRoof = { number: number; capacity: number; tilt: number; azimuth: number; width: number; depth: number; centerX: number; panelCount?: number | null; panelsPerRow?: number | null };
+export type RoofSunSite = { latitude: number; longitude: number; timeZoneId: string; roof1Kwp: number; roof1Tilt: number; roof1Azimuth: number; roof2Kwp: number; roof2Tilt: number; roof2Azimuth: number; roof1PanelCount?: number | null; roof2PanelCount?: number | null; roof1PanelsPerRow?: number | null; roof2PanelsPerRow?: number | null };
 const rad = Math.PI / 180, center = 160, radius = 112;
 const leap = (year: number) => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 export function sunPosition(latitude: number, longitude: number, at: number): SunPoint {
@@ -66,7 +66,7 @@ export function sunDay(latitude: number, longitude: number, timeZoneId: string, 
     state: samples.every(point => point.elevation >= 0) ? "polar-day" : samples.every(point => point.elevation < 0) ? "polar-night" : "normal" };
 }
 export function diagramRoofs(site: RoofSunSite): DiagramRoof[] {
-  const valid = [1, 2].map(number => ({ number, capacity: number === 1 ? site.roof1Kwp : site.roof2Kwp, tilt: number === 1 ? site.roof1Tilt : site.roof2Tilt, azimuth: number === 1 ? site.roof1Azimuth : site.roof2Azimuth }))
+  const valid = [1, 2].map(number => ({ number, capacity: number === 1 ? site.roof1Kwp : site.roof2Kwp, tilt: number === 1 ? site.roof1Tilt : site.roof2Tilt, azimuth: number === 1 ? site.roof1Azimuth : site.roof2Azimuth, panelCount: number === 1 ? site.roof1PanelCount : site.roof2PanelCount, panelsPerRow: number === 1 ? site.roof1PanelsPerRow : site.roof2PanelsPerRow }))
     .filter(roof => Number.isFinite(roof.capacity) && roof.capacity > 0 && roof.capacity <= 10000 && Number.isFinite(roof.tilt) && roof.tilt >= 0 && roof.tilt <= 90 && Number.isFinite(roof.azimuth) && roof.azimuth >= 0 && roof.azimuth <= 360);
   const maximum = Math.max(1e-9, ...valid.map(roof => roof.capacity));
   return valid.map((roof, index) => ({ ...roof, azimuth: roof.azimuth % 360, width: 24 + 18 * Math.sqrt(roof.capacity / maximum), depth: 12 + 24 * Math.cos(roof.tilt * rad), centerX: valid.length === 1 ? center : index === 0 ? 132 : 188 }));
@@ -75,12 +75,11 @@ export const sunPath = (points: SunPoint[]) => points.map((point, index) => `${i
 
 export type Point3 = { x: number; y: number; z: number };
 export type OrbitCamera = { yaw: number; elevation: number; zoom: number };
-export type RoofFace3 = { id: string; kind: "roof" | "wall" | "vertical"; roofNumber?: number; points: Point3[]; normal: Point3; panels: Point3[]; grid: Point3[][] };
+export type RoofFace3 = { id: string; kind: "roof" | "wall" | "vertical"; roofNumber?: number; points: Point3[]; normal: Point3; panels: Point3[]; panelTiles: Point3[][]; grid: Point3[][] };
 export type RoofMesh = { faces: RoofFace3[]; ridge: Point3[][]; footprint: Point3[]; scale: number; hasVerticalPanels: boolean };
 export type OrbitTouch = { pageX: number; pageY: number };
 export const DEFAULT_ROOF_CAMERA: Readonly<OrbitCamera> = { yaw: -35, elevation: 32, zoom: 1 };
 const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
-const mix3 = (a: Point3, b: Point3, t: number): Point3 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
 type Point2 = { x: number; y: number };
 
 /** Convex polygon clipped to a*x+b*y >= c. Shared intersections are calculated identically on both faces. */
@@ -104,7 +103,37 @@ function section(poly: Point2[], a: number, b: number, c = 0): Point2[] {
   return points.slice(0, 2);
 }
 
-/** Schematic connected building, in East/North/Up coordinates. Capacity controls array coverage, never roof pitch.
+/** Exact-count rectangular modules in an orthonormal roof plane. The complete
+ * regular-row block is fitted inside every convex edge, never clipped or culled.
+ * Missing counts remain unknown rather than being inferred from installed kWp.
+ */
+export function roofPanelTiles(points: Point3[], normal: Point3, tilt: number, azimuth: number, count?: number | null, requestedColumns?: number | null): Point3[][] {
+  if (!Number.isInteger(count) || count! <= 0 || count! > 1000 || points.length < 3) return [];
+  const az = azimuth * rad, pitch = tilt * rad;
+  const u = { x: Math.cos(az), y: -Math.sin(az), z: 0 }, v = { x: Math.sin(az) * Math.cos(pitch), y: Math.cos(az) * Math.cos(pitch), z: -Math.sin(pitch) }, origin = points[0]!;
+  const uv = points.map(p => ({ x: (p.x - origin.x) * u.x + (p.y - origin.y) * u.y + (p.z - origin.z) * u.z, y: (p.x - origin.x) * v.x + (p.y - origin.y) * v.y + (p.z - origin.z) * v.z }));
+  const center = { x: uv.reduce((sum, p) => sum + p.x, 0) / uv.length, y: uv.reduce((sum, p) => sum + p.y, 0) / uv.length };
+  const width = Math.max(...uv.map(p => p.x)) - Math.min(...uv.map(p => p.x)), height = Math.max(...uv.map(p => p.y)) - Math.min(...uv.map(p => p.y));
+  if (!(width > 0 && height > 0)) return [];
+  const columns = Number.isInteger(requestedColumns) && requestedColumns! > 0 && requestedColumns! <= count! ? requestedColumns! : clamp(Math.round(Math.sqrt(count! * 1.7 * width / height)), 1, count!);
+  const rows = Math.ceil(count! / columns), blockWidth = columns + (columns - 1) * .15, blockHeight = rows * 1.7 + (rows - 1) * .15;
+  const signedArea = uv.reduce((sum, p, i) => { const q = uv[(i + 1) % uv.length]!; return sum + p.x * q.y - q.x * p.y; }, 0), direction = signedArea >= 0 ? 1 : -1;
+  let scale = Infinity;
+  for (let i = 0; i < uv.length; ++i) {
+    const p = uv[i]!, q = uv[(i + 1) % uv.length]!, a = -(q.y - p.y) * direction, b = (q.x - p.x) * direction;
+    const extent = Math.abs(a) * blockWidth / 2 + Math.abs(b) * blockHeight / 2;
+    if (extent > 0) scale = Math.min(scale, (a * (center.x - p.x) + b * (center.y - p.y)) / extent);
+  }
+  if (!(Number.isFinite(scale) && scale > 0)) return [];
+  scale *= .88;
+  const project = (x: number, y: number): Point3 => ({ x: origin.x + u.x * (center.x + x * scale) + v.x * (center.y + y * scale) + normal.x * .3, y: origin.y + u.y * (center.x + x * scale) + v.y * (center.y + y * scale) + normal.y * .3, z: origin.z + u.z * (center.x + x * scale) + v.z * (center.y + y * scale) + normal.z * .3 });
+  return Array.from({ length: count! }, (_, index) => {
+    const row = Math.floor(index / columns), rowLength = Math.min(columns, count! - row * columns), x = -(rowLength + (rowLength - 1) * .15) / 2 + index % columns * 1.15, y = -blockHeight / 2 + row * 1.85;
+    return [project(x, y), project(x + 1, y), project(x + 1, y + 1.7), project(x, y + 1.7)];
+  });
+}
+
+/** Schematic connected building, in East/North/Up coordinates. Module count never changes roof pitch.
  * Two upward roof planes form their lower envelope on one footprint; their intersection is the shared ridge.
  * Exact vertical arrays cannot bound a roof height, so they stand on the shared flat/remaining roof instead.
  * A single uniform scale fits even near-vertical roofs without falsifying their configured angles.
@@ -129,35 +158,29 @@ export function roofMesh(site: RoofSunSite): RoofMesh {
   for (const [index, plane] of planes.entries()) {
     const poly = planes.length === 2 ? clip(footprint, splitX * (index ? -1 : 1), splitY * (index ? -1 : 1)) : footprint;
     const z = (p: Point2, offset = 0) => ({ ...p, z: height - plane.tx * p.x - plane.ty * p.y + offset });
-    const centroid = { x: poly.reduce((v, p) => v + p.x, 0) / poly.length, y: poly.reduce((v, p) => v + p.y, 0) / poly.length }, coverage = .78 * Math.sqrt(plane.capacity / maximum);
-    const panel = poly.map(p => ({ x: centroid.x + (p.x - centroid.x) * coverage, y: centroid.y + (p.y - centroid.y) * coverage }));
-    const grid: Point3[][] = [];
-    for (const [a, b] of [[Math.cos(plane.azimuth * rad), -Math.sin(plane.azimuth * rad)], [Math.sin(plane.azimuth * rad), Math.cos(plane.azimuth * rad)]]) {
-      const values = panel.map(p => a! * p.x + b! * p.y), lo = Math.min(...values), hi = Math.max(...values);
-      for (const fraction of [.25, .5, .75]) { const line = section(panel, a!, b!, lo + (hi - lo) * fraction); if (line.length === 2) grid.push(line.map(p => z(p, .45))); }
-    }
-    faces.push({ id: `roof-${plane.number}`, kind: "roof", roofNumber: plane.number, points: poly.map(p => z(p)), normal: { x: Math.sin(plane.tilt * rad) * Math.sin(plane.azimuth * rad), y: Math.sin(plane.tilt * rad) * Math.cos(plane.azimuth * rad), z: Math.cos(plane.tilt * rad) }, panels: panel.map(p => z(p, .4)), grid });
+    const points = poly.map(p => z(p)), normal = { x: Math.sin(plane.tilt * rad) * Math.sin(plane.azimuth * rad), y: Math.sin(plane.tilt * rad) * Math.cos(plane.azimuth * rad), z: Math.cos(plane.tilt * rad) };
+    faces.push({ id: `roof-${plane.number}`, kind: "roof", roofNumber: plane.number, points, normal, panels: [], panelTiles: roofPanelTiles(points, normal, plane.tilt, plane.azimuth, plane.panelCount, plane.panelsPerRow), grid: [] });
   }
-  if (!planes.length) faces.push({ id: "flat-base", kind: "roof", points: footprint.map(p => ({ ...p, z: 14 })), normal: { x: 0, y: 0, z: 1 }, panels: [], grid: [] });
+  if (!planes.length) faces.push({ id: "flat-base", kind: "roof", points: footprint.map(p => ({ ...p, z: 14 })), normal: { x: 0, y: 0, z: 1 }, panels: [], panelTiles: [], grid: [] });
   for (let i = 0; i < footprint.length; ++i) {
     const a = footprint[i]!, b = footprint[(i + 1) % footprint.length]!, cuts = [a];
     if (planes.length === 2) { const da = splitX * a.x + splitY * a.y, db = splitX * b.x + splitY * b.y; if (da * db < -1e-9) { const t = da / (da - db); cuts.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); } }
     cuts.push(b);
     for (let j = 1; j < cuts.length; ++j) {
       const p = cuts[j - 1]!, q = cuts[j]!, length = Math.hypot(q.x - p.x, q.y - p.y);
-      faces.push({ id: `wall-${i}-${j}`, kind: "wall", points: [{ ...p, z: 0 }, { ...q, z: 0 }, { ...q, z: roofZ(q) }, { ...p, z: roofZ(p) }], normal: { x: (q.y - p.y) / length, y: (p.x - q.x) / length, z: 0 }, panels: [], grid: [] });
+      faces.push({ id: `wall-${i}-${j}`, kind: "wall", points: [{ ...p, z: 0 }, { ...q, z: 0 }, { ...q, z: roofZ(q) }, { ...p, z: roofZ(p) }], normal: { x: (q.y - p.y) / length, y: (p.x - q.x) / length, z: 0 }, panels: [], panelTiles: [], grid: [] });
     }
   }
   for (const roof of roofs.filter(roof => roof.tilt === 90)) {
     const az = roof.azimuth * rad, tangent = { x: Math.cos(az), y: -Math.sin(az) }, center = { x: roofs.length === 1 ? 0 : roof.number === 1 ? -14 : 14, y: 0 }, half = 14 * Math.sqrt(roof.capacity / maximum);
     const a = { x: center.x - tangent.x * half, y: center.y - tangent.y * half }, b = { x: center.x + tangent.x * half, y: center.y + tangent.y * half }, base = Math.max(roofZ(a), roofZ(b)) + .5;
     const points = [{ ...a, z: base }, { ...b, z: base }, { ...b, z: base + 24 }, { ...a, z: base + 24 }];
-    const grid = [[{ ...a, z: roofZ(a) }, points[0]!], [{ ...b, z: roofZ(b) }, points[1]!], ...[.25, .5, .75].flatMap(t => [[mix3(points[0]!, points[1]!, t), mix3(points[3]!, points[2]!, t)], [mix3(points[0]!, points[3]!, t), mix3(points[1]!, points[2]!, t)]])];
-    faces.push({ id: `vertical-${roof.number}`, kind: "vertical", roofNumber: roof.number, points, normal: { x: Math.sin(az), y: Math.cos(az), z: 0 }, panels: points, grid });
+    const grid = [[{ ...a, z: roofZ(a) }, points[0]!], [{ ...b, z: roofZ(b) }, points[1]!]], normal = { x: Math.sin(az), y: Math.cos(az), z: 0 };
+    faces.push({ id: `vertical-${roof.number}`, kind: "vertical", roofNumber: roof.number, points, normal, panels: [], panelTiles: roofPanelTiles(points, normal, 90, roof.azimuth, roof.panelCount, roof.panelsPerRow), grid });
   }
   const scale = 112 / Math.max(Math.max(...footprint.map(p => p.x)) - Math.min(...footprint.map(p => p.x)), Math.max(...footprint.map(p => p.y)) - Math.min(...footprint.map(p => p.y)), ...faces.flatMap(face => face.points.map(p => p.z)));
   const fit = (p: Point3): Point3 => ({ x: p.x * scale, y: p.y * scale, z: p.z * scale });
-  return { faces: faces.map(face => ({ ...face, points: face.points.map(fit), panels: face.panels.map(fit), grid: face.grid.map(line => line.map(fit)) })), ridge: ridge.map(line => line.map(fit)), footprint: footprint.map(p => fit({ ...p, z: 0 })), scale, hasVerticalPanels: roofs.some(roof => roof.tilt === 90) };
+  return { faces: faces.map(face => ({ ...face, points: face.points.map(fit), panels: face.panels.map(fit), panelTiles: face.panelTiles.map(tile => tile.map(fit)), grid: face.grid.map(line => line.map(fit)) })), ridge: ridge.map(line => line.map(fit)), footprint: footprint.map(p => fit({ ...p, z: 0 })), scale, hasVerticalPanels: roofs.some(roof => roof.tilt === 90) };
 }
 
 export function normalizeRoofCamera(camera: OrbitCamera): OrbitCamera {

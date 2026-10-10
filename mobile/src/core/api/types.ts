@@ -75,6 +75,8 @@ export type SolarSiteSettings = {
     latitude: number; longitude: number; locationLabel: string; timeZoneId: string;
     roof1Kwp: number; roof2Kwp: number; roof1Tilt: number; roof2Tilt: number;
     roof1Azimuth: number; roof2Azimuth: number;
+    roof1PanelCount?: number | null; roof2PanelCount?: number | null;
+    roof1PanelsPerRow?: number | null; roof2PanelsPerRow?: number | null;
     deyeSolarPowerIsPvDcConfirmed: boolean; deyeSolarPowerConfirmedDeviceSn: string;
   };
   solarSales: { contractStartDate: string; timeZoneId: string; payNegativePrices: boolean; priceSource?: "pse" | "manual" | "feed"; manualPricePlnPerKwh?: number; priceFeedUrl?: string };

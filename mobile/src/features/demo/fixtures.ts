@@ -46,7 +46,7 @@ export function createDemoState(now: Date): DemoState {
     site: {
       selectedDeviceSn: "DEMO-INVERTER-001",
       solarEstimate: { latitude: 50, longitude: 20, locationLabel: "Demo rooftop", timeZoneId: "Europe/Warsaw",
-        roof1Kwp: 3.5, roof2Kwp: 3, roof1Tilt: 25, roof2Tilt: 25, roof1Azimuth: 180, roof2Azimuth: 90, deyeSolarPowerIsPvDcConfirmed: true, deyeSolarPowerConfirmedDeviceSn: "DEMO-INVERTER-001" },
+        roof1Kwp: 3.5, roof2Kwp: 3, roof1Tilt: 25, roof2Tilt: 25, roof1Azimuth: 180, roof2Azimuth: 90, roof1PanelCount: 8, roof2PanelCount: 7, roof1PanelsPerRow: 4, roof2PanelsPerRow: 4, deyeSolarPowerIsPvDcConfirmed: true, deyeSolarPowerConfirmedDeviceSn: "DEMO-INVERTER-001" },
       solarSales: { contractStartDate: "2026-01-01", timeZoneId: "Europe/Warsaw", payNegativePrices: false, priceSource: "pse", manualPricePlnPerKwh: 0, priceFeedUrl: "" }
     },
     runs: Array.from({ length: 16 }, (_, index): RuleRunLog => ({

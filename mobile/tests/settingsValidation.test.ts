@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseSettingNumber, settingBearingError, settingContractDateError, settingNumberError, settingTimeZoneError } from "../src/features/settings/formValidation";
+import { panelCountError, panelsPerRowError, parseSettingNumber, settingBearingError, settingContractDateError, settingNumberError, settingTimeZoneError } from "../src/features/settings/formValidation";
 import { compassPoint } from "../src/ui/forms/compassPolicy";
 test("site coordinate fields accept decimal comma and retain invalid partial numbers for field validation", () => {
   assert.equal(parseSettingNumber(" -52,31 "), -52.31);
@@ -28,4 +28,10 @@ test("contract calendar dates and time zones are validated before installation h
 test("polling interval is finite, integral and bounded before saving", () => {
   for (const value of [Number.NaN, Infinity, 0, 3601, 30.5]) assert.ok(settingNumberError(value, 1, 3600, true));
   for (const value of [1, 30, 3600]) assert.equal(settingNumberError(value, 1, 3600, true), null);
+});
+test("optional panel counts and row sizes require bounded integers and validate known positive counts", () => {
+  for (const value of [undefined, null, 0, 1, 1000]) assert.equal(panelCountError(value), null);
+  for (const value of [-1, 1.5, 1001, Number.NaN, Infinity]) { assert.ok(panelCountError(value)); assert.ok(panelsPerRowError(value)); }
+  for (const [value, count] of [[undefined, 7], [null, 7], [0, 7], [7, 7], [1000, null], [1000, 0]] as const) assert.equal(panelsPerRowError(value, count), null);
+  assert.ok(panelsPerRowError(8, 7));
 });

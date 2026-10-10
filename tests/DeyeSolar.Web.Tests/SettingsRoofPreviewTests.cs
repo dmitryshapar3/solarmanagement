@@ -20,7 +20,7 @@ namespace DeyeSolar.Web.Tests;
 public sealed class SettingsRoofPreviewTests
 {
     [Fact]
-    public async Task InstallationPagePassesItsStoredSiteTimeZoneToTheRoofPreview()
+    public async Task InstallationPagePassesItsStoredTimeZoneAndExactPanelLayoutToTheRoofPreview()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -34,6 +34,10 @@ public sealed class SettingsRoofPreviewTests
                 new AppSetting { Section = "SolarEstimate", Key = "Latitude", Value = "-33.87" },
                 new AppSetting { Section = "SolarEstimate", Key = "Longitude", Value = "151.2" },
                 new AppSetting { Section = "SolarEstimate", Key = "Roof1Kwp", Value = "4.5" },
+                new AppSetting { Section = "SolarEstimate", Key = "Roof1PanelCount", Value = "9" },
+                new AppSetting { Section = "SolarEstimate", Key = "Roof1PanelsPerRow", Value = "3" },
+                new AppSetting { Section = "SolarEstimate", Key = "Roof2PanelCount", Value = "0" },
+                new AppSetting { Section = "SolarEstimate", Key = "Roof2PanelsPerRow", Value = "0" },
                 new AppSetting { Section = "SolarEstimate", Key = "Roof2Kwp", Value = "0" });
             await db.SaveChangesAsync();
         }
@@ -54,6 +58,8 @@ public sealed class SettingsRoofPreviewTests
         Assert.Contains("roof-scene-sun-path roof-sun-path", html);
         Assert.Contains("data-roof=\"1\"", html);
         Assert.DoesNotContain("data-roof=\"2\"", html);
+        Assert.Equal(9, html.Split("class=\"roof-scene-face roof-scene-panel\"", StringSplitOptions.None).Length - 1);
+        Assert.Contains("9 panels", html);
         Assert.Contains("Australia/Sydney", html);
         Assert.DoesNotContain("Enter valid coordinates and a solar time zone to see the sun path.", html);
     }

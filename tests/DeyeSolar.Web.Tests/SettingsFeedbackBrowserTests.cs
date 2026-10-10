@@ -1,11 +1,12 @@
 using Microsoft.Playwright;
+using System.Text.RegularExpressions;
 
 namespace DeyeSolar.Web.Tests;
 
 public sealed class SettingsFeedbackBrowserTests
 {
     [SqlServerFact]
-    public async Task RoofPreviewRespondsToDraftChangesAndFixedExportPriceSurvivesReload()
+    public async Task RoofPreviewUsesExactPanelCountsAndRowsAndAllSettingsSurviveReload()
     {
         await using var app = await BrowserBillingTests.ProductionApp.StartAsync();
         using var playwright = await Playwright.CreateAsync();
@@ -30,6 +31,21 @@ public sealed class SettingsFeedbackBrowserTests
         var scene = diagram.Locator(".roof-scene-interactive");
         await Assertions.Expect(scene).ToBeVisibleAsync();
         await panels.GetByLabel("Installed capacity", new() { Exact = true }).First.FillAsync("4.5");
+        await panels.GetByLabel("Installed capacity", new() { Exact = true }).Nth(1).FillAsync("3.5");
+        var counts = panels.GetByLabel("Panel count", new() { Exact = true });
+        var rows = panels.GetByLabel("Panels per row", new() { Exact = true });
+        await counts.First.FillAsync("8");
+        await counts.Nth(1).FillAsync("7");
+        await rows.First.FillAsync("2");
+        await rows.Nth(1).FillAsync("2");
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='1']")).ToHaveCountAsync(8);
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='2']")).ToHaveCountAsync(7);
+        await counts.First.FillAsync("8.5");
+        await Assertions.Expect(counts.First).ToHaveAttributeAsync("aria-invalid", "true");
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save changes", Exact = true })).ToBeDisabledAsync();
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='1']")).ToHaveCountAsync(8);
+        await counts.First.FillAsync("7");
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='1']")).ToHaveCountAsync(7);
         var roof = scene.Locator(".roof-scene-roof[data-roof='1']");
         await Assertions.Expect(roof).ToHaveCountAsync(1);
         var originalRoof = await roof.GetAttributeAsync("points");
@@ -65,7 +81,19 @@ public sealed class SettingsFeedbackBrowserTests
         await page.ReloadAsync();
         await Assertions.Expect(contract.GetByLabel("Price source", new() { Exact = true })).ToHaveValueAsync("manual");
         await Assertions.Expect(contract.GetByLabel("Sale price", new() { Exact = true })).ToHaveValueAsync("0.42");
+        await Assertions.Expect(counts.First).ToHaveValueAsync("7");
+        await Assertions.Expect(counts.Nth(1)).ToHaveValueAsync("7");
+        await Assertions.Expect(rows.First).ToHaveValueAsync("2");
+        await Assertions.Expect(rows.Nth(1)).ToHaveValueAsync("2");
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='1']")).ToHaveCountAsync(7);
+        await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='2']")).ToHaveCountAsync(7);
         await Assertions.Expect(roof).ToHaveAttributeAsync("points", savedRoof!);
+        // Authenticated server rendering must use the persisted counts even before the scene module mounts.
+        var response = await context.APIRequest.GetAsync(app.Address + "/settings");
+        Assert.Equal(200, response.Status);
+        var serverHtml = await response.TextAsync();
+        Assert.Equal(7, Regex.Matches(serverHtml, "class=\"roof-scene-face roof-scene-panel\" data-roof=\"1\"").Count);
+        Assert.Equal(7, Regex.Matches(serverHtml, "class=\"roof-scene-face roof-scene-panel\" data-roof=\"2\"").Count);
         Assert.True(await page.EvaluateAsync<bool>("document.documentElement.scrollWidth <= innerWidth"));
         await Assertions.Expect(page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
         if (Environment.GetEnvironmentVariable("SOLAR_FEEDBACK_QA_DIRECTORY") is { Length: > 0 } folder)

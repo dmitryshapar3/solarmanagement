@@ -24,7 +24,7 @@ import { googleSignIn } from "../auth/googleSignIn";
 import { useInstallationSettings } from "./settingsResource";
 import { LanguageDropdown } from "./LanguageDropdown";
 import { validPriceFeedUrl } from "./exportPricingValidation";
-import { parseSettingNumber, settingBearingError, settingContractDateError, settingNumberError, settingTimeZoneError } from "./formValidation";
+import { panelCountError, panelsPerRowError, parseSettingNumber, settingBearingError, settingContractDateError, settingNumberError, settingTimeZoneError } from "./formValidation";
 
 type Navigation = NavigationProp<HomeStackParamList & RootStackParamList>;
 function useDiscardGuard(dirty: boolean) {
@@ -36,6 +36,12 @@ function SettingNumberField({ value, onValue, minimum, maximum, integer = false,
   useEffect(() => { if (!focused || !Object.is(parseSettingNumber(text), value)) setText(Number.isFinite(value) ? String(value) : ""); }, [value, focused, text]);
   const error = value === 360 && legacyBearing === 360 ? null : settingNumberError(value, minimum, maximum, integer);
   return <View onTouchStart={() => setFocused(true)}><TextField {...props} value={text} onChangeText={next => { setFocused(true); setText(next); onValue(parseSettingNumber(next)); }} onBlur={() => setFocused(false)} error={error ? t(error, minimum, maximum) : null} keyboardType="numbers-and-punctuation" /></View>;
+}
+function SettingPanelField({ value, onValue, count, rows = false, editable }: { value?: number | null; onValue(value: number | null): void; count?: number | null; rows?: boolean; editable: boolean }) {
+  const { t } = useLanguage(); const [text, setText] = useState(value == null ? rows ? "0" : "" : String(value)); const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(value == null ? rows ? "0" : "" : Number.isFinite(value) ? String(value) : ""); }, [value, focused, rows]);
+  const error = rows ? panelsPerRowError(value, count) : panelCountError(value);
+  return <TextField label={rows ? "Panels per row" : "Panel count"} value={text} editable={editable} keyboardType="number-pad" helper={rows ? "0 = automatic row layout." : "Enter the panel count for each roof to show its panels."} error={error ? t(error) : null} onChangeText={next => { setFocused(true); setText(next); onValue(next.trim() ? parseSettingNumber(next) : rows ? 0 : null); }} onBlur={() => setFocused(false)} />;
 }
 function InstallationForm({ title, resource: r, children, invalid = false }: { title: string; resource: ReturnType<typeof useInstallationSettings>; children: ReactNode; invalid?: boolean }) {
   const { t } = useLanguage(); const navigation = useNavigation<Navigation>(); useDiscardGuard(r.dirty);
@@ -55,9 +61,9 @@ function InstallationForm({ title, resource: r, children, invalid = false }: { t
 export function SolarSiteScreen() {
   const r = useInstallationSettings(); const { api } = useAuth(); const { t } = useLanguage(); const { colors } = useTheme(); const s = r.draft?.site.solarEstimate;
   const disabled = Boolean(r.busy) || !r.canEdit;
-  function field(key: keyof NonNullable<typeof s>, value: string | number | boolean) { r.setDraft(current => current && { ...current, site: { ...current.site, solarEstimate: { ...current.site.solarEstimate, [key]: value } } }); }
+  function field(key: keyof NonNullable<typeof s>, value: string | number | boolean | null) { r.setDraft(current => current && { ...current, site: { ...current.site, solarEstimate: { ...current.site.solarEstimate, [key]: value } } }); }
   const numberField = (key: "latitude" | "longitude" | "roof1Kwp" | "roof2Kwp" | "roof1Tilt" | "roof2Tilt" | "roof1Azimuth" | "roof2Azimuth", label: string, unit?: string) => s ? <SettingNumberField key={key} label={label} value={s[key]} onValue={value => field(key, value)} minimum={key === "latitude" ? -90 : key === "longitude" ? -180 : 0} maximum={key === "latitude" ? 90 : key === "longitude" ? 180 : key.includes("Tilt") ? 90 : key.includes("Azimuth") ? 359 : 1000} legacyBearing={key.includes("Azimuth") ? r.saved?.site.solarEstimate[key] : undefined} editable={!disabled} unit={unit} /> : null;
-  return <InstallationForm title="Solar site" resource={r} invalid={Boolean(s && (settingNumberError(s.latitude, -90, 90) || settingNumberError(s.longitude, -180, 180) || settingNumberError(s.roof1Kwp, 0, 1000) || settingNumberError(s.roof2Kwp, 0, 1000) || s.roof1Kwp + s.roof2Kwp <= 0 || settingNumberError(s.roof1Tilt, 0, 90) || settingNumberError(s.roof2Tilt, 0, 90) || settingBearingError(s.roof1Azimuth, r.saved?.site.solarEstimate.roof1Azimuth) || settingBearingError(s.roof2Azimuth, r.saved?.site.solarEstimate.roof2Azimuth) || settingTimeZoneError(s.timeZoneId)))}>{s ? <>
+  return <InstallationForm title="Solar site" resource={r} invalid={Boolean(s && (settingNumberError(s.latitude, -90, 90) || settingNumberError(s.longitude, -180, 180) || settingNumberError(s.roof1Kwp, 0, 1000) || settingNumberError(s.roof2Kwp, 0, 1000) || s.roof1Kwp + s.roof2Kwp <= 0 || settingNumberError(s.roof1Tilt, 0, 90) || settingNumberError(s.roof2Tilt, 0, 90) || settingBearingError(s.roof1Azimuth, r.saved?.site.solarEstimate.roof1Azimuth) || settingBearingError(s.roof2Azimuth, r.saved?.site.solarEstimate.roof2Azimuth) || settingTimeZoneError(s.timeZoneId) || panelCountError(s.roof1PanelCount) || panelCountError(s.roof2PanelCount) || panelsPerRowError(s.roof1PanelsPerRow, s.roof1PanelCount) || panelsPerRowError(s.roof2PanelsPerRow, s.roof2PanelCount)))}>{s ? <>
     <Card style={{ gap: 14 }}><SectionTitle title="Location" /><TextField label="Site name" value={s.locationLabel} onChangeText={value => field("locationLabel", value)} editable={!disabled} />
       <AppButton label="Use my location" icon={LocateFixed} variant="secondary" disabled={disabled} onPress={() => void r.run("location", async context => {
         const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") throw new Error("Allow location access or enter coordinates manually.");
@@ -69,6 +75,8 @@ export function SolarSiteScreen() {
     </Card>
     <Card><RoofSunDiagram site={s} /></Card>
     {[1, 2].map(array => <Card key={array} style={{ gap: 14 }}><SectionTitle title={t("Solar array {0}", array)} />
+      <SettingPanelField value={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelCount" : "roof2PanelCount", value)} editable={!disabled} />
+      <SettingPanelField rows value={array === 1 ? s.roof1PanelsPerRow : s.roof2PanelsPerRow} count={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelsPerRow" : "roof2PanelsPerRow", value)} editable={!disabled} />
       {numberField(array === 1 ? "roof1Kwp" : "roof2Kwp", "Installed capacity", "kWp")}{numberField(array === 1 ? "roof1Tilt" : "roof2Tilt", "Tilt", "°")}<CompassBearing value={array === 1 ? s.roof1Azimuth : s.roof2Azimuth} onChange={value => field(array === 1 ? "roof1Azimuth" : "roof2Azimuth", value)} disabled={disabled}>{numberField(array === 1 ? "roof1Azimuth" : "roof2Azimuth", "Compass bearing · degrees", "°")}</CompassBearing>
     </Card>)}
     <Card><DataRow label="Total installed capacity" value={Number.isFinite(s.roof1Kwp) && Number.isFinite(s.roof2Kwp) ? `${formatNumber(s.roof1Kwp + s.roof2Kwp, 1)} kWp` : "—"} /><Text style={{ fontSize: 13, color: colors.ink3 }}>{t("Use zero capacity for an unused group. Total capacity must be greater than zero. Bearings: north 0°, east 90°, south 180°, west 270°.")}</Text></Card>

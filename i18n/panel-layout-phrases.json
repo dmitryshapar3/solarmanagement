@@ -1,0 +1,10 @@
+[
+  "Panel count",
+  "Panels per row",
+  "0 = automatic row layout.",
+  "Enter the panel count for each roof to show its panels.",
+  "{0} panels",
+  "Schematic roof; panel count and rows follow your settings. Dimensions and shadows are not modelled.",
+  "Enter a whole panel count from 0 to 1000, or leave it blank if unknown.",
+  "Use 0 for automatic rows. A positive row size cannot exceed the panel count."
+]

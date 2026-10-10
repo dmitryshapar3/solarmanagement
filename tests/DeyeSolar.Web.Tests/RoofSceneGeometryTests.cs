@@ -16,7 +16,7 @@ public class RoofSceneGeometryTests
     public void BothRoofPlanesAndTheirPanelsKeepTheirActualPitchAndBearing(double tilt1, double azimuth1, double tilt2, double azimuth2)
     {
         var roofs = RoofSunGeometry.Roofs(4, tilt1, azimuth1, 3, tilt2, azimuth2);
-        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20);
+        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20, 8, 7);
 
         foreach (var roof in roofs)
         {
@@ -32,7 +32,7 @@ public class RoofSceneGeometryTests
         {
             var at = DateTimeOffset.Parse("2026-10-10T10:00:00Z");
             var preview = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4.32, 25, 230, 3.24, 25, 50),
-                RoofSunGeometry.Day(50.095278, 20.070278, "Europe/Warsaw", at), 50.095278, 20.070278);
+                RoofSunGeometry.Day(50.095278, 20.070278, "Europe/Warsaw", at), 50.095278, 20.070278, 8, 7, 4, 4);
             Directory.CreateDirectory(directory);
             File.WriteAllText(Path.Combine(directory, "scene.json"), System.Text.Json.JsonSerializer.Serialize(preview,
                 new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase }));
@@ -84,7 +84,7 @@ public class RoofSceneGeometryTests
     public void EitherRoofCanBeShownAloneWithoutRenumbering(int number)
     {
         var roofs = RoofSunGeometry.Roofs(number == 1 ? 4 : 0, 30, 230, number == 2 ? 3 : 0, 45, 50);
-        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20);
+        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20, 8, 7);
         var roof = Assert.Single(scene.Faces.Where(f => f.Kind == "roof"));
         Assert.Equal(number, roof.Roof);
         AssertPlane(roof.Points, number == 1 ? 30 : 45, number == 1 ? 230 : 50);
@@ -116,7 +116,7 @@ public class RoofSceneGeometryTests
     public void ExactlyVerticalInputIsAUprightArrayWithItsActualBearing(double azimuth)
     {
         var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 90, azimuth, 0, 0, 0), null, 50, 20);
-        var panel = Assert.Single(scene.Faces.Where(f => f.Kind == "panel"));
+        var panel = Assert.Single(scene.Faces.Where(f => f.Kind == "vertical"));
         var normal = Normal(panel.Points);
         Close(normal[2], 0);
         // A vertical plane is parallel to the vertical axis and perpendicular to its stated bearing.
@@ -133,7 +133,7 @@ public class RoofSceneGeometryTests
         // Placing it at the roof's centre height would bury one end inside the roof.
         var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 230, 3, 90, 0), null, 50, 20);
         var roof = Assert.Single(scene.Faces.Where(f => f.Kind == "roof"));
-        var panel = Assert.Single(scene.Faces.Where(f => f.Kind == "panel" && f.Roof == 2));
+        var panel = Assert.Single(scene.Faces.Where(f => f.Kind == "vertical" && f.Roof == 2));
         Close(Normal(panel.Points)[2], 0);
         var normal = Normal(roof.Points);
         var origin = roof.Points[0];
@@ -195,7 +195,7 @@ public class RoofSceneGeometryTests
     public void InvalidDraftRoofIsOmittedWithoutBreakingTheRemainingScene(double capacity, double tilt, double azimuth)
     {
         var roofs = RoofSunGeometry.Roofs(capacity, tilt, azimuth, 3, 40, 50);
-        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20);
+        var scene = RoofSceneGeometry.Create(roofs, null, 50, 20, 8, 7);
         Assert.DoesNotContain(scene.Faces, face => face.Roof == 1);
         Assert.Equal(2, Assert.Single(scene.Faces.Where(f => f.Kind == "roof")).Roof);
         AssertFinite(scene);
@@ -204,6 +204,87 @@ public class RoofSceneGeometryTests
         Assert.Null(empty.SunNow);
         Assert.Empty(empty.SunPaths);
         AssertFinite(empty);
+    }
+
+    [Theory]
+    [InlineData(1, 1, 25, 230)]
+    [InlineData(7, 4, 25, 230)]
+    [InlineData(8, 4, 0, 50)]
+    [InlineData(17, 5, 35, 17)]
+    [InlineData(17, 0, 89.9, 230)]
+    [InlineData(7, 3, 90, 90)]
+    public void EverySpecifiedPanelIsAWholeRectangleInsideItsOwnFacet(int count, int columns, double tilt, double azimuth)
+    {
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt, azimuth, 3, 52, 132), null, 50, 20, count, 8, columns, 4);
+        var surface = Assert.Single(scene.Faces.Where(f => f.Roof == 1 && f.Kind is "roof" or "vertical"));
+        var panels = scene.Faces.Where(f => f.Kind == "panel" && f.Roof == 1).ToArray();
+        Assert.Equal(count, panels.Length);
+        Assert.Equal(8, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 2));
+        var normal = Normal(surface.Points);
+        var origin = surface.Points[0];
+        double Dot(double[] p) => normal.Select((n, i) => n * (p[i] - origin[i])).Sum();
+        var offset = Dot(panels[0].Points[0]);
+        Assert.True(offset > 0);
+        foreach (var panel in panels)
+        {
+            Assert.Equal(4, panel.Points.Length);
+            AssertPlane(panel.Points, tilt, azimuth);
+            Close(Distance(panel.Points[1], panel.Points[2]) / Distance(panel.Points[0], panel.Points[1]), 1.7);
+            foreach (var point in panel.Points)
+            {
+                Close(Dot(point), offset);
+                var onSurface = point.Select((value, i) => value - normal[i] * offset).ToArray();
+                foreach (var (a, b) in Edges(surface.Points))
+                {
+                    var edge = b.Select((value, i) => value - a[i]).ToArray();
+                    var delta = onSurface.Select((value, i) => value - a[i]).ToArray();
+                    var cross = new[] { edge[1] * delta[2] - edge[2] * delta[1], edge[2] * delta[0] - edge[0] * delta[2], edge[0] * delta[1] - edge[1] * delta[0] };
+                    Assert.True(cross.Select((value, i) => value * normal[i]).Sum() >= -Tolerance, "A complete panel must stay inside its roof facet.");
+                }
+            }
+        }
+        var u = new[] { Math.Cos(azimuth * Radians), -Math.Sin(azimuth * Radians), 0 };
+        var v = new[] { Math.Sin(azimuth * Radians) * Math.Cos(tilt * Radians), Math.Cos(azimuth * Radians) * Math.Cos(tilt * Radians), -Math.Sin(tilt * Radians) };
+        double Coord(double[] p, double[] basis) => p.Select((value, i) => value * basis[i]).Sum();
+        var rectangles = panels.Select(p => (U: p.Points.Select(q => Coord(q, u)).ToArray(), V: p.Points.Select(q => Coord(q, v)).ToArray())).ToArray();
+        for (var i = 0; i < rectangles.Length; ++i)
+        for (var j = i + 1; j < rectangles.Length; ++j)
+        {
+            var a = rectangles[i]; var b = rectangles[j];
+            Assert.True(a.U.Max() < b.U.Min() || b.U.Max() < a.U.Min() || a.V.Max() < b.V.Min() || b.V.Max() < a.V.Min(), "Panel interiors must not overlap.");
+        }
+        if (columns > 0)
+        {
+            var rows = rectangles.GroupBy(p => Math.Round(p.V.Average(), 6)).OrderBy(g => g.Key).ToArray();
+            Assert.Equal((count + columns - 1) / columns, rows.Length);
+            Assert.Equal(count - columns * (rows.Length - 1), rows[^1].Count());
+            Assert.All(rows.Take(rows.Length - 1), row => Assert.Equal(columns, row.Count()));
+            Assert.All(rows, row => Close(row.Average(p => p.U.Average()), rows[0].Average(p => p.U.Average())));
+        }
+        AssertFinite(scene);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1001)]
+    public void UnknownZeroAndInvalidPanelCountsNeverInventPanelsFromCapacity(int? count)
+    {
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4.32, 25, 230, 3.78, 90, 50), null, 50, 20, count, count);
+        Assert.DoesNotContain(scene.Faces, f => f.Kind == "panel");
+        Assert.Single(scene.Faces.Where(f => f.Kind == "roof"));
+        Assert.Single(scene.Faces.Where(f => f.Kind == "vertical"));
+        AssertFinite(scene);
+    }
+
+    [Fact]
+    public void MaximumValidCountIsExactAndPerRoofRowChoicesAreIndependent()
+    {
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 230, 3, 25, 50), null, 50, 20, 1000, 7, 100, 3);
+        Assert.Equal(1000, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 1));
+        Assert.Equal(7, scene.Faces.Count(f => f.Kind == "panel" && f.Roof == 2));
+        AssertFinite(scene);
     }
 
     private static void AssertPlane(double[][] polygon, double tilt, double azimuth)

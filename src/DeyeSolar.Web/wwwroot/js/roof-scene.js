@@ -45,11 +45,11 @@ function draw(state) {
     }
     // Positive camera depth is nearer the viewer. Coplanar PV tiles stay with
     // their roof so a parent polygon cannot paint over its own far-side cells.
-    const validFaces = scene.faces.filter(face => ["wall", "roof", "panel"].includes(face.kind) && Array.isArray(face.points) && face.points.length > 2 && face.points.every(finitePoint));
-    const roofs = new Set(validFaces.filter(face => face.kind === "roof" && face.roof > 0).map(face => face.roof));
+    const validFaces = scene.faces.filter(face => ["wall", "roof", "vertical", "panel"].includes(face.kind) && Array.isArray(face.points) && face.points.length > 2 && face.points.every(finitePoint));
+    const roofs = new Set(validFaces.filter(face => ["roof", "vertical"].includes(face.kind) && face.roof > 0).map(face => face.roof));
     const cameraVector = [Math.sin(radians(camera.yaw)) * Math.cos(radians(camera.elevation)), Math.cos(radians(camera.yaw)) * Math.cos(radians(camera.elevation)), Math.sin(radians(camera.elevation))];
     const visible = face => {
-        if (face.kind === "panel") return true; // Upright PV has two usable sides in this schematic.
+        if (face.kind === "panel" || face.kind === "vertical") return true; // Upright arrays can be inspected from either side.
         const a = face.points[0];
         for (let i = 1; i < face.points.length - 1; ++i) {
             const b = face.points[i].map((value, axis) => value - a[axis]), c = face.points[i + 1].map((value, axis) => value - a[axis]);
@@ -65,7 +65,7 @@ function draw(state) {
     const addFace = face => content.appendChild(element(document, "polygon", `roof-scene-face roof-scene-${face.kind}`, { points: coordinates(face.points), "data-roof": face.roof }));
     for (const face of groups) {
         addFace(face);
-        if (face.kind === "roof") for (const tile of validFaces.filter(item => item.kind === "panel" && item.roof === face.roof)) addFace(tile);
+        if (face.kind === "roof" || face.kind === "vertical") for (const tile of validFaces.filter(item => item.kind === "panel" && item.roof === face.roof)) addFace(tile);
     }
     for (const sceneLine of scene.lines ?? []) {
         if (["ridge", "grid", "bearing"].includes(sceneLine.kind)) line(sceneLine.points, `roof-scene-line roof-scene-${sceneLine.kind}`);
@@ -82,11 +82,20 @@ function draw(state) {
         sun.appendChild(element(document, "path", "", { d: "M0 -14V-11M0 11V14M-14 0H-11M11 0H14M-10 -10L-8 -8M8 8L10 10M-10 10L-8 8M8 -8L10 -10", fill: "none" }));
         content.appendChild(sun);
     }
-    const visibleRoofNumbers = new Set(groups.filter(face => face.kind === "roof" || face.kind === "panel").map(face => face.roof));
+    const visibleRoofNumbers = new Set(groups.filter(face => ["roof", "vertical", "panel"].includes(face.kind)).map(face => face.roof));
     for (const label of scene.labels ?? []) {
         if (!finitePoint(label.point) || !["roof", "cardinal"].includes(label.kind)) continue;
         if (label.kind === "roof" && Number.isFinite(Number(label.text)) && !visibleRoofNumbers.has(Number(label.text))) continue;
-        const point = project(label.point, camera);
+        let point = project(label.point, camera);
+        if (label.kind === "roof") {
+            const face = groups.find(face => ["roof", "vertical"].includes(face.kind) && face.roof === Number(label.text));
+            if (face) {
+                const polygon = projected(face.points), corner = polygon.reduce((lowest, p) => p.y > lowest.y ? p : lowest);
+                const centerX = polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length;
+                point = { x: corner.x + Math.sign(corner.x - centerX) * 6, y: corner.y + 14 };
+                content.appendChild(element(document, "polyline", "roof-scene-label-line", { points: `${corner.x},${corner.y} ${point.x},${point.y - 5}`, fill: "none" }));
+            }
+        }
         const text = element(document, "text", `roof-scene-label ${label.kind === "roof" ? "roof-scene-number" : "roof-scene-cardinal"}`, { x: point.x, y: point.y, "text-anchor": "middle", "dominant-baseline": "middle" });
         text.textContent = String(label.text ?? "");
         content.appendChild(text);
