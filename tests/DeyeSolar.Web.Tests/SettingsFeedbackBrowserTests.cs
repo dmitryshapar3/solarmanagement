@@ -78,41 +78,76 @@ public sealed class SettingsFeedbackBrowserTests
         await tilts.First.FillAsync("45");
         await Assertions.Expect(roof).Not.ToHaveAttributeAsync("points", bearingRoof!);
 
+        // Dragging and arrow keys inspect the scene; only the explicit axis buttons configure the sun.
+        var beforeDragYaw = await scene.GetAttributeAsync("data-yaw");
+        var beforeDragElevation = await scene.GetAttributeAsync("data-elevation");
+        await scene.ScrollIntoViewIfNeededAsync();
+        var bounds = await scene.BoundingBoxAsync(); Assert.NotNull(bounds);
+        await page.Mouse.MoveAsync(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        await page.Mouse.DownAsync();
+        await page.Mouse.MoveAsync(bounds.X + bounds.Width / 2 + 20, bounds.Y + bounds.Height / 2 + 10, new() { Steps = 4 });
+        await page.Mouse.UpAsync();
+        await Assertions.Expect(scene).Not.ToHaveAttributeAsync("data-yaw", beforeDragYaw!);
+        await Assertions.Expect(scene).Not.ToHaveAttributeAsync("data-elevation", beforeDragElevation!);
+        foreach (var axis in new[] { "x", "y", "z" }) await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-" + axis, "0");
+        await Assertions.Expect(azimuths.First).ToHaveValueAsync("270");
+        await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("90");
+        await Assertions.Expect(tilts.First).ToHaveValueAsync("45");
+        await scene.PressAsync("ArrowRight");
+        await Assertions.Expect(azimuths.First).ToHaveValueAsync("270");
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Reset view", Exact = true }).ClickAsync();
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "0");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-elevation", "32");
         await diagram.GetByRole(AriaRole.Button, new() { Name = "Zoom in", Exact = true }).ClickAsync();
         await Assertions.Expect(scene).Not.ToHaveAttributeAsync("data-zoom", "1");
         var zoom = await scene.GetAttributeAsync("data-zoom");
         var zoomedRoof = await roof.GetAttributeAsync("points");
         var zoomedSecondRoof = await secondRoof.GetAttributeAsync("points");
+        await Assertions.Expect(diagram.Locator(".roof-scene-sun-controls button")).ToHaveCountAsync(6);
+        foreach (var axis in new[] { "X", "Y", "Z" })
+        {
+            var clockwise = diagram.GetByRole(AriaRole.Button, new() { Name = $"Rotate sun around {axis} clockwise", Exact = true });
+            var counterclockwise = diagram.GetByRole(AriaRole.Button, new() { Name = $"Rotate sun around {axis} counterclockwise", Exact = true });
+            foreach (var button in new[] { clockwise, counterclockwise })
+            {
+                var target = await button.BoundingBoxAsync(); Assert.NotNull(target);
+                Assert.True(target.Width >= 44 && target.Height >= 44, "Axis buttons must remain usable at 390px.");
+            }
+            originalPath = await path.GetAttributeAsync("points");
+            await clockwise.ClickAsync();
+            await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-" + axis.ToLowerInvariant(), "10");
+            await Assertions.Expect(path).Not.ToHaveAttributeAsync("points", originalPath!);
+            await AssertRoofProjectionNearAsync(page, 1, zoomedRoof!);
+            await AssertRoofProjectionNearAsync(page, 2, zoomedSecondRoof!);
+            await counterclockwise.ClickAsync();
+            await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-" + axis.ToLowerInvariant(), "0");
+            await Assertions.Expect(path).ToHaveAttributeAsync("points", originalPath!);
+        }
+        await Assertions.Expect(azimuths.First).ToHaveValueAsync("270");
+        await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("90");
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun around X clockwise", Exact = true }).ClickAsync();
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun around Z clockwise", Exact = true }).ClickAsync();
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-x", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-z", "10");
+
         await diagram.GetByRole(AriaRole.Button, new() { Name = "Set house direction", Exact = true }).ClickAsync();
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-direction-editing", "true");
-        var directionRight = diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun path right", Exact = true });
+        await Assertions.Expect(diagram.GetByText("X and Z adjust the diagram only. Y sets the roof azimuth.", new() { Exact = true })).ToBeVisibleAsync();
+        var directionRight = diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun around Y clockwise", Exact = true });
         await directionRight.ClickAsync();
         await directionRight.ClickAsync();
         await Assertions.Expect(azimuths.First).ToHaveValueAsync("290");
         await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("110");
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "20");
-        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun path left", Exact = true }).ClickAsync();
+        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun around Y counterclockwise", Exact = true }).ClickAsync();
         await Assertions.Expect(azimuths.First).ToHaveValueAsync("280");
         await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("100");
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-y", "0");
         await AssertRoofProjectionNearAsync(page, 1, zoomedRoof!);
         await AssertRoofProjectionNearAsync(page, 2, zoomedSecondRoof!);
         await diagram.GetByRole(AriaRole.Button, new() { Name = "Done", Exact = true }).ClickAsync();
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-direction-editing", "false");
-
-        originalPath = await path.GetAttributeAsync("points");
-        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun path clockwise", Exact = true }).ClickAsync();
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "10");
-        await Assertions.Expect(path).Not.ToHaveAttributeAsync("points", originalPath!);
-        await AssertRoofProjectionNearAsync(page, 1, zoomedRoof!);
-        await AssertRoofProjectionNearAsync(page, 2, zoomedSecondRoof!);
-        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun path counterclockwise", Exact = true }).ClickAsync();
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "0");
-        await Assertions.Expect(path).ToHaveAttributeAsync("points", originalPath!);
-        await diagram.GetByRole(AriaRole.Button, new() { Name = "Rotate sun path clockwise", Exact = true }).ClickAsync();
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "10");
-        await Assertions.Expect(azimuths.First).ToHaveValueAsync("280");
-        await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("100");
         await Assertions.Expect(tilts.First).ToHaveValueAsync("45");
         originalPath = await path.GetAttributeAsync("points");
         Assert.False(string.IsNullOrWhiteSpace(originalPath));
@@ -120,11 +155,16 @@ public sealed class SettingsFeedbackBrowserTests
         await Assertions.Expect(path).Not.ToHaveAttributeAsync("points", originalPath!);
         await page.GetByLabel("Longitude", new() { Exact = true }).FillAsync("0");
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-zoom", zoom!);
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-x", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-z", "10");
         await diagram.GetByRole(AriaRole.Button, new() { Name = "Reset view", Exact = true }).ClickAsync();
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-elevation", "32");
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-zoom", "1");
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "0");
+        // Reset restores only the camera; these explicit sun controls and physical drafts stay intact.
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-x", "10");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-y", "0");
+        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-z", "10");
         await Assertions.Expect(azimuths.First).ToHaveValueAsync("280");
         await Assertions.Expect(azimuths.Nth(1)).ToHaveValueAsync("100");
         await Assertions.Expect(tilts.First).ToHaveValueAsync("45");
@@ -148,7 +188,7 @@ public sealed class SettingsFeedbackBrowserTests
         await Assertions.Expect(page.GetByLabel("Latitude", new() { Exact = true })).ToHaveValueAsync("-33.87");
         await Assertions.Expect(page.GetByLabel("Longitude", new() { Exact = true })).ToHaveValueAsync("0");
         await Assertions.Expect(scene).ToHaveAttributeAsync("data-yaw", "10");
-        await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-roll", "0");
+        foreach (var axis in new[] { "x", "y", "z" }) await Assertions.Expect(scene).ToHaveAttributeAsync("data-sun-" + axis, "0");
         await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='1']")).ToHaveCountAsync(7);
         await Assertions.Expect(scene.Locator(".roof-scene-panel[data-roof='2']")).ToHaveCountAsync(7);
         await Assertions.Expect(roof).ToHaveAttributeAsync("points", savedRoof!);

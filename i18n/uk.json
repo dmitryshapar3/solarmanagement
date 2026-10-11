@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Повернути дугу сонця ліворуч",
   "Rotate sun path right": "Повернути дугу сонця праворуч",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Обертайте дугу сонця навколо будинку, щоб задати його напрямок. Азимути обох схилів змінюються разом.",
-  "Rotate sun path counterclockwise": "Повернути дугу сонця проти годинникової стрілки",
-  "Rotate sun path clockwise": "Повернути дугу сонця за годинниковою стрілкою",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Перетягуйте вбік для налаштування азимута · Вгору або вниз для обертання дуги сонця",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Перетягуйте вгору або вниз для обертання дуги сонця · Прокручуйте для зміни масштабу",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Перетягуйте вгору або вниз для обертання дуги сонця · Зводьте й розводьте пальці для зміни масштабу",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Вертикальне обертання змінює лише вигляд схеми. Розрахунки сонячної енергії залишаються незмінними."
+  "Rotate sun around X clockwise": "Повернути сонце навколо X за годинниковою стрілкою",
+  "Rotate sun around Y clockwise": "Повернути сонце навколо Y за годинниковою стрілкою",
+  "Rotate sun around Z clockwise": "Повернути сонце навколо Z за годинниковою стрілкою",
+  "Rotate sun around X counterclockwise": "Повернути сонце навколо X проти годинникової стрілки",
+  "Rotate sun around Y counterclockwise": "Повернути сонце навколо Y проти годинникової стрілки",
+  "Rotate sun around Z counterclockwise": "Повернути сонце навколо Z проти годинникової стрілки",
+  "Sun rotation": "Обертання сонця",
+  "Drag to change view · Scroll to zoom": "Перетягуйте для зміни ракурсу · Прокручуйте для масштабу",
+  "Drag to change view · Pinch to zoom": "Свайп змінює ракурс · Щипок змінює масштаб",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X і Z змінюють лише схему. Y задає азимут даху.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "Обертання сонця змінює лише схему. Розрахунки сонячної енергії залишаються незмінними."
 }

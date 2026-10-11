@@ -61,6 +61,12 @@ public sealed class SettingsRoofPreviewTests
         Assert.Equal(9, html.Split("class=\"roof-scene-face roof-scene-panel\"", StringSplitOptions.None).Length - 1);
         Assert.Contains("9 panels", html);
         Assert.Contains("Australia/Sydney", html);
+        foreach (var axis in new[] { "x", "y", "z" })
+        foreach (var sign in new[] { "minus", "plus" })
+            Assert.Contains($"data-roof-action=\"sun-{axis}-{sign}\"", html);
+        Assert.Contains("Sun rotation changes the diagram only. Solar calculations stay the same.", html);
+        Assert.DoesNotContain("data-roof-action=\"direction-left\"", html);
+        Assert.DoesNotContain("data-roof-action=\"sun-roll-right\"", html);
         Assert.DoesNotContain("Enter valid coordinates and a solar time zone to see the sun path.", html);
     }
 

@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Otočit dráhu slunce doleva",
   "Rotate sun path right": "Otočit dráhu slunce doprava",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Otáčením dráhy slunce kolem domu nastavíte jeho orientaci. Azimuty obou střešních ploch se mění společně.",
-  "Rotate sun path counterclockwise": "Otočit dráhu slunce proti směru hodinových ručiček",
-  "Rotate sun path clockwise": "Otočit dráhu slunce po směru hodinových ručiček",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Tažením do stran nastavte azimut · Tažením nahoru nebo dolů otočte dráhu slunce",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Tažením nahoru nebo dolů otočte dráhu slunce · Posouváním měňte přiblížení",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Tažením nahoru nebo dolů otočte dráhu slunce · Sevřením nebo rozevřením prstů měňte přiblížení",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Svislé otáčení mění pouze zobrazení schématu. Výpočty solární energie zůstávají stejné."
+  "Rotate sun around X clockwise": "Otočit slunce kolem X po směru hodinových ručiček",
+  "Rotate sun around Y clockwise": "Otočit slunce kolem Y po směru hodinových ručiček",
+  "Rotate sun around Z clockwise": "Otočit slunce kolem Z po směru hodinových ručiček",
+  "Rotate sun around X counterclockwise": "Otočit slunce kolem X proti směru hodinových ručiček",
+  "Rotate sun around Y counterclockwise": "Otočit slunce kolem Y proti směru hodinových ručiček",
+  "Rotate sun around Z counterclockwise": "Otočit slunce kolem Z proti směru hodinových ručiček",
+  "Sun rotation": "Otáčení slunce",
+  "Drag to change view · Scroll to zoom": "Tažením změníte pohled · Posouváním přiblížíte",
+  "Drag to change view · Pinch to zoom": "Tažením změníte pohled · Stažením prstů přiblížíte",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X a Z upravují pouze schéma. Y nastavuje azimut střechy.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "Otáčení slunce mění pouze schéma. Výpočty solární energie zůstávají stejné."
 }

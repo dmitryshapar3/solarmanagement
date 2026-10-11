@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "向左旋转太阳轨迹",
   "Rotate sun path right": "向右旋转太阳轨迹",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "围绕房屋旋转太阳轨迹以设置房屋朝向。两侧屋顶的方位角将同步变化。",
-  "Rotate sun path counterclockwise": "逆时针旋转太阳轨迹",
-  "Rotate sun path clockwise": "顺时针旋转太阳轨迹",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "左右拖动设置方位角 · 上下拖动旋转太阳轨迹",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "上下拖动旋转太阳轨迹 · 滚动缩放",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "上下拖动旋转太阳轨迹 · 双指捏合缩放",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "垂直旋转仅改变示意图的视角。太阳能计算保持不变。"
+  "Rotate sun around X clockwise": "绕 X 轴顺时针旋转太阳",
+  "Rotate sun around Y clockwise": "绕 Y 轴顺时针旋转太阳",
+  "Rotate sun around Z clockwise": "绕 Z 轴顺时针旋转太阳",
+  "Rotate sun around X counterclockwise": "绕 X 轴逆时针旋转太阳",
+  "Rotate sun around Y counterclockwise": "绕 Y 轴逆时针旋转太阳",
+  "Rotate sun around Z counterclockwise": "绕 Z 轴逆时针旋转太阳",
+  "Sun rotation": "太阳旋转",
+  "Drag to change view · Scroll to zoom": "拖动可改变视角 · 滚动可缩放",
+  "Drag to change view · Pinch to zoom": "拖动可改变视角 · 双指捏合可缩放",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X 和 Z 仅调整示意图。Y 设置屋顶方位角。",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "旋转太阳仅改变示意图。太阳能计算保持不变。"
 }

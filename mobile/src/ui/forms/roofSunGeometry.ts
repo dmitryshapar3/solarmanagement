@@ -75,6 +75,7 @@ export const sunPath = (points: SunPoint[]) => points.map((point, index) => `${i
 
 export type Point3 = { x: number; y: number; z: number };
 export type OrbitCamera = { yaw: number; elevation: number; zoom: number };
+export type SolarRotation = { x: number; y: number; z: number };
 export type RoofFace3 = { id: string; kind: "roof" | "wall" | "vertical"; roofNumber?: number; points: Point3[]; normal: Point3; panels: Point3[]; panelTiles: Point3[][]; grid: Point3[][] };
 export type RoofMesh = { faces: RoofFace3[]; ridge: Point3[][]; footprint: Point3[]; scale: number; hasVerticalPanels: boolean };
 export type OrbitTouch = { pageX: number; pageY: number };
@@ -89,6 +90,13 @@ const referenceRoofBearing = (roofs: readonly DiagramRoof[]) => (roofs.find(roof
  */
 export function fixedGableRoofCamera(site: RoofSunSite, zoom = 1): OrbitCamera {
   return normalizeRoofCamera({ yaw: referenceRoofBearing(diagramRoofs(site)) + 90, elevation: DEFAULT_ROOF_CAMERA.elevation, zoom });
+}
+
+/** The stored yaw is a view offset from the house front, so draft bearing edits
+ * preserve the chosen viewing side without changing any solar orientation.
+ */
+export function roofCameraFromView(site: RoofSunSite, view: OrbitCamera): OrbitCamera {
+  return normalizeRoofCamera({ ...view, yaw: fixedGableRoofCamera(site).yaw + view.yaw });
 }
 
 /** Convex polygon clipped to a*x+b*y >= c. Shared intersections are calculated identically on both faces. */
@@ -204,24 +212,33 @@ export function roofMesh(site: RoofSunSite): RoofMesh {
 }
 
 export function normalizeRoofCamera(camera: OrbitCamera): OrbitCamera {
-  return { yaw: Number.isFinite(camera.yaw) ? ((camera.yaw + 180) % 360 + 360) % 360 - 180 : DEFAULT_ROOF_CAMERA.yaw, elevation: Number.isFinite(camera.elevation) ? clamp(camera.elevation, 10, 85) : DEFAULT_ROOF_CAMERA.elevation, zoom: Number.isFinite(camera.zoom) ? clamp(camera.zoom, .7, 2.5) : 1 };
+  return { yaw: Number.isFinite(camera.yaw) ? ((camera.yaw + 180) % 360 + 360) % 360 - 180 : DEFAULT_ROOF_CAMERA.yaw, elevation: Number.isFinite(camera.elevation) ? clamp(camera.elevation, -80, 80) : DEFAULT_ROOF_CAMERA.elevation, zoom: Number.isFinite(camera.zoom) ? clamp(camera.zoom, .7, 2.5) : 1 };
 }
 export function projectRoofPoint(point: Point3, camera: OrbitCamera): Point3 {
   const view = normalizeRoofCamera(camera), yaw = view.yaw * rad, elevation = view.elevation * rad, horizontal = point.x * Math.sin(yaw) + point.y * Math.cos(yaw);
   return { x: 160 + (point.x * Math.cos(yaw) - point.y * Math.sin(yaw)) * view.zoom, y: 180 + (horizontal * Math.sin(elevation) - point.z * Math.cos(elevation)) * view.zoom, z: horizontal * Math.cos(elevation) + point.z * Math.sin(elevation) };
 }
-export const normalizeSunFrameRoll = (degrees: number) => Number.isFinite(degrees) ? ((degrees + 180) % 360 + 360) % 360 - 180 : 0;
-/** Rotate only the projected sky frame about its shared origin with the house. This rigid
- * screen rotation preserves the solar arc and never changes physical positions,
- * the fixed house camera, or any installation setting.
+export const normalizeSunRotationAngle = (degrees: number) => Number.isFinite(degrees) ? ((degrees + 180) % 360 + 360) % 360 - 180 : 0;
+/** Rigid rotations in the house frame, centred on the shared world origin.
+ * X points right in the default gable view, Y is up, and Z = X cross Y.
+ * Apply standard right-handed Rx, then Ry, then Rz before reconstructing the
+ * world point. Camera motion never changes these axes or the physical sun data.
  */
-export function projectSunFramePoint(point: Point3, camera: OrbitCamera, rollDegrees: number): Point3 {
-  const projected = projectRoofPoint(point, camera), roll = normalizeSunFrameRoll(rollDegrees) * rad;
-  const x = projected.x - 160, y = projected.y - 180;
-  return { x: 160 + x * Math.cos(roll) - y * Math.sin(roll), y: 180 + x * Math.sin(roll) + y * Math.cos(roll), z: projected.z };
+export function rotateSolarPoint(point: Point3, frontYaw: number, angles: SolarRotation): Point3 {
+  const ax = normalizeSunRotationAngle(angles.x) * rad, ay = normalizeSunRotationAngle(angles.y) * rad, az = normalizeSunRotationAngle(angles.z) * rad;
+  if (!ax && !ay && !az) return { ...point };
+  const front = normalizeSunRotationAngle(frontYaw) * rad, c = Math.cos(front), s = Math.sin(front);
+  const x = point.x * c - point.y * s, y = point.z, z = -point.x * s - point.y * c;
+  const x1 = x, y1 = y * Math.cos(ax) - z * Math.sin(ax), z1 = y * Math.sin(ax) + z * Math.cos(ax);
+  const x2 = x1 * Math.cos(ay) + z1 * Math.sin(ay), y2 = y1, z2 = -x1 * Math.sin(ay) + z1 * Math.cos(ay);
+  const x3 = x2 * Math.cos(az) - y2 * Math.sin(az), y3 = x2 * Math.sin(az) + y2 * Math.cos(az);
+  return { x: x3 * c - z2 * s, y: -x3 * s - z2 * c, z: y3 };
+}
+export function projectSunFramePoint(point: Point3, camera: OrbitCamera, frontYaw: number, angles: SolarRotation): Point3 {
+  return projectRoofPoint(rotateSolarPoint(point, frontYaw, angles), camera);
 }
 export const roofPath3 = (points: Point3[], camera: OrbitCamera, close = false) => points.map((point, index) => { const p = projectRoofPoint(point, camera); return `${index ? "L" : "M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`; }).join(" ") + (close ? " Z" : "");
-export const sunFramePath3 = (points: Point3[], camera: OrbitCamera, rollDegrees: number, close = false) => points.map((point, index) => { const p = projectSunFramePoint(point, camera, rollDegrees); return `${index ? "L" : "M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`; }).join(" ") + (close ? " Z" : "");
+export const sunFramePath3 = (points: Point3[], camera: OrbitCamera, frontYaw: number, angles: SolarRotation, close = false) => points.map((point, index) => { const p = projectSunFramePoint(point, camera, frontYaw, angles); return `${index ? "L" : "M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`; }).join(" ") + (close ? " Z" : "");
 export function sunPoint3(point: Pick<SunPoint, "azimuth" | "elevation">, distance = 110): Point3 { const altitude = point.elevation * rad, bearing = point.azimuth * rad; return { x: Math.sin(bearing) * Math.cos(altitude) * distance, y: Math.cos(bearing) * Math.cos(altitude) * distance, z: Math.sin(altitude) * distance }; }
 export function orbitRoofGesture(camera: OrbitCamera, previous: readonly OrbitTouch[], current: readonly OrbitTouch[]): OrbitCamera {
   if (!previous.length || previous.length !== current.length || current.some(p => !Number.isFinite(p.pageX) || !Number.isFinite(p.pageY)) || previous.some(p => !Number.isFinite(p.pageX) || !Number.isFinite(p.pageY))) return camera;

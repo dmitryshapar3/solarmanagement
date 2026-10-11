@@ -102,13 +102,17 @@ public class RoofSunDiagramTests
         Assert.Equal(8, System.Text.RegularExpressions.Regex.Matches(before, "class=\"roof-scene-face roof-scene-panel\"").Count);
         Assert.Contains("8 panels", before);
         Assert.Contains("data-roof-action=\"zoom-in\"", before); Assert.Contains("data-roof-action=\"reset\"", before);
-        Assert.Contains("data-roof-action=\"sun-roll-left\"", before); Assert.Contains("Rotate sun path counterclockwise", before);
-        Assert.Contains("data-roof-action=\"sun-roll-right\"", before); Assert.Contains("Rotate sun path clockwise", before);
-        Assert.Contains("Drag up or down to rotate the sun path", before);
-        Assert.Contains("Vertical rotation changes only the diagram view. Solar calculations stay the same.", before);
-        Assert.DoesNotContain("data-roof-action=\"opposite-end\"", before);
-        Assert.DoesNotContain("data-roof-action=\"direction-half-turn\"", before);
-        foreach (var action in new[] { "left", "right", "up", "down", "sun-up", "sun-down" })
+        foreach (var axis in new[] { "X", "Y", "Z" })
+        {
+            Assert.Contains($"data-roof-action=\"sun-{axis.ToLowerInvariant()}-minus\"", before);
+            Assert.Contains($"data-roof-action=\"sun-{axis.ToLowerInvariant()}-plus\"", before);
+            Assert.Contains($"Rotate sun around {axis} clockwise", before);
+            Assert.Contains($"Rotate sun around {axis} counterclockwise", before);
+        }
+        Assert.Contains("Drag to change view · Scroll to zoom", before);
+        Assert.Contains("Drag to change view · Pinch to zoom", before);
+        Assert.Contains("Sun rotation changes the diagram only. Solar calculations stay the same.", before);
+        foreach (var action in new[] { "opposite-end", "direction-half-turn", "direction-left", "direction-right", "sun-roll-left", "sun-roll-right", "left", "right", "up", "down", "sun-up", "sun-down" })
             Assert.DoesNotContain("data-roof-action=\"" + action + "\"", before);
         Assert.Contains("Tilt", before);
         var beforeRoof = RoofPolygon(before);
@@ -124,6 +128,29 @@ public class RoofSunDiagramTests
         var unknown = await Render(parameters);
         Assert.DoesNotContain("class=\"roof-scene-face roof-scene-panel\"", unknown);
         Assert.Contains("Enter the panel count for each roof", unknown);
+    }
+
+    [Fact]
+    public async Task DisabledDraftBlocksAllSolarAxisButtonsWhileCameraInspectionRemainsAvailable()
+    {
+        var html = await Render(new Dictionary<string, object?>
+        {
+            ["Roof1Kwp"] = 4d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
+            ["Roof1PanelCount"] = 8, ["DirectionDisabled"] = true
+        });
+        foreach (var axis in new[] { "x", "y", "z" })
+        foreach (var sign in new[] { "minus", "plus" })
+        {
+            var button = System.Text.RegularExpressions.Regex.Match(html, $"<button[^>]*data-roof-action=\"sun-{axis}-{sign}\"[^>]*>").Value;
+            Assert.NotEmpty(button); Assert.Contains(" disabled", button);
+        }
+        foreach (var action in new[] { "zoom-in", "zoom-out", "reset" })
+        {
+            var button = System.Text.RegularExpressions.Regex.Match(html, $"<button[^>]*data-roof-action=\"{action}\"[^>]*>").Value;
+            Assert.NotEmpty(button); Assert.DoesNotContain(" disabled", button);
+        }
+        Assert.Contains("tabindex=\"0\"", html);
+        Assert.Contains("Sun rotation changes the diagram only. Solar calculations stay the same.", html);
     }
 
     [Fact]

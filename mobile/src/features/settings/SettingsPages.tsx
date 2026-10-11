@@ -83,7 +83,7 @@ export function SolarSiteScreen() {
       <TextField label="Forecast time zone" value={s.timeZoneId} onChangeText={value => field("timeZoneId", value)} editable={!disabled} helper="Use a time zone such as Europe/Warsaw." error={settingTimeZoneError(s.timeZoneId)} />
       <Text style={{ fontSize: 13, color: colors.ink3 }}>{t("Location is used only when you tap the button. It helps estimate sunlight at your solar site.")}</Text>
     </Card>
-    <Card><RoofSunDiagram site={s} onOrientationChange={disabled || !Number.isFinite(s.roof1Azimuth) || !Number.isFinite(s.roof2Azimuth) ? undefined : rotateHouse} /></Card>
+    <Card><RoofSunDiagram site={s} directionDisabled={disabled} onOrientationChange={disabled || !Number.isFinite(s.roof1Azimuth) || !Number.isFinite(s.roof2Azimuth) ? undefined : rotateHouse} /></Card>
     {[1, 2].map(array => <Card key={array} style={{ gap: 14 }}><SectionTitle title={t("Solar array {0}", array)} />
       <SettingPanelField value={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelCount" : "roof2PanelCount", value)} editable={!disabled} />
       <SettingPanelField rows value={array === 1 ? s.roof1PanelsPerRow : s.roof2PanelsPerRow} count={array === 1 ? s.roof1PanelCount : s.roof2PanelCount} onValue={value => field(array === 1 ? "roof1PanelsPerRow" : "roof2PanelsPerRow", value)} editable={!disabled} />

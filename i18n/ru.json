@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Повернуть дугу солнца влево",
   "Rotate sun path right": "Повернуть дугу солнца вправо",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Вращайте дугу солнца вокруг дома, чтобы задать его направление. Азимуты обоих скатов меняются вместе.",
-  "Rotate sun path counterclockwise": "Повернуть дугу солнца против часовой стрелки",
-  "Rotate sun path clockwise": "Повернуть дугу солнца по часовой стрелке",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Перетаскивайте в стороны для настройки азимута · Вверх или вниз для вращения дуги солнца",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Перетаскивайте вверх или вниз для вращения дуги солнца · Прокручивайте для масштаба",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Перетаскивайте вверх или вниз для вращения дуги солнца · Сводите и разводите пальцы для масштаба",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Вертикальное вращение меняет только вид схемы. Расчёты солнечной энергии остаются прежними."
+  "Rotate sun around X clockwise": "Повернуть солнце вокруг X по часовой стрелке",
+  "Rotate sun around Y clockwise": "Повернуть солнце вокруг Y по часовой стрелке",
+  "Rotate sun around Z clockwise": "Повернуть солнце вокруг Z по часовой стрелке",
+  "Rotate sun around X counterclockwise": "Повернуть солнце вокруг X против часовой стрелки",
+  "Rotate sun around Y counterclockwise": "Повернуть солнце вокруг Y против часовой стрелки",
+  "Rotate sun around Z counterclockwise": "Повернуть солнце вокруг Z против часовой стрелки",
+  "Sun rotation": "Вращение солнца",
+  "Drag to change view · Scroll to zoom": "Перетаскивайте для смены ракурса · Прокручивайте для масштаба",
+  "Drag to change view · Pinch to zoom": "Свайп меняет ракурс · Щипок меняет масштаб",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X и Z меняют только схему. Y задаёт азимут крыши.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "Вращение солнца меняет только схему. Расчёты солнечной энергии остаются прежними."
 }

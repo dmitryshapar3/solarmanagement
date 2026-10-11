@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Sonnenbahn nach links drehen",
   "Rotate sun path right": "Sonnenbahn nach rechts drehen",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Drehen Sie die Sonnenbahn um das Haus, um es auszurichten. Die Azimute beider Dachflächen ändern sich gemeinsam.",
-  "Rotate sun path counterclockwise": "Sonnenbahn gegen den Uhrzeigersinn drehen",
-  "Rotate sun path clockwise": "Sonnenbahn im Uhrzeigersinn drehen",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Seitlich ziehen, um den Azimut einzustellen · Nach oben oder unten ziehen, um die Sonnenbahn zu drehen",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Nach oben oder unten ziehen, um die Sonnenbahn zu drehen · Zum Zoomen scrollen",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Nach oben oder unten ziehen, um die Sonnenbahn zu drehen · Zum Zoomen Finger zusammen- oder auseinanderziehen",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Die vertikale Drehung ändert nur die Diagrammansicht. Die Berechnungen zur Solarenergie bleiben unverändert."
+  "Rotate sun around X clockwise": "Sonne im Uhrzeigersinn um X drehen",
+  "Rotate sun around Y clockwise": "Sonne im Uhrzeigersinn um Y drehen",
+  "Rotate sun around Z clockwise": "Sonne im Uhrzeigersinn um Z drehen",
+  "Rotate sun around X counterclockwise": "Sonne gegen den Uhrzeigersinn um X drehen",
+  "Rotate sun around Y counterclockwise": "Sonne gegen den Uhrzeigersinn um Y drehen",
+  "Rotate sun around Z counterclockwise": "Sonne gegen den Uhrzeigersinn um Z drehen",
+  "Sun rotation": "Sonnendrehung",
+  "Drag to change view · Scroll to zoom": "Ziehen zum Ändern der Ansicht · Scrollen zum Zoomen",
+  "Drag to change view · Pinch to zoom": "Ziehen zum Ändern der Ansicht · Mit zwei Fingern zoomen",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X und Z ändern nur das Diagramm. Y legt den Dachazimut fest.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "Die Sonnendrehung ändert nur das Diagramm. Die Berechnungen zur Solarenergie bleiben unverändert."
 }

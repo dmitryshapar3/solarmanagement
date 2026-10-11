@@ -26,9 +26,21 @@
             </svg>
             <svg class="roof-sun-compass roof-scene-interactive" viewBox="0 0 360 320" role="img" tabindex="0" aria-label="@T["Roof layout and calculated sun path"]" aria-describedby="@_hintId"></svg>
         </div>
+        <div class="roof-scene-controls roof-scene-sun-controls" role="group" aria-label="@T["Sun rotation"]">
+            <div class="roof-scene-axis-controls" role="group" aria-label="X">
+                <button type="button" class="roof-scene-control" data-roof-action="sun-x-minus" disabled="@DirectionDisabled" title="@T["Rotate sun around X counterclockwise"]" aria-label="@T["Rotate sun around X counterclockwise"]">X−</button>
+                <button type="button" class="roof-scene-control" data-roof-action="sun-x-plus" disabled="@DirectionDisabled" title="@T["Rotate sun around X clockwise"]" aria-label="@T["Rotate sun around X clockwise"]">X+</button>
+            </div>
+            <div class="roof-scene-axis-controls" role="group" aria-label="Y">
+                <button type="button" class="roof-scene-control" data-roof-action="sun-y-minus" disabled="@DirectionDisabled" title="@T["Rotate sun around Y counterclockwise"]" aria-label="@T["Rotate sun around Y counterclockwise"]">Y−</button>
+                <button type="button" class="roof-scene-control" data-roof-action="sun-y-plus" disabled="@DirectionDisabled" title="@T["Rotate sun around Y clockwise"]" aria-label="@T["Rotate sun around Y clockwise"]">Y+</button>
+            </div>
+            <div class="roof-scene-axis-controls" role="group" aria-label="Z">
+                <button type="button" class="roof-scene-control" data-roof-action="sun-z-minus" disabled="@DirectionDisabled" title="@T["Rotate sun around Z counterclockwise"]" aria-label="@T["Rotate sun around Z counterclockwise"]">Z−</button>
+                <button type="button" class="roof-scene-control" data-roof-action="sun-z-plus" disabled="@DirectionDisabled" title="@T["Rotate sun around Z clockwise"]" aria-label="@T["Rotate sun around Z clockwise"]">Z+</button>
+            </div>
+        </div>
         <div class="roof-scene-controls" role="group" aria-label="@T["Roof and sun"]">
-            <button type="button" class="roof-scene-control" data-roof-action="sun-roll-left" title="@T["Rotate sun path counterclockwise"]" aria-label="@T["Rotate sun path counterclockwise"]">↶</button>
-            <button type="button" class="roof-scene-control" data-roof-action="sun-roll-right" title="@T["Rotate sun path clockwise"]" aria-label="@T["Rotate sun path clockwise"]">↷</button>
             <button type="button" class="roof-scene-control" data-roof-action="zoom-out" title="@T["Zoom out"]" aria-label="@T["Zoom out"]">−</button>
             <button type="button" class="roof-scene-control" data-roof-action="zoom-in" title="@T["Zoom in"]" aria-label="@T["Zoom in"]">+</button>
             <button type="button" class="roof-scene-control roof-scene-reset" data-roof-action="reset">@T["Reset view"]</button>
@@ -37,15 +49,10 @@
         {
             <div class="roof-scene-direction-controls">
                 <button type="button" class="roof-scene-control roof-scene-reset" aria-pressed="@_editingDirection.ToString().ToLowerInvariant()" disabled="@DirectionDisabled" @onclick="ToggleDirection">@T[_editingDirection ? "Done" : "Set house direction"]</button>
-                @if (_editingDirection)
-                {
-                    <button type="button" class="roof-scene-control" data-roof-action="direction-left" disabled="@DirectionDisabled" aria-label="@T["Rotate sun path left"]">↶</button>
-                    <button type="button" class="roof-scene-control" data-roof-action="direction-right" disabled="@DirectionDisabled" aria-label="@T["Rotate sun path right"]">↷</button>
-                }
             </div>
         }
-        <p class="roof-scene-hint" id="@_hintId">@if (_editingDirection) { @T["Drag sideways to set azimuth · Drag up or down to rotate the sun path"] } else { <span class="roof-scene-pointer-hint">@T["Drag up or down to rotate the sun path · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag up or down to rotate the sun path · Pinch to zoom"]</span> }</p>
-        <p class="caption roof-sun-note">@T["Vertical rotation changes only the diagram view. Solar calculations stay the same."]</p>
+        <p class="roof-scene-hint" id="@_hintId"><span class="roof-scene-pointer-hint">@T["Drag to change view · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag to change view · Pinch to zoom"]</span></p>
+        <p class="caption roof-sun-note">@T[_editingDirection ? "X and Z adjust the diagram only. Y sets the roof azimuth." : "Sun rotation changes the diagram only. Solar calculations stay the same."]</p>
     </div>
     @if (Day is { } sun)
     {

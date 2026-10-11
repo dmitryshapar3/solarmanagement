@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Zonnebaan naar links draaien",
   "Rotate sun path right": "Zonnebaan naar rechts draaien",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Draai de zonnebaan rond het huis om de richting in te stellen. De azimuten van beide dakvlakken veranderen samen.",
-  "Rotate sun path counterclockwise": "Zonnebaan tegen de klok in draaien",
-  "Rotate sun path clockwise": "Zonnebaan met de klok mee draaien",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Sleep zijwaarts om de azimut in te stellen · Sleep omhoog of omlaag om de zonnebaan te draaien",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Sleep omhoog of omlaag om de zonnebaan te draaien · Scrol om te zoomen",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Sleep omhoog of omlaag om de zonnebaan te draaien · Knijp om te zoomen",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Verticaal draaien verandert alleen de weergave van het diagram. De berekeningen voor zonne-energie blijven hetzelfde."
+  "Rotate sun around X clockwise": "Zon met de klok mee om X draaien",
+  "Rotate sun around Y clockwise": "Zon met de klok mee om Y draaien",
+  "Rotate sun around Z clockwise": "Zon met de klok mee om Z draaien",
+  "Rotate sun around X counterclockwise": "Zon tegen de klok in om X draaien",
+  "Rotate sun around Y counterclockwise": "Zon tegen de klok in om Y draaien",
+  "Rotate sun around Z counterclockwise": "Zon tegen de klok in om Z draaien",
+  "Sun rotation": "Zon draaien",
+  "Drag to change view · Scroll to zoom": "Slepen om de weergave te wijzigen · Scrollen om te zoomen",
+  "Drag to change view · Pinch to zoom": "Slepen om de weergave te wijzigen · Knijpen om te zoomen",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X en Z passen alleen het schema aan. Y stelt de azimut van het dak in.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "Het draaien van de zon verandert alleen het schema. De berekeningen voor zonne-energie blijven hetzelfde."
 }

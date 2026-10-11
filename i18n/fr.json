@@ -2676,10 +2676,15 @@
   "Rotate sun path left": "Tourner la trajectoire du soleil à gauche",
   "Rotate sun path right": "Tourner la trajectoire du soleil à droite",
   "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Faites tourner la trajectoire du soleil autour de la maison pour définir son orientation. Les azimuts des deux pans changent ensemble.",
-  "Rotate sun path counterclockwise": "Tourner la trajectoire du soleil dans le sens antihoraire",
-  "Rotate sun path clockwise": "Tourner la trajectoire du soleil dans le sens horaire",
-  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Glissez latéralement pour régler l’azimut · Glissez vers le haut ou le bas pour faire tourner la trajectoire du soleil",
-  "Drag up or down to rotate the sun path · Scroll to zoom": "Glissez vers le haut ou le bas pour faire tourner la trajectoire du soleil · Faites défiler pour zoomer",
-  "Drag up or down to rotate the sun path · Pinch to zoom": "Glissez vers le haut ou le bas pour faire tourner la trajectoire du soleil · Pincez pour zoomer",
-  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "La rotation verticale modifie uniquement la vue du schéma. Les calculs d’énergie solaire restent inchangés."
+  "Rotate sun around X clockwise": "Tourner le soleil autour de X dans le sens horaire",
+  "Rotate sun around Y clockwise": "Tourner le soleil autour de Y dans le sens horaire",
+  "Rotate sun around Z clockwise": "Tourner le soleil autour de Z dans le sens horaire",
+  "Rotate sun around X counterclockwise": "Tourner le soleil autour de X dans le sens antihoraire",
+  "Rotate sun around Y counterclockwise": "Tourner le soleil autour de Y dans le sens antihoraire",
+  "Rotate sun around Z counterclockwise": "Tourner le soleil autour de Z dans le sens antihoraire",
+  "Sun rotation": "Rotation du soleil",
+  "Drag to change view · Scroll to zoom": "Glisser pour changer la vue · Défiler pour zoomer",
+  "Drag to change view · Pinch to zoom": "Glisser pour changer la vue · Pincer pour zoomer",
+  "X and Z adjust the diagram only. Y sets the roof azimuth.": "X et Z modifient uniquement le schéma. Y définit l’azimut du toit.",
+  "Sun rotation changes the diagram only. Solar calculations stay the same.": "La rotation du soleil modifie uniquement le schéma. Les calculs d’énergie solaire restent inchangés."
 }

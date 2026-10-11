@@ -1,5 +1,5 @@
-// The house stays end-on. Only the solar frame can roll about the viewing Z axis;
-// the location-derived ENU solar positions and installation tilt stay unchanged.
+// Dragging orbits only the camera. Explicit buttons rotate the solar frame in
+// house-local 3D axes; only the Y buttons in direction mode edit roof bearings.
 const states = new WeakMap();
 const ns = "http://www.w3.org/2000/svg";
 const normalizeYaw = value => ((value + 180) % 360 + 360) % 360 - 180;
@@ -17,10 +17,19 @@ function project(point, camera) {
         depth: depth * Math.cos(elevation) + point[2] * Math.sin(elevation) };
 }
 
-function solarProject(point, camera, roll) {
-    const result = project(point, camera), angle = radians(roll);
-    const x = result.x - 180, y = result.y - 180;
-    return { ...result, x: 180 + x * Math.cos(angle) - y * Math.sin(angle), y: 180 + x * Math.sin(angle) + y * Math.cos(angle) };
+// Right-handed house axes: X across the gable, Y up, Z away from the front.
+// Apply X, then Y, then Z before the independent camera projection. The input
+// ENU solar positions remain immutable, including the location-derived altitude.
+export function rotateSolarPoint(point, houseYaw, angles) {
+    const f = radians(houseYaw), cx = Math.cos(radians(angles.x)), sx = Math.sin(radians(angles.x));
+    const cy = Math.cos(radians(angles.y)), sy = Math.sin(radians(angles.y));
+    const cz = Math.cos(radians(angles.z)), sz = Math.sin(radians(angles.z));
+    const x = point[0] * Math.cos(f) - point[1] * Math.sin(f), y = point[2];
+    const z = -point[0] * Math.sin(f) - point[1] * Math.cos(f);
+    const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+    const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+    const x3 = x2 * cz - y1 * sz, y3 = x2 * sz + y1 * cz;
+    return [x3 * Math.cos(f) - z2 * Math.sin(f), -x3 * Math.sin(f) - z2 * Math.cos(f), y3];
 }
 
 function element(document, name, className, attributes = {}) {
@@ -33,10 +42,8 @@ function element(document, name, className, attributes = {}) {
 function draw(state) {
     const { svg, root, scene, camera } = state;
     if (!scene || !Array.isArray(scene.faces)) return;
-    camera.yaw = frontYaw(scene);
-    camera.elevation = 32;
     const document = svg.ownerDocument, content = document.createDocumentFragment();
-    const skyPoint = point => solarProject(point, camera, state.sunRoll);
+    const skyPoint = point => project(rotateSolarPoint(point, frontYaw(scene), state.sunAngles), camera);
     const projected = points => points.map(point => project(point, camera));
     const coordinates = points => projected(points).map(point => `${point.x.toFixed(3)},${point.y.toFixed(3)}`).join(" ");
     const skyCoordinates = points => points.map(skyPoint).map(point => `${point.x.toFixed(3)},${point.y.toFixed(3)}`).join(" ");
@@ -117,7 +124,7 @@ function draw(state) {
     svg.setAttribute("data-yaw", String(camera.yaw));
     svg.setAttribute("data-elevation", String(camera.elevation));
     svg.setAttribute("data-zoom", String(camera.zoom));
-    svg.setAttribute("data-sun-roll", String(state.sunRoll));
+    for (const axis of ["x", "y", "z"]) svg.setAttribute(`data-sun-${axis}`, String(state.sunAngles[axis]));
     svg.setAttribute("data-direction-editing", String(Boolean(state.orientation?.enabled && !state.orientation.disabled)));
     root.classList.add("scene-ready");
 }
@@ -128,14 +135,17 @@ function schedule(state) {
 }
 
 function setCamera(state, camera) {
-    state.camera = { yaw: frontYaw(state.scene), elevation: 32, zoom: clamp(camera.zoom, .7, 2.5) };
+    state.camera = { yaw: normalizeYaw(camera.yaw), elevation: clamp(camera.elevation, -80, 80), zoom: clamp(camera.zoom, .7, 2.5) };
     schedule(state);
 }
 
-function rollSun(state, delta) {
-    if (state.disposed || !Number.isFinite(delta)) return;
-    state.sunRoll = normalizeYaw(state.sunRoll + delta);
-    schedule(state);
+function rotateSun(state, axis, delta) {
+    if (state.disposed || state.orientation?.disabled || !Number.isFinite(delta)) return;
+    if (axis === "y" && state.orientation?.enabled) rotateDirection(state, delta);
+    else {
+        state.sunAngles[axis] = normalizeYaw(state.sunAngles[axis] + delta);
+        schedule(state);
+    }
 }
 
 function rebase(state) {
@@ -143,8 +153,8 @@ function rebase(state) {
     state.gesture = { camera: { ...state.camera }, first: points[0], distance: points.length > 1 ? Math.max(1, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)) : null };
 }
 
-// One server update at a time, accumulating small pointer moves while the
-// previous draft update is in flight. Only acknowledged bearings move the view.
+// Serialize explicit Y-button edits while the previous draft update is in
+// flight. Pointer and keyboard camera controls never enter this queue.
 function rotateDirection(state, delta) {
     if (state.disposed || !state.orientation?.enabled || state.orientation.disabled || !Number.isFinite(delta)) return;
     state.directionPending += delta;
@@ -153,27 +163,30 @@ function rotateDirection(state, delta) {
         const amount = clamp(Math.trunc(state.directionPending), -360, 360);
         if (!amount) return;
         state.directionPending -= amount;
+        const epoch = state.directionEpoch, bridge = state.orientation.bridge;
         state.directionInFlight = true;
         Promise.resolve().then(() => {
-            if (state.disposed || !state.orientation?.enabled || state.orientation.disabled) return;
-            return state.orientation.bridge.invokeMethodAsync("RotateHouse", amount);
+            if (state.disposed || state.directionEpoch !== epoch || !state.orientation?.enabled || state.orientation.disabled) return;
+            return bridge.invokeMethodAsync("RotateHouse", amount);
         })
-            .catch(() => { state.directionPending = 0; })
+            .catch(() => { if (state.directionEpoch === epoch) state.directionPending = 0; })
             .finally(() => { state.directionInFlight = false; pump(); });
     };
     pump();
 }
 
 function action(state, name) {
+    const axisAction = /^sun-([xyz])-(minus|plus)$/.exec(name);
+    if (axisAction) { rotateSun(state, axisAction[1], axisAction[2] === "plus" ? 10 : -10); return true; }
     const camera = { ...state.camera };
     switch (name) {
         case "zoom-in": camera.zoom *= 1.15; break;
         case "zoom-out": camera.zoom /= 1.15; break;
-        case "reset": state.sunRoll = 0; setCamera(state, initialCamera(state.scene)); rebase(state); return true;
-        case "direction-left": rotateDirection(state, -10); return true;
-        case "direction-right": rotateDirection(state, 10); return true;
-        case "sun-roll-left": rollSun(state, -10); rebase(state); return true;
-        case "sun-roll-right": rollSun(state, 10); rebase(state); return true;
+        case "view-left": camera.yaw -= 10; break;
+        case "view-right": camera.yaw += 10; break;
+        case "view-up": camera.elevation += 10; break;
+        case "view-down": camera.elevation -= 10; break;
+        case "reset": setCamera(state, initialCamera(state.scene)); rebase(state); return true;
         default: return false;
     }
     setCamera(state, camera); rebase(state); return true;
@@ -183,9 +196,9 @@ export function mount(root, scene) {
     if (states.has(root)) { update(root, scene); return; }
     const svg = root.querySelector("svg.roof-scene-interactive");
     if (!svg) return;
-    const state = { root, svg, scene, window: svg.ownerDocument.defaultView, camera: initialCamera(scene), sunRoll: 0, frame: null,
+    const state = { root, svg, scene, window: svg.ownerDocument.defaultView, camera: initialCamera(scene), sunAngles: { x: 0, y: 0, z: 0 }, frame: null,
         pointers: new Map(), gesture: null, listeners: [], disposed: false, previousTouchAction: svg.style.touchAction,
-        orientation: null, directionPending: 0, directionInFlight: false };
+        orientation: null, directionEpoch: 0, directionPending: 0, directionInFlight: false };
     const listen = (target, name, handler, options) => { target.addEventListener(name, handler, options); state.listeners.push(() => target.removeEventListener(name, handler, options)); };
     const end = event => {
         if (!state.pointers.delete(event.pointerId)) return;
@@ -202,7 +215,6 @@ export function mount(root, scene) {
     listen(svg, "pointermove", event => {
         if (!state.pointers.has(event.pointerId)) return;
         event.preventDefault();
-        const previous = state.pointers.get(event.pointerId);
         state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         const points = [...state.pointers.values()], gesture = state.gesture;
         if (!gesture?.first) return;
@@ -210,9 +222,9 @@ export function mount(root, scene) {
             const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
             setCamera(state, { ...state.camera, zoom: gesture.camera.zoom * distance / gesture.distance });
         } else {
-            rollSun(state, (event.clientY - previous.y) * .6);
-            if (state.orientation?.enabled && !state.orientation.disabled)
-                rotateDirection(state, (event.clientX - previous.x) * .6);
+            setCamera(state, { ...gesture.camera,
+                yaw: gesture.camera.yaw + (points[0].x - gesture.first.x) * .6,
+                elevation: gesture.camera.elevation - (points[0].y - gesture.first.y) * .6 });
         }
     });
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) listen(svg, name, end);
@@ -224,11 +236,7 @@ export function mount(root, scene) {
     }, { passive: false });
     listen(svg, "keydown", event => {
         if (event.altKey || event.ctrlKey || event.metaKey) return;
-        if (state.orientation?.enabled && !state.orientation.disabled && ["ArrowLeft", "ArrowRight"].includes(event.key)) {
-            rotateDirection(state, event.key === "ArrowLeft" ? -10 : 10);
-            event.preventDefault(); event.stopPropagation(); return;
-        }
-        const name = { ArrowUp: "sun-roll-left", ArrowDown: "sun-roll-right", "+": "zoom-in", "=": "zoom-in", "-": "zoom-out", "_": "zoom-out", Home: "reset" }[event.key];
+        const name = { ArrowLeft: "view-left", ArrowRight: "view-right", ArrowUp: "view-up", ArrowDown: "view-down", "+": "zoom-in", "=": "zoom-in", "-": "zoom-out", "_": "zoom-out", Home: "reset" }[event.key];
         if (name && action(state, name)) { event.preventDefault(); event.stopPropagation(); }
     });
     listen(root, "click", event => {
@@ -243,13 +251,16 @@ export function mount(root, scene) {
 export function update(root, scene) {
     const state = states.get(root);
     if (!state) { mount(root, scene); return; }
+    state.camera.yaw = normalizeYaw(state.camera.yaw + normalizeYaw(frontYaw(scene) - frontYaw(state.scene)));
     state.scene = scene;
+    rebase(state);
     schedule(state);
 }
 
 export function updateOrientation(root, scene, enabled, disabled, bridge, bearing) {
     const state = states.get(root);
     if (!state || state.disposed) return;
+    state.camera.yaw = normalizeYaw(state.camera.yaw + normalizeYaw(frontYaw(scene) - frontYaw(state.scene)));
     state.scene = scene;
     configureOrientation(root, enabled, disabled, bridge, bearing);
 }
@@ -257,7 +268,12 @@ export function updateOrientation(root, scene, enabled, disabled, bridge, bearin
 export function configureOrientation(root, enabled, disabled, bridge, bearing) {
     const state = states.get(root);
     if (!state || state.disposed) return;
-    state.orientation = { enabled: Boolean(enabled), disabled: Boolean(disabled), bridge, bearing };
+    const next = { enabled: Boolean(enabled), disabled: Boolean(disabled), bridge, bearing };
+    if (!state.orientation || state.orientation.enabled !== next.enabled || state.orientation.disabled !== next.disabled || state.orientation.bridge !== bridge) {
+        state.directionEpoch++;
+        state.directionPending = 0;
+    }
+    state.orientation = next;
     if (!enabled || disabled) state.directionPending = 0;
     rebase(state);
     schedule(state);
