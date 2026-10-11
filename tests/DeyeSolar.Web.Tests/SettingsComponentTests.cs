@@ -62,8 +62,11 @@ public class SettingsComponentTests
                 var initial = Assert.Single(module.Orientations);
                 component = initial.Bridge.Value;
                 Assert.False(initial.Editing); Assert.False(initial.Disabled); Assert.Equal(349.5, initial.Bearing);
-                Assert.False(renderer.Button(root, "Rotate sun path counterclockwise").Disabled);
-                Assert.False(renderer.Button(root, "Rotate sun path clockwise").Disabled);
+                foreach (var axis in new[] { "X", "Y", "Z" })
+                {
+                    Assert.False(renderer.Button(root, $"Rotate sun around {axis} counterclockwise").Disabled);
+                    Assert.False(renderer.Button(root, $"Rotate sun around {axis} clockwise").Disabled);
+                }
                 Assert.Equal(79.5, initial.Scene.FrontYaw);
                 Assert.Equal(15, initial.Scene.Faces.Count(face => face.Kind == "panel"));
                 await component.RotateHouse(10);
@@ -71,7 +74,8 @@ public class SettingsComponentTests
 
                 await renderer.DispatchAsync(renderer.Button(root, "Set house direction").Id);
                 Assert.True(module.Orientations[^1].Editing);
-                Assert.Contains("Drag sideways to set azimuth", renderer.Text(root));
+                Assert.Contains("Drag to change view", renderer.Text(root));
+                Assert.Contains("X and Z adjust the diagram only. Y sets the roof azimuth.", renderer.Text(root));
                 foreach (var delta in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 360.01, -360.01 })
                     await component.RotateHouse(delta);
                 Assert.Empty(changes);
@@ -92,8 +96,14 @@ public class SettingsComponentTests
                 await renderer.RenderRoofSceneAsync(root, parameters);
                 Assert.True(module.Orientations[^1].Disabled);
                 Assert.True(renderer.Button(root, "Done").Disabled);
-                Assert.False(renderer.Button(root, "Rotate sun path counterclockwise").Disabled);
-                Assert.False(renderer.Button(root, "Rotate sun path clockwise").Disabled);
+                foreach (var axis in new[] { "X", "Y", "Z" })
+                {
+                    Assert.True(renderer.Button(root, $"Rotate sun around {axis} counterclockwise").Disabled);
+                    Assert.True(renderer.Button(root, $"Rotate sun around {axis} clockwise").Disabled);
+                }
+                Assert.False(renderer.Button(root, "Zoom out").Disabled);
+                Assert.False(renderer.Button(root, "Zoom in").Disabled);
+                Assert.False(renderer.Button(root, "Reset view").Disabled);
                 await renderer.DispatchAsync(renderer.Button(root, "Done").Id);
                 await component.RotateHouse(-10);
                 Assert.Equal([10d, 10d], changes);
