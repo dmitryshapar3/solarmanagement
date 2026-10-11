@@ -1,7 +1,10 @@
-// Local orthographic camera: settings edits redraw the scene without resetting its view.
+// The house stays end-on. Only the solar frame can roll about the viewing Z axis;
+// the location-derived ENU solar positions and installation tilt stay unchanged.
 const states = new WeakMap();
 const ns = "http://www.w3.org/2000/svg";
-const initialCamera = () => ({ yaw: -35, elevation: 32, zoom: 1 });
+const normalizeYaw = value => ((value + 180) % 360 + 360) % 360 - 180;
+const frontYaw = scene => normalizeYaw(Number.isFinite(scene?.frontYaw) ? scene.frontYaw : -35);
+const initialCamera = scene => ({ yaw: frontYaw(scene), elevation: 32, zoom: 1 });
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finitePoint = point => Array.isArray(point) && point.length === 3 && point.every(Number.isFinite);
 const radians = degrees => degrees * Math.PI / 180;
@@ -14,6 +17,12 @@ function project(point, camera) {
         depth: depth * Math.cos(elevation) + point[2] * Math.sin(elevation) };
 }
 
+function solarProject(point, camera, roll) {
+    const result = project(point, camera), angle = radians(roll);
+    const x = result.x - 180, y = result.y - 180;
+    return { ...result, x: 180 + x * Math.cos(angle) - y * Math.sin(angle), y: 180 + x * Math.sin(angle) + y * Math.cos(angle) };
+}
+
 function element(document, name, className, attributes = {}) {
     const node = document.createElementNS(ns, name);
     node.setAttribute("class", className);
@@ -24,21 +33,25 @@ function element(document, name, className, attributes = {}) {
 function draw(state) {
     const { svg, root, scene, camera } = state;
     if (!scene || !Array.isArray(scene.faces)) return;
+    camera.yaw = frontYaw(scene);
+    camera.elevation = 32;
     const document = svg.ownerDocument, content = document.createDocumentFragment();
+    const skyPoint = point => solarProject(point, camera, state.sunRoll);
     const projected = points => points.map(point => project(point, camera));
     const coordinates = points => projected(points).map(point => `${point.x.toFixed(3)},${point.y.toFixed(3)}`).join(" ");
-    const line = (points, className) => {
+    const skyCoordinates = points => points.map(skyPoint).map(point => `${point.x.toFixed(3)},${point.y.toFixed(3)}`).join(" ");
+    const line = (points, className, sky = false) => {
         if (Array.isArray(points) && points.length > 1 && points.every(finitePoint))
-            content.appendChild(element(document, "polyline", className, { points: coordinates(points), fill: "none" }));
+            content.appendChild(element(document, "polyline", className, { points: sky ? skyCoordinates(points) : coordinates(points), fill: "none" }));
     };
     if (Array.isArray(scene.ground) && scene.ground.length > 2 && scene.ground.every(finitePoint))
-        content.appendChild(element(document, "polygon", "roof-scene-ground", { points: coordinates(scene.ground) }));
-    for (const axis of scene.axes ?? []) line(axis, "roof-scene-axis");
+        content.appendChild(element(document, "polygon", "roof-scene-ground", { points: skyCoordinates(scene.ground) }));
+    for (const axis of scene.axes ?? []) line(axis, "roof-scene-axis", true);
     for (const path of scene.sunPaths ?? []) {
-        line(path, "roof-scene-sun-path");
+        line(path, "roof-scene-sun-path", true);
         if (Array.isArray(path) && path.length > 4 && path.every(finitePoint)) for (const fraction of [1 / 3, 2 / 3]) {
             const index = Math.min(path.length - 2, Math.floor(path.length * fraction));
-            const point = project(path[index], camera), next = project(path[index + 1], camera);
+            const point = skyPoint(path[index]), next = skyPoint(path[index + 1]);
             const angle = Math.atan2(next.y - point.y, next.x - point.x) * 180 / Math.PI;
             content.appendChild(element(document, "path", "roof-scene-sun-direction", { d: "M-5 -4L0 0L-5 4", transform: `translate(${point.x} ${point.y}) rotate(${angle})`, fill: "none" }));
         }
@@ -72,11 +85,11 @@ function draw(state) {
     }
     for (const point of scene.crossings ?? []) {
         if (!finitePoint(point)) continue;
-        const location = project(point, camera);
+        const location = skyPoint(point);
         content.appendChild(element(document, "circle", "roof-scene-crossing", { cx: location.x, cy: location.y, r: 3 }));
     }
     if (finitePoint(scene.sunNow)) {
-        const point = project(scene.sunNow, camera);
+        const point = skyPoint(scene.sunNow);
         const sun = element(document, "g", "roof-scene-sun-current", { transform: `translate(${point.x} ${point.y})` });
         sun.appendChild(element(document, "circle", "", { r: 8 }));
         sun.appendChild(element(document, "path", "", { d: "M0 -14V-11M0 11V14M-14 0H-11M11 0H14M-10 -10L-8 -8M8 8L10 10M-10 10L-8 8M8 -8L10 -10", fill: "none" }));
@@ -86,7 +99,7 @@ function draw(state) {
     for (const label of scene.labels ?? []) {
         if (!finitePoint(label.point) || !["roof", "cardinal"].includes(label.kind)) continue;
         if (label.kind === "roof" && Number.isFinite(Number(label.text)) && !visibleRoofNumbers.has(Number(label.text))) continue;
-        let point = project(label.point, camera);
+        let point = label.kind === "cardinal" ? skyPoint(label.point) : project(label.point, camera);
         if (label.kind === "roof") {
             const face = groups.find(face => ["roof", "vertical"].includes(face.kind) && face.roof === Number(label.text));
             if (face) {
@@ -104,6 +117,7 @@ function draw(state) {
     svg.setAttribute("data-yaw", String(camera.yaw));
     svg.setAttribute("data-elevation", String(camera.elevation));
     svg.setAttribute("data-zoom", String(camera.zoom));
+    svg.setAttribute("data-sun-roll", String(state.sunRoll));
     svg.setAttribute("data-direction-editing", String(Boolean(state.orientation?.enabled && !state.orientation.disabled)));
     root.classList.add("scene-ready");
 }
@@ -114,8 +128,13 @@ function schedule(state) {
 }
 
 function setCamera(state, camera) {
-    state.camera = { yaw: ((camera.yaw + 180) % 360 + 360) % 360 - 180,
-        elevation: clamp(camera.elevation, 10, 85), zoom: clamp(camera.zoom, .7, 2.5) };
+    state.camera = { yaw: frontYaw(state.scene), elevation: 32, zoom: clamp(camera.zoom, .7, 2.5) };
+    schedule(state);
+}
+
+function rollSun(state, delta) {
+    if (state.disposed || !Number.isFinite(delta)) return;
+    state.sunRoll = normalizeYaw(state.sunRoll + delta);
     schedule(state);
 }
 
@@ -150,13 +169,11 @@ function action(state, name) {
     switch (name) {
         case "zoom-in": camera.zoom *= 1.15; break;
         case "zoom-out": camera.zoom /= 1.15; break;
-        case "left": camera.yaw -= 10; break;
-        case "right": camera.yaw += 10; break;
-        case "up": camera.elevation += 5; break;
-        case "down": camera.elevation -= 5; break;
-        case "reset": setCamera(state, initialCamera()); rebase(state); return true;
+        case "reset": state.sunRoll = 0; setCamera(state, initialCamera(state.scene)); rebase(state); return true;
         case "direction-left": rotateDirection(state, -10); return true;
         case "direction-right": rotateDirection(state, 10); return true;
+        case "sun-roll-left": rollSun(state, -10); rebase(state); return true;
+        case "sun-roll-right": rollSun(state, 10); rebase(state); return true;
         default: return false;
     }
     setCamera(state, camera); rebase(state); return true;
@@ -166,7 +183,7 @@ export function mount(root, scene) {
     if (states.has(root)) { update(root, scene); return; }
     const svg = root.querySelector("svg.roof-scene-interactive");
     if (!svg) return;
-    const state = { root, svg, scene, window: svg.ownerDocument.defaultView, camera: initialCamera(), frame: null,
+    const state = { root, svg, scene, window: svg.ownerDocument.defaultView, camera: initialCamera(scene), sunRoll: 0, frame: null,
         pointers: new Map(), gesture: null, listeners: [], disposed: false, previousTouchAction: svg.style.touchAction,
         orientation: null, directionPending: 0, directionInFlight: false };
     const listen = (target, name, handler, options) => { target.addEventListener(name, handler, options); state.listeners.push(() => target.removeEventListener(name, handler, options)); };
@@ -192,10 +209,11 @@ export function mount(root, scene) {
         if (points.length > 1 && gesture.distance !== null) {
             const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
             setCamera(state, { ...state.camera, zoom: gesture.camera.zoom * distance / gesture.distance });
-        } else if (state.orientation?.enabled && !state.orientation.disabled) {
-            rotateDirection(state, (event.clientX - previous.x) * .6);
-        } else setCamera(state, { ...state.camera, yaw: gesture.camera.yaw + (points[0].x - gesture.first.x) * .45,
-            elevation: gesture.camera.elevation - (points[0].y - gesture.first.y) * .35 });
+        } else {
+            rollSun(state, (event.clientY - previous.y) * .6);
+            if (state.orientation?.enabled && !state.orientation.disabled)
+                rotateDirection(state, (event.clientX - previous.x) * .6);
+        }
     });
     for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) listen(svg, name, end);
     listen(svg, "wheel", event => {
@@ -210,7 +228,7 @@ export function mount(root, scene) {
             rotateDirection(state, event.key === "ArrowLeft" ? -10 : 10);
             event.preventDefault(); event.stopPropagation(); return;
         }
-        const name = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down", "+": "zoom-in", "=": "zoom-in", "-": "zoom-out", "_": "zoom-out", Home: "reset" }[event.key];
+        const name = { ArrowUp: "sun-roll-left", ArrowDown: "sun-roll-right", "+": "zoom-in", "=": "zoom-in", "-": "zoom-out", "_": "zoom-out", Home: "reset" }[event.key];
         if (name && action(state, name)) { event.preventDefault(); event.stopPropagation(); }
     });
     listen(root, "click", event => {
@@ -239,11 +257,6 @@ export function updateOrientation(root, scene, enabled, disabled, bridge, bearin
 export function configureOrientation(root, enabled, disabled, bridge, bearing) {
     const state = states.get(root);
     if (!state || state.disposed) return;
-    const previous = state.orientation;
-    if (previous?.enabled && Number.isFinite(bearing) && Number.isFinite(previous.bearing)) {
-        const delta = ((bearing - previous.bearing + 540) % 360 + 360) % 360 - 180;
-        if (delta) { setCamera(state, { ...state.camera, yaw: state.camera.yaw + delta }); rebase(state); }
-    }
     state.orientation = { enabled: Boolean(enabled), disabled: Boolean(disabled), bridge, bearing };
     if (!enabled || disabled) state.directionPending = 0;
     rebase(state);

@@ -5,7 +5,7 @@ public sealed record RoofSceneLine(string Kind, double[][] Points);
 public sealed record RoofSceneLabel(string Text, string Kind, double[] Point);
 public sealed record RoofScene(IReadOnlyList<RoofSceneFace> Faces, IReadOnlyList<RoofSceneLine> Lines,
     IReadOnlyList<RoofSceneLabel> Labels, double[][][] SunPaths, double[]? SunNow, double[][] Crossings,
-    double[][] Ground, double[][][] Axes);
+    double[][] Ground, double[][][] Axes, double FrontYaw);
 public sealed record RoofSceneProjection(double X, double Y, double Depth);
 
 /// <summary>Connected schematic roof in east/north/up coordinates. Geometry preserves each plane's pitch and bearing.</summary>
@@ -21,7 +21,10 @@ public static class RoofSceneGeometry
     {
         var planes = roofs.Where(r => r.Tilt < 90).Select(r => new Plane(r,
             Math.Tan(r.Tilt * Rad) * Math.Sin(r.Azimuth * Rad), Math.Tan(r.Tilt * Rad) * Math.Cos(r.Azimuth * Rad))).ToArray();
-        var bearing = (roofs.FirstOrDefault(r => r.Tilt < 90) ?? roofs.FirstOrDefault())?.Azimuth * Rad ?? 0;
+        var referenceBearing = (roofs.FirstOrDefault(r => r.Tilt < 90) ?? roofs.FirstOrDefault())?.Azimuth ?? 0;
+        var bearing = referenceBearing * Rad;
+        // The near gable stays square to the viewer, with the first ordinary slope on the left.
+        var frontYaw = (referenceBearing + 270) % 360 - 180;
         double[] World(double x, double y) => [x * Math.Sin(bearing) - y * Math.Cos(bearing), x * Math.Cos(bearing) + y * Math.Sin(bearing)];
         var footprint = LocalFootprint.Select(p => World(p[0], p[1])).ToArray();
         var ridgeHeight = 14 + planes.SelectMany(p => footprint.Select(v => Math.Abs(p.X * v[0] + p.Y * v[1]))).DefaultIfEmpty(0).Max();
@@ -106,7 +109,7 @@ public static class RoofSceneGeometry
         var crossings = day is null ? [] : new[] { day.Sunrise, day.Sunset }.Where(p => p.HasValue).Select(p => Sun(RoofSunGeometry.Position(latitude, longitude, p!.Value))).ToArray();
         return new(faces, lines, labels, day?.Paths.Select(p => p.Select(Sun).ToArray()).ToArray() ?? [], day?.Now is { } now ? Sun(now) : null, crossings,
             Enumerable.Range(0, 65).Select(i => new[] { 110 * Math.Sin(i * 2 * Math.PI / 64), 110 * Math.Cos(i * 2 * Math.PI / 64), 0d }).ToArray(),
-            [[[-110, 0, 0], [110, 0, 0]], [[0, -110, 0], [0, 110, 0]]]);
+            [[[-110, 0, 0], [110, 0, 0]], [[0, -110, 0], [0, 110, 0]]], frontYaw);
     }
 
     public static RoofSceneProjection Project(double[] p, double yaw = -35, double elevation = 32, double zoom = 1)
@@ -115,8 +118,8 @@ public static class RoofSceneGeometry
         return new(180 + (p[0] * Math.Cos(a) - p[1] * Math.Sin(a)) * zoom,
             180 + (depth * Math.Sin(e) - p[2] * Math.Cos(e)) * zoom, depth * Math.Cos(e) + p[2] * Math.Sin(e));
     }
-    public static string Points(IEnumerable<double[]> points) => string.Join(" ", points.Select(p => { var q = Project(p); return $"{RoofSunGeometry.F(q.X)},{RoofSunGeometry.F(q.Y)}"; }));
-    public static string Path(IEnumerable<double[]> points) => string.Join(" ", points.Select((p, i) => { var q = Project(p); return $"{(i == 0 ? "M" : "L")}{RoofSunGeometry.F(q.X)} {RoofSunGeometry.F(q.Y)}"; }));
+    public static string Points(IEnumerable<double[]> points, double yaw = -35) => string.Join(" ", points.Select(p => { var q = Project(p, yaw); return $"{RoofSunGeometry.F(q.X)},{RoofSunGeometry.F(q.Y)}"; }));
+    public static string Path(IEnumerable<double[]> points, double yaw = -35) => string.Join(" ", points.Select((p, i) => { var q = Project(p, yaw); return $"{(i == 0 ? "M" : "L")}{RoofSunGeometry.F(q.X)} {RoofSunGeometry.F(q.Y)}"; }));
     // Pack complete, separate modules in an orthonormal basis on the configured roof plane.
     // The full row block is fitted inside every convex facet edge, so no edge clipping can
     // silently reduce the user's count or distort an individual module's aspect ratio.

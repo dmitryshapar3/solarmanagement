@@ -62,12 +62,16 @@ public class SettingsComponentTests
                 var initial = Assert.Single(module.Orientations);
                 component = initial.Bridge.Value;
                 Assert.False(initial.Editing); Assert.False(initial.Disabled); Assert.Equal(349.5, initial.Bearing);
+                Assert.False(renderer.Button(root, "Rotate sun path counterclockwise").Disabled);
+                Assert.False(renderer.Button(root, "Rotate sun path clockwise").Disabled);
+                Assert.Equal(79.5, initial.Scene.FrontYaw);
                 Assert.Equal(15, initial.Scene.Faces.Count(face => face.Kind == "panel"));
                 await component.RotateHouse(10);
                 Assert.Empty(changes);
 
                 await renderer.DispatchAsync(renderer.Button(root, "Set house direction").Id);
                 Assert.True(module.Orientations[^1].Editing);
+                Assert.Contains("Drag sideways to set azimuth", renderer.Text(root));
                 foreach (var delta in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 360.01, -360.01 })
                     await component.RotateHouse(delta);
                 Assert.Empty(changes);
@@ -79,6 +83,7 @@ public class SettingsComponentTests
                 Assert.Same(component, updated.Bridge.Value);
                 Assert.Same(module.Scenes[^1], updated.Scene);
                 Assert.True(updated.Editing); Assert.False(updated.Disabled); Assert.Equal(9.5, updated.Bearing);
+                Assert.Equal(99.5, updated.Scene.FrontYaw);
                 var expected = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 9.5, 3, 25, 189.25), null, 50, 20, 8, 7);
                 Assert.Equal(RoofSceneGeometry.Points(expected.Faces.First(face => face.Kind == "roof").Points),
                     RoofSceneGeometry.Points(updated.Scene.Faces.First(face => face.Kind == "roof").Points));
@@ -87,6 +92,8 @@ public class SettingsComponentTests
                 await renderer.RenderRoofSceneAsync(root, parameters);
                 Assert.True(module.Orientations[^1].Disabled);
                 Assert.True(renderer.Button(root, "Done").Disabled);
+                Assert.False(renderer.Button(root, "Rotate sun path counterclockwise").Disabled);
+                Assert.False(renderer.Button(root, "Rotate sun path clockwise").Disabled);
                 await renderer.DispatchAsync(renderer.Button(root, "Done").Id);
                 await component.RotateHouse(-10);
                 Assert.Equal([10d, 10d], changes);
@@ -96,6 +103,15 @@ public class SettingsComponentTests
                 await renderer.DispatchAsync(renderer.Button(root, "Done").Id);
                 Assert.False(module.Orientations[^1].Editing);
                 await component.RotateHouse(10);
+                Assert.Equal([10d, 10d], changes);
+                parameters["Roof1Azimuth"] = 270d; parameters["Roof2Azimuth"] = 90d;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+                Assert.Equal(0, module.Orientations[^1].Scene.FrontYaw);
+                Assert.False(module.Orientations[^1].Editing);
+                parameters["Roof1Azimuth"] = 349.5d; parameters["Roof2Azimuth"] = 169.25d;
+                await renderer.RenderRoofSceneAsync(root, parameters);
+                Assert.Equal(79.5, module.Orientations[^1].Scene.FrontYaw);
+                Assert.Equal(25d, parameters["Roof1Tilt"]); Assert.Equal(25d, parameters["Roof2Tilt"]);
                 Assert.Equal([10d, 10d], changes);
                 await renderer.DispatchAsync(renderer.Button(root, "Set house direction").Id);
                 Assert.True(module.Orientations[^1].Editing);

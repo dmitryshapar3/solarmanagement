@@ -2675,5 +2675,11 @@
   "Set house direction": "Kierunek domu",
   "Rotate sun path left": "Obróć łuk słońca w lewo",
   "Rotate sun path right": "Obróć łuk słońca w prawo",
-  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Obracaj łuk słońca wokół domu, aby ustawić jego kierunek. Azymuty obu połaci zmieniają się razem."
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Obracaj łuk słońca wokół domu, aby ustawić jego kierunek. Azymuty obu połaci zmieniają się razem.",
+  "Rotate sun path counterclockwise": "Obróć łuk słońca przeciwnie do ruchu wskazówek zegara",
+  "Rotate sun path clockwise": "Obróć łuk słońca zgodnie z ruchem wskazówek zegara",
+  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Przeciągnij w bok, aby ustawić azymut · Przeciągnij w górę lub w dół, aby obrócić łuk słońca",
+  "Drag up or down to rotate the sun path · Scroll to zoom": "Przeciągnij w górę lub w dół, aby obrócić łuk słońca · Przewiń, aby zmienić skalę",
+  "Drag up or down to rotate the sun path · Pinch to zoom": "Przeciągnij w górę lub w dół, aby obrócić łuk słońca · Zsuń lub rozsuń palce, aby zmienić skalę",
+  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Obrót w pionie zmienia tylko widok schematu. Obliczenia energii słonecznej pozostają bez zmian."
 }

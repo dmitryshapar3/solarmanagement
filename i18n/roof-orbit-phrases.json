@@ -12,5 +12,11 @@
   "Set house direction",
   "Rotate sun path left",
   "Rotate sun path right",
-  "Rotate the sun path around the house to set its direction. Both roof azimuths change together."
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.",
+  "Rotate sun path counterclockwise",
+  "Rotate sun path clockwise",
+  "Drag sideways to set azimuth · Drag up or down to rotate the sun path",
+  "Drag up or down to rotate the sun path · Scroll to zoom",
+  "Drag up or down to rotate the sun path · Pinch to zoom",
+  "Vertical rotation changes only the diagram view. Solar calculations stay the same."
 ]

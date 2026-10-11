@@ -22,7 +22,7 @@ class DomNode {
   addEventListener(name: string, listener: Listener) { const listeners = this.listeners.get(name) ?? new Set<Listener>(); listeners.add(listener); this.listeners.set(name, listeners); }
   removeEventListener(name: string, listener: Listener) { this.listeners.get(name)?.delete(listener); }
   contains(node: DomNode): boolean { return node === this || this.children.some(child => child.contains(node)); }
-  querySelector(selector: string): DomNode | null { return this.children.find(child => selector === "svg.roof-scene-interactive" && child.name === "svg") ?? null; }
+  querySelector(selector: string): DomNode | null { return this.children.find(child => selector === "svg.roof-scene-interactive" && child.name === "svg" || selector === `[data-roof-action="${child.dataset.roofAction}"]`) ?? null; }
   closest(selector: string) { return selector === "[data-roof-action]" && this.dataset.roofAction ? this : null; }
   setPointerCapture(id: number) { this.captured.add(id); }
   hasPointerCapture(id: number) { return this.captured.has(id); }
@@ -49,7 +49,7 @@ const renderer: Promise<Renderer> = readFile(new URL("../../src/DeyeSolar.Web/ww
   .then(source => import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`));
 const scene = () => ({ faces: [{ kind: "roof", roof: 1, points: [[0, 0, 10], [10, 0, 10], [0, 10, 10]] }],
   ground: [[-20, -20, 0], [20, -20, 0], [20, 20, 0]], axes: [[[0, 0, 0], [10, 0, 0]]],
-  lines: [{ kind: "ridge", points: [[0, 0, 10], [10, 0, 10]] }], sunPaths: [[[0, 100, 0], [0, 80, 30], [0, 60, 60], [0, 30, 80], [0, 0, 100], [0, -30, 80]]],
+  frontYaw: -35, lines: [{ kind: "ridge", points: [[0, 0, 10], [10, 0, 10]] }], sunPaths: [[[0, 100, 0], [0, 80, 30], [0, 60, 60], [0, 30, 80], [0, 0, 100], [0, -30, 80]]],
   sunNow: [0, 0, 100], crossings: [[0, 100, 0]], labels: [{ text: "N", kind: "cardinal", point: [0, 100, 0] }] });
 function fixture() {
   const document = new DomDocument(), root = new DomNode("div", document), svg = new DomNode("svg", document);
@@ -100,7 +100,7 @@ test("web roof PV cells remain above their owning surface and back faces stay hi
   dispose(root);
 });
 
-test("web upright panel parents keep each exact tile directly above the parent across orbit and count updates", async () => {
+test("web upright panel parents keep each exact tile above the parent across bearing and count updates", async () => {
   const { mount, update, dispose } = await renderer, value = fixture();
   const vertical = (count: number) => ({ ...scene(), faces: [{ kind: "vertical", roof: 1, points: [[-10, 0, 10], [10, 0, 10], [10, 0, 25], [-10, 0, 25]] },
     ...Array.from({ length: count }, (_, index) => ({ kind: "panel", roof: 1, points: [[index, .3, 11], [index + .8, .3, 11], [index + .8, .3, 13], [index, .3, 13]] }))] });
@@ -110,9 +110,8 @@ test("web upright panel parents keep each exact tile directly above the parent a
     assert.ok(faces.slice(1).every(node => node.attributes.get("class")?.includes("roof-scene-panel") && node.attributes.get("data-roof") === "1"));
   };
   mount(value.root, vertical(8)); assertGrouped(8);
-  for (let i = 0; i < 20; ++i) value.svg.fire("keydown", { key: "ArrowRight" });
-  value.document.flush(); assertGrouped(8);
-  update(value.root, vertical(7)); value.document.flush(); assertGrouped(7); assert.equal(value.camera().yaw, 165);
+  update(value.root, { ...vertical(8), frontYaw: 145 }); value.document.flush(); assertGrouped(8);
+  update(value.root, vertical(7)); value.document.flush(); assertGrouped(7); assert.equal(value.camera().yaw, -35);
   update(value.root, vertical(0)); value.document.flush(); assertGrouped(0);
   dispose(value.root);
 });
@@ -120,30 +119,30 @@ test("web upright panel parents keep each exact tile directly above the parent a
 test("web roof edits retain the camera and coalesce redraws while independent scenes stay isolated", async () => {
   const { mount, update, dispose } = await renderer, first = fixture(), second = fixture();
   mount(first.root, scene()); mount(second.root, scene());
-  first.svg.fire("keydown", { key: "ArrowRight" });
   first.svg.fire("keydown", { key: "+" });
-  const edited = scene(); edited.faces[0]!.points[0]![2] = 20;
+  const edited = scene(); edited.frontYaw = 50; edited.faces[0]!.points.forEach(point => { point[2] = 20; });
   update(first.root, edited); update(first.root, edited);
   assert.equal(first.document.frames.size, 1);
   first.document.flush();
-  assert.deepEqual(first.camera(), { yaw: -25, elevation: 32, zoom: 1.15 });
+  assert.deepEqual(first.camera(), { yaw: 50, elevation: 32, zoom: 1.15 });
   assert.deepEqual(second.camera(), { yaw: -35, elevation: 32, zoom: 1 });
   const points = first.svg.children.find(node => node.attributes.get("class")?.includes("roof-scene-face"))!.attributes.get("points")!;
   assert.ok(points.startsWith(`180.000,${(180 - 20 * Math.cos(32 * Math.PI / 180) * 1.15).toFixed(3)}`));
   dispose(first.root); dispose(second.root);
 });
 
-test("web roof drag and pinch rebase when touches enter, leave or cancel without orbit jumps", async () => {
+test("web gable stays fixed while vertical drags roll the sky and pinch rebases without jumps", async () => {
   const { mount, dispose } = await renderer, value = fixture(); mount(value.root, scene());
   value.svg.fire("pointerdown");
   value.svg.fire("pointermove", { clientX: 20, clientY: 10 }); value.document.flush();
-  assert.deepEqual(value.camera(), { yaw: -26, elevation: 28.5, zoom: 1 });
+  assert.deepEqual(value.camera(), { yaw: -35, elevation: 32, zoom: 1 });
   value.svg.fire("pointerdown", { pointerId: 2, clientX: 100, clientY: 10 });
   value.svg.fire("pointermove", { pointerId: 2, clientX: 180, clientY: 10 }); value.document.flush();
-  assert.deepEqual(value.camera(), { yaw: -26, elevation: 28.5, zoom: 2 });
+  assert.deepEqual(value.camera(), { yaw: -35, elevation: 32, zoom: 2 });
   value.svg.fire("pointerup", { pointerId: 2 });
   value.svg.fire("pointermove", { clientX: 30, clientY: 10 }); value.document.flush();
-  assert.deepEqual(value.camera(), { yaw: -21.5, elevation: 28.5, zoom: 2 });
+  assert.deepEqual(value.camera(), { yaw: -35, elevation: 32, zoom: 2 });
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 6);
   value.svg.fire("pointercancel");
   const before = value.document.requests;
   value.svg.fire("pointermove", { clientX: 300, clientY: 300 });
@@ -152,16 +151,16 @@ test("web roof drag and pinch rebase when touches enter, leave or cancel without
   dispose(value.root);
 });
 
-test("web roof keyboard, local wheel and visible buttons clamp zoom/elevation and reset accessibly", async () => {
+test("web fixed-gable controls clamp zoom and reset scale without rotating the house", async () => {
   const { mount, dispose } = await renderer, value = fixture(); mount(value.root, scene());
   assert.equal(value.svg.fire("keydown", { key: "ArrowUp" }).prevented, true);
+  assert.equal(value.svg.fire("keydown", { key: "ArrowRight" }).prevented, false);
   assert.equal(value.svg.fire("keydown", { key: "Tab" }).prevented, false);
-  assert.equal(value.svg.fire("keydown", { key: "ArrowUp", altKey: true }).prevented, false);
-  for (let i = 0; i < 30; ++i) value.root.fire("click", { target: value.button("up") });
+  assert.equal(value.svg.fire("keydown", { key: "+", altKey: true }).prevented, false);
   value.svg.fire("wheel", { deltaY: -10000, deltaMode: 0 }); value.document.flush();
-  assert.equal(value.camera().elevation, 85); assert.equal(value.camera().zoom, 2.5);
-  for (let i = 0; i < 30; ++i) { value.svg.fire("keydown", { key: "ArrowDown" }); value.svg.fire("keydown", { key: "-" }); }
-  value.document.flush(); assert.equal(value.camera().elevation, 10); assert.equal(value.camera().zoom, .7);
+  assert.equal(value.camera().elevation, 32); assert.equal(value.camera().zoom, 2.5);
+  for (let i = 0; i < 30; ++i) value.svg.fire("keydown", { key: "-" });
+  value.document.flush(); assert.equal(value.camera().zoom, .7);
   const reset = value.button("reset"); reset.disabled = true;
   value.root.fire("click", { target: reset }); value.document.flush(); assert.equal(value.camera().zoom, .7);
   reset.disabled = false; value.root.fire("click", { target: reset }); value.document.flush();
@@ -186,6 +185,7 @@ test("web roof disposal removes captures, all listeners and queued frames before
 
 test("web direction mode keeps the house fixed while its azimuth crosses north and the sun path moves", async () => {
   const { mount, updateOrientation, configureOrientation, dispose } = await renderer, value = fixture(), initial = scene();
+  initial.frontYaw = 79.5;
   const calls: [string, number][] = [];
   const bridge = { invokeMethodAsync: async (method: string, delta: number) => { calls.push([method, delta]); } };
   const roofPoints = () => value.svg.children.find(node => node.attributes.get("class")?.includes("roof-scene-roof"))!.attributes.get("points");
@@ -198,14 +198,15 @@ test("web direction mode keeps the house fixed while its azimuth crosses north a
   assert.deepEqual(calls, [["RotateHouse", 10], ["RotateHouse", 10]]);
   const rotated = scene(), radians = 20 * Math.PI / 180;
   const rotate = ([x, y, z]: number[]) => [x! * Math.cos(radians) + y! * Math.sin(radians), y! * Math.cos(radians) - x! * Math.sin(radians), z!];
+  rotated.frontYaw = 99.5;
   rotated.faces = rotated.faces.map(face => ({ ...face, points: face.points.map(rotate) }));
   rotated.lines = rotated.lines.map(line => ({ ...line, points: line.points.map(rotate) }));
   updateOrientation(value.root, rotated, false, true, bridge, 9.5); value.document.flush();
   assert.equal(roofPoints(), houseBefore); assert.notEqual(sunPath(), sunBefore);
-  assert.equal(value.camera().yaw, -15); assert.equal(value.camera().elevation, 32);
+  assert.equal(value.camera().yaw, 99.5); assert.equal(value.camera().elevation, 32);
   configureOrientation(value.root, false, false, bridge, 9.5); value.document.flush();
   value.svg.fire("keydown", { key: "ArrowRight" }); value.document.flush();
-  assert.equal(value.camera().yaw, -5); assert.equal(calls.length, 2);
+  assert.equal(value.camera().yaw, 99.5); assert.equal(calls.length, 2);
   dispose(value.root);
 });
 
@@ -235,4 +236,69 @@ test("web direction gestures accumulate fractional moves, serialize callbacks, a
   value.svg.fire("keydown", { key: "ArrowRight" }); dispose(value.root);
   release!(); await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(deltas, [1, 11, 10]); assert.equal(value.svg.children.length, 0);
+});
+
+test("web smooth viewing-Z rotation moves the entire solar frame while the house and physical solar data stay fixed", async () => {
+  const { mount, configureOrientation, dispose } = await renderer, value = fixture(), model = scene();
+  model.labels.push({ text: "1", kind: "roof", point: [0, 0, 12] });
+  const original = JSON.stringify(model), calls: number[] = [];
+  mount(value.root, model);
+  configureOrientation(value.root, true, false, { invokeMethodAsync: async (_: string, delta: number) => calls.push(delta) }, 230);
+  value.document.flush();
+  const node = (kind: string) => value.svg.children.find(n => n.attributes.get("class") === kind)!;
+  const points = (kind: string) => node(kind).attributes.get("points")!.split(" ").map(p => p.split(",").map(Number));
+  const fixed = () => value.svg.children.filter(n => /roof-scene-(face|line|number|label-line)/.test(n.attributes.get("class") ?? "")).map(n => [...n.attributes]);
+  const house = fixed(), solar = ["roof-scene-ground", "roof-scene-axis", "roof-scene-sun-path"].map(points);
+  value.svg.fire("pointerdown", { clientX: 30, clientY: 20 });
+  value.svg.fire("pointermove", { clientX: 30, clientY: 20.5 }); value.document.flush();
+  assert.ok(Math.abs(Number(value.svg.attributes.get("data-sun-roll")) - .3) < 1e-10, "Subdegree movement is continuous");
+  value.svg.fire("pointermove", { clientX: 30, clientY: 170 }); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 90);
+  assert.deepEqual(fixed(), house, "Faces, PV tiles, ridge and roof numbers cannot orbit with the sky");
+  for (const [index, kind] of ["roof-scene-ground", "roof-scene-axis", "roof-scene-sun-path"].entries()) {
+    const after = points(kind);
+    solar[index]!.forEach((p, i) => {
+      assert.ok(Math.abs(after[i]![0]! - (360 - p[1]!)) < .002);
+      assert.ok(Math.abs(after[i]![1]! - p[0]!) < .002);
+    });
+  }
+  const crossing = node("roof-scene-crossing"), cardinal = node("roof-scene-label roof-scene-cardinal");
+  const first = points("roof-scene-sun-path")[0]!;
+  assert.ok(Math.abs(Number(crossing.attributes.get("cx")) - first[0]!) < .001);
+  assert.ok(Math.abs(Number(cardinal.attributes.get("y")) - first[1]!) < .001);
+  const sun = node("roof-scene-sun-current").attributes.get("transform")!;
+  assert.ok(sun.startsWith("translate(264.804"), "Current sun must use the same rolled frame");
+  assert.equal(JSON.stringify(model), original);
+  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(calls, [], "Vertical movement cannot change roof azimuths or tilt");
+  value.svg.fire("pointerup"); value.svg.fire("keydown", { key: "Home" }); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 0); assert.deepEqual(fixed(), house);
+  dispose(value.root);
+});
+
+test("web two-axis movement preserves roll across acknowledged azimuth updates and rebases after pinch or cancellation", async () => {
+  const { mount, configureOrientation, updateOrientation, dispose } = await renderer, value = fixture(), model = scene(), calls: number[] = [];
+  const bridge = { invokeMethodAsync: async (_: string, delta: number) => calls.push(delta) };
+  mount(value.root, model); configureOrientation(value.root, true, false, bridge, 230); value.document.flush();
+  value.svg.fire("pointerdown"); value.svg.fire("pointermove", { clientX: 20, clientY: 30 }); value.document.flush();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [12]); assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 18);
+  updateOrientation(value.root, { ...model, frontYaw: -28 }, true, false, bridge, 242); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 18); assert.equal(value.camera().elevation, 32);
+  value.svg.fire("pointerdown", { pointerId: 2, clientX: 120, clientY: 30 });
+  value.svg.fire("pointermove", { pointerId: 2, clientX: 220, clientY: 30 }); value.document.flush();
+  assert.equal(value.camera().zoom, 2); assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 18);
+  value.svg.fire("pointerup", { pointerId: 2 });
+  value.svg.fire("pointermove", { clientX: 20, clientY: 35 }); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 21);
+  configureOrientation(value.root, false, true, bridge, 242);
+  value.svg.fire("pointermove", { clientX: 40, clientY: 40 }); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 24); assert.deepEqual(calls, [12]);
+  value.svg.fire("lostpointercapture");
+  value.svg.fire("pointermove", { clientX: 400, clientY: 400 }); value.document.flush();
+  assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 24);
+  for (let i = 0; i < 40; ++i) value.root.fire("click", { target: value.button("sun-roll-right") });
+  value.document.flush(); assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 64);
+  value.svg.fire("keydown", { key: "Home" }); value.document.flush();
+  assert.deepEqual(value.camera(), { yaw: -28, elevation: 32, zoom: 1 }); assert.equal(Number(value.svg.attributes.get("data-sun-roll")), 0);
+  dispose(value.root);
 });

@@ -2675,5 +2675,11 @@
   "Set house direction": "Orientación de la casa",
   "Rotate sun path left": "Girar la trayectoria solar a la izquierda",
   "Rotate sun path right": "Girar la trayectoria solar a la derecha",
-  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Gira la trayectoria del sol alrededor de la casa para definir su orientación. Los azimuts de ambas vertientes cambian juntos."
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Gira la trayectoria del sol alrededor de la casa para definir su orientación. Los azimuts de ambas vertientes cambian juntos.",
+  "Rotate sun path counterclockwise": "Girar la trayectoria solar en sentido antihorario",
+  "Rotate sun path clockwise": "Girar la trayectoria solar en sentido horario",
+  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Arrastra hacia los lados para ajustar el acimut · Arrastra hacia arriba o abajo para girar la trayectoria solar",
+  "Drag up or down to rotate the sun path · Scroll to zoom": "Arrastra hacia arriba o abajo para girar la trayectoria solar · Desplaza la rueda para cambiar el zoom",
+  "Drag up or down to rotate the sun path · Pinch to zoom": "Arrastra hacia arriba o abajo para girar la trayectoria solar · Pellizca para cambiar el zoom",
+  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "La rotación vertical solo cambia la vista del diagrama. Los cálculos de energía solar no cambian."
 }

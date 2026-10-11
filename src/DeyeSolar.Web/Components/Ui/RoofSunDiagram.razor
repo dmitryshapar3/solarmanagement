@@ -7,30 +7,28 @@
     <div class="roof-scene" @ref="_sceneRoot">
         <div class="roof-scene-stage">
             <svg class="roof-sun-compass roof-scene-fallback" viewBox="0 0 360 320" role="img" aria-label="@T["Roof layout and calculated sun path"]">
-                <polygon class="roof-scene-ground" points="@RoofSceneGeometry.Points(Scene.Ground)" />
-                @foreach(var axis in Scene.Axes){<path class="roof-scene-axis" d="@RoofSceneGeometry.Path(axis)" />}
+                <polygon class="roof-scene-ground" points="@Points(Scene.Ground)" />
+                @foreach(var axis in Scene.Axes){<path class="roof-scene-axis" d="@Path(axis)" />}
                 @foreach(var path in Scene.SunPaths)
                 {
-                    <path class="roof-scene-sun-path roof-sun-path" d="@RoofSceneGeometry.Path(path)" />
-                    @if(path.Length>4){foreach(var fraction in new[]{1d/3,2d/3}){var index=Math.Clamp((int)(path.Length*fraction),0,path.Length-2);var q=RoofSceneGeometry.Project(path[index]);var next=RoofSceneGeometry.Project(path[index+1]);var angle=Math.Atan2(next.Y-q.Y,next.X-q.X)*180/Math.PI;<path class="roof-scene-sun-direction" d="M-5 -4L0 0L-5 4" transform="@($"translate({F(q.X)} {F(q.Y)}) rotate({F(angle)})")" />}}
+                    <path class="roof-scene-sun-path roof-sun-path" d="@Path(path)" />
+                    @if(path.Length>4){foreach(var fraction in new[]{1d/3,2d/3}){var index=Math.Clamp((int)(path.Length*fraction),0,path.Length-2);var q=Project(path[index]);var next=Project(path[index+1]);var angle=Math.Atan2(next.Y-q.Y,next.X-q.X)*180/Math.PI;<path class="roof-scene-sun-direction" d="M-5 -4L0 0L-5 4" transform="@($"translate({F(q.X)} {F(q.Y)}) rotate({F(angle)})")" />}}
                 }
-                @foreach(var face in Scene.Faces.Where(f=>f.Kind!="panel" || !Scene.Faces.Any(r=>(r.Kind=="roof" || r.Kind=="vertical") && r.Roof==f.Roof)).OrderBy(f=>f.Points.Average(p=>RoofSceneGeometry.Project(p).Depth)))
+                @foreach(var face in Scene.Faces.Where(f=>f.Kind!="panel" || !Scene.Faces.Any(r=>(r.Kind=="roof" || r.Kind=="vertical") && r.Roof==f.Roof)).OrderBy(f=>f.Points.Average(p=>Project(p).Depth)))
                 {
-                    <polygon class="roof-scene-face roof-scene-@face.Kind" data-roof="@face.Roof" points="@RoofSceneGeometry.Points(face.Points)" />
-                    @if(face.Kind is "roof" or "vertical"){foreach(var panel in Scene.Faces.Where(p=>p.Kind=="panel" && p.Roof==face.Roof)){<polygon class="roof-scene-face roof-scene-panel" data-roof="@panel.Roof" points="@RoofSceneGeometry.Points(panel.Points)" />}}
+                    <polygon class="roof-scene-face roof-scene-@face.Kind" data-roof="@face.Roof" points="@Points(face.Points)" />
+                    @if(face.Kind is "roof" or "vertical"){foreach(var panel in Scene.Faces.Where(p=>p.Kind=="panel" && p.Roof==face.Roof)){<polygon class="roof-scene-face roof-scene-panel" data-roof="@panel.Roof" points="@Points(panel.Points)" />}}
                 }
-                @foreach(var line in Scene.Lines){<path class="roof-scene-line roof-scene-@line.Kind" d="@RoofSceneGeometry.Path(line.Points)" />}
-                @foreach(var point in Scene.Crossings){var q=RoofSceneGeometry.Project(point);<circle class="roof-scene-crossing" cx="@F(q.X)" cy="@F(q.Y)" r="4" />}
-                @if(Scene.SunNow is {} now){var q=RoofSceneGeometry.Project(now);<circle class="roof-scene-sun-current" cx="@F(q.X)" cy="@F(q.Y)" r="10" />}
+                @foreach(var line in Scene.Lines){<path class="roof-scene-line roof-scene-@line.Kind" d="@Path(line.Points)" />}
+                @foreach(var point in Scene.Crossings){var q=Project(point);<circle class="roof-scene-crossing" cx="@F(q.X)" cy="@F(q.Y)" r="4" />}
+                @if(Scene.SunNow is {} now){var q=Project(now);<circle class="roof-scene-sun-current" cx="@F(q.X)" cy="@F(q.Y)" r="10" />}
                 @foreach(var label in Scene.Labels){var q=LabelPosition(label);<g><text class="roof-scene-label @(label.Kind=="roof"?"roof-scene-number":"roof-scene-cardinal")" x="@F(q.X)" y="@F(q.Y)">@label.Text</text></g>}
             </svg>
             <svg class="roof-sun-compass roof-scene-interactive" viewBox="0 0 360 320" role="img" tabindex="0" aria-label="@T["Roof layout and calculated sun path"]" aria-describedby="@_hintId"></svg>
         </div>
         <div class="roof-scene-controls" role="group" aria-label="@T["Roof and sun"]">
-            <button type="button" class="roof-scene-control" data-roof-action="left" title="@T["Rotate left"]" aria-label="@T["Rotate left"]">↶</button>
-            <button type="button" class="roof-scene-control" data-roof-action="right" title="@T["Rotate right"]" aria-label="@T["Rotate right"]">↷</button>
-            <button type="button" class="roof-scene-control" data-roof-action="up" title="@T["Tilt view up"]" aria-label="@T["Tilt view up"]">↑</button>
-            <button type="button" class="roof-scene-control" data-roof-action="down" title="@T["Tilt view down"]" aria-label="@T["Tilt view down"]">↓</button>
+            <button type="button" class="roof-scene-control" data-roof-action="sun-roll-left" title="@T["Rotate sun path counterclockwise"]" aria-label="@T["Rotate sun path counterclockwise"]">↶</button>
+            <button type="button" class="roof-scene-control" data-roof-action="sun-roll-right" title="@T["Rotate sun path clockwise"]" aria-label="@T["Rotate sun path clockwise"]">↷</button>
             <button type="button" class="roof-scene-control" data-roof-action="zoom-out" title="@T["Zoom out"]" aria-label="@T["Zoom out"]">−</button>
             <button type="button" class="roof-scene-control" data-roof-action="zoom-in" title="@T["Zoom in"]" aria-label="@T["Zoom in"]">+</button>
             <button type="button" class="roof-scene-control roof-scene-reset" data-roof-action="reset">@T["Reset view"]</button>
@@ -46,7 +44,8 @@
                 }
             </div>
         }
-        <p class="roof-scene-hint" id="@_hintId">@if (_editingDirection) { @T["Rotate the sun path around the house to set its direction. Both roof azimuths change together."] } else { <span class="roof-scene-pointer-hint">@T["Drag to rotate · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag to rotate · Pinch to zoom"]</span> }</p>
+        <p class="roof-scene-hint" id="@_hintId">@if (_editingDirection) { @T["Drag sideways to set azimuth · Drag up or down to rotate the sun path"] } else { <span class="roof-scene-pointer-hint">@T["Drag up or down to rotate the sun path · Scroll to zoom"]</span><span class="roof-scene-touch-hint">@T["Drag up or down to rotate the sun path · Pinch to zoom"]</span> }</p>
+        <p class="caption roof-sun-note">@T["Vertical rotation changes only the diagram view. Solar calculations stay the same."]</p>
     </div>
     @if (Day is { } sun)
     {
@@ -94,6 +93,9 @@
     private bool _editingDirection, _disposed;
     private readonly string _hintId = "roof-scene-hint-" + Guid.NewGuid().ToString("N");
     private int? PanelCount(int roof) => roof == 1 ? Roof1PanelCount : Roof2PanelCount;
+    private RoofSceneProjection Project(double[] point) => RoofSceneGeometry.Project(point, Scene.FrontYaw);
+    private string Points(IEnumerable<double[]> points) => RoofSceneGeometry.Points(points, Scene.FrontYaw);
+    private string Path(IEnumerable<double[]> points) => RoofSceneGeometry.Path(points, Scene.FrontYaw);
     private void ToggleDirection() { if (!DirectionDisabled) _editingDirection = !_editingDirection; }
     [JSInvokable]
     public Task RotateHouse(double delta) => !_disposed && _editingDirection && !DirectionDisabled && double.IsFinite(delta) && Math.Abs(delta) <= 360
@@ -103,11 +105,11 @@
         if(label.Kind=="roof" && int.TryParse(label.Text,out var number)
             && Scene.Faces.FirstOrDefault(f=>f.Roof==number && f.Kind is "roof" or "vertical") is {} face)
         {
-            var polygon=face.Points.Select(p=>RoofSceneGeometry.Project(p)).ToArray();
+            var polygon=face.Points.Select(p=>Project(p)).ToArray();
             var corner=polygon.MaxBy(p=>p.Y)!;
             return corner with{X=corner.X+Math.Sign(corner.X-polygon.Average(p=>p.X))*6,Y=corner.Y+14};
         }
-        return RoofSceneGeometry.Project(label.Point);
+        return Project(label.Point);
     }
     protected override void OnParametersSet()
     {

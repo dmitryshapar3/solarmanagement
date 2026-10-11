@@ -2675,5 +2675,11 @@
   "Set house direction": "Evin yönü",
   "Rotate sun path left": "Güneş yolunu sola döndür",
   "Rotate sun path right": "Güneş yolunu sağa döndür",
-  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Evin yönünü ayarlamak için güneş yolunu evin etrafında döndürün. Her iki çatı yüzeyinin azimutu birlikte değişir."
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Evin yönünü ayarlamak için güneş yolunu evin etrafında döndürün. Her iki çatı yüzeyinin azimutu birlikte değişir.",
+  "Rotate sun path counterclockwise": "Güneş yolunu saat yönünün tersine döndür",
+  "Rotate sun path clockwise": "Güneş yolunu saat yönünde döndür",
+  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Azimutu ayarlamak için yana sürükleyin · Güneş yolunu döndürmek için yukarı veya aşağı sürükleyin",
+  "Drag up or down to rotate the sun path · Scroll to zoom": "Güneş yolunu döndürmek için yukarı veya aşağı sürükleyin · Yakınlaştırmak için kaydırın",
+  "Drag up or down to rotate the sun path · Pinch to zoom": "Güneş yolunu döndürmek için yukarı veya aşağı sürükleyin · Yakınlaştırmak için parmaklarınızı açıp kapatın",
+  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Dikey döndürme yalnızca şema görünümünü değiştirir. Güneş enerjisi hesaplamaları aynı kalır."
 }

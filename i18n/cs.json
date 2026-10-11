@@ -2675,5 +2675,11 @@
   "Set house direction": "Orientace domu",
   "Rotate sun path left": "Otočit dráhu slunce doleva",
   "Rotate sun path right": "Otočit dráhu slunce doprava",
-  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Otáčením dráhy slunce kolem domu nastavíte jeho orientaci. Azimuty obou střešních ploch se mění společně."
+  "Rotate the sun path around the house to set its direction. Both roof azimuths change together.": "Otáčením dráhy slunce kolem domu nastavíte jeho orientaci. Azimuty obou střešních ploch se mění společně.",
+  "Rotate sun path counterclockwise": "Otočit dráhu slunce proti směru hodinových ručiček",
+  "Rotate sun path clockwise": "Otočit dráhu slunce po směru hodinových ručiček",
+  "Drag sideways to set azimuth · Drag up or down to rotate the sun path": "Tažením do stran nastavte azimut · Tažením nahoru nebo dolů otočte dráhu slunce",
+  "Drag up or down to rotate the sun path · Scroll to zoom": "Tažením nahoru nebo dolů otočte dráhu slunce · Posouváním měňte přiblížení",
+  "Drag up or down to rotate the sun path · Pinch to zoom": "Tažením nahoru nebo dolů otočte dráhu slunce · Sevřením nebo rozevřením prstů měňte přiblížení",
+  "Vertical rotation changes only the diagram view. Solar calculations stay the same.": "Svislé otáčení mění pouze zobrazení schématu. Výpočty solární energie zůstávají stejné."
 }

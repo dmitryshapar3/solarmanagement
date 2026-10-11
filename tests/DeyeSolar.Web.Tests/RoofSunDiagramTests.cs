@@ -85,7 +85,7 @@ public class RoofSunDiagramTests
     }
 
     [Fact]
-    public async Task ComponentBindsCurrentDraftToConnectedRoofAndOrbitControls()
+    public async Task ComponentBindsCurrentDraftToConnectedRoofAndEndOnViewControls()
     {
         var parameters = new Dictionary<string, object?> { ["Latitude"] = 50.095278, ["Longitude"] = 20.070278, ["TimeZoneId"] = "Europe/Warsaw",
             ["Roof1Kwp"] = 4.32d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
@@ -102,6 +102,14 @@ public class RoofSunDiagramTests
         Assert.Equal(8, System.Text.RegularExpressions.Regex.Matches(before, "class=\"roof-scene-face roof-scene-panel\"").Count);
         Assert.Contains("8 panels", before);
         Assert.Contains("data-roof-action=\"zoom-in\"", before); Assert.Contains("data-roof-action=\"reset\"", before);
+        Assert.Contains("data-roof-action=\"sun-roll-left\"", before); Assert.Contains("Rotate sun path counterclockwise", before);
+        Assert.Contains("data-roof-action=\"sun-roll-right\"", before); Assert.Contains("Rotate sun path clockwise", before);
+        Assert.Contains("Drag up or down to rotate the sun path", before);
+        Assert.Contains("Vertical rotation changes only the diagram view. Solar calculations stay the same.", before);
+        Assert.DoesNotContain("data-roof-action=\"opposite-end\"", before);
+        Assert.DoesNotContain("data-roof-action=\"direction-half-turn\"", before);
+        foreach (var action in new[] { "left", "right", "up", "down", "sun-up", "sun-down" })
+            Assert.DoesNotContain("data-roof-action=\"" + action + "\"", before);
         Assert.Contains("Tilt", before);
         var beforeRoof = RoofPolygon(before);
         parameters["Roof1Azimuth"] = 90d; parameters["Roof1Tilt"] = 60d; parameters["Latitude"] = -33.8688;
@@ -116,6 +124,36 @@ public class RoofSunDiagramTests
         var unknown = await Render(parameters);
         Assert.DoesNotContain("class=\"roof-scene-face roof-scene-panel\"", unknown);
         Assert.Contains("Enter the panel count for each roof", unknown);
+    }
+
+    [Fact]
+    public async Task FallbackKeepsTheGableAndPanelsFixedWhileManualBearingChangesMoveTheRealSunAndCompass()
+    {
+        var at = DateTimeOffset.Parse("2026-10-10T10:00:00Z");
+        var parameters = new Dictionary<string, object?> { ["Latitude"] = 50.095278, ["Longitude"] = 20.070278,
+            ["TimeZoneId"] = "Europe/Warsaw", ["Roof1Kwp"] = 4d, ["Roof1Tilt"] = 25d, ["Roof1Azimuth"] = 230d,
+            ["Roof2Kwp"] = 3d, ["Roof2Tilt"] = 40d, ["Roof2Azimuth"] = 50d,
+            ["Roof1PanelCount"] = 8, ["Roof2PanelCount"] = 7, ["At"] = at };
+        var initial = await Render(parameters);
+        var day = RoofSunGeometry.Day(50.095278, 20.070278, "Europe/Warsaw", at)!;
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 230, 3, 40, 50), day, 50.095278, 20.070278, 8, 7);
+        Assert.Equal(-40, scene.FrontYaw);
+        Assert.Equal(RoofSceneGeometry.Points(scene.Faces.Single(face => face.Kind == "roof" && face.Roof == 1).Points, scene.FrontYaw), RoofPolygon(initial));
+        Assert.Contains("class=\"roof-scene-ground\" points=\"" + RoofSceneGeometry.Points(scene.Ground, scene.FrontYaw) + "\"", initial);
+        Assert.Contains("class=\"roof-scene-sun-path roof-sun-path\" d=\"" + RoofSceneGeometry.Path(scene.SunPaths[0], scene.FrontYaw) + "\"", initial);
+        var north = RoofSceneGeometry.Project(scene.Labels.Single(label => label.Text == "N").Point, scene.FrontYaw);
+        Assert.Matches("class=\"roof-scene-label roof-scene-cardinal\" x=\"" + System.Text.RegularExpressions.Regex.Escape(RoofSunGeometry.F(north.X))
+            + "\" y=\"" + System.Text.RegularExpressions.Regex.Escape(RoofSunGeometry.F(north.Y)) + "\"[^>]*>N</text>", initial);
+
+        parameters["Roof1Azimuth"] = 270d; parameters["Roof2Azimuth"] = 90d;
+        var changed = await Render(parameters);
+        Assert.Equal(RoofPolygon(initial), RoofPolygon(changed));
+        Assert.Equal(15, System.Text.RegularExpressions.Regex.Matches(changed, "class=\"roof-scene-face roof-scene-panel\"").Count);
+        Assert.NotEqual(System.Text.RegularExpressions.Regex.Match(initial, "roof-scene-sun-path roof-sun-path\" d=\"([^\"]+)\"").Groups[1].Value,
+            System.Text.RegularExpressions.Regex.Match(changed, "roof-scene-sun-path roof-sun-path\" d=\"([^\"]+)\"").Groups[1].Value);
+        Assert.Contains("Azimuth 270° · Tilt 25°", changed); Assert.Contains("Azimuth 90° · Tilt 40°", changed);
+        parameters["Roof1Azimuth"] = 230d; parameters["Roof2Azimuth"] = 50d;
+        Assert.Equal(RoofPolygon(initial), RoofPolygon(await Render(parameters)));
     }
 
     private static string RoofPolygon(string html) => System.Text.RegularExpressions.Regex.Match(html,

@@ -81,6 +81,15 @@ export type OrbitTouch = { pageX: number; pageY: number };
 export const DEFAULT_ROOF_CAMERA: Readonly<OrbitCamera> = { yaw: -35, elevation: 32, zoom: 1 };
 const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
 type Point2 = { x: number; y: number };
+const referenceRoofBearing = (roofs: readonly DiagramRoof[]) => (roofs.find(roof => roof.tilt < 90) ?? roofs[0])?.azimuth ?? 0;
+
+/** Look down the building's ridge at its gable, with roof 1 on the left for
+ * opposing slopes. Deriving this from the draft also covers manual bearing
+ * edits, discarded edits and reset without accumulating camera corrections.
+ */
+export function fixedGableRoofCamera(site: RoofSunSite, zoom = 1): OrbitCamera {
+  return normalizeRoofCamera({ yaw: referenceRoofBearing(diagramRoofs(site)) + 90, elevation: DEFAULT_ROOF_CAMERA.elevation, zoom });
+}
 
 /** Convex polygon clipped to a*x+b*y >= c. Shared intersections are calculated identically on both faces. */
 function clip(poly: Point2[], a: number, b: number, c = 0): Point2[] {
@@ -141,7 +150,7 @@ export function roofPanelTiles(points: Point3[], normal: Point3, tilt: number, a
 export function roofMesh(site: RoofSunSite): RoofMesh {
   const roofs = diagramRoofs(site), faces: RoofFace3[] = [], ridge: Point3[][] = [];
   if (!roofs.length) return { faces, ridge, footprint: [], scale: 1, hasVerticalPanels: false };
-  const bearing = (roofs.find(roof => roof.tilt < 90) ?? roofs[0]!).azimuth * rad;
+  const bearing = referenceRoofBearing(roofs) * rad;
   // r points along the ridge, d down the first slope. Their basis is reflected,
   // so clockwise local corners become counterclockwise world corners.
   const footprint = [[-40, -32], [-40, 32], [40, 32], [40, -32]].map(([u, v]) => ({ x: -Math.cos(bearing) * u! + Math.sin(bearing) * v!, y: Math.sin(bearing) * u! + Math.cos(bearing) * v! }));
@@ -201,7 +210,18 @@ export function projectRoofPoint(point: Point3, camera: OrbitCamera): Point3 {
   const view = normalizeRoofCamera(camera), yaw = view.yaw * rad, elevation = view.elevation * rad, horizontal = point.x * Math.sin(yaw) + point.y * Math.cos(yaw);
   return { x: 160 + (point.x * Math.cos(yaw) - point.y * Math.sin(yaw)) * view.zoom, y: 180 + (horizontal * Math.sin(elevation) - point.z * Math.cos(elevation)) * view.zoom, z: horizontal * Math.cos(elevation) + point.z * Math.sin(elevation) };
 }
+export const normalizeSunFrameRoll = (degrees: number) => Number.isFinite(degrees) ? ((degrees + 180) % 360 + 360) % 360 - 180 : 0;
+/** Rotate only the projected sky frame about its shared origin with the house. This rigid
+ * screen rotation preserves the solar arc and never changes physical positions,
+ * the fixed house camera, or any installation setting.
+ */
+export function projectSunFramePoint(point: Point3, camera: OrbitCamera, rollDegrees: number): Point3 {
+  const projected = projectRoofPoint(point, camera), roll = normalizeSunFrameRoll(rollDegrees) * rad;
+  const x = projected.x - 160, y = projected.y - 180;
+  return { x: 160 + x * Math.cos(roll) - y * Math.sin(roll), y: 180 + x * Math.sin(roll) + y * Math.cos(roll), z: projected.z };
+}
 export const roofPath3 = (points: Point3[], camera: OrbitCamera, close = false) => points.map((point, index) => { const p = projectRoofPoint(point, camera); return `${index ? "L" : "M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`; }).join(" ") + (close ? " Z" : "");
+export const sunFramePath3 = (points: Point3[], camera: OrbitCamera, rollDegrees: number, close = false) => points.map((point, index) => { const p = projectSunFramePoint(point, camera, rollDegrees); return `${index ? "L" : "M"}${p.x.toFixed(3)} ${p.y.toFixed(3)}`; }).join(" ") + (close ? " Z" : "");
 export function sunPoint3(point: Pick<SunPoint, "azimuth" | "elevation">, distance = 110): Point3 { const altitude = point.elevation * rad, bearing = point.azimuth * rad; return { x: Math.sin(bearing) * Math.cos(altitude) * distance, y: Math.cos(bearing) * Math.cos(altitude) * distance, z: Math.sin(altitude) * distance }; }
 export function orbitRoofGesture(camera: OrbitCamera, previous: readonly OrbitTouch[], current: readonly OrbitTouch[]): OrbitCamera {
   if (!previous.length || previous.length !== current.length || current.some(p => !Number.isFinite(p.pageX) || !Number.isFinite(p.pageY)) || previous.some(p => !Number.isFinite(p.pageX) || !Number.isFinite(p.pageY))) return camera;

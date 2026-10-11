@@ -8,6 +8,87 @@ public class RoofSceneGeometryTests
     private const double Tolerance = 1e-7;
 
     [Theory]
+    [InlineData(0, 90)]
+    [InlineData(90, -180)]
+    [InlineData(230, -40)]
+    [InlineData(359.5, 89.5)]
+    public void FrontCameraFacesTheNearGableWithTheFirstSlopeOnTheLeft(double bearing, double expectedYaw)
+    {
+        var scene = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, bearing, 3, 40, (bearing + 180) % 360), null, 50, 20, 8, 7);
+        Close(scene.FrontYaw, expectedYaw);
+        var walls = scene.Faces.Where(face => face.Kind == "wall").ToArray();
+        var near = walls[0].Points.Select(point => RoofSceneGeometry.Project(point, scene.FrontYaw)).ToArray();
+        var far = walls[2].Points.Select(point => RoofSceneGeometry.Project(point, scene.FrontYaw)).ToArray();
+        // A square-on gable has no perspective shortening across its horizontal bottom edge.
+        Close(near[0].Y, near[1].Y); Close(near[0].Depth, near[1].Depth);
+        Assert.True(near.Take(2).Average(point => point.Depth) > far.Take(2).Average(point => point.Depth));
+        var roof1 = scene.Faces.Single(face => face.Kind == "roof" && face.Roof == 1);
+        var roof2 = scene.Faces.Single(face => face.Kind == "roof" && face.Roof == 2);
+        Assert.True(roof1.Points.Average(point => RoofSceneGeometry.Project(point, scene.FrontYaw).X)
+            < roof2.Points.Average(point => RoofSceneGeometry.Project(point, scene.FrontYaw).X));
+    }
+
+    [Theory]
+    [InlineData(25, 230, 40, 50)]
+    [InlineData(35, 17, 52, 132)]
+    [InlineData(90, 110, 25, 300)]
+    [InlineData(90, 270, 90, 90)]
+    public void DerivedFrontCameraKeepsEveryHousePointFixedWhenBothBearingsChange(double tilt1, double bearing1, double tilt2, double bearing2)
+    {
+        var initial = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt1, bearing1, 3, tilt2, bearing2), null, 50, 20, 8, 7, 4, 3);
+        foreach (var delta in new[] { 10d, 90, 180, 359.5 })
+        {
+            var changed = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, tilt1, (bearing1 + delta) % 360, 3, tilt2, (bearing2 + delta) % 360), null, 50, 20, 8, 7, 4, 3);
+            Assert.Equal(initial.Faces.Count, changed.Faces.Count);
+            for (var face = 0; face < initial.Faces.Count; ++face)
+            {
+                Assert.Equal(initial.Faces[face].Kind, changed.Faces[face].Kind);
+                Assert.Equal(initial.Faces[face].Points.Length, changed.Faces[face].Points.Length);
+                for (var vertex = 0; vertex < initial.Faces[face].Points.Length; ++vertex)
+                {
+                    var before = RoofSceneGeometry.Project(initial.Faces[face].Points[vertex], initial.FrontYaw);
+                    var after = RoofSceneGeometry.Project(changed.Faces[face].Points[vertex], changed.FrontYaw);
+                    Close(before.X, after.X); Close(before.Y, after.Y); Close(before.Depth, after.Depth);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void FrontCameraUsesTheActiveNonverticalRoofAndHasFiniteEmptyAndVerticalFallbacks()
+    {
+        var mixed = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 90, 230, 3, 25, 50), null, 50, 20);
+        Close(mixed.FrontYaw, 140);
+        var secondOnly = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(0, 25, 230, 3, 25, 50), null, 50, 20);
+        Close(secondOnly.FrontYaw, 140);
+        var vertical = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 90, 230, 3, 90, 50), null, 50, 20);
+        Close(vertical.FrontYaw, -40);
+        Close(RoofSceneGeometry.Create([], null, 50, 20).FrontYaw, 90);
+    }
+
+    [Fact]
+    public void CommonBearingChangesKeepTheCalculatedSunArcInWorldCoordinates()
+    {
+        var day = RoofSunGeometry.Day(50.095278, 20.070278, "Europe/Warsaw", DateTimeOffset.Parse("2026-10-10T10:00:00Z"));
+        var initial = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 230, 3, 40, 50), day, 50.095278, 20.070278);
+        var changed = RoofSceneGeometry.Create(RoofSunGeometry.Roofs(4, 25, 270, 3, 40, 90), day, 50.095278, 20.070278);
+        Assert.NotEmpty(initial.SunPaths);
+        Assert.Equal(initial.SunPaths.Length, changed.SunPaths.Length);
+        for (var path = 0; path < initial.SunPaths.Length; ++path)
+        {
+            Assert.Equal(initial.SunPaths[path].Length, changed.SunPaths[path].Length);
+            for (var point = 0; point < initial.SunPaths[path].Length; ++point)
+            {
+                Assert.Equal(initial.SunPaths[path][point], changed.SunPaths[path][point]);
+            }
+        }
+        Assert.Equal(initial.SunNow, changed.SunNow);
+        Assert.Equal(initial.Crossings.Length, changed.Crossings.Length);
+        for (var point = 0; point < initial.Crossings.Length; ++point)
+            Assert.Equal(initial.Crossings[point], changed.Crossings[point]);
+    }
+
+    [Theory]
     [InlineData(25, 230, 40, 50)]
     [InlineData(15, 90, 65, 270)]
     [InlineData(35, 17, 52, 132)]

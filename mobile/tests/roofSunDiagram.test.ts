@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import React from "react";
 import { act, create } from "react-test-renderer";
-import { DEFAULT_ROOF_CAMERA, diagramRoofs, normalizeRoofCamera, orbitRoofGesture, projectRoofPoint, roofMesh, sunDay, sunPoint3, sunPosition, type Point3, type RoofSunSite } from "../src/ui/forms/roofSunGeometry";
+import { DEFAULT_ROOF_CAMERA, diagramRoofs, fixedGableRoofCamera, normalizeRoofCamera, normalizeSunFrameRoll, orbitRoofGesture, projectRoofPoint, projectSunFramePoint, roofMesh, sunDay, sunFramePath3, sunPoint3, sunPosition, type Point3, type RoofSunSite } from "../src/ui/forms/roofSunGeometry";
 import { globals, uiHarness } from "./support/uiHarness";
 
 const site: RoofSunSite = { latitude: 50.095278, longitude: 20.070278, timeZoneId: "Europe/Warsaw", roof1Kwp: 4.32, roof1Tilt: 25, roof1Azimuth: 230, roof2Kwp: 3.78, roof2Tilt: 25, roof2Azimuth: 50 };
@@ -158,6 +158,29 @@ test("turning both roof bearings preserves house size, module placement and dist
   }
 });
 
+test("fixed gable camera follows the active roof reference, preserving roof sides and zoom", () => {
+  let reference: Point3[] | undefined;
+  for (const [azimuth, yaw] of [[0, 90], [50, 140], [230, -40], [360, 90]] as const) {
+    const draft = { ...site, roof1Azimuth: azimuth, roof2Azimuth: (azimuth + 180) % 360, roof1PanelCount: 8, roof2PanelCount: 7 };
+    const camera = fixedGableRoofCamera(draft, 1.2), mesh = roofMesh(draft);
+    assert.deepEqual(camera, { yaw, elevation: 32, zoom: 1.2 });
+    const ridge = mesh.ridge[0]!.map(point => projectRoofPoint(point, camera));
+    assert.ok(Math.abs(ridge[0]!.x - ridge[1]!.x) < 1e-7, "The ridge points directly toward the viewer");
+    for (const face of mesh.faces.filter(face => face.roofNumber)) {
+      const averageX = face.points.reduce((sum, point) => sum + projectRoofPoint(point, camera).x, 0) / face.points.length;
+      assert.ok(face.roofNumber === 1 ? averageX < 160 : averageX > 160, "Roof 1 remains left and roof 2 right");
+    }
+    const projected = mesh.faces.flatMap(face => [...face.points, ...face.panelTiles.flat(), ...face.grid.flat()].map(point => projectRoofPoint(point, camera)));
+    if (reference) for (let i = 0; i < reference.length; ++i) assert.ok(close(reference[i]!, projected[i]!, 1e-6), "Compass changes cannot turn the building away from its gable");
+    else reference = projected;
+  }
+  assert.equal(fixedGableRoofCamera({ ...site, roof1Tilt: 90 }).yaw, 140, "A remaining nonvertical slope defines the house reference");
+  assert.equal(fixedGableRoofCamera({ ...site, roof1Tilt: 90, roof2Tilt: 90 }).yaw, -40);
+  assert.equal(fixedGableRoofCamera({ ...site, roof1Kwp: 0 }).yaw, 140);
+  assert.equal(fixedGableRoofCamera({ ...site, roof1Kwp: 0, roof2Kwp: 0 }).yaw, 90);
+  assert.equal(fixedGableRoofCamera(site, 9).zoom, 2.5); assert.equal(fixedGableRoofCamera(site, -1).zoom, .7);
+});
+
 test("orthographic camera preserves physical directions, depth and proportional zoom", () => {
   const camera = { yaw: 0, elevation: 30, zoom: 1 }, origin = projectRoofPoint({ x: 0, y: 0, z: 0 }, camera), east = projectRoofPoint({ x: 20, y: 0, z: 0 }, camera), north = projectRoofPoint({ x: 0, y: 20, z: 0 }, camera), above = projectRoofPoint({ x: 0, y: 0, z: 20 }, camera);
   assert.ok(east.x > origin.x && north.y > origin.y && north.z > origin.z && above.y < origin.y && above.z > origin.z);
@@ -165,6 +188,27 @@ test("orthographic camera preserves physical directions, depth and proportional 
   assert.ok(Math.abs(zoomed.x - origin.x - 2 * (normal.x - origin.x)) < 1e-7 && Math.abs(zoomed.y - origin.y - 2 * (normal.y - origin.y)) < 1e-7);
   assert.ok(close(sunPoint3({ azimuth: 90, elevation: 0 }), { x: 110, y: 0, z: 0 }));
   assert.ok(close(sunPoint3({ azimuth: 0, elevation: 90 }), { x: 0, y: 0, z: 110 }));
+});
+
+test("sun-frame roll is a rigid projected rotation with continuous fractions and unchanged physical solar data", () => {
+  const camera = fixedGableRoofCamera(site), at = Date.parse("2026-10-09T10:00:00Z"), day = sunDay(site.latitude, site.longitude, site.timeZoneId, at)!;
+  const before = JSON.stringify(day), position = sunPosition(site.latitude, site.longitude, at), points = day.paths[0]!.map(point => sunPoint3(point));
+  for (const angle of [-180, -90, -10.5, 0, .3, 10.5, 90, 179.9, 360]) {
+    assert.deepEqual(projectSunFramePoint({ x: 0, y: 0, z: 0 }, camera, angle), { x: 160, y: 180, z: 0 }, "The house and sky share one stationary projected origin at every roll");
+    const roll = normalizeSunFrameRoll(angle) * Math.PI / 180;
+    const projected = points.map(point => projectRoofPoint(point, camera)), rotated = points.map(point => projectSunFramePoint(point, camera, angle));
+    for (let i = 0; i < points.length; ++i) {
+      const a = projected[i]!, b = rotated[i]!, x = a.x - 160, y = a.y - 180;
+      assert.ok(Math.abs(b.x - (160 + x * Math.cos(roll) - y * Math.sin(roll))) < 1e-9);
+      assert.ok(Math.abs(b.y - (180 + x * Math.sin(roll) + y * Math.cos(roll))) < 1e-9);
+      assert.equal(b.z, a.z, "Roll cannot alter the physical/camera depth");
+      assert.ok(Math.abs(Math.hypot(b.x - 160, b.y - 180) - Math.hypot(x, y)) < 1e-9);
+      if (i) assert.ok(Math.abs(Math.hypot(a.x - projected[i - 1]!.x, a.y - projected[i - 1]!.y) - Math.hypot(b.x - rotated[i - 1]!.x, b.y - rotated[i - 1]!.y)) < 1e-9, "The solar arc keeps its shape");
+    }
+  }
+  assert.equal(normalizeSunFrameRoll(540), -180); assert.equal(normalizeSunFrameRoll(-181), 179); assert.equal(normalizeSunFrameRoll(NaN), 0);
+  assert.ok(Math.abs(normalizeSunFrameRoll(.3) - .3) < 1e-9);
+  assert.equal(JSON.stringify(day), before); assert.deepEqual(sunPosition(site.latitude, site.longitude, at), position);
 });
 
 test("orbit clamps its camera and pinch never introduces rotation or touch-count jumps", () => {
@@ -179,7 +223,7 @@ test("orbit clamps its camera and pinch never introduces rotation or touch-count
   const orbited = orbitRoofGesture(pinched, one, [{ pageX: 40, pageY: -1000 }]); assert.equal(orbited.elevation, 85); assert.equal(orbited.zoom, 2); assert.notEqual(orbited.yaw, pinched.yaw);
 });
 
-test("native gestures, accessible controls, draft updates and cancellation share one camera", async () => {
+test("native fixed gable view retains zoom, draft updates and cancellation without orbit drift", async () => {
   globals.IS_REACT_ACT_ENVIRONMENT = true; let renderer: ReturnType<typeof create> | undefined;
   try {
     const RoofSunDiagram = (await uiHarness('export { RoofSunDiagram } from "./src/ui/forms/RoofSunDiagram";', { stubComponents: true })).RoofSunDiagram!;
@@ -187,10 +231,12 @@ test("native gestures, accessible controls, draft updates and cancellation share
     const scene = () => renderer!.root.findByProps({ testID: "roof-sun-orbit" });
     const event = (points: [number, number][]) => ({ nativeEvent: { touches: points.map(([pageX, pageY]) => ({ pageX, pageY })) } });
     const initialPath = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    const initialHouse = renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d;
     assert.equal(scene().props.onStartShouldSetResponder(), true); assert.equal(scene().props.onResponderTerminationRequest(), false);
     assert.equal(renderer!.root.findByProps({ testID: "roof-sun-diagram" }).props.onStartShouldSetResponder, undefined);
     await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[35, 10]])); });
-    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialPath);
+    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialPath, "Vertical motion rotates only the projected sun frame");
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, initialHouse);
     await act(async () => { scene().props.onResponderStart(event([[35, 10], [135, 10]])); scene().props.onResponderMove(event([[35, 10], [235, 10]])); });
     assert.equal(scene().props.accessibilityValue.now, 200);
     await act(async () => { scene().props.onResponderEnd(event([[35, 10]])); scene().props.onResponderMove(event([[35, 10]])); });
@@ -201,7 +247,8 @@ test("native gestures, accessible controls, draft updates and cancellation share
     assert.equal(scene().props.accessibilityValue.now, 200);
     await act(async () => { scene().props.onAccessibilityAction({ nativeEvent: { actionName: "increment" } }); });
     assert.equal(scene().props.accessibilityValue.now, 220);
-    for (const label of ["Rotate left", "Rotate right", "Tilt view up", "Tilt view down", "Zoom in", "Zoom out", "Reset view"]) assert.equal(renderer!.root.findByProps({ accessibilityLabel: label }).props.accessibilityRole, "button");
+    for (const label of ["Rotate sun path counterclockwise", "Rotate sun path clockwise", "Zoom in", "Zoom out", "Reset view"]) assert.equal(renderer!.root.findByProps({ accessibilityLabel: label }).props.accessibilityRole, "button");
+    for (const label of ["Rotate left", "Rotate right", "Tilt view up", "Tilt view down", "View from the opposite end", "Turn house direction by 180°"]) assert.equal(renderer!.root.findAllByProps({ accessibilityLabel: label }).length, 0);
     await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Reset view" }).props.onPress(); });
     assert.equal(scene().props.accessibilityValue.now, 100);
     assert.equal(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialPath);
@@ -263,7 +310,7 @@ test("native individual panels redraw on count/row drafts while retaining orbit 
     const tiles = () => renderer!.root.findAll(node => typeof node.props.testID === "string" && node.props.testID.startsWith("roof-sun-panel-"));
     assert.equal(tiles().length, 7); const before = tiles()[0]!.props.d;
     const label = renderer!.root.findByProps({ testID: "roof-sun-label-1" });
-    const maximumY = Math.max(...roofMesh(props).faces.find(face => face.roofNumber === 1)!.points.map(point => projectRoofPoint(point, DEFAULT_ROOF_CAMERA).y));
+    const maximumY = Math.max(...roofMesh(props).faces.find(face => face.roofNumber === 1)!.points.map(point => projectRoofPoint(point, fixedGableRoofCamera(props)).y));
     const labelY = Number(label.props.transform.match(/translate\([^ ]+ ([^)]+)\)/)[1]);
     assert.ok(Math.abs(labelY - maximumY - 12) < 1e-7, "Roof badge stays below the facet rather than obscuring modules");
     const svgChildren = renderer!.root.findByType("Svg").children;
@@ -272,6 +319,70 @@ test("native individual panels redraw on count/row drafts while retaining orbit 
     assert.equal(tiles().length, 17); assert.notEqual(tiles()[0]!.props.d, before); assert.equal(renderer!.root.findByProps({ testID: "roof-sun-orbit" }).props.accessibilityValue.now, 120);
     await act(async () => renderer!.update(React.createElement(RoofSunDiagram, { site: { ...props, roof1PanelCount: null }, at })));
     assert.equal(tiles().length, 0); assert.ok(renderer!.root.findAllByType("Text").some(node => node.props.children === "Enter the panel count for each roof to show its panels."));
+  } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});
+
+test("native manual bearing drafts, discard, reset and remount derive the same gable without correction drift", async () => {
+  globals.IS_REACT_ACT_ENVIRONMENT = true; let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const RoofSunDiagram = (await uiHarness('export { RoofSunDiagram } from "./src/ui/forms/RoofSunDiagram";', { stubComponents: true })).RoofSunDiagram!;
+    const at = Date.parse("2026-10-09T10:00:00Z"), initial = { ...site, roof1Azimuth: 349.5, roof2Azimuth: 169.5, roof1PanelCount: 8, roof2PanelCount: 7 };
+    await act(async () => { renderer = create(React.createElement(RoofSunDiagram, { site: initial, at })); });
+    const paths = () => Object.fromEntries(renderer!.root.findAll(node => typeof node.props.testID === "string" && /^roof-sun-(?:face-|panel-|ridge$)/.test(node.props.testID)).map(node => [node.props.testID, node.props.d]));
+    const initialHouse = paths(), initialSun = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    const changed = { ...initial, roof1Azimuth: 9.5, roof2Azimuth: 189.5 };
+    await act(async () => { renderer!.update(React.createElement(RoofSunDiagram, { site: changed, at })); });
+    assert.deepEqual(paths(), initialHouse, "A manual draft crossing north preserves the front of every roof and module");
+    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialSun);
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Zoom in" }).props.onPress(); });
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-orbit" }).props.accessibilityValue.now, 120);
+    await act(async () => { renderer!.update(React.createElement(RoofSunDiagram, { site: initial, at })); });
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-orbit" }).props.accessibilityValue.now, 120, "Discarding the draft preserves the chosen zoom");
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Reset view" }).props.onPress(); });
+    assert.deepEqual(paths(), initialHouse); assert.equal(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialSun);
+    await act(async () => { renderer!.unmount(); renderer = create(React.createElement(RoofSunDiagram, { site: initial, at })); });
+    assert.deepEqual(paths(), initialHouse); assert.equal(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, initialSun);
+  } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
+});
+
+test("native vertical drag smoothly rolls the complete sky frame while house pixels, solar data and settings stay unchanged", async () => {
+  globals.IS_REACT_ACT_ENVIRONMENT = true; let renderer: ReturnType<typeof create> | undefined;
+  try {
+    const RoofSunDiagram = (await uiHarness('export { RoofSunDiagram } from "./src/ui/forms/RoofSunDiagram";', { stubComponents: true })).RoofSunDiagram!;
+    const at = Date.parse("2026-10-09T10:00:00Z"), draft = { ...site, roof1PanelCount: 8, roof2PanelCount: 7 }, snapshot = JSON.stringify(draft), day = sunDay(site.latitude, site.longitude, site.timeZoneId, at)!;
+    await act(async () => { renderer = create(React.createElement(RoofSunDiagram, { site: draft, at })); });
+    const scene = () => renderer!.root.findByProps({ testID: "roof-sun-orbit" });
+    const event = (points: [number, number][]) => ({ nativeEvent: { touches: points.map(([pageX, pageY]) => ({ pageX, pageY })) } });
+    const path = () => renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    const house = () => Object.fromEntries(renderer!.root.findAll(node => typeof node.props.testID === "string" && /^roof-sun-(?:face-|panel-|ridge$|label-)/.test(node.props.testID)).map(node => [node.props.testID, node.props.d ?? node.props.transform]));
+    const initialHouse = house(), initialPath = path(), description = scene().props.accessibilityLabel;
+    await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[100, .25]])); });
+    assert.notEqual(path(), initialPath, "A fractional vertical gesture changes the view without a snapped half-turn");
+    await act(async () => { scene().props.onResponderMove(event([[100, .5]])); scene().props.onResponderMove(event([[100, 17.5]])); });
+    const camera = fixedGableRoofCamera(draft), expectedPath = (roll: number, zoom = 1) => sunFramePath3(day.paths[0]!.map(point => sunPoint3(point)), { ...camera, zoom }, roll);
+    assert.equal(path(), expectedPath(10.5)); assert.deepEqual(house(), initialHouse);
+    const horizon = Array.from({ length: 73 }, (_, i) => sunPoint3({ azimuth: i * 5, elevation: 0 }));
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-horizon" }).props.d, sunFramePath3(horizon, camera, 10.5, true));
+    const axes = sunFramePath3([{ x: -110, y: 0, z: 0 }, { x: 110, y: 0, z: 0 }], camera, 10.5) + " " + sunFramePath3([{ x: 0, y: -110, z: 0 }, { x: 0, y: 110, z: 0 }], camera, 10.5);
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-axes" }).props.d, axes);
+    for (const [label, azimuth] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]] as const) {
+      const point = projectSunFramePoint(sunPoint3({ azimuth, elevation: 0 }, 124), camera, 10.5), node = renderer!.root.findByProps({ testID: `roof-sun-cardinal-${label}` });
+      assert.ok(Math.abs(node.props.x - point.x) < 1e-7 && Math.abs(node.props.y - 5 - point.y) < 1e-7);
+    }
+    const now = projectSunFramePoint(sunPoint3(day.now!), camera, 10.5), transform = renderer!.root.findByProps({ testID: "roof-sun-current" }).props.transform.match(/translate\(([^ ]+) ([^)]+)\)/);
+    assert.ok(Math.abs(Number(transform[1]) - now.x) < 1e-7 && Math.abs(Number(transform[2]) - now.y) < 1e-7);
+    assert.equal(scene().props.accessibilityLabel, description); assert.equal(JSON.stringify(draft), snapshot);
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Rotate sun path clockwise" }).props.onPress(); });
+    assert.equal(path(), expectedPath(20.5)); assert.deepEqual(house(), initialHouse);
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Rotate sun path counterclockwise" }).props.onPress(); });
+    assert.equal(path(), expectedPath(10.5));
+    await act(async () => { scene().props.onResponderStart(event([[100, 17.5], [200, 17.5]])); scene().props.onResponderMove(event([[100, 17.5], [300, 117.5]])); });
+    const zoom = Math.hypot(200, 100) / 100;
+    assert.equal(path(), expectedPath(10.5, zoom), "Pinch changes zoom without changing the sky roll");
+    await act(async () => { scene().props.onResponderEnd(event([[100, 17.5]])); scene().props.onResponderMove(event([[100, 17.5]])); scene().props.onResponderTerminate(); scene().props.onResponderMove(event([[100, 200]])); });
+    assert.equal(path(), expectedPath(10.5, zoom), "Rebase and cancellation introduce no roll jump");
+    await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Reset view" }).props.onPress(); });
+    assert.equal(path(), initialPath); assert.deepEqual(house(), initialHouse); assert.equal(scene().props.accessibilityValue.now, 100); assert.equal(JSON.stringify(draft), snapshot);
   } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
 });
 
@@ -289,7 +400,7 @@ test("native house-direction mode edits both bearings while the house stays stil
     const event = (points: [number, number][]) => ({ nativeEvent: { touches: points.map(([pageX, pageY]) => ({ pageX, pageY })) } });
     const initialHouse = renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, initialSun = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
     await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Set house direction" }).props.onPress(); });
-    assert.match(scene().props.accessibilityHint, /Both roof azimuths change together/);
+    assert.match(scene().props.accessibilityHint, /Drag sideways to set azimuth/);
     await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[50, 90]])); });
     assert.deepEqual(deltas, [30]); assert.equal(current.roof1Azimuth, 260); assert.equal(current.roof2Azimuth, 80);
     assert.equal(renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, initialHouse);
@@ -300,11 +411,20 @@ test("native house-direction mode edits both bearings while the house stays stil
     assert.deepEqual(deltas, [30]);
     const captured = renderer!.root.findByProps({ accessibilityLabel: "Rotate sun path right" }).props.onPress;
     await act(async () => { captured(); captured(); }); assert.deepEqual(deltas, [30, 10, 10]); assert.equal(current.roof1Azimuth, 280); assert.equal(current.roof2Azimuth, 100);
+    const houseAfterEdit = renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d;
     await act(async () => { renderer!.root.findByProps({ accessibilityLabel: "Done" }).props.onPress(); });
     await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[50, 0]])); });
     assert.deepEqual(deltas, [30, 10, 10], "Ordinary orbit never edits installation bearings");
+    const sunAfterDone = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    await act(async () => { scene().props.onResponderMove(event([[50, 25]])); });
+    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, sunAfterDone, "Vertical view rotation remains available after Done");
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, houseAfterEdit);
     await act(async () => { renderer!.update(React.createElement(Host, { editable: false })); });
     await act(async () => captured()); assert.deepEqual(deltas, [30, 10, 10], "A stale direction control cannot edit a disabled diagram");
     assert.equal(renderer!.root.findAllByProps({ accessibilityLabel: "Set house direction" }).length, 0);
+    const sunDisabled = renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d;
+    await act(async () => { scene().props.onResponderGrant(event([[0, 0]])); scene().props.onResponderMove(event([[0, 20]])); });
+    assert.notEqual(renderer!.root.findByProps({ testID: "roof-sun-path" }).props.d, sunDisabled, "A read-only installation can still change its local sky view");
+    assert.equal(renderer!.root.findByProps({ testID: "roof-sun-face-roof-1" }).props.d, houseAfterEdit); assert.deepEqual(deltas, [30, 10, 10]);
   } finally { await act(async () => renderer?.unmount()); delete globals.IS_REACT_ACT_ENVIRONMENT; }
 });
